@@ -62,7 +62,9 @@ CREATE TABLE customers (
   credit_limit INTEGER,
   opening_balance INTEGER NOT NULL DEFAULT 0,
   notes TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX idx_customers_phone ON customers(phone);
 CREATE INDEX idx_customers_name ON customers(name);

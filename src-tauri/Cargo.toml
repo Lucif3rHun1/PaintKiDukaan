@@ -65,3 +65,4 @@ rdev = "0.5"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+test-harness = []

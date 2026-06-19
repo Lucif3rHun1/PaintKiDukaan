@@ -5,6 +5,7 @@ pub mod migrations;
 pub mod queries;
 
 use std::path::Path;
+use std::sync::Mutex;
 
 use rusqlite::Connection;
 use zeroize::Zeroize;
@@ -18,14 +19,14 @@ use zeroize::Zeroizing;
 impl std::fmt::Debug for Db {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Db")
-            .field("conn", &"<Connection>")
+            .field("conn", &"<Mutex<Connection>>")
             .field("dek", &"[redacted; 32B]")
             .finish()
     }
 }
 
 pub struct Db {
-    conn: Connection,
+    conn: Mutex<Connection>,
     /// Data Encryption Key (32 random bytes) — zeroized on drop.
     dek: Zeroizing<[u8; 32]>,
 }
@@ -69,8 +70,35 @@ impl Db {
         )?;
 
         Ok(Self {
-            conn,
+            conn: Mutex::new(conn),
             dek: Zeroizing::new(*dek),
+        })
+    }
+
+    /// Open an in-memory SQLCipher database for unit tests.
+    #[cfg(any(test, feature = "test-harness"))]
+    pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
+        let mut conn = Connection::open_in_memory()?;
+        let dek = [0x42u8; 32];
+        let key_hex = hex::encode(dek);
+        conn.execute_batch(&format!("PRAGMA key = \"x'{key_hex}'\";"))?;
+        conn.execute_batch(
+            "PRAGMA cipher_compatibility = 4;\
+             PRAGMA cipher_page_size = 4096;",
+        )?;
+        migrations::run(&mut conn).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
+                e.to_string(),
+            )))
+        })?;
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;\
+             PRAGMA busy_timeout = 5000;\
+             PRAGMA foreign_keys = ON;",
+        )?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+            dek: Zeroizing::new(dek),
         })
     }
 
@@ -79,14 +107,15 @@ impl Db {
         &self,
         f: impl FnOnce(&Connection) -> Result<R, rusqlite::Error>,
     ) -> Result<R, rusqlite::Error> {
-        self.conn.execute("BEGIN", [])?;
-        match f(&self.conn) {
+        let conn = self.conn.lock().expect("db lock poisoned");
+        conn.execute("BEGIN", [])?;
+        match f(&conn) {
             Ok(val) => {
-                self.conn.execute("COMMIT", [])?;
+                conn.execute("COMMIT", [])?;
                 Ok(val)
             }
             Err(e) => {
-                let _ = self.conn.execute("ROLLBACK", []);
+                let _ = conn.execute("ROLLBACK", []);
                 Err(e)
             }
         }
@@ -97,14 +126,47 @@ impl Db {
         &self,
         f: impl FnOnce(&Connection) -> Result<R, rusqlite::Error>,
     ) -> Result<R, rusqlite::Error> {
-        self.conn.execute("BEGIN IMMEDIATE", [])?;
-        match f(&self.conn) {
+        let conn = self.conn.lock().expect("db lock poisoned");
+        conn.execute("BEGIN IMMEDIATE", [])?;
+        match f(&conn) {
             Ok(val) => {
-                self.conn.execute("COMMIT", [])?;
+                conn.execute("COMMIT", [])?;
                 Ok(val)
             }
             Err(e) => {
-                let _ = self.conn.execute("ROLLBACK", []);
+                let _ = conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
+
+    /// Raw read access — gives the closure a `&Connection` without
+    /// transaction wrapping. Slice-B compatibility alias.
+    pub fn with_raw<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&Connection) -> R,
+    {
+        let conn = self.conn.lock().expect("db lock poisoned");
+        f(&conn)
+    }
+
+    /// Write with `BEGIN IMMEDIATE`. Gives the closure a `&Connection`
+    /// inside a transaction that is committed on `Ok` or rolled back on `Err`.
+    /// Slice-B compatibility alias.
+    pub fn with_tx<F, R, E>(&self, f: F) -> Result<R, E>
+    where
+        F: FnOnce(&Connection) -> Result<R, E>,
+        E: From<rusqlite::Error>,
+    {
+        let conn = self.conn.lock().expect("db lock poisoned");
+        conn.execute("BEGIN IMMEDIATE", [])?;
+        match f(&conn) {
+            Ok(val) => {
+                conn.execute("COMMIT", [])?;
+                Ok(val)
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
                 Err(e)
             }
         }
@@ -120,9 +182,9 @@ impl Db {
     ///
     /// Single quotes in the destination path are escaped.
     pub fn backup_to(&self, dest: &Path) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().expect("db lock poisoned");
         let escaped = dest.to_string_lossy().replace('\'', "''");
-        self.conn
-            .execute_batch(&format!("VACUUM INTO '{escaped}';"))
+        conn.execute_batch(&format!("VACUUM INTO '{escaped}';"))
     }
 }
 
