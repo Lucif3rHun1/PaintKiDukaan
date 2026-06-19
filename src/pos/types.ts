@@ -1,0 +1,245 @@
+// POS shared types — mirror src-tauri/src/commands/{sales,purchases,day_close,reports,sequences}.rs
+// Keep these in sync; small drift here will break the IPC bridge.
+
+export interface PaymentSplit {
+  mode: "cash" | "upi" | "card" | "bank" | "cheque";
+  amount: number; // paise
+}
+
+export interface SaleItem {
+  item_id: number;
+  item_name: string;
+  qty: number;             // base units (INTEGER)
+  price: number;
+  unit_type: "unit" | "box";
+  line_discount: number;
+  shade_note?: string | null;
+  line_order: number;
+}
+
+export interface Sale {
+  id: number;
+  no: string;
+  customer_id: number | null;
+  customer_name: string | null;
+  date: string;
+  status: "quotation" | "final";
+  subtotal: number;
+  bill_discount: number;
+  total: number;
+  paid_amount: number;
+  payment_modes: PaymentSplit[];
+  validity_days: number | null;
+  converted_from_id: number | null;
+  user_id: number;
+  items: SaleItem[];
+}
+
+export interface CartLine {
+  item_id: number;
+  qty: number;
+  price: number;
+  unit_type: "unit" | "box";
+  line_discount: number;
+  shade_note?: string | null;
+}
+
+export interface NewSale {
+  customer_id: number | null;
+  kind: "quotation" | "final";
+  date?: string | null;
+  bill_discount: number;
+  paid_amount: number;
+  payment_modes: PaymentSplit[];
+  validity_days?: number | null;
+  acknowledge_flag: boolean;
+  lines: CartLine[];
+}
+
+export interface ConvertQuotation {
+  quotation_id: number;
+  paid_amount: number;
+  payment_modes: PaymentSplit[];
+  acknowledge_flag: boolean;
+}
+
+export interface HeldBill {
+  id: number;
+  note: string | null;
+  created_at: string;
+  payload_json: string;
+}
+
+// ---- Inward / purchases ----
+
+export interface InwardLine {
+  item_id: number;
+  qty: number;
+  unit_type: "unit" | "box";
+  cost_price: number;
+  retail_price: number;
+  location_id: number;
+}
+
+export interface NewPurchase {
+  vendor_id: number | null;
+  date?: string | null;
+  notes?: string | null;
+  auto_print_label: boolean;
+  lines: InwardLine[];
+}
+
+export interface PurchaseCreated {
+  id: number;
+  print_label: boolean;
+}
+
+export interface PurchaseItem {
+  item_id: number;
+  item_name: string;
+  qty: number;             // base units (after box conversion)
+  cost_price: number;
+  retail_price: number;
+  location_id: number;
+}
+
+export interface Purchase {
+  id: number;
+  vendor_id: number | null;
+  vendor_name: string | null;
+  date: string;
+  total: number;
+  user_id: number;
+  notes: string | null;
+  items: PurchaseItem[];
+}
+
+export interface StockMovement {
+  id: number;
+  item_id: number;
+  location_id: number;
+  qty: number;             // INTEGER base units; sale negative, inward positive
+  type: "inward" | "sale" | "adjust" | "transfer";
+  ref_type: string | null;
+  ref_id: number | null;
+  reason: string | null;
+  user_id: number;
+  created_at: string;
+}
+
+// ---- Day close ----
+
+export interface DayClose {
+  id: number;
+  date: string;
+  user_id: number;
+  opening_cash: number;
+  cash_sales: number;
+  cash_in: number;
+  cash_out: number;
+  counted_cash: number;
+  expected_cash: number;
+  variance: number;
+  notes: string | null;
+  backup_check_status: "fresh" | "stale" | "skipped";
+  created_at: string;
+}
+
+export interface CashSalesSummary {
+  date: string;
+  user_id: number;
+  cash_sales_paise: number;
+  non_cash_sales_paise: number;
+  total_sales_paise: number;
+}
+
+export interface BackupGate {
+  needs_prompt: boolean;
+  age_hours: number | null;
+  reason: string;
+  last_backup_at: string | null;
+}
+
+export interface NewDayClose {
+  date?: string | null;
+  opening_cash: number;
+  cash_in: number;
+  cash_out: number;
+  counted_cash: number;
+  notes?: string | null;
+  backup_decision: "back_up" | "skip" | "fresh";
+}
+
+export interface DayLockState {
+  date: string;
+  user_id: number;
+  is_locked: boolean;
+  day_close_id: number | null;
+}
+
+// ---- Reports ----
+
+export interface ModeTotal {
+  mode: string;
+  amount: number;
+}
+
+export interface DailySalesRow {
+  date: string;
+  bill_count: number;
+  grand_total: number;
+  total_discount: number;
+  by_mode: ModeTotal[];
+}
+
+export interface DailySalesReport {
+  from_date: string;
+  to_date: string;
+  rows: DailySalesRow[];
+  grand_total: number;
+  total_discount: number;
+  bill_count: number;
+}
+
+export interface StockRow {
+  item_id: number;
+  sku: string;
+  name: string;
+  location_id: number;
+  location_name: string;
+  qty_base: number;
+  low_stock_threshold: number;
+}
+
+export interface StockGroupRow {
+  group: string;
+  total_qty_base: number;
+  total_retail_value: number;
+}
+
+export interface StockReport {
+  by_location: StockRow[];
+  low_stock: StockRow[];
+  by_group: StockGroupRow[];
+}
+
+export interface CustomerOutstanding {
+  customer_id: number;
+  name: string;
+  phone: string | null;
+  outstanding: number;
+  credit_limit: number | null;
+}
+
+export interface VendorOutstanding {
+  vendor_id: number;
+  name: string;
+  outstanding: number;
+}
+
+export interface OutstandingReport {
+  customers: CustomerOutstanding[];
+  customer_total: number;
+  vendors: VendorOutstanding[];
+  vendor_total: number;
+}

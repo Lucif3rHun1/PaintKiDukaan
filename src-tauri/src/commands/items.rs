@@ -4,12 +4,12 @@
 //! returns different fields depending on the caller role. This is enforced
 //! server-side so a malicious frontend cannot see cost_price as a cashier.
 
-use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use crate::commands::auth::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Item {
@@ -143,7 +143,9 @@ fn mint_next_sku(tx: &rusqlite::Connection) -> AppResult<String> {
 }
 
 #[tauri::command]
-pub fn create_item(db: State<'_, Db>, payload: NewItem) -> AppResult<Item> {
+pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<Item> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     if payload.name.trim().is_empty() {
@@ -186,7 +188,9 @@ pub fn create_item(db: State<'_, Db>, payload: NewItem) -> AppResult<Item> {
 }
 
 #[tauri::command]
-pub fn update_item(db: State<'_, Db>, id: i64, patch: ItemUpdate) -> AppResult<Item> {
+pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> AppResult<Item> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     db.with_tx(|tx| {
@@ -230,7 +234,9 @@ pub fn update_item(db: State<'_, Db>, id: i64, patch: ItemUpdate) -> AppResult<I
 }
 
 #[tauri::command]
-pub fn list_items(db: State<'_, Db>, filter: ItemFilter) -> AppResult<Vec<Item>> {
+pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<Vec<Item>> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     let mut sql = String::from("SELECT id, sku_code, barcode, name, brand, category, unit, pack_size, units_per_box, sell_unit, retail_price, cost_price, label_line1, label_line2, location_text, reorder_level, is_active, created_at, updated_at FROM items WHERE 1=1");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -266,7 +272,9 @@ pub fn list_items(db: State<'_, Db>, filter: ItemFilter) -> AppResult<Vec<Item>>
 }
 
 #[tauri::command]
-pub fn get_item(db: State<'_, Db>, id: i64) -> AppResult<Item> {
+pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
@@ -280,7 +288,9 @@ pub fn get_item(db: State<'_, Db>, id: i64) -> AppResult<Item> {
 }
 
 #[tauri::command]
-pub fn lookup_item(db: State<'_, Db>, code: String) -> AppResult<Option<ItemLookup>> {
+pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option<ItemLookup>> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     // Search by barcode OR sku_code OR name match (best-effort).
     db.with_raw(|c| {
@@ -339,10 +349,12 @@ pub fn lookup_item(db: State<'_, Db>, code: String) -> AppResult<Option<ItemLook
 
 #[tauri::command]
 pub fn box_unit_conversion(
-    db: State<'_, Db>,
+    state: State<'_, AppState>,
     item_id: i64,
     qty: f64,
 ) -> AppResult<ConversionResult> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
         let (sell_unit, units_per_box): (String, Option<i64>) = c.query_row(

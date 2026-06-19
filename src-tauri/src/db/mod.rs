@@ -103,15 +103,16 @@ impl Db {
     }
 
     /// Run a closure inside a deferred transaction (`BEGIN … COMMIT`).
-    pub fn with_conn<R>(
-        &self,
-        f: impl FnOnce(&Connection) -> Result<R, rusqlite::Error>,
-    ) -> Result<R, rusqlite::Error> {
+    pub fn with_conn<F, R, E>(&self, f: F) -> Result<R, E>
+    where
+        F: FnOnce(&Connection) -> Result<R, E>,
+        E: From<rusqlite::Error>,
+    {
         let conn = self.conn.lock().expect("db lock poisoned");
-        conn.execute("BEGIN", [])?;
+        conn.execute("BEGIN", []).map_err(E::from)?;
         match f(&conn) {
             Ok(val) => {
-                conn.execute("COMMIT", [])?;
+                conn.execute("COMMIT", []).map_err(E::from)?;
                 Ok(val)
             }
             Err(e) => {
@@ -122,15 +123,16 @@ impl Db {
     }
 
     /// Run a closure inside an immediate transaction (`BEGIN IMMEDIATE …`).
-    pub fn with_conn_immediate<R>(
-        &self,
-        f: impl FnOnce(&Connection) -> Result<R, rusqlite::Error>,
-    ) -> Result<R, rusqlite::Error> {
+    pub fn with_conn_immediate<F, R, E>(&self, f: F) -> Result<R, E>
+    where
+        F: FnOnce(&Connection) -> Result<R, E>,
+        E: From<rusqlite::Error>,
+    {
         let conn = self.conn.lock().expect("db lock poisoned");
-        conn.execute("BEGIN IMMEDIATE", [])?;
+        conn.execute("BEGIN IMMEDIATE", []).map_err(E::from)?;
         match f(&conn) {
             Ok(val) => {
-                conn.execute("COMMIT", [])?;
+                conn.execute("COMMIT", []).map_err(E::from)?;
                 Ok(val)
             }
             Err(e) => {

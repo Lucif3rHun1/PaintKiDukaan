@@ -65,6 +65,35 @@ pub fn run() {
             commands::vendors::update_vendor,
             commands::vendors::record_vendor_payment,
             commands::vendors::vendor_outstanding,
+            // Sales (Slice C)
+            commands::sales::cmd_create_sale,
+            commands::sales::cmd_convert_quotation,
+            commands::sales::cmd_get_sale,
+            commands::sales::cmd_list_sales,
+            commands::sales::cmd_hold_bill,
+            commands::sales::cmd_list_held,
+            commands::sales::cmd_delete_held,
+            // Purchases (Slice C)
+            commands::purchases::cmd_create_inward,
+            commands::purchases::cmd_last_cost,
+            commands::purchases::cmd_list_purchases,
+            commands::purchases::cmd_get_purchase,
+            commands::purchases::cmd_movements_for_item,
+            // Day Close (Slice C)
+            commands::day_close::cmd_cash_sales_for,
+            commands::day_close::cmd_last_opening_for,
+            commands::day_close::cmd_backup_gate_check,
+            commands::day_close::cmd_trigger_day_close,
+            commands::day_close::cmd_lock_state,
+            commands::day_close::cmd_list_day_close,
+            commands::day_close::cmd_get_day_close,
+            commands::day_close::cmd_admin_reopen_day,
+            // Reports (Slice C)
+            commands::reports::cmd_daily_sales,
+            commands::reports::cmd_stock_report,
+            commands::reports::cmd_outstanding_report,
+            // Sequences (Slice C)
+            commands::sequences::cmd_mint_next_sale_no,
         ])
         .run(tauri::generate_context!())
         .expect("error while running PaintKiDukaan");

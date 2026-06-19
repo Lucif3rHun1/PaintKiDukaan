@@ -1,11 +1,11 @@
 //! Vendors CRUD + payments + outstanding balance.
 
-use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use crate::commands::auth::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Vendor {
@@ -56,7 +56,9 @@ pub struct VendorPayment {
 }
 
 #[tauri::command]
-pub fn create_vendor(db: State<'_, Db>, payload: NewVendor) -> AppResult<Vendor> {
+pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResult<Vendor> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     if payload.name.trim().is_empty() {
@@ -94,10 +96,12 @@ pub fn create_vendor(db: State<'_, Db>, payload: NewVendor) -> AppResult<Vendor>
 
 #[tauri::command]
 pub fn list_vendors(
-    db: State<'_, Db>,
+    state: State<'_, AppState>,
     query: Option<String>,
     include_inactive: bool,
 ) -> AppResult<Vec<Vendor>> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut sql = String::from("SELECT id, name, phone, opening_balance, notes, is_active, created_at, updated_at FROM vendors WHERE 1=1");
@@ -127,7 +131,9 @@ pub fn list_vendors(
 }
 
 #[tauri::command]
-pub fn get_vendor(db: State<'_, Db>, id: i64) -> AppResult<Vendor> {
+pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
@@ -153,10 +159,12 @@ pub fn get_vendor(db: State<'_, Db>, id: i64) -> AppResult<Vendor> {
 
 #[tauri::command]
 pub fn update_vendor(
-    db: State<'_, Db>,
+    state: State<'_, AppState>,
     id: i64,
     patch: VendorUpdate,
 ) -> AppResult<Vendor> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     db.with_tx(|tx| {
@@ -208,9 +216,11 @@ pub fn update_vendor(
 
 #[tauri::command]
 pub fn record_vendor_payment(
-    db: State<'_, Db>,
+    state: State<'_, AppState>,
     payload: VendorPayment,
 ) -> AppResult<VendorOutstanding> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner])?;
     if payload.amount <= 0 {
@@ -245,7 +255,9 @@ pub fn record_vendor_payment(
 }
 
 #[tauri::command]
-pub fn vendor_outstanding(db: State<'_, Db>, id: i64) -> AppResult<VendorOutstanding> {
+pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<VendorOutstanding> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
         let total_purchases: i64 = c.query_row(

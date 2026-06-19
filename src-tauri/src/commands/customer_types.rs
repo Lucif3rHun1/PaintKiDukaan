@@ -1,12 +1,12 @@
 //! Customer-type CRUD. Seeded with retail/painter/contractor/dealer.
 //! Only owners can mutate; anyone authenticated can read.
 
-use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use crate::commands::auth::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CustomerType {
@@ -22,7 +22,9 @@ pub struct NewCustomerType {
 }
 
 #[tauri::command]
-pub fn list_customer_types(db: State<'_, Db>, include_inactive: bool) -> AppResult<Vec<CustomerType>> {
+pub fn list_customer_types(state: State<'_, AppState>, include_inactive: bool) -> AppResult<Vec<CustomerType>> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?; // any signed-in user
     let sql = if include_inactive {
         "SELECT id, name, is_active, created_at FROM customer_types ORDER BY name"
@@ -44,7 +46,9 @@ pub fn list_customer_types(db: State<'_, Db>, include_inactive: bool) -> AppResu
 }
 
 #[tauri::command]
-pub fn add_customer_type(db: State<'_, Db>, payload: NewCustomerType) -> AppResult<CustomerType> {
+pub fn add_customer_type(state: State<'_, AppState>, payload: NewCustomerType) -> AppResult<CustomerType> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner])?;
     let name = payload.name.trim().to_string();
@@ -68,10 +72,12 @@ pub fn add_customer_type(db: State<'_, Db>, payload: NewCustomerType) -> AppResu
 
 #[tauri::command]
 pub fn rename_customer_type(
-    db: State<'_, Db>,
+    state: State<'_, AppState>,
     id: i64,
     new_name: String,
 ) -> AppResult<CustomerType> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner])?;
     let name = new_name.trim().to_string();
@@ -100,7 +106,9 @@ pub fn rename_customer_type(
 }
 
 #[tauri::command]
-pub fn deactivate_customer_type(db: State<'_, Db>, id: i64) -> AppResult<()> {
+pub fn deactivate_customer_type(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner])?;
     db.with_tx(|tx| {

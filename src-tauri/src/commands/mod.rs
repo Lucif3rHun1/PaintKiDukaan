@@ -7,3 +7,10 @@ pub mod customers;
 pub mod items;
 pub mod locations;
 pub mod vendors;
+
+// Slice C — POS commands
+pub mod day_close;
+pub mod purchases;
+pub mod reports;
+pub mod sales;
+pub mod sequences;

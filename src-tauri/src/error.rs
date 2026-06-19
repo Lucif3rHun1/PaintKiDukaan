@@ -22,6 +22,9 @@ pub enum AppError {
 
     #[error("internal: {0}")]
     Internal(String),
+
+    #[error("database is locked — please unlock first")]
+    NotUnlocked,
 }
 
 impl AppError {
@@ -34,6 +37,7 @@ impl AppError {
             AppError::Unauthorized(_) => "unauthorized",
             AppError::Forbidden(_) => "forbidden",
             AppError::Internal(_) => "internal",
+            AppError::NotUnlocked => "not_unlocked",
         }
     }
 }

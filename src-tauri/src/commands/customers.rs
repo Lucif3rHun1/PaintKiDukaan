@@ -11,6 +11,7 @@ use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use crate::commands::auth::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Customer {
@@ -76,9 +77,11 @@ fn validate_phone(phone: &str) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn create_customer(db: State<'_, Db>, payload: NewCustomer) -> AppResult<Customer> {
+pub fn create_customer(state: State<'_, AppState>, payload: NewCustomer) -> AppResult<Customer> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
-    create_customer_impl(db.inner(), &user, payload)
+    create_customer_impl(db, &user, payload)
 }
 
 fn create_customer_impl(
@@ -131,12 +134,14 @@ fn create_customer_impl(
 
 #[tauri::command]
 pub fn update_customer(
-    db: State<'_, Db>,
+    state: State<'_, AppState>,
     id: i64,
     patch: CustomerUpdate,
 ) -> AppResult<Customer> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
-    update_customer_impl(db.inner(), &user, id, patch)
+    update_customer_impl(db, &user, id, patch)
 }
 
 fn update_customer_impl(
@@ -199,10 +204,12 @@ fn update_customer_impl(
 
 #[tauri::command]
 pub fn list_customers(
-    db: State<'_, Db>,
+    state: State<'_, AppState>,
     query: Option<String>,
     include_inactive: bool,
 ) -> AppResult<Vec<Customer>> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut sql = String::from(
@@ -238,7 +245,9 @@ pub fn list_customers(
 }
 
 #[tauri::command]
-pub fn lookup_customer(db: State<'_, Db>, phone: String) -> AppResult<Option<Customer>> {
+pub fn lookup_customer(state: State<'_, AppState>, phone: String) -> AppResult<Option<Customer>> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     // Master plan §7.4: search by 4-10 digit phone substring.
     let q = phone.trim();
@@ -314,11 +323,13 @@ fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<CustomerOutstanding>
 
 #[tauri::command]
 pub fn customer_outstanding(
-    db: State<'_, Db>,
+    state: State<'_, AppState>,
     id: i64,
 ) -> AppResult<CustomerOutstanding> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
-    customer_outstanding_impl(db.inner(), id)
+    customer_outstanding_impl(db, id)
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -354,9 +365,11 @@ fn list_customer_bills_impl(db: &Db, customer_id: i64) -> AppResult<Vec<Customer
 }
 
 #[tauri::command]
-pub fn list_customer_bills(db: State<'_, Db>, customer_id: i64) -> AppResult<Vec<CustomerBill>> {
+pub fn list_customer_bills(state: State<'_, AppState>, customer_id: i64) -> AppResult<Vec<CustomerBill>> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
-    list_customer_bills_impl(db.inner(), customer_id)
+    list_customer_bills_impl(db, customer_id)
 }
 
 fn fetch_customer_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Customer> {
@@ -382,6 +395,15 @@ fn fetch_customer_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Customer> 
     rows.next()
         .ok_or_else(|| AppError::NotFound(format!("customer {id}")))?
         .map_err(Into::into)
+}
+
+/// Look up a customer by id. Returns `None` if the id does not exist.
+pub fn get_by_id(c: &rusqlite::Connection, id: i64) -> AppResult<Option<Customer>> {
+    match fetch_customer_tx(c, id) {
+        Ok(c) => Ok(Some(c)),
+        Err(AppError::NotFound(_)) => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(test)]

@@ -47,6 +47,16 @@ pub fn current_user() -> AppResult<User> {
         .ok_or_else(|| AppError::Unauthorized("no user signed in".into()))
 }
 
+/// Test helper: set current user with a given role (ignores db param).
+#[cfg(test)]
+pub fn __test_set_role(_db: &crate::db::Db, role: Role) {
+    set_current_user(Some(User {
+        id: 1,
+        name: "Test User".into(),
+        role,
+    }));
+}
+
 /// Convenience: assert the current user has a specific role (or higher).
 pub fn require_role(user: &User, allowed: &[Role]) -> AppResult<()> {
     if allowed.iter().any(|r| *r == user.role) {

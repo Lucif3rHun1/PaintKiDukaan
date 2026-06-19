@@ -1,12 +1,12 @@
 //! Locations CRUD. Soft delete only — no hard delete so item.location_text
 //! FK references stay valid. Only owners can mutate; anyone authenticated can read.
 
-use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use crate::commands::auth::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Location {
@@ -24,7 +24,9 @@ pub struct NewLocation {
 }
 
 #[tauri::command]
-pub fn list_locations(db: State<'_, Db>, include_inactive: bool) -> AppResult<Vec<Location>> {
+pub fn list_locations(state: State<'_, AppState>, include_inactive: bool) -> AppResult<Vec<Location>> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     let sql = if include_inactive {
         "SELECT id, name, rack, is_active, created_at FROM locations ORDER BY name"
@@ -47,7 +49,9 @@ pub fn list_locations(db: State<'_, Db>, include_inactive: bool) -> AppResult<Ve
 }
 
 #[tauri::command]
-pub fn create_location(db: State<'_, Db>, payload: NewLocation) -> AppResult<Location> {
+pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppResult<Location> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     let name = payload.name.trim().to_string();
@@ -76,11 +80,13 @@ pub fn create_location(db: State<'_, Db>, payload: NewLocation) -> AppResult<Loc
 
 #[tauri::command]
 pub fn rename_location(
-    db: State<'_, Db>,
+    state: State<'_, AppState>,
     id: i64,
     new_name: String,
     new_rack: Option<String>,
 ) -> AppResult<Location> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     let name = new_name.trim().to_string();
@@ -114,7 +120,9 @@ pub fn rename_location(
 }
 
 #[tauri::command]
-pub fn deactivate_location(db: State<'_, Db>, id: i64) -> AppResult<()> {
+pub fn deactivate_location(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner])?;
     db.with_tx(|tx| {
