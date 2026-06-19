@@ -285,18 +285,24 @@ CREATE TABLE users (
 );
 CREATE UNIQUE INDEX idx_users_name ON users(name) WHERE active = 1;
 
--- Key-wrapping metadata (single row, system)
-CREATE TABLE keywrap (
-  id INTEGER PRIMARY KEY CHECK(id = 1),                -- singleton
-  dek_wrapped_by_pin BLOB NOT NULL,                    -- AES-GCM(DEK, KEK_owner)
-  dek_wrapped_by_recovery BLOB NOT NULL,               -- AES-GCM(DEK, K_recovery)
-  recovery_salt BLOB NOT NULL,                         -- 16B
-  pin_salt BLOB NOT NULL,                              -- 16B
-  backup_salt BLOB NOT NULL,                           -- 16B
-  kdf_params_pin TEXT NOT NULL,                        -- JSON: m_cost, t_cost, p_cost
-  kdf_params_recovery TEXT NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+-- Key-wrapping metadata lives in a separate UNENCRYPTED SQLite sidecar file
+-- `<db_path>.keystore` (single row, system). Keeping it outside the SQLCipher
+-- main DB avoids a bootstrap chicken-and-egg problem: we must read the wrapped
+-- DEK before we can derive the SQLCipher key to open the main database.
+--
+-- Sidecar `keywrap` table schema:
+--   id INTEGER PRIMARY KEY CHECK(id = 1),
+--   pin_salt BLOB NOT NULL,                            -- 16B
+--   pin_params BLOB NOT NULL,                          -- JSON Argon2id params
+--   pin_wrapped_dek BLOB NOT NULL,                     -- AES-GCM(DEK, KEK_PIN)
+--   rec_salt BLOB NOT NULL,                            -- 16B
+--   rec_params BLOB NOT NULL,                          -- JSON Argon2id params
+--   rec_wrapped_dek BLOB NOT NULL,                     -- AES-GCM(DEK, KEK_recovery)
+--   backup_salt BLOB NOT NULL,                         -- 16B
+--   version INTEGER NOT NULL DEFAULT 1,
+--   created_at INTEGER NOT NULL,                       -- unix seconds
+--   updated_at INTEGER NOT NULL                        -- unix seconds
+-- )
 
 -- Lockout state
 CREATE TABLE lockouts (
@@ -904,7 +910,7 @@ Backup key: `Argon2id(recovery_passphrase, backup_salt, m=256MiB, t=3, p=1)` →
 
 **Deliverables**:
 - [ ] Project scaffold: Tauri 2 + React 19 + TS 6 + Vite 8 + Tailwind 4 + shadcn 4
-- [ ] SQLCipher DB initialization, migrations, keywrap table, PRAGMAs
+- [ ] SQLCipher DB initialization, migrations, unencrypted keywrap sidecar, PRAGMAs
 - [ ] First-launch wizard: set owner PIN, set recovery passphrase, set shop name/address/phone
 - [ ] Lock screen with PIN entry + 5-attempt counter
 - [ ] Idle auto-lock (5 min, configurable)
@@ -1058,7 +1064,7 @@ All scenarios must pass before M2 begins. Record evidence in `.omo/plans/m1-veri
 ### 15.2 DB & migrations (DB, R)
 
 - **DB1** Delete DB, launch app → wizard runs, on completion DB exists at `%APPDATA%\PaintKiDukaan\master.db`, open with `sqlcipher master.db` + same DEK → `.tables` lists all §5.1 tables.
-- **DB2** Schema dump via `.schema` → matches §5.1 exactly (table names, columns, types, CHECK constraints, indexes, triggers).
+- **DB2** Schema dump via `.schema` on `master.db` → matches §5.1 exactly for all encrypted main-DB tables, indexes, and triggers. The keywrap sidecar `master.db.keystore` is a separate SQLite file and is excluded from the main-DB schema dump.
 - **DB3** PRAGMAs: `journal_mode = wal`, `busy_timeout = 5000`, `cipher_compatibility = 4`, `cipher_page_size = 4096`. Verified via `PRAGMA journal_mode;` etc.
 - **DB4** Witness file rejection: rename `master.db` to `master.db.bak`, app should refuse to open (DEK wrong) and surface a recovery flow, NOT silently start.
 - **DB5** Stock trigger: insert row into `stock_movements(item_id=1, location_id=1, qty=10)`, then `SELECT qty FROM stock_balances WHERE item_id=1 AND location_id=1` → returns 10. Insert another with qty=-3, returns 7. SUM from `stock_movements` matches.
@@ -1067,10 +1073,10 @@ All scenarios must pass before M2 begins. Record evidence in `.omo/plans/m1-veri
 ### 15.3 First-launch wizard (E, DB)
 
 - **E1** Delete all app data, launch app → wizard Step 1 (set owner PIN) appears. Enter `123456` → Step 2 (set recovery passphrase) appears. Enter `correct horse battery staple` → Step 3 (shop name/address/phone) appears. Enter values → Step 4 (review) → Submit.
-- **E2** After submit, `keywrap` table has 1 row with non-null `dek_wrapped_by_pin`, `dek_wrapped_by_recovery`, `recovery_salt`, `pin_salt`, `backup_salt`. All salts are 16 bytes.
+- **E2** After submit, the keywrap sidecar (`master.db.keystore`) has 1 row with non-null `pin_wrapped_dek`, `rec_wrapped_dek`, `pin_salt`, `rec_salt`, `backup_salt`. All salts are 16 bytes.
 - **E3** Re-launch app → no wizard, goes directly to lock screen.
 - **E4** Wrong PIN 5 times → 15 min lockout. Wait 15 min, try right PIN → unlocks.
-- **E5** Force wrong-PIN wipe (set `lockout_action=wipe` in settings first): 5 wrong → app destroys `keywrap`, shows recovery screen.
+- **E5** Force wrong-PIN wipe (set `lockout_action=wipe` in settings first): 5 wrong → app destroys the keywrap sidecar row, shows recovery screen.
 
 ### 15.4 Lock + auto-lock (E, R)
 
