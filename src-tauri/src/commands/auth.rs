@@ -211,6 +211,10 @@ fn keystore_path(db_path: &Path) -> PathBuf {
 fn open_keystore(path: &Path) -> Result<Connection, AppError> {
     let conn = Connection::open(path)?;
     conn.execute_batch(db::keywrap::KEYSTORE_SCHEMA)?;
+    // Force full durability on the sidecar so a committed keywrap row survives
+    // an immediate process restart / crash (defense against the empty-keystore
+    // symptom where the file exists but contains no row).
+    conn.execute_batch("PRAGMA synchronous = FULL;")?;
     Ok(conn)
 }
 
@@ -225,6 +229,9 @@ pub(crate) fn write_keywrap_to_keystore(db_path: &Path, row: &KeywrapRow) -> Res
     let kp = keystore_path(db_path);
     let conn = open_keystore(&kp)?;
     keywrap::upsert(&conn, row)?;
+    // Explicitly close so any close-time error (e.g. unfinalized statement or
+    // failed flush) is surfaced instead of silently swallowed by Drop.
+    conn.close().map_err(|(_conn, e)| AppError::Db(e))?;
     Ok(())
 }
 
@@ -242,7 +249,9 @@ pub(crate) fn write_lockout_to_keystore(
 ) -> Result<(), AppError> {
     let kp = keystore_path(db_path);
     let conn = open_keystore(&kp)?;
-    keywrap::write_lockout(&conn, row).map_err(AppError::Db)
+    keywrap::write_lockout(&conn, row).map_err(AppError::Db)?;
+    conn.close().map_err(|(_conn, e)| AppError::Db(e))?;
+    Ok(())
 }
 
 pub(crate) fn clear_lockout_keystore(db_path: &Path) -> Result<(), AppError> {
