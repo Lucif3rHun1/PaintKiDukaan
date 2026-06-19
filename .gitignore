@@ -1,0 +1,24 @@
+# Build outputs
+dist/
+target/
+node_modules/
+
+# Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+src-tauri/gen/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local config
+.env
+.env.local
+*.log
