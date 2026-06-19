@@ -321,7 +321,11 @@ pub fn decrypt_and_verify(
 
     let mut key = kdf::derive_backup_key(recovery_passphrase, &header.salt);
 
-    let chunk0_plaintext_size = (header.chunk_size as usize).min(header.manifest_len as usize);
+    // The first encrypted chunk has plaintext size `chunk_size` (or the whole
+    // body if it fits in a single chunk). The manifest lives at the start of
+    // that first plaintext chunk, so we must decrypt the full chunk before we
+    // can know how much DB/wrapper data follows.
+    let chunk0_plaintext_size = (header.chunk_size as usize).min(body_ciphertext.len() - 16);
     let chunk0_ciphertext_size = chunk0_plaintext_size + 16;
     if body_ciphertext.len() < chunk0_ciphertext_size {
         return Err(BackupError::InvalidEnvelope("chunk 0 truncated"));
@@ -348,13 +352,13 @@ pub fn decrypt_and_verify(
         &header.nonce_prefix,
         remaining_ciphertext,
         header.chunk_size,
-        total_plaintext_len - chunk0_plaintext_size,
+        total_plaintext_len.saturating_sub(chunk0_plaintext_size),
         &header_bytes,
         1,
     )?;
 
     let mut full_plaintext = Vec::with_capacity(total_plaintext_len);
-    full_plaintext.extend_from_slice(&chunk0_plaintext[..header.manifest_len as usize]);
+    full_plaintext.extend_from_slice(&chunk0_plaintext[..chunk0_plaintext_size.min(total_plaintext_len)]);
     full_plaintext.extend_from_slice(&remaining_plaintext);
 
     if full_plaintext.len() != total_plaintext_len {
@@ -374,14 +378,21 @@ pub fn decrypt_and_verify(
 /// Atomically replace `live_db` with `new_db`.
 ///
 /// The existing live database is moved to `<live_db>.prev`. The new database is
-/// moved into place. On Windows `std::fs::rename` uses `MoveFileEx` with
-/// `MOVEFILE_REPLACE_EXISTING`, so overwriting an existing target is safe.
+/// then moved into place. If `live_db` and `new_db` live on different
+/// filesystems, the fallback copies `new_db` into place and removes the source
+/// so the restore still succeeds.
 ///
 /// Returns the path to the `.prev` file so callers can roll back on error.
 pub fn atomic_swap(live_db: &Path, new_db: &Path) -> BackupResult<std::path::PathBuf> {
     let prev_path = live_db.with_extension("prev");
     fs::rename(live_db, &prev_path)?;
-    fs::rename(new_db, live_db)?;
+
+    // Prefer atomic rename; fall back to copy+delete so a cross-filesystem
+    // restore still succeeds.
+    if fs::rename(new_db, live_db).is_err() {
+        fs::copy(new_db, live_db)?;
+        fs::remove_file(new_db)?;
+    }
     Ok(prev_path)
 }
 

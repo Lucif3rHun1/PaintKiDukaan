@@ -8,6 +8,8 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use tauri::State;
+use tempfile::NamedTempFile;
+use zeroize::Zeroize;
 
 use crate::backup::{
     atomic_swap, decrypt_and_verify, encrypt_snapshot, list_backup_targets, snapshot,
@@ -47,6 +49,8 @@ pub fn list_targets() -> Result<Vec<BackupTarget>, String> {
 /// Create a new `.pkb1` backup of the live database.
 #[tauri::command]
 pub fn backup_now(state: State<'_, AppState>, passphrase: String) -> Result<BackupMetadata, String> {
+    let mut passphrase = passphrase;
+
     let targets = list_backup_targets().map_err(err_str)?;
     let target = targets
         .into_iter()
@@ -55,6 +59,7 @@ pub fn backup_now(state: State<'_, AppState>, passphrase: String) -> Result<Back
 
     let live_db = resolve_live_db_path(&state);
     if !live_db.exists() {
+        passphrase.zeroize();
         return Err("backup failed: no live database to back up".into());
     }
 
@@ -64,20 +69,24 @@ pub fn backup_now(state: State<'_, AppState>, passphrase: String) -> Result<Back
     let timestamp = Utc::now().format("%Y%m%d-%H%M%S").to_string();
     let envelope_path = target_dir.join(format!("paintkiduakan-{timestamp}.pkb1"));
 
-    let temp_snapshot = target_dir.join(format!(".snapshot-{timestamp}.db"));
+    // Snapshot into the OS temporary directory so a crash never leaves a
+    // plaintext copy inside the backup target folder.
+    let temp_snapshot = NamedTempFile::new().map_err(|e| err_str(BackupError::Io(e)))?;
+    let temp_path = temp_snapshot.path().to_path_buf();
 
     // TODO(slice-A): Read DEK from AppState.db once Slice A exposes Db::dek().
     // For the stubbed Db in Slice D we pass None, which treats the source as a
     // plain SQLite database for snapshotting purposes.
     let dek: Option<[u8; 32]> = None;
-    snapshot::snapshot_via_backup_api(&live_db, dek.as_ref(), &temp_snapshot)
+    snapshot::snapshot_via_backup_api(&live_db, dek.as_ref(), &temp_path)
         .map_err(err_str)?;
 
-    let metadata = encrypt_snapshot(&temp_snapshot, &envelope_path, &passphrase)
+    let metadata = encrypt_snapshot(&temp_path, &envelope_path, &passphrase)
         .map_err(err_str)?;
 
-    // Best-effort cleanup of the temporary plaintext snapshot.
-    let _ = std::fs::remove_file(&temp_snapshot);
+    // Drop the tempfile handle so the OS removes the plaintext snapshot.
+    drop(temp_snapshot);
+    passphrase.zeroize();
 
     *state.last_backup_unix_ms.lock() = Some(metadata.created_at_unix_ms);
 
@@ -87,21 +96,30 @@ pub fn backup_now(state: State<'_, AppState>, passphrase: String) -> Result<Back
 /// Restore the live database from a `.pkb1` envelope.
 #[tauri::command]
 pub fn restore(state: State<'_, AppState>, path: String, passphrase: String) -> Result<(), String> {
+    let mut passphrase = passphrase;
+
     let envelope = PathBuf::from(path);
     if !envelope.exists() {
+        passphrase.zeroize();
         return Err("backup failed: envelope not found".into());
     }
 
     let live_db = resolve_live_db_path(&state);
-    let temp_plaintext = envelope
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .join(format!(".restore-{}.db", Utc::now().timestamp_millis()));
 
-    decrypt_and_verify(&envelope, &passphrase, &temp_plaintext)
+    // Decrypt into the OS temporary directory so a crash never leaves a
+    // plaintext copy next to the backup envelope.
+    let temp_plaintext = NamedTempFile::new().map_err(|e| err_str(BackupError::Io(e)))?;
+    let temp_path = temp_plaintext.path().to_path_buf();
+
+    decrypt_and_verify(&envelope, &passphrase, &temp_path)
         .map_err(err_str)?;
 
-    atomic_swap(&live_db, &temp_plaintext).map_err(err_str)?;
+    atomic_swap(&live_db, &temp_path).map_err(err_str)?;
+
+    // The tempfile guard is dropped after the swap, cleaning up any leftover
+    // plaintext copy (important when atomic_swap falls back to copy+remove).
+    drop(temp_plaintext);
+    passphrase.zeroize();
 
     *state.last_backup_unix_ms.lock() = Some(Utc::now().timestamp_millis());
 
@@ -115,12 +133,16 @@ pub fn test_restore(
     path: String,
     passphrase: String,
 ) -> Result<TestRestoreResult, String> {
+    let mut passphrase = passphrase;
+
     let envelope = PathBuf::from(path);
     if !envelope.exists() {
+        passphrase.zeroize();
         return Err("backup failed: envelope not found".into());
     }
 
     let result = crate::backup::test_restore(&envelope, &passphrase).map_err(err_str)?;
+    passphrase.zeroize();
 
     if result.ok {
         *state.last_test_restore_unix_ms.lock() = Some(Utc::now().timestamp_millis());
