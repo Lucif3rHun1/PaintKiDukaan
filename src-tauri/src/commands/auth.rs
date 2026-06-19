@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
-use crate::crypto::kdf;
+use crate::crypto::kdf::{self, random_salt};
 use crate::crypto::wrap;
 use crate::db;
 use crate::db::keywrap::{self, KeywrapRow};
@@ -515,6 +515,195 @@ pub fn touch_activity(state: State<AppState>) -> Result<(), AppError> {
 #[tauri::command]
 pub fn current_session(state: State<AppState>) -> Result<Session, AppError> {
     Ok(build_session(&state))
+}
+
+// ---------------------------------------------------------------------------
+// User management (owner-only)
+// ---------------------------------------------------------------------------
+
+/// Create a new cashier or stocker user. Owner-only.
+#[tauri::command]
+pub fn create_user(
+    state: State<AppState>,
+    name: String,
+    role: String,
+    pin: String,
+) -> Result<User, AppError> {
+    // Only the owner can create users.
+    {
+        let session = state.session.lock().unwrap();
+        let s = session.as_ref().ok_or(AppError::NotUnlocked)?;
+        if s.role != "owner" {
+            return Err(AppError::Unauthorized);
+        }
+    }
+
+    // Validate role.
+    if role != "cashier" && role != "stocker" {
+        return Err(AppError::Crypto("role must be 'cashier' or 'stocker'".into()));
+    }
+
+    // Validate PIN format (6 digits).
+    validate_owner_pin(&pin)?;
+
+    // Validate name is non-empty.
+    if name.trim().is_empty() {
+        return Err(AppError::Crypto("user name cannot be empty".into()));
+    }
+
+    let db = state.db.lock().unwrap();
+    let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
+
+    // Generate per-user PIN salt and verifier.
+    let salt = random_salt();
+    let params = kdf::KdfParams::PIN;
+    let mut kek = kdf::derive_pin_kek(&pin, &salt, &params)
+        .map_err(|e| AppError::Crypto(e.to_string()))?;
+    // Store the KEK as the verifier (the DB-level per-user auth checks
+    // re-deriving this from input PIN against stored salt).
+    let verifier: Vec<u8> = kek.to_vec();
+    kdf::zeroize_key(&mut kek);
+
+    let salt_bytes = salt.to_vec();
+
+    db.with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) \
+             VALUES (?1, ?2, ?3, ?4, 6)",
+            rusqlite::params![name, role, &salt_bytes, &verifier],
+        )
+    })
+    .map_err(AppError::Db)?;
+
+    // Read back the inserted user to get the id.
+    let user = db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, role FROM users WHERE name = ?1 AND active = 1 LIMIT 1",
+        )?;
+        stmt.query_row(rusqlite::params![name], |r| {
+            Ok(User {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                role: r.get(2)?,
+            })
+        })
+    })?;
+
+    Ok(user)
+}
+
+/// List all active users (owner-only).
+#[tauri::command]
+pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
+    {
+        let session = state.session.lock().unwrap();
+        let s = session.as_ref().ok_or(AppError::NotUnlocked)?;
+        if s.role != "owner" {
+            return Err(AppError::Unauthorized);
+        }
+    }
+
+    let db = state.db.lock().unwrap();
+    let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
+
+    let users = db.with_conn(|conn| {
+        let mut stmt =
+            conn.prepare("SELECT id, name, role FROM users WHERE active = 1 ORDER BY role, name")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(User {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                role: r.get(2)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+    })?;
+
+    Ok(users)
+}
+
+/// Deactivate a user. Owner-only. Cannot deactivate yourself.
+#[tauri::command]
+pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError> {
+    {
+        let session = state.session.lock().unwrap();
+        let s = session.as_ref().ok_or(AppError::NotUnlocked)?;
+        if s.role != "owner" {
+            return Err(AppError::Unauthorized);
+        }
+        if s.id == user_id {
+            return Err(AppError::Crypto("cannot deactivate your own account".into()));
+        }
+    }
+
+    let db = state.db.lock().unwrap();
+    let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
+
+    let affected = db
+        .with_conn(|conn| {
+            conn.execute(
+                "UPDATE users SET active = 0 WHERE id = ?1 AND active = 1",
+                rusqlite::params![user_id],
+            )
+        })
+        .map_err(AppError::Db)?;
+
+    if affected == 0 {
+        return Err(AppError::Crypto("user not found".into()));
+    }
+
+    Ok(())
+}
+
+/// Non-owner login: authenticate a cashier or stocker by name + PIN.
+///
+/// Only works when the DB is already decrypted (owner must have unlocked first).
+/// Returns a Session with the authenticated user.
+#[tauri::command]
+pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<Session, AppError> {
+    validate_owner_pin(&pin)?;
+
+    let db = state.db.lock().unwrap();
+    let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
+
+    // Look up user by name.
+    let user = db
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, role, pin_salt, pin_verifier \
+                 FROM users WHERE name = ?1 AND active = 1 LIMIT 1",
+            )?;
+            stmt.query_row(rusqlite::params![name], |r| {
+                let id: i64 = r.get(0)?;
+                let name: String = r.get(1)?;
+                let role: String = r.get(2)?;
+                let salt: Vec<u8> = r.get(3)?;
+                let verifier: Vec<u8> = r.get(4)?;
+                Ok((id, name, role, salt, verifier))
+            })
+        })
+        .map_err(|_| AppError::WrongPin)?;
+
+    let (id, name, role, salt, verifier) = user;
+
+    // Derive KEK from input PIN and compare against stored verifier.
+    let params = kdf::KdfParams::PIN;
+    let mut kek = kdf::derive_pin_kek(&pin, &salt, &params)
+        .map_err(|e| AppError::Crypto(e.to_string()))?;
+    let derived_verifier = kek.to_vec();
+    kdf::zeroize_key(&mut kek);
+
+    if derived_verifier != verifier {
+        return Err(AppError::WrongPin);
+    }
+
+    // Don't overwrite owner session — just return the authenticated session.
+    let authenticated_user = User { id, name, role };
+
+    Ok(Session {
+        user: Some(authenticated_user),
+        locked: false,
+    })
 }
 
 /// Free function for cross-slice middleware (slice plan §1 contract):
