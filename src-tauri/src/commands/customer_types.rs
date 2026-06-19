@@ -176,7 +176,7 @@ mod tests {
     fn cannot_deactivate_type_in_use() {
         let db = fresh_db();
         let type_id: i64 = db.with_conn(|c| {
-            c.query_row("SELECT id FROM customer_types WHERE name='Retail'", [], |r| r.get(0))
+            c.query_row("SELECT id FROM customer_types WHERE name='retail'", [], |r| r.get(0))
                 .unwrap()
         });
         db.with_conn(|c| {

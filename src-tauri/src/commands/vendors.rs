@@ -164,7 +164,7 @@ pub fn update_vendor(
         let mut values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         macro_rules! add {
             ($col:literal, $val:expr) => {{
-                sets.push($col);
+                sets.push(concat!($col, " ?"));
                 values.push(Box::new($val));
             }};
         }

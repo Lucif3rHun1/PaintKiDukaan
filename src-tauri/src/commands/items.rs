@@ -195,7 +195,7 @@ pub fn update_item(db: State<'_, Db>, id: i64, patch: ItemUpdate) -> AppResult<I
         let mut values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         macro_rules! add {
             ($col:literal, $val:expr) => {{
-                sets.push($col);
+                sets.push(concat!($col, " ?"));
                 values.push(Box::new($val));
             }};
         }
@@ -413,7 +413,7 @@ mod tests {
     fn create_item_mints_sku_and_barcode_defaults_to_sku() {
         set_current_user(Some(owner()));
         let db = Db::open_in_memory().unwrap();
-        let new = NewItem {
+        let _new = NewItem {
             name: "Asian Paints Ace 4L".into(),
             brand: Some("Asian Paints".into()),
             category: Some("Interior".into()),
