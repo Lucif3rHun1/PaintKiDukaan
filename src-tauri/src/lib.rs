@@ -1,19 +1,8 @@
-use serde::Serialize;
+pub mod commands;
+pub mod crypto;
+pub mod db;
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "kebab-case", tag = "kind")]
-pub enum Bootstrap {
-    FirstLaunch,
-    Locked,
-    Unlocked { user: String, role: String },
-}
-
-#[tauri::command]
-fn app_bootstrap() -> Bootstrap {
-    // Real bootstrap lives in M1.1–M1.3. For the M1.0 scaffold we always
-    // return "first-launch" so the React shell can render the setup screen.
-    Bootstrap::FirstLaunch
-}
+pub use commands::auth::AppError;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,7 +15,18 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![app_bootstrap])
+        .manage(commands::auth::AppState::default())
+        .invoke_handler(tauri::generate_handler![
+            commands::auth::app_bootstrap,
+            commands::auth::unlock,
+            commands::auth::lock,
+            commands::auth::change_pin,
+            commands::auth::touch_activity,
+            commands::auth::current_session,
+            commands::recovery::first_launch_setup,
+            commands::recovery::set_recovery_passphrase,
+            commands::recovery::restore_from_recovery,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running PaintKiDukaan Master");
 }

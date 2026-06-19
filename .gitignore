@@ -22,3 +22,8 @@ Thumbs.db
 .env
 .env.local
 *.log
+
+# TypeScript build info / emitted config files
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js

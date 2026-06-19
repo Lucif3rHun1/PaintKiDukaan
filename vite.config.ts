@@ -2,8 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 // Tauri expects a fixed port, fail if that port is not available
-export default defineConfig(async () => ({
-  plugins: [react()],
+export default defineConfig({
+  plugins: react(),
   clearScreen: false,
   server: {
     port: 1420,
@@ -18,4 +18,4 @@ export default defineConfig(async () => ({
     minify: "esbuild",
     sourcemap: false,
   },
-}));
+});
