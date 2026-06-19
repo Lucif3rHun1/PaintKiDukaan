@@ -3,7 +3,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { BackupPanel } from "../backup/BackupPanel";
 import { MasterHealthPage } from "../health/MasterHealthPage";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { EmptyState } from "../components/EmptyState";
 import { ipc, type Device, type Role, type User } from "../lib/ipc";
 
 type Tab =
@@ -72,22 +71,24 @@ export function Settings() {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">Settings</h2>
-      <div className="flex flex-wrap gap-1 border-b border-slate-200">
-        {TABS.map((t) => (
-          <button
-            type="button"
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={
-              "rounded-t-md px-3 py-1.5 text-sm " +
-              (tab === t.id
-                ? "border border-slate-200 border-b-white bg-white font-medium"
-                : "text-slate-600 hover:bg-slate-100")
-            }
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="overflow-x-auto">
+        <div className="flex gap-1 border-b border-slate-200 min-w-max">
+          {TABS.map((t) => (
+            <button
+              type="button"
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={
+                "rounded-t-md px-3 py-1.5 text-sm whitespace-nowrap " +
+                (tab === t.id
+                  ? "border border-slate-200 border-b-white bg-white font-medium"
+                  : "text-slate-600 hover:bg-slate-100")
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="rounded-md border border-slate-200 bg-white p-4">
         {tab === "shop" && <ShopTab />}
@@ -95,23 +96,14 @@ export function Settings() {
         {tab === "receipt" && <ReceiptTab />}
         {tab === "users" && <UsersTab />}
         {tab === "devices" && <DevicesTab />}
-        {tab === "locations" && <PlaceholderTab name="Locations" />}
-        {tab === "customer-types" && <PlaceholderTab name="Customer types" />}
+        {tab === "locations" && <LocationsTab />}
+        {tab === "customer-types" && <CustomerTypesTab />}
         {tab === "backup" && <BackupPanel />}
         {tab === "security" && <SecurityTab />}
         {tab === "scanner" && <ScannerTab />}
         {tab === "master-health" && <MasterHealthPage />}
       </div>
     </div>
-  );
-}
-
-function PlaceholderTab({ name }: { name: string }) {
-  return (
-    <EmptyState
-      title={`${name} tab`}
-      body="UI lands in the corresponding slice. The Rust command surface for this tab is already wired in lib.rs."
-    />
   );
 }
 
@@ -666,6 +658,188 @@ function DevicesTab() {
         onConfirm={() => void revoke()}
         onCancel={() => setRevoking(null)}
       />
+    </div>
+  );
+}
+
+function LocationsTab() {
+  const [locations, setLocations] = useState<string[]>([]);
+  const [newLocation, setNewLocation] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = () => {
+    ipc
+      .listLocations()
+      .then(setLocations)
+      .catch((e: unknown) => setError(String(e)));
+  };
+
+  useEffect(refresh, []);
+
+  const add = async () => {
+    const trimmed = newLocation.trim();
+    if (!trimmed) return;
+    setError(null);
+    try {
+      const updated = await ipc.addLocation(trimmed);
+      setLocations(updated);
+      setNewLocation("");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const remove = async (location: string) => {
+    setError(null);
+    try {
+      const updated = await ipc.removeLocation(location);
+      setLocations(updated);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  return (
+    <div className="space-y-4 text-sm">
+      <h3 className="text-base font-semibold">Locations</h3>
+
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={newLocation}
+          onChange={(e) => setNewLocation(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void add();
+          }}
+          placeholder="New location name"
+          className="flex-1 rounded-md border border-slate-300 p-2"
+        />
+        <button
+          type="button"
+          onClick={() => void add()}
+          disabled={!newLocation.trim()}
+          className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          Add
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <ul className="divide-y divide-slate-200 rounded-md border border-slate-200">
+        {locations.map((loc) => (
+          <li key={loc} className="flex items-center justify-between px-3 py-2">
+            <span>{loc}</span>
+            <button
+              type="button"
+              onClick={() => void remove(loc)}
+              className="text-xs text-red-600 hover:text-red-800"
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+        {locations.length === 0 && (
+          <li className="px-3 py-4 text-center text-slate-500">
+            No locations configured.
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function CustomerTypesTab() {
+  const [customerTypes, setCustomerTypes] = useState<string[]>([]);
+  const [newType, setNewType] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = () => {
+    ipc
+      .listCustomerTypes()
+      .then(setCustomerTypes)
+      .catch((e: unknown) => setError(String(e)));
+  };
+
+  useEffect(refresh, []);
+
+  const add = async () => {
+    const trimmed = newType.trim();
+    if (!trimmed) return;
+    setError(null);
+    try {
+      const updated = await ipc.addCustomerType(trimmed);
+      setCustomerTypes(updated);
+      setNewType("");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const remove = async (customerType: string) => {
+    setError(null);
+    try {
+      const updated = await ipc.removeCustomerType(customerType);
+      setCustomerTypes(updated);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  return (
+    <div className="space-y-4 text-sm">
+      <h3 className="text-base font-semibold">Customer Types</h3>
+
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={newType}
+          onChange={(e) => setNewType(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void add();
+          }}
+          placeholder="New customer type"
+          className="flex-1 rounded-md border border-slate-300 p-2"
+        />
+        <button
+          type="button"
+          onClick={() => void add()}
+          disabled={!newType.trim()}
+          className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          Add
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <ul className="divide-y divide-slate-200 rounded-md border border-slate-200">
+        {customerTypes.map((ct) => (
+          <li key={ct} className="flex items-center justify-between px-3 py-2">
+            <span>{ct}</span>
+            <button
+              type="button"
+              onClick={() => void remove(ct)}
+              className="text-xs text-red-600 hover:text-red-800"
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+        {customerTypes.length === 0 && (
+          <li className="px-3 py-4 text-center text-slate-500">
+            No customer types configured.
+          </li>
+        )}
+      </ul>
     </div>
   );
 }
