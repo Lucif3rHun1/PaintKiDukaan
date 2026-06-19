@@ -11,9 +11,6 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-#[allow(dead_code)]
-const PHONE_RE: &str = r"^[6-9]\d{9}$";
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Customer {
     pub id: i64,
@@ -56,7 +53,8 @@ pub struct NewCustomer {
 pub struct CustomerUpdate {
     pub name: Option<String>,
     pub phone: Option<String>,
-    pub type_id: Option<Option<i64>>,  // double-Option: Some(None) = clear
+    pub type_id: Option<Option<i64>>,
+    pub is_flagged: Option<bool>,
     pub credit_limit: Option<Option<f64>>,
     pub opening_balance: Option<f64>,
     pub notes: Option<Option<String>>,
@@ -133,27 +131,37 @@ pub fn update_customer(
     patch: CustomerUpdate,
 ) -> AppResult<Customer> {
     let user = current_user()?;
-    require_role(&user, &[Role::Owner, Role::Cashier])?;
+    update_customer_impl(db.inner(), &user, id, patch)
+}
+
+fn update_customer_impl(
+    db: &Db,
+    user: &crate::session::User,
+    id: i64,
+    patch: CustomerUpdate,
+) -> AppResult<Customer> {
+    require_role(user, &[Role::Owner, Role::Cashier])?;
     if let Some(p) = &patch.phone {
         validate_phone(p)?;
     }
+    // Per master plan §7.4: is_flagged, credit_limit, opening_balance are
+    // owner-only settable. Cashier attempting to send any of these fields
+    // is rejected before we touch the DB.
+    if patch.is_flagged.is_some() || patch.credit_limit.is_some() || patch.opening_balance.is_some() {
+        require_role(user, &[Role::Owner])?;
+    }
     db.with_conn_immediate(|tx| {
-        // Load existing to enforce role rules and merge.
-        let current = fetch_customer_tx(tx, id)?;
-        let new_flagged = if let Some(f) = None::<bool> { f } else { current.is_flagged };
-        // is_flagged is owner-only.
-        let _ = new_flagged; // currently not in patch; reserved for future
+        let _current = fetch_customer_tx(tx, id)?;
         let mut sets: Vec<&'static str> = Vec::new();
         let mut values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         macro_rules! add {
             ($col:literal, $val:expr) => {{
-                sets.push($col);
+                sets.push(concat!($col, " ?"));
                 values.push(Box::new($val));
             }};
         }
         if let Some(v) = &patch.name { add!("name =", v.clone()) }
         if let Some(v) = &patch.phone {
-            // check uniqueness
             let taken: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM customers WHERE phone = ?1 AND id <> ?2)",
                 params![v, id], |r| r.get(0),
@@ -167,6 +175,9 @@ pub fn update_customer(
         if let Some(v) = &patch.credit_limit { add!("credit_limit =", v) }
         if let Some(v) = patch.opening_balance { add!("opening_balance =", v) }
         if let Some(v) = &patch.notes { add!("notes =", v) }
+        if let Some(v) = patch.is_flagged {
+            add!("is_flagged =", if v { 1_i64 } else { 0_i64 });
+        }
         if let Some(v) = patch.is_active { add!("is_active =", if v { 1_i64 } else { 0_i64 }) }
         if sets.is_empty() {
             return Err(AppError::Validation("no fields to update".into()));
@@ -227,13 +238,22 @@ pub fn list_customers(
 #[tauri::command]
 pub fn lookup_customer(db: State<'_, Db>, phone: String) -> AppResult<Option<Customer>> {
     let _ = current_user()?;
+    // Master plan §7.4: search by 4-10 digit phone substring.
+    let q = phone.trim();
+    if q.len() < 4 || q.len() > 10 || !q.chars().all(|c| c.is_ascii_digit()) {
+        return Err(AppError::Validation(
+            "phone search must be 4-10 digits".into(),
+        ));
+    }
+    let like_pattern = format!("%{q}%");
     db.with_conn(|c| {
         let mut stmt = c.prepare(
             "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.credit_limit, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
              FROM customers c LEFT JOIN customer_types t ON t.id = c.type_id \
-             WHERE c.phone = ?1 LIMIT 1",
+             WHERE c.phone LIKE ?1 \
+             ORDER BY c.id ASC LIMIT 1",
         )?;
-        let mut rows = stmt.query_map(params![phone], |r| {
+        let mut rows = stmt.query_map(params![like_pattern], |r| {
             Ok(Customer {
                 id: r.get(0)?,
                 name: r.get(1)?,
@@ -367,13 +387,156 @@ mod tests {
 
     #[test]
     fn is_flagged_only_owner_can_set() {
+        // Cashier attempting to set is_flagged via update is rejected by the
+        // role guard before we touch the DB. We exercise the real entry point
+        // (update_customer_impl) rather than the require_role helper directly.
         set_current_user(Some(cashier()));
-        // Cashier tries to set is_flagged = true → forbidden.
-        let res = require_role(&cashier(), &[Role::Owner]);
-        assert!(res.is_err());
+        let db = Db::open_in_memory().unwrap();
+        let id = db.with_conn(|c| {
+            c.execute(
+                "INSERT INTO customers (name, phone) VALUES ('Test', '9876543210')",
+                [],
+            ).unwrap();
+            c.last_insert_rowid()
+        });
+        let res = update_customer_impl(
+            &db,
+            &cashier(),
+            id,
+            CustomerUpdate {
+                name: None,
+                phone: None,
+                type_id: None,
+                is_flagged: Some(true),
+                credit_limit: None,
+                opening_balance: None,
+                notes: None,
+                is_active: None,
+            },
+        );
+        assert!(matches!(res, Err(AppError::Forbidden(_))));
+
+        // Owner may set it.
+        set_current_user(Some(owner()));
+        let ok = update_customer_impl(
+            &db,
+            &owner(),
+            id,
+            CustomerUpdate {
+                name: None,
+                phone: None,
+                type_id: None,
+                is_flagged: Some(true),
+                credit_limit: None,
+                opening_balance: None,
+                notes: None,
+                is_active: None,
+            },
+        );
+        assert!(ok.is_ok(), "owner should be allowed, got: {:?}", ok.as_ref().err());
+        assert!(ok.unwrap().is_flagged);
+    }
+
+    #[test]
+    fn credit_limit_and_opening_balance_only_owner_can_set() {
+        set_current_user(Some(cashier()));
+        let db = Db::open_in_memory().unwrap();
+        let id = db.with_conn(|c| {
+            c.execute(
+                "INSERT INTO customers (name, phone) VALUES ('Test', '9876543210')",
+                [],
+            ).unwrap();
+            c.last_insert_rowid()
+        });
+
+        let res = update_customer_impl(
+            &db,
+            &cashier(),
+            id,
+            CustomerUpdate {
+                name: None,
+                phone: None,
+                type_id: None,
+                is_flagged: None,
+                credit_limit: Some(Some(5000.0)),
+                opening_balance: None,
+                notes: None,
+                is_active: None,
+            },
+        );
+        assert!(matches!(res, Err(AppError::Forbidden(_))), "cashier setting credit_limit must be Forbidden");
+
+        let res = update_customer_impl(
+            &db,
+            &cashier(),
+            id,
+            CustomerUpdate {
+                name: None,
+                phone: None,
+                type_id: None,
+                is_flagged: None,
+                credit_limit: None,
+                opening_balance: Some(1000.0),
+                notes: None,
+                is_active: None,
+            },
+        );
+        assert!(matches!(res, Err(AppError::Forbidden(_))), "cashier setting opening_balance must be Forbidden");
 
         set_current_user(Some(owner()));
-        assert!(require_role(&owner(), &[Role::Owner]).is_ok());
+        let ok = update_customer_impl(
+            &db,
+            &owner(),
+            id,
+            CustomerUpdate {
+                name: None,
+                phone: None,
+                type_id: None,
+                is_flagged: None,
+                credit_limit: Some(Some(5000.0)),
+                opening_balance: Some(1000.0),
+                notes: None,
+                is_active: None,
+            },
+        );
+        assert!(ok.is_ok(), "owner should be allowed, got: {:?}", ok.as_ref().err());
+        let c = ok.unwrap();
+        assert_eq!(c.credit_limit, Some(5000.0));
+        assert_eq!(c.opening_balance, 1000.0);
+    }
+
+    #[test]
+    fn lookup_by_4_to_10_digit_phone_substring() {
+        set_current_user(Some(owner()));
+        let db = Db::open_in_memory().unwrap();
+        db.with_conn(|c| {
+            c.execute(
+                "INSERT INTO customers (name, phone) VALUES ('Test', '9876543210')",
+                [],
+            ).unwrap();
+            let stored: String = c
+                .query_row("SELECT phone FROM customers LIMIT 1", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(stored, "9876543210");
+        });
+        // 4-digit substring '4321' must match '9876543210' (positions 5-8).
+        let q4: String = db.with_conn(|c| {
+            c.query_row(
+                "SELECT name FROM customers WHERE phone LIKE '%4321%'",
+                [],
+                |r| r.get(0),
+            ).unwrap()
+        });
+        assert_eq!(q4, "Test");
+        // 10-digit full match.
+        let q10: String = db.with_conn(|c| {
+            c.query_row(
+                "SELECT name FROM customers WHERE phone LIKE '%9876543210%'",
+                [],
+                |r| r.get(0),
+            ).unwrap()
+        });
+        assert_eq!(q10, "Test");
     }
 
     #[test]
@@ -404,7 +567,7 @@ mod tests {
                 "SELECT COALESCE(SUM(total - paid_amount), 0) FROM sales WHERE customer_id = ?1 AND status = 'final'",
                 [cust_id], |r| r.get(0),
             ).unwrap();
-            let total_paid: f64 = c.query_row(
+            let _total_paid: f64 = c.query_row(
                 "SELECT COALESCE(SUM(paid_amount), 0) FROM sales WHERE customer_id = ?1 AND status = 'final'",
                 [cust_id], |r| r.get(0),
             ).unwrap();
