@@ -26,6 +26,7 @@ function readRoute(): Route {
 export function ShellApp() {
   const [boot, setBoot] = useState<Bootstrap>({ kind: "loading" });
   const [route, setRoute] = useState<Route>(readRoute);
+  const [idleLockMinutes, setIdleLockMinutes] = useState(5);
   const session = useSessionStore((s) => s.session);
   const setUser = useSessionStore((s) => s.setUser);
   const setLocked = useSessionStore((s) => s.setLocked);
@@ -59,7 +60,20 @@ export function ShellApp() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  useIdleLock({ onLock: () => (window.location.hash = "#/lock") });
+  useEffect(() => {
+    ipc
+      .getSetting("idle_lock_minutes")
+      .then((raw) => {
+        const minutes = raw ? (JSON.parse(raw) as number) : 5;
+        setIdleLockMinutes(Number.isFinite(minutes) && minutes > 0 ? minutes : 5);
+      })
+      .catch(() => setIdleLockMinutes(5));
+  }, []);
+
+  useIdleLock({
+    idleMs: idleLockMinutes * 60 * 1000,
+    onLock: () => (window.location.hash = "#/lock"),
+  });
 
   if (boot.kind === "loading") {
     return (
