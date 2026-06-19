@@ -6,8 +6,9 @@
 //! Used for both `dek_wrapped_by_pin` and `dek_wrapped_by_recovery` rows
 //! in the `keywrap` table.
 
+use aes_gcm::aead::generic_array::typenum::U12;
 use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
+use aes_gcm::{Aes256Gcm, Nonce};
 use rand_core::{OsRng, RngCore};
 use thiserror::Error;
 use zeroize::Zeroize;
@@ -28,13 +29,13 @@ pub enum WrapError {
 
 /// Wrap a 32-byte DEK with a 32-byte KEK. Returns `nonce(12) || ciphertext_and_tag`.
 pub fn wrap_dek(dek: &[u8; KEK_LEN], kek: &[u8; KEK_LEN]) -> Result<Vec<u8>, WrapError> {
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(kek));
+    let cipher = Aes256Gcm::new_from_slice(kek).map_err(|e| WrapError::Aead(e.to_string()))?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
     OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce: Nonce<U12> = nonce_bytes.into();
 
     let mut ct = cipher
-        .encrypt(nonce, dek.as_ref())
+        .encrypt(&nonce, dek.as_ref())
         .map_err(|e| WrapError::Aead(e.to_string()))?;
 
     // Prepend nonce.
@@ -54,10 +55,13 @@ pub fn unwrap_dek(blob: &[u8], kek: &[u8; KEK_LEN]) -> Result<[u8; KEK_LEN], Wra
         // Sanity: a wrapped 32-byte key with 16-byte tag should be ~60 bytes.
         return Err(WrapError::TooLong(blob.len()));
     }
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(kek));
-    let nonce = Nonce::from_slice(&blob[..NONCE_LEN]);
+    let cipher = Aes256Gcm::new_from_slice(kek).map_err(|e| WrapError::Aead(e.to_string()))?;
+    let nonce_bytes: [u8; NONCE_LEN] = blob[..NONCE_LEN]
+        .try_into()
+        .map_err(|_| WrapError::TooShort(blob.len()))?;
+    let nonce: Nonce<U12> = nonce_bytes.into();
     let plaintext = cipher
-        .decrypt(nonce, &blob[NONCE_LEN..])
+        .decrypt(&nonce, &blob[NONCE_LEN..])
         .map_err(|e| WrapError::Aead(e.to_string()))?;
     if plaintext.len() != KEK_LEN {
         return Err(WrapError::Aead(format!(

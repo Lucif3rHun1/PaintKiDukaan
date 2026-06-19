@@ -42,7 +42,7 @@ pub enum KdfError {
     InvalidSalt(usize),
 }
 
-fn argon2_with(params: &KdfParams) -> Result<Argon2, KdfError> {
+fn argon2_with(params: &KdfParams) -> Result<Argon2<'_>, KdfError> {
     let p = Params::new(params.m_cost_kib, params.t_cost, params.p_cost, Some(KEK_LEN))
         .map_err(|e| KdfError::Argon2(e.to_string()))?;
     Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, p))
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn pin_kek_differs_for_different_salts() {
-        let mut s1 = [0u8; 16];
+        let s1 = [0u8; 16];
         let mut s2 = [0u8; 16];
         s2[15] = 1;
         let k1 = derive_pin_kek("123456", &s1, &KdfParams::PIN).unwrap();
