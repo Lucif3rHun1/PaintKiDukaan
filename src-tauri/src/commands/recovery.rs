@@ -29,39 +29,56 @@ pub fn first_launch_setup(
     address: String,
     phone: String,
 ) -> Result<Session, AppError> {
+    log::info!("[SETUP] first_launch_setup called");
+    log::info!("[SETUP] pin len={}, passphrase len={}, shop={}", pin.len(), passphrase.len(), shop_name);
+
     // Determine paths.
+    log::info!("[SETUP] Resolving app data dir...");
     let app_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
+    log::info!("[SETUP] App dir: {:?}", app_dir);
     std::fs::create_dir_all(&app_dir)?;
     let db_path: PathBuf = app_dir.join("paintkiduakan.db");
+    log::info!("[SETUP] DB path: {:?}", db_path);
 
     // --- Generate crypto material ----------------------------------------
+    log::info!("[SETUP] Generating crypto material...");
     let dek = random_dek();
     let pin_salt = random_salt();
     let rec_salt = random_salt();
     let backup_salt = random_salt(); // spec §4.1: 16-byte random
+    log::info!("[SETUP] Crypto salts generated");
 
     let pin_params = KdfParams::PIN;
     let rec_params = KdfParams::RECOVERY;
 
+    log::info!("[SETUP] Deriving PIN KEK (Argon2id 64 MiB)...");
     let mut pin_kek = kdf::derive_pin_kek(&pin, &pin_salt, &pin_params)
         .map_err(|e| AppError::Crypto(e.to_string()))?;
+    log::info!("[SETUP] PIN KEK derived OK");
+    log::info!("[SETUP] Deriving recovery KEK (Argon2id 256 MiB)...");
     let mut rec_kek = kdf::derive_recovery_k(&passphrase, &rec_salt)
         .map_err(|e| AppError::Crypto(e.to_string()))?;
+    log::info!("[SETUP] Recovery KEK derived OK");
 
+    log::info!("[SETUP] Wrapping DEK with PIN KEK...");
     let pin_wrapped_dek = wrap_dek(&dek, &pin_kek)
         .map_err(|e| AppError::Crypto(e.to_string()))?;
+    log::info!("[SETUP] Wrapping DEK with recovery KEK...");
     let rec_wrapped_dek = wrap_dek(&dek, &rec_kek)
         .map_err(|e| AppError::Crypto(e.to_string()))?;
+    log::info!("[SETUP] DEK wrapped OK");
 
     // Zeroize intermediate keys.
     kdf::zeroize_key(&mut pin_kek);
     kdf::zeroize_key(&mut rec_kek);
 
     // --- Open main encrypted DB and apply schema -------------------------
+    log::info!("[SETUP] Opening encrypted DB...");
     let db = db::Db::open(&db_path, &dek)?;
+    log::info!("[SETUP] DB opened OK, seeding data...");
 
     db.with_conn(|conn: &Connection| {
         // Seed owner user (placeholder pin_salt/verifier — per-user PIN is post-v1).
@@ -83,16 +100,22 @@ pub fn first_launch_setup(
 
         Ok::<_, rusqlite::Error>(())
     })?;
+    log::info!("[SETUP] Data seeded OK");
 
     // --- Write keywrap to keystore (separate, unencrypted) ---------------
+    log::info!("[SETUP] Writing keywrap to keystore sidecar...");
     let ts = now_unix() as i64;
+    let pin_params_json = serde_json::to_vec(&pin_params)
+        .map_err(|e| AppError::Crypto(format!("pin_params serialize: {e}")))?;
+    let rec_params_json = serde_json::to_vec(&rec_params)
+        .map_err(|e| AppError::Crypto(format!("rec_params serialize: {e}")))?;
     let row = KeywrapRow {
         id: 1,
         pin_salt: pin_salt.to_vec(),
-        pin_params: serde_json::to_vec(&pin_params).unwrap(),
+        pin_params: pin_params_json,
         pin_wrapped_dek,
         rec_salt: rec_salt.to_vec(),
-        rec_params: serde_json::to_vec(&rec_params).unwrap(),
+        rec_params: rec_params_json,
         rec_wrapped_dek,
         backup_salt: backup_salt.to_vec(),
         version: 1,
@@ -100,11 +123,15 @@ pub fn first_launch_setup(
         updated_at: ts,
     };
     write_keywrap_to_keystore(&db_path, &row)?;
+    log::info!("[SETUP] Keywrap written OK");
 
     // Seed the sidecar lockout policy row with spec defaults.
+    log::info!("[SETUP] Writing lockout row...");
     write_lockout_to_keystore(&db_path, &default_lockout_row())?;
+    log::info!("[SETUP] Lockout row written OK");
 
     // --- Set state -------------------------------------------------------
+    log::info!("[SETUP] Setting app state...");
     *state.db_path.lock().unwrap() = Some(db_path);
     *state.db.lock().unwrap() = Some(db);
 

@@ -39,7 +39,8 @@ pub fn run() {
     let _ = std::fs::create_dir_all(&log_dir);
 
     let log_file = log_dir.join("session.log");
-    let _ = std::fs::remove_file(&log_file);
+    let prev_log = log_dir.join("session.prev.log");
+    let _ = std::fs::rename(&log_file, &prev_log);
 
     tauri::Builder::default()
         .plugin(
@@ -67,7 +68,6 @@ pub fn run() {
         .setup(|app| {
             log::info!("=== PaintKiDukaan session started ===");
 
-            // Resolve the actual data directory from the app handle (authoritative).
             if let Ok(app_data) = app.path().app_data_dir() {
                 log::info!("App data dir: {}", app_data.display());
                 if let Ok(db_path) = std::fs::canonicalize(app_data.join("paintkiduakan.db")) {
@@ -78,10 +78,32 @@ pub fn run() {
                 log::info!("Keystore exists: {}", app_data.join("paintkiduakan.keystore").exists());
             }
 
-            // Initialize Slice D shell subsystems (best-effort).
-            let _ = hardening::tray::init(app);
-            let _ = scan::init(app);
-            let _ = hardening::prevent_sleep::apply_on_launch(app);
+            // Install panic hook that writes to the log before crashing.
+            let default_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                log::error!("PANIC: {}", info);
+                if let Some(s) = info.payload().downcast_ref::<&str>() {
+                    log::error!("  payload: {}", s);
+                } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                    log::error!("  payload: {}", s);
+                }
+                if let Some(loc) = info.location() {
+                    log::error!("  at {}:{}:{}", loc.file(), loc.line(), loc.column());
+                }
+                default_hook(info);
+            }));
+
+            log::info!("Initializing hardening subsystems...");
+            if let Err(e) = hardening::tray::init(app) {
+                log::warn!("Tray init failed (non-fatal): {}", e);
+            }
+            if let Err(e) = scan::init(app) {
+                log::warn!("Scan init failed (non-fatal): {}", e);
+            }
+            if let Err(e) = hardening::prevent_sleep::apply_on_launch(app) {
+                log::warn!("Prevent-sleep failed (non-fatal): {}", e);
+            }
+            log::info!("Setup complete");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
