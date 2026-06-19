@@ -13,9 +13,15 @@ import {
   recoveryPassphraseSchema,
   shopNameSchema,
 } from "./pin";
-import { type Role, type Session, useSecurity } from "./state";
+import { type Role, type Session, type User, useSecurity } from "./state";
 
-type SetupResponse = Partial<Session> & { user?: string; role?: Role };
+interface SetupResponse {
+  user?: { id?: number; name?: string; role?: Role } | null;
+  user_id?: number;
+  user_name?: string;
+  role?: Role;
+  locked?: boolean;
+}
 type Step = 0 | 1 | 2;
 
 const inputClass =
@@ -27,11 +33,11 @@ const ghostButtonClass =
   "inline-flex h-11 items-center justify-center rounded-lg border border-white/10 px-4 text-sm font-medium text-zinc-200 transition-colors duration-150 hover:border-white/20 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: SetupResponse): Session {
-  return {
-    user_id: result.user_id ?? 0,
-    user_name: result.user_name ?? result.user ?? "Owner",
-    role: result.role ?? "owner",
-  };
+  const role: Role = result.user?.role ?? result.role ?? "owner";
+  const name = result.user?.name ?? result.user_name ?? "Owner";
+  const id = result.user?.id ?? result.user_id ?? 0;
+  const user: User | null = result.user === null ? null : { id, name, role };
+  return { user, locked: result.locked ?? false };
 }
 
 function fieldError(message?: string) {

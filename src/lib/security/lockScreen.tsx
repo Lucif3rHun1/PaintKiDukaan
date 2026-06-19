@@ -5,9 +5,15 @@ import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { type UnlockInput, unlockSchema } from "./pin";
-import { type Role, type Session, useSecurity } from "./state";
+import { type Role, type Session, type User, useSecurity } from "./state";
 
-type UnlockResponse = Partial<Session> & { user?: string; role?: Role };
+interface UnlockResponse {
+  user?: { id?: number; name?: string; role?: Role } | null;
+  user_id?: number;
+  user_name?: string;
+  role?: Role;
+  locked?: boolean;
+}
 
 const inputClass =
   "h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 text-center text-lg font-medium tracking-[0.35em] text-zinc-100 outline-none transition-colors duration-150 placeholder:text-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50";
@@ -15,11 +21,13 @@ const buttonClass =
   "inline-flex h-11 w-full items-center justify-center rounded-lg bg-indigo-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: UnlockResponse): Session {
-  return {
-    user_id: result.user_id ?? 0,
-    user_name: result.user_name ?? result.user ?? "Owner",
-    role: result.role ?? "owner",
-  };
+  const role: Role = result.user?.role ?? result.role ?? "owner";
+  const name = result.user?.name ?? result.user_name ?? result.user?.name ?? "Owner";
+  const id = result.user?.id ?? result.user_id ?? 0;
+  const user: User | null = result.user === null
+    ? null
+    : { id, name, role };
+  return { user, locked: result.locked ?? false };
 }
 
 function extractAttemptCount(message: string): number | null {
