@@ -205,3 +205,28 @@ fn now_unix_ms() -> i64 {
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disk_free_gb_is_positive() {
+        let gb = disk_free_gb().expect("disk free probe should work");
+        assert!(gb > 0.0, "expected positive free space, got {gb}");
+    }
+
+    #[test]
+    fn bitlocker_status_on_non_windows_is_unknown() {
+        if cfg!(not(target_os = "windows")) {
+            assert_eq!(bitlocker_status_inner().unwrap(), "unknown");
+        }
+    }
+
+    #[test]
+    fn format_iso_roundtrips_timestamp() {
+        let ts = 1_700_000_000_000i64;
+        let iso = format_iso(ts);
+        assert!(iso.starts_with("2023-11-14"));
+    }
+}
