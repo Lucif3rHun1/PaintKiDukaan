@@ -76,6 +76,7 @@ pub fn run() {
             commands::customers::list_customers,
             commands::customers::lookup_customer,
             commands::customers::customer_outstanding,
+            commands::customers::list_customer_bills,
             // vendors
             commands::vendors::create_vendor,
             commands::vendors::list_vendors,

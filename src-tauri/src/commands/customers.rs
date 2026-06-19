@@ -1,7 +1,8 @@
 //! Customers CRUD + outstanding balance.
 //!
 //! - Phone is `^[6-9]\d{9}$` (10 digits, starts 6-9) and unique.
-//! - `is_flagged` is owner-only.
+//! - `is_flagged` and `opening_balance` updates are owner-only; cashier can set
+//!   `opening_balance` on create.
 //! - `customer_outstanding` = opening + Σ(sales.total - paid) - Σ(payments).
 
 use crate::db::Db;
@@ -19,7 +20,6 @@ pub struct Customer {
     pub type_id: Option<i64>,
     pub type_name: Option<String>,
     pub is_flagged: bool,
-    pub credit_limit: Option<f64>,
     pub opening_balance: f64,
     pub notes: Option<String>,
     pub is_active: bool,
@@ -44,7 +44,6 @@ pub struct NewCustomer {
     pub phone: String,
     pub type_id: Option<i64>,
     pub is_flagged: Option<bool>,
-    pub credit_limit: Option<f64>,
     pub opening_balance: Option<f64>,
     pub notes: Option<String>,
 }
@@ -55,7 +54,6 @@ pub struct CustomerUpdate {
     pub phone: Option<String>,
     pub type_id: Option<Option<i64>>,
     pub is_flagged: Option<bool>,
-    pub credit_limit: Option<Option<f64>>,
     pub opening_balance: Option<f64>,
     pub notes: Option<Option<String>>,
     pub is_active: Option<bool>,
@@ -80,12 +78,20 @@ fn validate_phone(phone: &str) -> AppResult<()> {
 #[tauri::command]
 pub fn create_customer(db: State<'_, Db>, payload: NewCustomer) -> AppResult<Customer> {
     let user = current_user()?;
-    require_role(&user, &[Role::Owner, Role::Cashier])?;
+    create_customer_impl(db.inner(), &user, payload)
+}
+
+fn create_customer_impl(
+    db: &Db,
+    user: &crate::session::User,
+    payload: NewCustomer,
+) -> AppResult<Customer> {
+    require_role(user, &[Role::Owner, Role::Cashier])?;
     validate_phone(&payload.phone)?;
 
     // is_flagged is owner-only.
     let is_flagged = if payload.is_flagged.unwrap_or(false) {
-        require_role(&user, &[Role::Owner])?;
+        require_role(user, &[Role::Owner])?;
         true
     } else {
         false
@@ -107,14 +113,13 @@ pub fn create_customer(db: State<'_, Db>, payload: NewCustomer) -> AppResult<Cus
             )));
         }
         tx.execute(
-            "INSERT INTO customers (name, phone, type_id, is_flagged, credit_limit, opening_balance, notes, is_active) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)",
+            "INSERT INTO customers (name, phone, type_id, is_flagged, opening_balance, notes, is_active) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
             params![
                 payload.name,
                 payload.phone,
                 payload.type_id,
                 if is_flagged { 1_i64 } else { 0_i64 },
-                payload.credit_limit,
                 payload.opening_balance.unwrap_or(0.0),
                 payload.notes,
             ],
@@ -144,10 +149,9 @@ fn update_customer_impl(
     if let Some(p) = &patch.phone {
         validate_phone(p)?;
     }
-    // Per master plan §7.4: is_flagged, credit_limit, opening_balance are
-    // owner-only settable. Cashier attempting to send any of these fields
-    // is rejected before we touch the DB.
-    if patch.is_flagged.is_some() || patch.credit_limit.is_some() || patch.opening_balance.is_some() {
+    // Owner-only update fields. Cashier attempting to send any of these is
+    // rejected before we touch the DB.
+    if patch.is_flagged.is_some() || patch.opening_balance.is_some() {
         require_role(user, &[Role::Owner])?;
     }
     db.with_conn_immediate(|tx| {
@@ -172,7 +176,6 @@ fn update_customer_impl(
             add!("phone =", v.clone());
         }
         if let Some(v) = &patch.type_id { add!("type_id =", v) }
-        if let Some(v) = &patch.credit_limit { add!("credit_limit =", v) }
         if let Some(v) = patch.opening_balance { add!("opening_balance =", v) }
         if let Some(v) = &patch.notes { add!("notes =", v) }
         if let Some(v) = patch.is_flagged {
@@ -203,7 +206,7 @@ pub fn list_customers(
     let _ = current_user()?;
     db.with_conn(|c| {
         let mut sql = String::from(
-            "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.credit_limit, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
+            "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
              FROM customers c LEFT JOIN customer_types t ON t.id = c.type_id WHERE 1=1",
         );
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -223,12 +226,11 @@ pub fn list_customers(
                 type_id: r.get(3)?,
                 type_name: r.get(4)?,
                 is_flagged: r.get::<_, i64>(5)? != 0,
-                credit_limit: r.get(6)?,
-                opening_balance: r.get(7)?,
-                notes: r.get(8)?,
-                is_active: r.get::<_, i64>(9)? != 0,
-                created_at: r.get(10)?,
-                updated_at: r.get(11)?,
+                opening_balance: r.get(6)?,
+                notes: r.get(7)?,
+                is_active: r.get::<_, i64>(8)? != 0,
+                created_at: r.get(9)?,
+                updated_at: r.get(10)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -248,7 +250,7 @@ pub fn lookup_customer(db: State<'_, Db>, phone: String) -> AppResult<Option<Cus
     let like_pattern = format!("%{q}%");
     db.with_conn(|c| {
         let mut stmt = c.prepare(
-            "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.credit_limit, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
+            "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
              FROM customers c LEFT JOIN customer_types t ON t.id = c.type_id \
              WHERE c.phone LIKE ?1 \
              ORDER BY c.id ASC LIMIT 1",
@@ -261,12 +263,11 @@ pub fn lookup_customer(db: State<'_, Db>, phone: String) -> AppResult<Option<Cus
                 type_id: r.get(3)?,
                 type_name: r.get(4)?,
                 is_flagged: r.get::<_, i64>(5)? != 0,
-                credit_limit: r.get(6)?,
-                opening_balance: r.get(7)?,
-                notes: r.get(8)?,
-                is_active: r.get::<_, i64>(9)? != 0,
-                created_at: r.get(10)?,
-                updated_at: r.get(11)?,
+                opening_balance: r.get(6)?,
+                notes: r.get(7)?,
+                is_active: r.get::<_, i64>(8)? != 0,
+                created_at: r.get(9)?,
+                updated_at: r.get(10)?,
             })
         })?;
         match rows.next() {
@@ -316,9 +317,47 @@ pub fn customer_outstanding(
     })
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct CustomerBill {
+    pub sale_id: i64,
+    pub date: String,
+    pub total: f64,
+    pub paid_amount: f64,
+    pub status: String,
+    pub created_at: String,
+}
+
+fn list_customer_bills_impl(db: &Db, customer_id: i64) -> AppResult<Vec<CustomerBill>> {
+    db.with_conn(|c| {
+        let mut stmt = c.prepare(
+            "SELECT id, date, total, paid_amount, status, created_at \
+             FROM sales \
+             WHERE customer_id = ?1 AND status = 'final' \
+             ORDER BY date DESC, id DESC",
+        )?;
+        let rows = stmt.query_map(params![customer_id], |r| {
+            Ok(CustomerBill {
+                sale_id: r.get(0)?,
+                date: r.get(1)?,
+                total: r.get(2)?,
+                paid_amount: r.get(3)?,
+                status: r.get(4)?,
+                created_at: r.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    })
+}
+
+#[tauri::command]
+pub fn list_customer_bills(db: State<'_, Db>, customer_id: i64) -> AppResult<Vec<CustomerBill>> {
+    let _ = current_user()?;
+    list_customer_bills_impl(db.inner(), customer_id)
+}
+
 fn fetch_customer_tx(tx: &rusqlite::Transaction<'_>, id: i64) -> AppResult<Customer> {
     let mut stmt = tx.prepare(
-        "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.credit_limit, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
+        "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
          FROM customers c LEFT JOIN customer_types t ON t.id = c.type_id WHERE c.id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], |r| {
@@ -329,12 +368,11 @@ fn fetch_customer_tx(tx: &rusqlite::Transaction<'_>, id: i64) -> AppResult<Custo
             type_id: r.get(3)?,
             type_name: r.get(4)?,
             is_flagged: r.get::<_, i64>(5)? != 0,
-            credit_limit: r.get(6)?,
-            opening_balance: r.get(7)?,
-            notes: r.get(8)?,
-            is_active: r.get::<_, i64>(9)? != 0,
-            created_at: r.get(10)?,
-            updated_at: r.get(11)?,
+            opening_balance: r.get(6)?,
+            notes: r.get(7)?,
+            is_active: r.get::<_, i64>(8)? != 0,
+            created_at: r.get(9)?,
+            updated_at: r.get(10)?,
         })
     })?;
     rows.next()
@@ -408,7 +446,6 @@ mod tests {
                 phone: None,
                 type_id: None,
                 is_flagged: Some(true),
-                credit_limit: None,
                 opening_balance: None,
                 notes: None,
                 is_active: None,
@@ -427,7 +464,6 @@ mod tests {
                 phone: None,
                 type_id: None,
                 is_flagged: Some(true),
-                credit_limit: None,
                 opening_balance: None,
                 notes: None,
                 is_active: None,
@@ -438,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn credit_limit_and_opening_balance_only_owner_can_set() {
+    fn opening_balance_only_owner_can_update() {
         set_current_user(Some(cashier()));
         let db = Db::open_in_memory().unwrap();
         let id = db.with_conn(|c| {
@@ -458,30 +494,12 @@ mod tests {
                 phone: None,
                 type_id: None,
                 is_flagged: None,
-                credit_limit: Some(Some(5000.0)),
-                opening_balance: None,
-                notes: None,
-                is_active: None,
-            },
-        );
-        assert!(matches!(res, Err(AppError::Forbidden(_))), "cashier setting credit_limit must be Forbidden");
-
-        let res = update_customer_impl(
-            &db,
-            &cashier(),
-            id,
-            CustomerUpdate {
-                name: None,
-                phone: None,
-                type_id: None,
-                is_flagged: None,
-                credit_limit: None,
                 opening_balance: Some(1000.0),
                 notes: None,
                 is_active: None,
             },
         );
-        assert!(matches!(res, Err(AppError::Forbidden(_))), "cashier setting opening_balance must be Forbidden");
+        assert!(matches!(res, Err(AppError::Forbidden(_))), "cashier updating opening_balance must be Forbidden");
 
         set_current_user(Some(owner()));
         let ok = update_customer_impl(
@@ -493,16 +511,73 @@ mod tests {
                 phone: None,
                 type_id: None,
                 is_flagged: None,
-                credit_limit: Some(Some(5000.0)),
                 opening_balance: Some(1000.0),
                 notes: None,
                 is_active: None,
             },
         );
         assert!(ok.is_ok(), "owner should be allowed, got: {:?}", ok.as_ref().err());
+        assert_eq!(ok.unwrap().opening_balance, 1000.0);
+    }
+
+    #[test]
+    fn cashier_can_set_opening_balance_on_create() {
+        set_current_user(Some(cashier()));
+        let db = Db::open_in_memory().unwrap();
+        let c = create_customer_impl(
+            &db,
+            &cashier(),
+            NewCustomer {
+                name: "Test".into(),
+                phone: "9876543210".into(),
+                type_id: None,
+                is_flagged: None,
+                opening_balance: Some(2500.0),
+                notes: None,
+            },
+        ).unwrap();
+        assert_eq!(c.opening_balance, 2500.0);
+    }
+
+    #[test]
+    fn cashier_can_update_non_owner_fields() {
+        set_current_user(Some(cashier()));
+        let db = Db::open_in_memory().unwrap();
+        let id = create_customer_impl(
+            &db,
+            &cashier(),
+            NewCustomer {
+                name: "Old".into(),
+                phone: "9876543210".into(),
+                type_id: None,
+                is_flagged: None,
+                opening_balance: Some(100.0),
+                notes: None,
+            },
+        )
+        .unwrap()
+        .id;
+
+        let ok = update_customer_impl(
+            &db,
+            &cashier(),
+            id,
+            CustomerUpdate {
+                name: Some("New".into()),
+                phone: Some("8765432109".into()),
+                type_id: None,
+                is_flagged: None,
+                opening_balance: None,
+                notes: Some(Some("updated".into())),
+                is_active: None,
+            },
+        );
+        assert!(ok.is_ok(), "cashier update failed: {:?}", ok.as_ref().err());
         let c = ok.unwrap();
-        assert_eq!(c.credit_limit, Some(5000.0));
-        assert_eq!(c.opening_balance, 1000.0);
+        assert_eq!(c.name, "New");
+        assert_eq!(c.phone, "8765432109");
+        assert_eq!(c.notes.as_deref(), Some("updated"));
+        assert_eq!(c.opening_balance, 100.0);
     }
 
     #[test]
@@ -537,6 +612,50 @@ mod tests {
             ).unwrap()
         });
         assert_eq!(q10, "Test");
+    }
+
+    #[test]
+    fn list_customer_bills_returns_final_sales_ordered_by_date_desc() {
+        set_current_user(Some(cashier()));
+        let db = Db::open_in_memory().unwrap();
+        let customer = create_customer_impl(
+            &db,
+            &cashier(),
+            NewCustomer {
+                name: "Bill".into(),
+                phone: "9876543210".into(),
+                type_id: None,
+                is_flagged: None,
+                opening_balance: Some(0.0),
+                notes: None,
+            },
+        )
+        .unwrap();
+
+        db.with_conn(|c| {
+            c.execute(
+                "INSERT INTO sales (customer_id, total, paid_amount, status, date) VALUES (?1, 100, 50, 'draft', '2025-01-10')",
+                [customer.id],
+            ).unwrap();
+            c.execute(
+                "INSERT INTO sales (customer_id, total, paid_amount, status, date) VALUES (?1, 250, 200, 'final', '2025-01-15')",
+                [customer.id],
+            ).unwrap();
+            c.execute(
+                "INSERT INTO sales (customer_id, total, paid_amount, status, date) VALUES (?1, 180, 180, 'final', '2025-01-12')",
+                [customer.id],
+            ).unwrap();
+            c.execute(
+                "INSERT INTO sales (customer_id, total, paid_amount, status, date) VALUES (?1, 300, 0, 'final', '2025-01-15')",
+                [customer.id],
+            ).unwrap();
+        });
+
+        let bills = list_customer_bills_impl(&db, customer.id).unwrap();
+        assert_eq!(bills.len(), 3, "draft sale should be excluded");
+        assert_eq!(bills[0].total, 300.0);
+        assert_eq!(bills[1].total, 250.0);
+        assert_eq!(bills[2].total, 180.0);
     }
 
     #[test]

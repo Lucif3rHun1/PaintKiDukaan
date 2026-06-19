@@ -50,7 +50,6 @@ CREATE TABLE IF NOT EXISTS customers (
   phone             TEXT NOT NULL UNIQUE,        -- ^[6-9]\d{9}$ enforced in app layer
   type_id           INTEGER REFERENCES customer_types(id),
   is_flagged        INTEGER NOT NULL DEFAULT 0,  -- owner-only set
-  credit_limit      REAL,
   opening_balance   REAL NOT NULL DEFAULT 0,
   notes             TEXT,
   is_active         INTEGER NOT NULL DEFAULT 1,
