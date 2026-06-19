@@ -5,8 +5,8 @@ use serde_json;
 use tauri::{AppHandle, Manager, State};
 
 use crate::commands::auth::{
-    now_unix, read_keywrap_from_keystore, write_keywrap_to_keystore, AppError, AppState, Session,
-    User,
+    default_lockout_row, now_unix, read_keywrap_from_keystore, validate_owner_pin,
+    write_keywrap_to_keystore, write_lockout_to_keystore, AppError, AppState, Session, User,
 };
 use crate::crypto::kdf::{self, random_dek, random_salt, KdfParams, KEK_LEN};
 use crate::crypto::wrap::wrap_dek;
@@ -78,6 +78,9 @@ pub fn first_launch_setup(
             params![shop_name, address, phone],
         )?;
 
+        // Seed default locations expected by inward/POS workflows.
+        conn.execute("INSERT INTO locations (name) VALUES ('Shop'), ('Godown')", [])?;
+
         Ok::<_, rusqlite::Error>(())
     })?;
 
@@ -97,6 +100,9 @@ pub fn first_launch_setup(
         updated_at: ts,
     };
     write_keywrap_to_keystore(&db_path, &row)?;
+
+    // Seed the sidecar lockout policy row with spec defaults.
+    write_lockout_to_keystore(&db_path, &default_lockout_row())?;
 
     // --- Set state -------------------------------------------------------
     *state.db_path.lock().unwrap() = Some(db_path);
@@ -152,10 +158,22 @@ pub fn set_recovery_passphrase(
 #[tauri::command]
 pub fn restore_from_recovery(
     state: State<AppState>,
+    app: AppHandle,
     passphrase: String,
     new_pin: String,
 ) -> Result<Session, AppError> {
-    let db_path = state.db_path.lock().unwrap().clone().ok_or(AppError::NoDb)?;
+    validate_owner_pin(&new_pin)?;
+
+    let db_path = match state.db_path.lock().unwrap().clone() {
+        Some(p) => p,
+        None => {
+            let app_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
+            app_dir.join("paintkiduakan.db")
+        }
+    };
 
     // Read keywrap, unwrap with recovery.
     let mut row = read_keywrap_from_keystore(&db_path)?;
@@ -167,6 +185,7 @@ pub fn restore_from_recovery(
 
     // Open the main DB.
     let db = db::Db::open(&db_path, &dek)?;
+    *state.db_path.lock().unwrap() = Some(db_path.clone());
 
     let user = db.with_conn(|conn: &Connection| {
         let mut stmt = conn
