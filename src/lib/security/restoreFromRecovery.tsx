@@ -86,7 +86,7 @@ export function RestoreFromRecovery() {
       const session = normalizeSession(
         await invoke<RestoreResponse>("restore_from_recovery", {
           passphrase: input.passphrase,
-          newPin: input.newPin,
+          new_pin: input.newPin,
         }),
       );
       const security = useSecurity.getState();

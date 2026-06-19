@@ -105,7 +105,15 @@ export function FirstLaunch() {
   async function onSubmit(input: FirstLaunchInput) {
     setBackendError(null);
     try {
-      const session = normalizeSession(await invoke<SetupResponse>("first_launch_setup", input));
+      const session = normalizeSession(
+        await invoke<SetupResponse>("first_launch_setup", {
+          pin: input.pin,
+          passphrase: input.passphrase,
+          shop_name: input.shopName,
+          address: input.address,
+          phone: input.phone,
+        }),
+      );
       const security = useSecurity.getState();
       security.setSession(session);
       security.setPhase("unlocked");
