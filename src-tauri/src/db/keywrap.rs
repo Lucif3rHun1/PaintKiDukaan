@@ -6,7 +6,7 @@
 //! bootstrap `unlock`. See `commands::auth::open_keystore` for the file
 //! location and `KEYSTORE_SCHEMA` for the table DDL.
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -17,7 +17,9 @@ use crate::crypto::wrap::{unwrap_dek, wrap_dek};
 // Schema (shared between production `open_keystore` and tests)
 // ---------------------------------------------------------------------------
 
-/// DDL for the unencrypted keywrap sidecar DB. Single `keywrap` row at id=1.
+/// DDL for the unencrypted keywrap sidecar DB. Single `keywrap` row at id=1,
+/// plus a `lockouts` table so lockout state can be read before the main DB is
+/// unlocked.
 pub const KEYSTORE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS keywrap (
   id INTEGER PRIMARY KEY CHECK(id = 1),
   pin_salt BLOB NOT NULL,
@@ -30,6 +32,14 @@ pub const KEYSTORE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS keywrap (
   version INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lockouts (
+  user_id INTEGER PRIMARY KEY,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER,
+  wipe_on_next_fail INTEGER NOT NULL DEFAULT 0,
+  action TEXT NOT NULL DEFAULT 'timeout',
+  base_minutes INTEGER NOT NULL DEFAULT 15
 );";
 
 // ---------------------------------------------------------------------------
@@ -56,6 +66,18 @@ pub struct KeywrapRow {
     pub version: i64,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+/// Lockout state persisted in the unencrypted keywrap sidecar so it can be
+/// enforced before the main encrypted DB is unlocked.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LockoutRow {
+    pub user_id: i64,
+    pub failed_attempts: i64,
+    pub locked_until: Option<i64>,
+    pub wipe_on_next_fail: bool,
+    pub action: String,
+    pub base_minutes: i64,
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +162,93 @@ pub fn update(conn: &Connection, row: &KeywrapRow) -> Result<(), rusqlite::Error
             row.updated_at,
         ],
     )?;
+    Ok(())
+}
+
+/// Upsert the singleton keywrap row. This is the production write path used
+/// by PIN change, recovery passphrase change, and recovery restore.
+pub fn upsert(conn: &Connection, row: &KeywrapRow) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO keywrap \
+         (id, pin_salt, pin_params, pin_wrapped_dek, \
+          rec_salt, rec_params, rec_wrapped_dek, backup_salt, \
+          version, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
+         ON CONFLICT(id) DO UPDATE SET \
+           pin_salt = excluded.pin_salt, \
+           pin_params = excluded.pin_params, \
+           pin_wrapped_dek = excluded.pin_wrapped_dek, \
+           rec_salt = excluded.rec_salt, \
+           rec_params = excluded.rec_params, \
+           rec_wrapped_dek = excluded.rec_wrapped_dek, \
+           backup_salt = excluded.backup_salt, \
+           version = excluded.version, \
+           updated_at = excluded.updated_at",
+        params![
+            1i64,
+            &row.pin_salt,
+            &row.pin_params,
+            &row.pin_wrapped_dek,
+            &row.rec_salt,
+            &row.rec_params,
+            &row.rec_wrapped_dek,
+            &row.backup_salt,
+            row.version,
+            row.created_at,
+            row.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Lockout helpers
+// ---------------------------------------------------------------------------
+
+/// Read the lockout row for `user_id` from the sidecar.
+pub fn read_lockout(conn: &Connection, user_id: i64) -> Result<LockoutRow, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT user_id, failed_attempts, locked_until, wipe_on_next_fail, action, base_minutes \
+         FROM lockouts WHERE user_id = ?1",
+    )?;
+    stmt.query_row([user_id], |r| {
+        Ok(LockoutRow {
+            user_id: r.get(0)?,
+            failed_attempts: r.get(1)?,
+            locked_until: r.get(2)?,
+            wipe_on_next_fail: r.get::<_, i64>(3)? != 0,
+            action: r.get(4)?,
+            base_minutes: r.get(5)?,
+        })
+    })
+}
+
+/// Upsert a lockout row.
+pub fn write_lockout(conn: &Connection, row: &LockoutRow) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO lockouts (user_id, failed_attempts, locked_until, wipe_on_next_fail, action, base_minutes) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+         ON CONFLICT(user_id) DO UPDATE SET \
+           failed_attempts = excluded.failed_attempts, \
+           locked_until = excluded.locked_until, \
+           wipe_on_next_fail = excluded.wipe_on_next_fail, \
+           action = excluded.action, \
+           base_minutes = excluded.base_minutes",
+        params![
+            row.user_id,
+            row.failed_attempts,
+            row.locked_until,
+            row.wipe_on_next_fail as i64,
+            row.action,
+            row.base_minutes,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Delete the lockout row for `user_id`.
+pub fn clear_lockout(conn: &Connection, user_id: i64) -> Result<(), rusqlite::Error> {
+    conn.execute("DELETE FROM lockouts WHERE user_id = ?1", [user_id])?;
     Ok(())
 }
 
@@ -387,5 +496,48 @@ mod tests {
             Err(crate::AppError::WrongPin) => {} // expected
             other => panic!("expected WrongPin, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_upsert_overwrites_existing_row() {
+        let conn = setup_test_db();
+        let dek = random_dek();
+        let row = make_row("123456", "long-passphrase", &dek);
+        write_initial(&conn, &row).unwrap();
+
+        let mut updated = row.clone();
+        updated.updated_at += 1;
+        let mutated_backup_salt = vec![0u8; 16];
+        updated.backup_salt = mutated_backup_salt.clone();
+        upsert(&conn, &updated).unwrap();
+
+        let read_back = read(&conn).unwrap();
+        assert_eq!(read_back.backup_salt, mutated_backup_salt);
+        assert_eq!(read_back.updated_at, updated.updated_at);
+    }
+
+    #[test]
+    fn test_lockout_read_write_clear() {
+        let conn = setup_test_db();
+        let row = LockoutRow {
+            user_id: 1,
+            failed_attempts: 3,
+            locked_until: Some(1234567890),
+            wipe_on_next_fail: true,
+            action: "timeout".to_string(),
+            base_minutes: 15,
+        };
+        write_lockout(&conn, &row).unwrap();
+
+        let read_back = read_lockout(&conn, 1).unwrap();
+        assert_eq!(read_back.failed_attempts, 3);
+        assert_eq!(read_back.locked_until, Some(1234567890));
+        assert!(read_back.wipe_on_next_fail);
+
+        clear_lockout(&conn, 1).unwrap();
+        assert!(matches!(
+            read_lockout(&conn, 1),
+            Err(rusqlite::Error::QueryReturnedNoRows)
+        ));
     }
 }
