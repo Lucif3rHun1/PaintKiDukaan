@@ -1,10 +1,13 @@
 //! `powercfg` wrapper to keep the master awake while unattended.
 //!
-//! §9.2 of the master plan: on AC set standby/hibernate timeouts to 0
-//! (disabled). On DC: 15–30 min standby, 30–60 min hibernate. On non-Windows
-//! hosts the calls are no-ops so dev boxes keep working.
+//! §9.2 of the master plan: on AC set standby/hibernate/lid timeouts to 0
+//! (disabled). On DC: 15–30 min standby, 30–60 min hibernate, lid = 0. On
+//! non-Windows hosts the calls are no-ops so dev boxes keep working.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(target_os = "windows")]
+use std::process::Command;
 
 use tauri::{App, Runtime};
 
@@ -36,14 +39,22 @@ fn apply_policy(enabled: bool) -> bool {
     let cmds: &[&[&str]] = if enabled {
         &[
             &["/change", "standby-timeout-ac", "0"],
-            &["/change", "standby-timeout-dc", "0"],
+            &["/change", "standby-timeout-dc", "15"],
             &["/change", "hibernate-timeout-ac", "0"],
-            &["/change", "hibernate-timeout-dc", "0"],
+            &["/change", "hibernate-timeout-dc", "30"],
+            &["/setacvalueindex", "SCHEME_CURRENT", "SUB_BUTTONS", "LIDACTION", "0"],
+            &["/setdcvalueindex", "SCHEME_CURRENT", "SUB_BUTTONS", "LIDACTION", "0"],
+            &["/setactive", "SCHEME_CURRENT"],
         ]
     } else {
         &[
             &["/change", "standby-timeout-ac", "15"],
             &["/change", "standby-timeout-dc", "15"],
+            &["/change", "hibernate-timeout-ac", "30"],
+            &["/change", "hibernate-timeout-dc", "30"],
+            &["/setacvalueindex", "SCHEME_CURRENT", "SUB_BUTTONS", "LIDACTION", "1"],
+            &["/setdcvalueindex", "SCHEME_CURRENT", "SUB_BUTTONS", "LIDACTION", "1"],
+            &["/setactive", "SCHEME_CURRENT"],
         ]
     };
 

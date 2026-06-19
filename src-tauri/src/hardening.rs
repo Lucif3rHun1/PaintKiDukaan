@@ -188,13 +188,9 @@ fn bitlocker_status_inner() -> Result<String, String> {
 }
 
 fn disk_free_gb() -> Option<f64> {
-    let path = dirs::data_local_dir()?;
-    // Best-effort: use a synchronous statvfs-like call via std::fs metadata.
-    // We can't read free bytes portably without `fs2` or `sysinfo`, so we
-    // just return 0.0 to indicate "unknown" — Slice A or a future hardening
-    // pass can wire the real probe.
-    let _ = path;
-    Some(0.0)
+    let path = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    let bytes = fs2::available_space(&path).ok()?;
+    Some(bytes as f64 / (1024.0 * 1024.0 * 1024.0))
 }
 
 fn format_iso(unix_ms: i64) -> String {
