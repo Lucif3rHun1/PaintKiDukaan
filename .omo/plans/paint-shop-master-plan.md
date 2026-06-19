@@ -131,7 +131,7 @@ tauri-plugin-log = "2.9.0"
 tauri-plugin-oauth = "2.0.0"          # Drive OAuth
 tauri-plugin-keyring-store = "0.2.0"  # device cert privkey + Drive refresh token
 rdev = "0.5.3"                         # global barcode wedge (desktop)
-rusqlite = { version = "0.40.1", features = ["sqlcipher"] }  # Windows: link system SQLCipher 4.16.0
+rusqlite = { version = "0.40.1", features = ["bundled-sqlcipher", "backup"] }
 rusqlite_migration = "2.6.0"
 argon2 = { version = "0.5.3", features = ["zeroize"] }
 aes-gcm = "0.10.3"
@@ -881,7 +881,7 @@ Backup key: `Argon2id(recovery_passphrase, backup_salt, m=256MiB, t=3, p=1)` →
 
 ### 10.6 Test restore
 - First-class button: Settings → Backup → "Test restore latest backup"
-- Runs full restore path to a separate temp file, runs `quick_check`, deletes temp, updates `last_test_restore_at`
+- Runs full restore path to a separate temp file in the OS temporary directory, runs `quick_check`, deletes temp, updates `last_test_restore_at`, and zeroizes the recovery passphrase
 - Banner: "Last tested restore: 35 days ago" (yellow if >30d, red if >90d)
 
 ### 10.7 Retention

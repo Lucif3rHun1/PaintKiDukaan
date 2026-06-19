@@ -382,29 +382,31 @@ src/shell/
 
 **Critical paths to implement**:
 
-1. `scan::init` — `rdev::listen` in a tokio task; emit `barcode:scan` event on detection per §8.9 rule.
+1. `scan::init` — `rdev::listen` in a tokio task; emit `barcode:scan` event on detection per §8.9 rule. Detection logic is extracted into a pure `evaluate_scan(...)` function for unit testing; Shift-key state is tracked so uppercase barcode characters are accepted.
 2. `scan::set_target(target: ScanTarget)` — Tauri command; stores in state.
 3. `backup::snapshot_and_encrypt(dek, dest_path, recovery_passphrase)`:
-   - `rusqlite::Connection::backup` to temp file.
+   - `rusqlite::Connection::backup` to a `NamedTempFile` in the OS temporary directory.
    - Open temp with same DEK.
    - Encrypt with AES-256-GCM using `Argon2id(recovery_passphrase, backup_salt)`.
    - Write PKB1 envelope (per §10.1).
    - Compute `ciphertext_sha256` for trailer.
+   - Zeroize the recovery passphrase immediately after encryption.
 4. `backup::decrypt_and_verify(path, recovery_passphrase)`:
    - Read header, verify magic + ciphertext SHA-256.
-   - Decrypt body.
+   - Decrypt body to a `NamedTempFile` in the OS temporary directory.
    - Open temp SQLCipher, run `PRAGMA quick_check`.
    - Return temp path.
-5. `backup::atomic_swap(temp_path)` — moves live → .prev, temp → live, reopens DB.
-6. `backup::test_restore(path, recovery_passphrase)` — runs full restore path to a separate temp, verifies `quick_check`, deletes temp, updates `last_test_restore_at`.
+5. `backup::atomic_swap(temp_path)` — moves live → `.prev`, temp → live, reopens DB; falls back to copy+remove when `fs::rename` cannot cross filesystems.
+6. `backup::test_restore(path, recovery_passphrase)` — runs full restore path to a separate `NamedTempFile`, verifies `quick_check`, deletes temp, updates `last_test_restore_at`, and zeroizes the recovery passphrase.
 7. `hardening::autostart_enable` / `autostart_disable` — `tauri-plugin-autostart`.
 8. `hardening::prevent_sleep` — PowerShell `powercfg /change standby-timeout-ac 0`, etc.
 9. `hardening::single_instance` — `tauri-plugin-single-instance` (register early in builder).
 10. `hardening::tray_menu` — `tauri::tray::TrayIconBuilder` with Show / Lock now (calls `LockWorkStation` via Win32) / Quit.
 11. `hardening::bitlocker_status` — `powershell Get-BitLockerVolume -MountPoint C:`.
 12. `hardening::master_health` — aggregates all of the above.
-13. `commands::settings::*` — full CRUD on settings, users, devices, locations, customer_types (admin UI).
-14. `commands::settings::reset_pin` — owner-only, re-derives `pin_verifier` with existing `pin_salt`.
+13. `commands::settings::*` — full CRUD on settings, users, devices, locations, customer_types (admin UI). User PINs are hashed with Argon2id (m=64 MiB, t=2, p=1) and stored as PHC strings (salt embedded). Device IDs are cryptographically random 16-character hex strings.
+14. `commands::settings::reset_pin` — owner-only, re-hashes the PIN with Argon2id and replaces the stored PHC verifier.
+15. `commands::settings::verify_pin` — constant-time PIN verification for login/unlock flows.
 15. `commands::backup::backup_now` → calls `backup::snapshot_and_encrypt`. `commands::backup::restore` → calls decrypt + atomic_swap.
 
 **E-scenarios**:
