@@ -3,9 +3,9 @@
 //! §8.9 of the master plan defines the detection rule:
 //! `terminator seen && length >= settings.scanner_min_length && totalTime <= max(150ms, len * settings.scanner_avg_ms_per_char)`.
 //!
-//! In M1 the settings come from compile-time defaults because Slice A's
-//! settings store is not yet wired in this worktree. The hook is started in
-//! a dedicated thread by `init()` and emits the `barcode:scan` Tauri event
+//! Settings are read from `AppState.settings` on every keystroke so they can
+//! be tuned at runtime from Settings → Scanner. The hook is started in a
+//! dedicated thread by `init()` and emits the `barcode:scan` Tauri event
 //! when a scan is detected.
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -16,14 +16,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use parking_lot::Mutex;
 use rdev::{Event, EventType, Key};
 use serde::Serialize;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 /// Default minimum length before a keypress sequence is treated as a scan.
 pub const DEFAULT_SCANNER_MIN_LENGTH: usize = 4;
 /// Default average milliseconds-per-character used to budget a scan window.
 pub const DEFAULT_SCANNER_AVG_MS_PER_CHAR: u64 = 25;
-/// Default minimum total scan duration in milliseconds.
-pub const DEFAULT_SCANNER_MIN_MS: u64 = 20;
 
 /// Where scanned barcodes should be routed. The frontend mirrors this in a
 /// Zustand store via the `scan_target` Tauri command.
@@ -73,12 +71,16 @@ pub struct ScanEvent {
 struct ScanBuffer {
     chars: Vec<char>,
     started: Option<Instant>,
+    shift: bool,
 }
 
 /// Set the current scan target. Called from the frontend when a route
 /// mounts (sales, inward, stocktake) and from the lock screen.
 #[tauri::command]
-pub fn set_scan_target(target: String, state: tauri::State<'_, crate::AppState>) -> Result<(), String> {
+pub fn set_scan_target(
+    target: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<(), String> {
     let new = ScanTarget::from_str(&target);
     *state.scan_target.lock() = new;
     Ok(())
@@ -135,13 +137,30 @@ fn run_hook<R: tauri::Runtime>(
     last_emit_ms: Arc<AtomicU64>,
     app: tauri::AppHandle<R>,
 ) {
-    let min_length = DEFAULT_SCANNER_MIN_LENGTH;
-    let avg_ms_per_char = DEFAULT_SCANNER_AVG_MS_PER_CHAR;
-    let min_total_ms = DEFAULT_SCANNER_MIN_MS;
-
     let callback = move |event: Event| {
         match event.event_type {
+            EventType::KeyPress(Key::ShiftLeft | Key::ShiftRight) => {
+                buffer.lock().shift = true;
+            }
+            EventType::KeyRelease(Key::ShiftLeft | Key::ShiftRight) => {
+                buffer.lock().shift = false;
+            }
             EventType::KeyPress(key) => {
+                // Read runtime scanner settings from app state.
+                let app_state = app.state::<crate::AppState>();
+                let settings = app_state.settings.lock();
+                let min_length = settings
+                    .get("scanner_min_length")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(DEFAULT_SCANNER_MIN_LENGTH);
+                let avg_ms_per_char = settings
+                    .get("scanner_avg_ms_per_char")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(DEFAULT_SCANNER_AVG_MS_PER_CHAR);
+                drop(settings);
+                drop(app_state);
+
                 // Start of a new buffer if we see a non-terminator key after
                 // a long enough gap (treat the gap as "inter-scan pause").
                 let mut buf = buffer.lock();
@@ -155,7 +174,7 @@ fn run_hook<R: tauri::Runtime>(
                     buf.started = Some(now);
                 }
 
-                if let Some(c) = key_to_char(key) {
+                if let Some(c) = key_to_char(key, buf.shift) {
                     buf.chars.push(c);
                 } else {
                     // terminator (Enter, Tab)
@@ -165,7 +184,7 @@ fn run_hook<R: tauri::Runtime>(
                         let total = now.duration_since(started).as_millis() as u64;
                         let budget = (len as u64 * avg_ms_per_char).max(150);
                         // Per §8.9: totalTime <= max(150ms, len*avg)
-                        if total >= min_total_ms && total <= budget {
+                        if total <= budget {
                             let barcode: String = buf.chars.iter().collect();
                             let evt = ScanEvent {
                                 barcode,
@@ -197,47 +216,52 @@ fn run_hook<R: tauri::Runtime>(
     }
 }
 
-fn key_to_char(key: Key) -> Option<char> {
-    match key {
-        Key::KeyA => Some('a'),
-        Key::KeyB => Some('b'),
-        Key::KeyC => Some('c'),
-        Key::KeyD => Some('d'),
-        Key::KeyE => Some('e'),
-        Key::KeyF => Some('f'),
-        Key::KeyG => Some('g'),
-        Key::KeyH => Some('h'),
-        Key::KeyI => Some('i'),
-        Key::KeyJ => Some('j'),
-        Key::KeyK => Some('k'),
-        Key::KeyL => Some('l'),
-        Key::KeyM => Some('m'),
-        Key::KeyN => Some('n'),
-        Key::KeyO => Some('o'),
-        Key::KeyP => Some('p'),
-        Key::KeyQ => Some('q'),
-        Key::KeyR => Some('r'),
-        Key::KeyS => Some('s'),
-        Key::KeyT => Some('t'),
-        Key::KeyU => Some('u'),
-        Key::KeyV => Some('v'),
-        Key::KeyW => Some('w'),
-        Key::KeyX => Some('x'),
-        Key::KeyY => Some('y'),
-        Key::KeyZ => Some('z'),
-        Key::Num0 => Some('0'),
-        Key::Num1 => Some('1'),
-        Key::Num2 => Some('2'),
-        Key::Num3 => Some('3'),
-        Key::Num4 => Some('4'),
-        Key::Num5 => Some('5'),
-        Key::Num6 => Some('6'),
-        Key::Num7 => Some('7'),
-        Key::Num8 => Some('8'),
-        Key::Num9 => Some('9'),
-        Key::Minus => Some('-'),
-        _ => None,
-    }
+fn key_to_char(key: Key, shift: bool) -> Option<char> {
+    let c = match key {
+        Key::KeyA => 'a',
+        Key::KeyB => 'b',
+        Key::KeyC => 'c',
+        Key::KeyD => 'd',
+        Key::KeyE => 'e',
+        Key::KeyF => 'f',
+        Key::KeyG => 'g',
+        Key::KeyH => 'h',
+        Key::KeyI => 'i',
+        Key::KeyJ => 'j',
+        Key::KeyK => 'k',
+        Key::KeyL => 'l',
+        Key::KeyM => 'm',
+        Key::KeyN => 'n',
+        Key::KeyO => 'o',
+        Key::KeyP => 'p',
+        Key::KeyQ => 'q',
+        Key::KeyR => 'r',
+        Key::KeyS => 's',
+        Key::KeyT => 't',
+        Key::KeyU => 'u',
+        Key::KeyV => 'v',
+        Key::KeyW => 'w',
+        Key::KeyX => 'x',
+        Key::KeyY => 'y',
+        Key::KeyZ => 'z',
+        Key::Num0 => '0',
+        Key::Num1 => '1',
+        Key::Num2 => '2',
+        Key::Num3 => '3',
+        Key::Num4 => '4',
+        Key::Num5 => '5',
+        Key::Num6 => '6',
+        Key::Num7 => '7',
+        Key::Num8 => '8',
+        Key::Num9 => '9',
+        Key::Minus => '-',
+        _ => return None,
+    };
+    Some(if shift && c.is_ascii_lowercase() {
+        c.to_ascii_uppercase()
+    } else {
+        c
+    })
 }
 
 fn now_unix_ms() -> i64 {
@@ -283,5 +307,12 @@ mod tests {
         let json = serde_json::to_string(&evt).unwrap();
         assert!(json.contains("\"barcode\":\"ABC123\""));
         assert!(json.contains("\"terminator\":\"enter\""));
+    }
+
+    #[test]
+    fn key_to_char_uppercase_when_shifted() {
+        assert_eq!(key_to_char(Key::KeyA, true), Some('A'));
+        assert_eq!(key_to_char(Key::KeyA, false), Some('a'));
+        assert_eq!(key_to_char(Key::Num1, true), Some('1'));
     }
 }
