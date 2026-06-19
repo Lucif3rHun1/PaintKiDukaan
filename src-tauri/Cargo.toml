@@ -68,6 +68,7 @@ rdev = "0.5"
 
 # System paths (config / data dirs)
 dirs = "5"
+fs2 = "0.4"
 
 # Temp paths used at runtime by backup test_restore and snapshot flows
 tempfile = "3"
