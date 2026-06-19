@@ -182,9 +182,8 @@ fn run_hook<R: tauri::Runtime>(
                     if len >= min_length {
                         let started = buf.started.unwrap_or(now);
                         let total = now.duration_since(started).as_millis() as u64;
-                        let budget = (len as u64 * avg_ms_per_char).max(150);
                         // Per §8.9: totalTime <= max(150ms, len*avg)
-                        if total <= budget {
+                        if evaluate_scan(len, total, min_length, avg_ms_per_char) {
                             let barcode: String = buf.chars.iter().collect();
                             let evt = ScanEvent {
                                 barcode,
@@ -271,6 +270,20 @@ fn now_unix_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Scanner detection rule from §8.9 of the master plan.
+///
+/// Returns `true` when the sequence length and timing are within the scanner
+/// wedge budget. `total_ms` is the elapsed time from the first buffered
+/// keypress to the terminator.
+pub fn evaluate_scan(
+    len: usize,
+    total_ms: u64,
+    min_length: usize,
+    avg_ms_per_char: u64,
+) -> bool {
+    len >= min_length && total_ms <= (len as u64 * avg_ms_per_char).max(150)
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -314,5 +327,25 @@ mod tests {
         assert_eq!(key_to_char(Key::KeyA, true), Some('A'));
         assert_eq!(key_to_char(Key::KeyA, false), Some('a'));
         assert_eq!(key_to_char(Key::Num1, true), Some('1'));
+    }
+
+    #[test]
+    fn evaluate_scan_honors_min_length() {
+        assert!(!evaluate_scan(3, 50, 4, 25));
+        assert!(evaluate_scan(4, 100, 4, 25));
+    }
+
+    #[test]
+    fn evaluate_scan_uses_150ms_floor() {
+        // 4 chars * 25 ms = 100 ms, floor is 150 ms.
+        assert!(evaluate_scan(4, 150, 4, 25));
+        assert!(!evaluate_scan(4, 151, 4, 25));
+    }
+
+    #[test]
+    fn evaluate_scan_scales_with_avg_ms() {
+        // 10 chars * 20 ms = 200 ms, above 150 ms floor.
+        assert!(evaluate_scan(10, 200, 4, 20));
+        assert!(!evaluate_scan(10, 201, 4, 20));
     }
 }
