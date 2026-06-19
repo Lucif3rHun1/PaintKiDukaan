@@ -365,7 +365,7 @@ pub enum ReportsError {
 // Tauri command surface.
 // -----------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_daily_sales(
     state: tauri::State<'_, AppState>,
     from_date: String,
@@ -376,14 +376,14 @@ pub fn cmd_daily_sales(
     daily_sales(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_stock_report(state: tauri::State<'_, AppState>) -> AppResult<StockReport> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     stock_report(db).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_outstanding_report(state: tauri::State<'_, AppState>) -> AppResult<OutstandingReport> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;

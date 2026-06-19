@@ -23,7 +23,7 @@ pub struct NewLocation {
     pub rack: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_locations(state: State<'_, AppState>, include_inactive: bool) -> AppResult<Vec<Location>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -48,7 +48,7 @@ pub fn list_locations(state: State<'_, AppState>, include_inactive: bool) -> App
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppResult<Location> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -78,7 +78,7 @@ pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppR
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn rename_location(
     state: State<'_, AppState>,
     id: i64,
@@ -119,7 +119,7 @@ pub fn rename_location(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn deactivate_location(state: State<'_, AppState>, id: i64) -> AppResult<()> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;

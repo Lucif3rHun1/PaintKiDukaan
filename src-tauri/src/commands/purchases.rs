@@ -432,7 +432,7 @@ fn now() -> String {
 // Tauri command surface.
 // -----------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_create_inward(
     state: tauri::State<'_, AppState>,
     req: NewPurchase,
@@ -444,14 +444,14 @@ pub fn cmd_create_inward(
     create_inward(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_last_cost(state: tauri::State<'_, AppState>, item_id: i64) -> AppResult<Option<i64>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     last_cost_for_item(db, item_id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_list_purchases(
     state: tauri::State<'_, AppState>,
     from_date: Option<String>,
@@ -469,14 +469,14 @@ pub fn cmd_list_purchases(
     .map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_get_purchase(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Purchase>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_movements_for_item(
     state: tauri::State<'_, AppState>,
     item_id: i64,

@@ -27,7 +27,7 @@ pub fn apply_on_launch<R: Runtime>(_app: &mut App<R>) -> Result<(), Box<dyn std:
 }
 
 /// Tauri command to toggle prevent-sleep at runtime.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn set_prevent_sleep(enabled: bool) -> Result<bool, String> {
     let ok = apply_policy(enabled);
     PREVENTED.store(ok, Ordering::Relaxed);

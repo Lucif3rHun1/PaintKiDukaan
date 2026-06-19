@@ -21,7 +21,7 @@ pub struct NewCustomerType {
     pub name: String,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_customer_types(state: State<'_, AppState>, include_inactive: bool) -> AppResult<Vec<CustomerType>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -45,7 +45,7 @@ pub fn list_customer_types(state: State<'_, AppState>, include_inactive: bool) -
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn add_customer_type(state: State<'_, AppState>, payload: NewCustomerType) -> AppResult<CustomerType> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -70,7 +70,7 @@ pub fn add_customer_type(state: State<'_, AppState>, payload: NewCustomerType) -
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn rename_customer_type(
     state: State<'_, AppState>,
     id: i64,
@@ -105,7 +105,7 @@ pub fn rename_customer_type(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn deactivate_customer_type(state: State<'_, AppState>, id: i64) -> AppResult<()> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;

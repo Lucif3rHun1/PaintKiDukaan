@@ -142,7 +142,7 @@ fn mint_next_sku(tx: &rusqlite::Connection) -> AppResult<String> {
     Ok(format!("SKU-{n:06}"))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<Item> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -187,7 +187,7 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> AppResult<Item> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -233,7 +233,7 @@ pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> Ap
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<Vec<Item>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -271,7 +271,7 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -287,7 +287,7 @@ pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option<ItemLookup>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -347,7 +347,7 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn box_unit_conversion(
     state: State<'_, AppState>,
     item_id: i64,

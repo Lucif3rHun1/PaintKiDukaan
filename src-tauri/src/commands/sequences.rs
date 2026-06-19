@@ -102,7 +102,7 @@ pub fn parse(no: &str) -> Option<(Kind, i32, i64)> {
 // Tauri command surface.
 // -----------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_mint_next_sale_no(
     state: tauri::State<'_, AppState>,
     kind: String,

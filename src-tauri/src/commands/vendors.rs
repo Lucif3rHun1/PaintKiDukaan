@@ -55,7 +55,7 @@ pub struct VendorPayment {
     pub notes: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResult<Vendor> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -94,7 +94,7 @@ pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResul
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_vendors(
     state: State<'_, AppState>,
     query: Option<String>,
@@ -130,7 +130,7 @@ pub fn list_vendors(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -157,7 +157,7 @@ pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn update_vendor(
     state: State<'_, AppState>,
     id: i64,
@@ -214,7 +214,7 @@ pub fn update_vendor(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn record_vendor_payment(
     state: State<'_, AppState>,
     payload: VendorPayment,
@@ -254,7 +254,7 @@ pub fn record_vendor_payment(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<VendorOutstanding> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;

@@ -76,7 +76,7 @@ struct ScanBuffer {
 
 /// Set the current scan target. Called from the frontend when a route
 /// mounts (sales, inward, stocktake) and from the lock screen.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn set_scan_target(
     target: String,
     state: tauri::State<'_, crate::commands::auth::AppState>,
@@ -87,7 +87,7 @@ pub fn set_scan_target(
 }
 
 /// Read the current scan target.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn scan_target(
     state: tauri::State<'_, crate::commands::auth::AppState>,
 ) -> Result<String, String> {
@@ -100,7 +100,7 @@ pub fn scan_target(
 
 /// Tauri command proxy for emitting a synthetic scan event (used by the
 /// frontend to validate the round-trip end-to-end during E67).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn emit_test_scan<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     barcode: String,

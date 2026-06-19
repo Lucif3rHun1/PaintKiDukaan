@@ -649,7 +649,7 @@ pub fn delete_held(db: &Db, id: i64) -> anyhow::Result<usize> {
 // Tauri command surface.
 // -----------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_create_sale(
     state: tauri::State<'_, AppState>,
     sale: NewSale,
@@ -666,7 +666,7 @@ pub fn cmd_create_sale(
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_convert_quotation(
     state: tauri::State<'_, AppState>,
     req: ConvertQuotation,
@@ -679,14 +679,14 @@ pub fn cmd_convert_quotation(
     convert_quotation(db, user_id, req).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_get_sale(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Sale>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_list_sales(
     state: tauri::State<'_, AppState>,
     status: Option<String>,
@@ -697,7 +697,7 @@ pub fn cmd_list_sales(
     list(db, status.as_deref(), limit.unwrap_or(100)).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_hold_bill(
     state: tauri::State<'_, AppState>,
     hb: HoldBill,
@@ -710,14 +710,14 @@ pub fn cmd_hold_bill(
     hold_bill(db, user_id, hb).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_list_held(state: tauri::State<'_, AppState>) -> AppResult<Vec<HeldBill>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     list_held(db).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_delete_held(state: tauri::State<'_, AppState>, id: i64) -> AppResult<usize> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;

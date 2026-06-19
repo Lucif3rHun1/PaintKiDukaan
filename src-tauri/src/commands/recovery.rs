@@ -19,7 +19,7 @@ use crate::db::keywrap::{self, KeywrapRow};
 
 /// First-launch setup: create the encrypted database, seed users/settings,
 /// wrap the DEK, and store the keywrap metadata.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn first_launch_setup(
     state: State<AppState>,
     app: AppHandle,
@@ -154,7 +154,7 @@ pub fn first_launch_setup(
 }
 
 /// Change the recovery passphrase (owner-only).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn set_recovery_passphrase(
     state: State<AppState>,
     current_pin: String,
@@ -183,7 +183,7 @@ pub fn set_recovery_passphrase(
 }
 
 /// Restore access using the recovery passphrase, then set a new PIN.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn restore_from_recovery(
     state: State<AppState>,
     app: AppHandle,

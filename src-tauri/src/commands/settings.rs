@@ -22,7 +22,7 @@ pub struct Device {
     pub is_active: bool,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn get_setting(state: State<'_, AppState>, key: String) -> Result<String, String> {
     let settings = state.settings.lock().map_err(|e| e.to_string())?;
     match settings.get(&key) {
@@ -31,7 +31,7 @@ pub fn get_setting(state: State<'_, AppState>, key: String) -> Result<String, St
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn set_setting(
     state: State<'_, AppState>,
     key: String,
@@ -46,12 +46,12 @@ pub fn set_setting(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_devices(_state: State<'_, AppState>) -> Result<Vec<Device>, String> {
     Ok(devices_store().read().clone())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn enroll_device(
     _state: State<'_, AppState>,
     name: String,
@@ -75,7 +75,7 @@ pub fn enroll_device(
     Ok(device)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn revoke_device(
     _state: State<'_, AppState>,
     device_id: String,

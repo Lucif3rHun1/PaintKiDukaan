@@ -15,7 +15,7 @@ pub use commands::auth::AppError;
 
 /// Simple frontend log command — routes JS console output to the Rust logger
 /// so everything ends up in `session.log`.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 fn log_frontend(level: String, message: String) {
     match level.as_str() {
         "error" => log::error!("{}", message),

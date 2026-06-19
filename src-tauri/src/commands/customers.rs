@@ -76,7 +76,7 @@ fn validate_phone(phone: &str) -> AppResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_customer(state: State<'_, AppState>, payload: NewCustomer) -> AppResult<Customer> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -132,7 +132,7 @@ fn create_customer_impl(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn update_customer(
     state: State<'_, AppState>,
     id: i64,
@@ -202,7 +202,7 @@ fn update_customer_impl(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_customers(
     state: State<'_, AppState>,
     query: Option<String>,
@@ -244,7 +244,7 @@ pub fn list_customers(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn lookup_customer(state: State<'_, AppState>, phone: String) -> AppResult<Option<Customer>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -321,7 +321,7 @@ fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<CustomerOutstanding>
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn customer_outstanding(
     state: State<'_, AppState>,
     id: i64,
@@ -364,7 +364,7 @@ fn list_customer_bills_impl(db: &Db, customer_id: i64) -> AppResult<Vec<Customer
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_customer_bills(state: State<'_, AppState>, customer_id: i64) -> AppResult<Vec<CustomerBill>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;

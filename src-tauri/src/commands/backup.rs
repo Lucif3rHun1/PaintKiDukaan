@@ -41,13 +41,13 @@ fn err_str(e: BackupError) -> String {
 }
 
 /// List available backup targets.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_targets() -> Result<Vec<BackupTarget>, String> {
     list_backup_targets().map_err(err_str)
 }
 
 /// Create a new `.pkb1` backup of the live database.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn backup_now(state: State<'_, AppState>, passphrase: String) -> Result<BackupMetadata, String> {
     let mut passphrase = passphrase;
 
@@ -94,7 +94,7 @@ pub fn backup_now(state: State<'_, AppState>, passphrase: String) -> Result<Back
 }
 
 /// Restore the live database from a `.pkb1` envelope.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn restore(state: State<'_, AppState>, path: String, passphrase: String) -> Result<(), String> {
     let mut passphrase = passphrase;
 
@@ -127,7 +127,7 @@ pub fn restore(state: State<'_, AppState>, path: String, passphrase: String) -> 
 }
 
 /// Decrypt and verify a `.pkb1` envelope without modifying the live database.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn test_restore(
     state: State<'_, AppState>,
     path: String,
@@ -152,7 +152,7 @@ pub fn test_restore(
 }
 
 /// Return the current backup health status.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn backup_status(state: State<'_, AppState>) -> Result<BackupStatus, String> {
     let now = Utc::now().timestamp_millis();
     let last_backup = *state.last_backup_unix_ms.lock().unwrap();

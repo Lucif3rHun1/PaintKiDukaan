@@ -74,7 +74,7 @@ pub struct OpsHealth {
 }
 
 /// Read the aggregated master health snapshot.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, String> {
     let last_backup_unix_ms = *state.last_backup_unix_ms.lock().unwrap();
     let last_test_unix_ms = *state.last_test_restore_unix_ms.lock().unwrap();
@@ -132,7 +132,7 @@ pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, 
 }
 
 /// Enable auto-launch on boot via tauri-plugin-autostart.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn autostart_enable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
     let manager = app.autolaunch();
     manager.enable().map_err(|e| e.to_string())?;
@@ -140,7 +140,7 @@ pub fn autostart_enable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<b
 }
 
 /// Disable auto-launch on boot.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn autostart_disable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
     let manager = app.autolaunch();
     manager.disable().map_err(|e| e.to_string())?;
@@ -148,14 +148,14 @@ pub fn autostart_disable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<
 }
 
 /// Return whether auto-launch is currently enabled.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn autostart_is_enabled<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
     app.autolaunch().is_enabled().map_err(|e| e.to_string())
 }
 
 /// Read the BitLocker status of the C: drive. Returns "on", "off",
 /// "suspended", or "unknown".
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn bitlocker_status() -> Result<String, String> {
     bitlocker_status_inner().map_err(|e| e.to_string())
 }

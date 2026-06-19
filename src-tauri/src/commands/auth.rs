@@ -267,7 +267,7 @@ pub fn default_lockout_row() -> keywrap::LockoutRow {
 // ---------------------------------------------------------------------------
 
 /// Returns the current bootstrap state of the app.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap, AppError> {
     let app_dir = app
         .path()
@@ -328,7 +328,7 @@ fn build_session(state: &AppState) -> Session {
 }
 
 /// Unlock the database with the owner's PIN.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> {
     let db_path = {
         let guard = state.db_path.lock().unwrap();
@@ -484,7 +484,7 @@ fn clear_lockout(db_path: &Path, state: &AppState) -> Result<(), AppError> {
 }
 
 /// Lock the database — drops the DEK (zeroized via Drop).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn lock(state: State<AppState>) -> Result<(), AppError> {
     *state.db.lock().unwrap() = None;
     *state.session.lock().unwrap() = None;
@@ -492,7 +492,7 @@ pub fn lock(state: State<AppState>) -> Result<(), AppError> {
 }
 
 /// Change the owner PIN (owner-only).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn change_pin(
     state: State<AppState>,
     old_pin: String,
@@ -528,7 +528,7 @@ pub fn change_pin(
 }
 
 /// Update the last-activity timestamp (called by frontend on user interaction).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn touch_activity(state: State<AppState>) -> Result<(), AppError> {
     state
         .last_activity
@@ -537,7 +537,7 @@ pub fn touch_activity(state: State<AppState>) -> Result<(), AppError> {
 }
 
 /// Return the current session (spec-shaped: `{ user, locked }`).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn current_session(state: State<AppState>) -> Result<Session, AppError> {
     Ok(build_session(&state))
 }
@@ -547,7 +547,7 @@ pub fn current_session(state: State<AppState>) -> Result<Session, AppError> {
 // ---------------------------------------------------------------------------
 
 /// Create a new cashier or stocker user. Owner-only.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_user(
     state: State<AppState>,
     name: String,
@@ -619,7 +619,7 @@ pub fn create_user(
 }
 
 /// List all active users (owner-only).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
     {
         let session = state.session.lock().unwrap();
@@ -650,7 +650,7 @@ pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
 }
 
 /// Deactivate a user. Owner-only. Cannot deactivate yourself.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError> {
     {
         let session = state.session.lock().unwrap();
@@ -686,7 +686,7 @@ pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError>
 ///
 /// Only works when the DB is already decrypted (owner must have unlocked first).
 /// Returns a Session with the authenticated user.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<Session, AppError> {
     validate_owner_pin(&pin)?;
 
