@@ -52,6 +52,17 @@ export const changePinSchema = z
     message: "PINs do not match",
   });
 
+export const createUserSchema = z.object({
+  name: z.string().min(1, "Name is required").max(50),
+  role: z.enum(["cashier", "stocker"], { required_error: "Role is required" }),
+  pin: pinSchema,
+  pinConfirm: pinSchema,
+}).refine((d) => d.pin === d.pinConfirm, {
+  path: ["pinConfirm"],
+  message: "PINs do not match",
+});
+
 export type FirstLaunchInput = z.infer<typeof firstLaunchSchema>;
 export type UnlockInput = z.infer<typeof unlockSchema>;
 export type RestoreFromRecoveryInput = z.infer<typeof restoreFromRecoverySchema>;
+export type CreateUserInput = z.infer<typeof createUserSchema>;

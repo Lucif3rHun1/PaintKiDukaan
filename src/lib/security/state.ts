@@ -23,7 +23,8 @@ export type AppPhase =
   | "first-launch"
   | "locked"
   | "unlocked"
-  | "restore-recovery";
+  | "restore-recovery"
+  | "user-management";
 
 interface SecurityState {
   phase: AppPhase;
