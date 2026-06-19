@@ -118,28 +118,49 @@ export const ipc = {
   listUsers: () => invoke<User[]>("list_users"),
   createUser: (name: string, role: string, pin: string) =>
     invoke<User>("create_user", { name, role, pin }),
-  verifyPin: (userId: number, pin: string) =>
-    invoke<boolean>("verify_pin", { userId, pin }),
-  resetPin: (userId: number, newPin: string) =>
-    invoke<void>("reset_pin", { userId, newPin }),
-
   listDevices: () => invoke<Device[]>("list_devices"),
   enrollDevice: (name: string, role: string) =>
     invoke<Device>("enroll_device", { name, role }),
   revokeDevice: (deviceId: string) =>
     invoke<void>("revoke_device", { deviceId }),
 
-  listLocations: () => invoke<string[]>("list_locations"),
+  listLocations: () =>
+    tauriInvoke<Array<{ id: number; name: string; is_active: boolean }>>("list_locations").then(
+      (locs) => locs.map((l) => l.name),
+    ),
   addLocation: (location: string) =>
-    invoke<string[]>("add_location", { location }),
+    tauriInvoke("add_location", { payload: { name: location } }).then(() =>
+      tauriInvoke<Array<{ id: number; name: string }>>("list_locations").then((locs) =>
+        locs.map((l) => l.name),
+      ),
+    ),
   removeLocation: (location: string) =>
-    invoke<string[]>("remove_location", { location }),
+    tauriInvoke<Array<{ id: number; name: string }>>("list_locations").then(async (locs) => {
+      const match = locs.find((l) => l.name === location);
+      if (match) await tauriInvoke("remove_location", { id: match.id });
+      return tauriInvoke<Array<{ id: number; name: string }>>("list_locations").then((l2) =>
+        l2.map((l) => l.name),
+      );
+    }),
 
-  listCustomerTypes: () => invoke<string[]>("list_customer_types"),
+  listCustomerTypes: () =>
+    tauriInvoke<Array<{ id: number; name: string; is_active: boolean }>>("list_customer_types").then(
+      (types) => types.map((t) => t.name),
+    ),
   addCustomerType: (customerType: string) =>
-    invoke<string[]>("add_customer_type", { customerType }),
+    tauriInvoke("add_customer_type", { payload: { name: customerType } }).then(() =>
+      tauriInvoke<Array<{ id: number; name: string }>>("list_customer_types").then((types) =>
+        types.map((t) => t.name),
+      ),
+    ),
   removeCustomerType: (customerType: string) =>
-    invoke<string[]>("remove_customer_type", { customerType }),
+    tauriInvoke<Array<{ id: number; name: string }>>("list_customer_types").then(async (types) => {
+      const match = types.find((t) => t.name === customerType);
+      if (match) await tauriInvoke("remove_customer_type", { id: match.id });
+      return tauriInvoke<Array<{ id: number; name: string }>>("list_customer_types").then((t2) =>
+        t2.map((t) => t.name),
+      );
+    }),
 
   listBackupTargets: () => invoke<BackupTarget[]>("list_targets"),
   backupNow: (passphrase: string) =>

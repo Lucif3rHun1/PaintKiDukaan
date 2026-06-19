@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { ipc, type BackupStatus } from "../lib/ipc";
-import { useSessionStore } from "../store/session";
+import { useSecurity } from "../../lib/security/state";
 
 export function Dashboard() {
-  const session = useSessionStore((s) => s.session);
+  const session = useSecurity((s) => s.session);
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 

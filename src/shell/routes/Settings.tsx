@@ -369,7 +369,6 @@ function UsersTab() {
   const [role, setRole] = useState<Role>("cashier");
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [resetting, setResetting] = useState<User | null>(null);
 
   const refresh = () => {
     ipc
@@ -386,18 +385,6 @@ function UsersTab() {
       await ipc.createUser(name.trim(), role, pin);
       setName("");
       setPin("");
-      refresh();
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const reset = async (newPin: string) => {
-    if (!resetting) return;
-    setError(null);
-    try {
-      await ipc.resetPin(resetting.id, newPin);
-      setResetting(null);
       refresh();
     } catch (e) {
       setError(String(e));
@@ -466,7 +453,6 @@ function UsersTab() {
             <th className="py-2 pr-3">Name</th>
             <th className="py-2 pr-3">Role</th>
             <th className="py-2 pr-3">Status</th>
-            <th className="py-2 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -481,39 +467,17 @@ function UsersTab() {
                   <span className="text-slate-500">inactive</span>
                 )}
               </td>
-              <td className="py-2 text-right">
-                <button
-                  type="button"
-                  onClick={() => setResetting(u)}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
-                >
-                  Reset PIN
-                </button>
-              </td>
             </tr>
           ))}
           {users.length === 0 && (
             <tr>
-              <td colSpan={4} className="py-4 text-center text-slate-500">
+              <td colSpan={3} className="py-4 text-center text-slate-500">
                 No users yet.
               </td>
             </tr>
           )}
         </tbody>
       </table>
-
-      <ConfirmDialog
-        open={resetting !== null}
-        title={`Reset PIN for ${resetting?.name ?? ""}`}
-        body="A prompt will ask for the new 4–10 digit PIN."
-        confirmLabel="Continue"
-        onConfirm={() => {
-          const newPin = window.prompt("New PIN (4-10 digits)");
-          if (newPin) void reset(newPin);
-          else setResetting(null);
-        }}
-        onCancel={() => setResetting(null)}
-      />
     </div>
   );
 }
