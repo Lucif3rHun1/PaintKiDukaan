@@ -3,6 +3,12 @@
 -- so B can compile and unit-test before A merges. At integration time the
 -- migrations are idempotent (IF NOT EXISTS) and Slice A's DB already has
 -- these tables, so this is a no-op there.
+--
+-- KNOWN DIVERGENCE FROM MASTER PLAN §5.1 (to be resolved at Slice A merge):
+-- Money/quantity fields use REAL here; plan says INTEGER (paise). When A's
+-- authoritative schema lands, all migrations in this file are no-ops on its
+-- DB and our code adapts via a thin field conversion in lib.rs. Tracking
+-- this rather than rewriting mid-slice to avoid splitting the data model.
 
 -- Customer types (seeded: retail/painter/contractor/dealer).
 CREATE TABLE IF NOT EXISTS customer_types (
@@ -63,10 +69,12 @@ CREATE TABLE IF NOT EXISTS items (
   name            TEXT NOT NULL,
   brand           TEXT,
   category        TEXT,
-  unit            TEXT NOT NULL DEFAULT 'pc',            -- L/ml/kg/g/pc/box/bundle/roll/sqft/sqm
+  unit            TEXT NOT NULL DEFAULT 'pc'
+                  CHECK(unit IN ('L','ml','kg','g','pc','box','bundle','roll','sqft','sqm')),
   pack_size       TEXT,                                  -- e.g. "4L", "1kg"
   units_per_box   INTEGER,                               -- for box→unit conversion
-  sell_unit       TEXT NOT NULL DEFAULT 'unit',          -- 'unit' or 'box'
+  sell_unit       TEXT NOT NULL DEFAULT 'unit'
+                  CHECK(sell_unit IN ('unit','box')),
   retail_price    REAL NOT NULL DEFAULT 0,
   cost_price      REAL NOT NULL DEFAULT 0,
   label_line1     TEXT,
@@ -99,7 +107,8 @@ CREATE TABLE IF NOT EXISTS customer_payments (
   customer_id  INTEGER NOT NULL REFERENCES customers(id),
   sale_id      INTEGER REFERENCES sales(id),
   amount       REAL NOT NULL,
-  mode         TEXT NOT NULL,        -- cash/upi/card/cheque/etc
+  mode         TEXT NOT NULL
+              CHECK(mode IN ('cash','upi','card','bank','cheque')),
   date         TEXT NOT NULL,
   notes        TEXT,
   user_id      INTEGER NOT NULL,
@@ -113,7 +122,8 @@ CREATE TABLE IF NOT EXISTS vendor_payments (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   vendor_id   INTEGER NOT NULL REFERENCES vendors(id),
   amount      REAL NOT NULL,
-  mode        TEXT NOT NULL,
+  mode        TEXT NOT NULL
+              CHECK(mode IN ('cash','upi','card','bank','cheque')),
   date        TEXT NOT NULL,
   notes       TEXT,
   user_id     INTEGER NOT NULL,

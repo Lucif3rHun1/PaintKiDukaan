@@ -11,7 +11,7 @@
 //! integration is a 1-line swap of the `Db` initializer (and the migrations
 //! become no-ops because tables already exist).
 
-use rusqlite::{Connection, Transaction, TransactionBehavior};
+use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 use rusqlite_migration::{Migrations, M};
 use std::path::Path;
 use std::sync::Mutex;
@@ -69,18 +69,34 @@ impl Db {
         Ok(())
     }
 
-    /// Seed customer_types with the four defaults if the table is empty.
+    /// Seed customer_types and locations with their defaults if empty.
     /// Idempotent: re-running is a no-op.
     fn seed_minimum(conn: &Connection) -> Result<(), DbError> {
-        let count: i64 = conn.query_row(
+        let type_count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM customer_types", [], |r| r.get(0),
         )?;
-        if count == 0 {
+        if type_count == 0 {
             let tx = conn.unchecked_transaction()?;
-            for name in ["Retail", "Painter", "Contractor", "Dealer"] {
+            // Per master plan §5.1 — seeded as lowercase.
+            for name in ["retail", "painter", "contractor", "dealer"] {
                 tx.execute(
                     "INSERT INTO customer_types (name, is_active) VALUES (?1, 1)",
                     [name],
+                )?;
+            }
+            tx.commit()?;
+        }
+        let loc_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM locations", [], |r| r.get(0),
+        )?;
+        if loc_count == 0 {
+            let tx = conn.unchecked_transaction()?;
+            // Per master plan §7.7 — Shop and Godown are the default locations.
+            let defaults: [(&str, Option<&str>); 2] = [("Shop", None), ("Godown", None)];
+            for (name, rack) in defaults {
+                tx.execute(
+                    "INSERT INTO locations (name, rack, is_active) VALUES (?1, ?2, 1)",
+                    params![name, rack],
                 )?;
             }
             tx.commit()?;
