@@ -660,8 +660,8 @@ pub fn cmd_create_sale(
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
     let user_id = user.id;
     match sale.kind.as_str() {
-        "quotation" => create_quotation(&db, user_id, sale).map_err(|e| AppError::Internal(e.to_string())),
-        "final" => create_final_bill(&db, user_id, sale).map_err(|e| AppError::Internal(e.to_string())),
+        "quotation" => create_quotation(db, user_id, sale).map_err(|e| AppError::Internal(e.to_string())),
+        "final" => create_final_bill(db, user_id, sale).map_err(|e| AppError::Internal(e.to_string())),
         k => Err(AppError::Internal(format!("invalid kind: {}", k))),
     }
 }
@@ -676,14 +676,14 @@ pub fn cmd_convert_quotation(
     let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
     let user_id = user.id;
-    convert_quotation(&db, user_id, req).map_err(|e| AppError::Internal(e.to_string()))
+    convert_quotation(db, user_id, req).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
 pub fn cmd_get_sale(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Sale>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    get(&db, id).map_err(|e| AppError::Internal(e.to_string()))
+    get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
@@ -694,7 +694,7 @@ pub fn cmd_list_sales(
 ) -> AppResult<Vec<Sale>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    list(&db, status.as_deref(), limit.unwrap_or(100)).map_err(|e| AppError::Internal(e.to_string()))
+    list(db, status.as_deref(), limit.unwrap_or(100)).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
@@ -707,21 +707,21 @@ pub fn cmd_hold_bill(
     let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
     let user_id = user.id;
-    hold_bill(&db, user_id, hb).map_err(|e| AppError::Internal(e.to_string()))
+    hold_bill(db, user_id, hb).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
 pub fn cmd_list_held(state: tauri::State<'_, AppState>) -> AppResult<Vec<HeldBill>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    list_held(&db).map_err(|e| AppError::Internal(e.to_string()))
+    list_held(db).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
 pub fn cmd_delete_held(state: tauri::State<'_, AppState>, id: i64) -> AppResult<usize> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    delete_held(&db, id).map_err(|e| AppError::Internal(e.to_string()))
+    delete_held(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 // -----------------------------------------------------------------------------

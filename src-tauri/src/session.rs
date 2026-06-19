@@ -59,7 +59,7 @@ pub fn __test_set_role(_db: &crate::db::Db, role: Role) {
 
 /// Convenience: assert the current user has a specific role (or higher).
 pub fn require_role(user: &User, allowed: &[Role]) -> AppResult<()> {
-    if allowed.iter().any(|r| *r == user.role) {
+    if allowed.contains(&user.role) {
         Ok(())
     } else {
         Err(AppError::Forbidden(format!(

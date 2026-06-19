@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
@@ -5,6 +6,7 @@ use std::time::UNIX_EPOCH;
 use chrono::{Duration, Utc};
 use rusqlite::Connection;
 use serde::Serialize;
+use serde_json::Value;
 use tauri::{AppHandle, Manager, State};
 
 use crate::crypto::kdf::{self, random_salt};
@@ -140,16 +142,37 @@ pub struct AppState {
     pub last_activity: Arc<std::sync::atomic::AtomicU64>,
     pub db_path: Mutex<Option<PathBuf>>,
     pub failed_attempts: Mutex<u32>,
+    /// Runtime settings (scanner params, theme, etc.).
+    pub settings: Mutex<HashMap<String, Value>>,
+    /// Current barcode scan routing target.
+    pub scan_target: Mutex<String>,
+    /// Timestamp of last successful backup (unix ms).
+    pub last_backup_unix_ms: Mutex<Option<i64>>,
+    /// Timestamp of last successful test-restore (unix ms).
+    pub last_test_restore_unix_ms: Mutex<Option<i64>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
+        let mut settings = HashMap::new();
+        settings.insert(
+            "scanner_min_length".into(),
+            Value::Number(4.into()),
+        );
+        settings.insert(
+            "scanner_avg_ms_per_char".into(),
+            Value::Number(25.into()),
+        );
         Self {
             db: Mutex::new(None),
             session: Mutex::new(None),
             last_activity: Arc::new(std::sync::atomic::AtomicU64::new(now_unix())),
             db_path: Mutex::new(None),
             failed_attempts: Mutex::new(0),
+            settings: Mutex::new(settings),
+            scan_target: Mutex::new(String::new()),
+            last_backup_unix_ms: Mutex::new(None),
+            last_test_restore_unix_ms: Mutex::new(None),
         }
     }
 }

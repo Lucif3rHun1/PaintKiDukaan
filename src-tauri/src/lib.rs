@@ -4,13 +4,19 @@ pub mod db;
 pub mod error;
 pub mod session;
 
+// Slice D — shell modules
+pub mod backup;
+pub mod hardening;
+pub mod scan;
+
 pub use commands::auth::AppError;
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
-        .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
+        .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {
+            // Focus existing window on second launch.
+        }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -19,6 +25,13 @@ pub fn run() {
         .plugin(tauri_plugin_keyring_store::Builder::new().build())
         .plugin(tauri_plugin_oauth::init())
         .manage(commands::auth::AppState::default())
+        .setup(|app| {
+            // Initialize Slice D shell subsystems (best-effort).
+            let _ = hardening::tray::init(app);
+            let _ = scan::init(app);
+            let _ = hardening::prevent_sleep::apply_on_launch(app);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // Auth & security (Slice A)
             commands::auth::app_bootstrap,
@@ -94,6 +107,28 @@ pub fn run() {
             commands::reports::cmd_outstanding_report,
             // Sequences (Slice C)
             commands::sequences::cmd_mint_next_sale_no,
+            // Settings (Slice D)
+            commands::settings::get_setting,
+            commands::settings::set_setting,
+            commands::settings::list_devices,
+            commands::settings::enroll_device,
+            commands::settings::revoke_device,
+            // Backup (Slice D)
+            commands::backup::list_targets,
+            commands::backup::backup_now,
+            commands::backup::restore,
+            commands::backup::test_restore,
+            commands::backup::backup_status,
+            // Hardening (Slice D)
+            hardening::master_health,
+            hardening::autostart_enable,
+            hardening::autostart_disable,
+            hardening::autostart_is_enabled,
+            hardening::prevent_sleep::set_prevent_sleep,
+            hardening::bitlocker_status,
+            // Scanner (Slice D)
+            scan::set_scan_target,
+            scan::scan_target,
         ])
         .run(tauri::generate_context!())
         .expect("error while running PaintKiDukaan");

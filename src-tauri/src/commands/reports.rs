@@ -373,21 +373,21 @@ pub fn cmd_daily_sales(
 ) -> AppResult<DailySalesReport> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    daily_sales(&db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
+    daily_sales(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
 pub fn cmd_stock_report(state: tauri::State<'_, AppState>) -> AppResult<StockReport> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    stock_report(&db).map_err(|e| AppError::Internal(e.to_string()))
+    stock_report(db).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
 pub fn cmd_outstanding_report(state: tauri::State<'_, AppState>) -> AppResult<OutstandingReport> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    outstanding_report(&db).map_err(|e| AppError::Internal(e.to_string()))
+    outstanding_report(db).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 // -----------------------------------------------------------------------------

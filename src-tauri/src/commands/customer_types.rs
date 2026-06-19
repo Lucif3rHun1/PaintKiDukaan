@@ -153,14 +153,11 @@ mod tests {
     fn add_rename_deactivate_flow() {
         let db = fresh_db();
         // owner adds a new type
-        let id = {
-            let ct = db.with_raw(|c| {
-                c.execute("INSERT INTO customer_types (name, is_active) VALUES ('Wholesale', 1)", [])
-                    .unwrap();
-                c.last_insert_rowid()
-            });
-            ct
-        };
+        let id = db.with_raw(|c| {
+            c.execute("INSERT INTO customer_types (name, is_active) VALUES ('Wholesale', 1)", [])
+                .unwrap();
+            c.last_insert_rowid()
+        });
         // rename
         db.with_raw(|c| {
             c.execute("UPDATE customer_types SET name='Trade' WHERE id=?1", [id]).unwrap();

@@ -29,7 +29,7 @@ tauri-plugin-oauth = "2"
 tauri-plugin-keyring-store = "0.2"
 
 # Database (SQLCipher)
-rusqlite = { version = "0.40", features = ["sqlcipher", "bundled-sqlcipher"] }
+rusqlite = { version = "0.40", features = ["sqlcipher", "bundled-sqlcipher", "backup"] }
 rusqlite_migration = "2.6"
 
 # Crypto
@@ -40,6 +40,7 @@ password-hash = "0.5"
 rand_core = "0.6"
 sha2 = "0.10"
 hex = "0.4"
+base64 = "0.22"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -59,8 +60,20 @@ chrono = { version = "0.4", features = ["serde"] }
 # Logging
 log = "0.4"
 
+# Concurrency primitives
+parking_lot = "0.12"
+
 # Scanner wedge (desktop global keyboard hook)
 rdev = "0.5"
+
+# System paths (config / data dirs)
+dirs = "5"
+fs2 = "0.4"
+
+# Temp paths used at runtime by backup test_restore and snapshot flows
+tempfile = "3"
+
+[dev-dependencies]
 
 [features]
 default = ["custom-protocol"]

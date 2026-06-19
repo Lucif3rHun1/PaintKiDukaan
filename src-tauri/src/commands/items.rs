@@ -42,7 +42,7 @@ pub struct Item {
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "scope", rename_all = "lowercase")]
 pub enum ItemLookup {
-    Owner(Item),
+    Owner(Box<Item>),
     Cashier {
         id: i64,
         sku_code: String,
@@ -305,7 +305,7 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
         };
         // Build role-specific projection.
         let result = match user.role {
-            Role::Owner => ItemLookup::Owner(item),
+            Role::Owner => ItemLookup::Owner(Box::new(item)),
             Role::Cashier => {
                 let in_stock: f64 = c.query_row(
                     "SELECT COALESCE(SUM(qty), 0) FROM stock_balances WHERE item_id = ?1",

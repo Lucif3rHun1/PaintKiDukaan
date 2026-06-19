@@ -114,7 +114,7 @@ pub fn cmd_mint_next_sale_no(
         "qtn" | "sale_qtn" | "QTN" => Kind::SaleQtn,
         _ => return Err(AppError::Internal(format!("unknown sequence kind: {}", kind))),
     };
-    mint_next_sale_no(&db, k).map_err(|e| AppError::Internal(e.to_string()))
+    mint_next_sale_no(db, k).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[cfg(test)]

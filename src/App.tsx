@@ -1,74 +1,131 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Loader2, Lock, Settings, ShieldCheck, Users } from "lucide-react";
+import {
+  LayoutDashboard,
+  Loader2,
+  Lock,
+  Package,
+  ShieldCheck,
+  ShoppingCart,
+  Settings,
+  Users,
+  UserCheck,
+  HeartPulse,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+/* ── Security UI ─────────────────────────────────────────── */
 import { FirstLaunch } from "./lib/security/firstLaunch";
 import { LockScreen } from "./lib/security/lockScreen";
 import { RestoreFromRecovery } from "./lib/security/restoreFromRecovery";
 import { type Bootstrap, useSecurity } from "./lib/security/state";
 import { UserManagement } from "./lib/security/userManagement";
 
+/* ── Domain UI (Slice B) ─────────────────────────────────── */
+import { ItemList } from "./domain/items/ItemList";
+import { CustomerList } from "./domain/customers/CustomerList";
+import { VendorList } from "./domain/vendors/VendorList";
+import { ManageTypes } from "./domain/customerTypes/ManageTypes";
+
+/* ── POS UI (Slice C) ────────────────────────────────────── */
+import PosLayout from "./pos/PosLayout";
+
+/* ── Shell UI (Slice D) ──────────────────────────────────── */
+import { Dashboard } from "./shell/routes/Dashboard";
+import { Settings as SettingsPage } from "./shell/routes/Settings";
+import { AdminLogs } from "./shell/routes/AdminLogs";
+import { MasterHealthPage } from "./shell/health/MasterHealthPage";
+
 const THIRTY_SECONDS = 30_000;
 const FIFTEEN_MINUTES = 15 * 60 * 1_000;
-
 const LOCKED_SESSION = { user: null, locked: true } as const;
 
+/* ── Navigation tabs ─────────────────────────────────────── */
+type AppTab =
+  | "dashboard"
+  | "pos"
+  | "items"
+  | "customers"
+  | "vendors"
+  | "settings"
+  | "health"
+  | "logs";
+
+const NAV_ITEMS: { id: AppTab; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "pos", label: "POS", icon: ShoppingCart },
+  { id: "items", label: "Items", icon: Package },
+  { id: "customers", label: "Customers", icon: Users },
+  { id: "vendors", label: "Vendors", icon: UserCheck },
+  { id: "settings", label: "Settings", icon: Settings },
+  { id: "health", label: "Health", icon: HeartPulse },
+];
+
+function readTab(): AppTab {
+  const h = typeof window !== "undefined" ? window.location.hash : "";
+  if (h.startsWith("#/pos")) return "pos";
+  if (h.startsWith("#/items")) return "items";
+  if (h.startsWith("#/customers")) return "customers";
+  if (h.startsWith("#/vendors")) return "vendors";
+  if (h.startsWith("#/settings")) return "settings";
+  if (h.startsWith("#/health")) return "health";
+  if (h.startsWith("#/logs")) return "logs";
+  return "dashboard";
+}
+
 export default function App() {
-  const phase = useSecurity((state) => state.phase);
-  const session = useSecurity((state) => state.session);
-  const setPhase = useSecurity((state) => state.setPhase);
-  const setSession = useSecurity((state) => state.setSession);
+  const phase = useSecurity((s) => s.phase);
+  const session = useSecurity((s) => s.session);
+  const setPhase = useSecurity((s) => s.setPhase);
+  const setSession = useSecurity((s) => s.setSession);
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [tab, setTab] = useState<AppTab>(readTab);
 
-  // Bootstrap: determine initial app state
+  /* ── Bootstrap ─────────────────────────────────────────── */
   useEffect(() => {
     let cancelled = false;
-
     invoke<Bootstrap>("app_bootstrap")
-      .then((bootstrap) => {
+      .then((b) => {
         if (cancelled) return;
-        if (bootstrap.kind === "first-launch") {
+        if (b.kind === "first-launch") {
           setSession(LOCKED_SESSION);
           setPhase("first-launch");
-        } else if (bootstrap.kind === "locked") {
+        } else if (b.kind === "locked") {
           setSession(LOCKED_SESSION);
           setPhase("locked");
         } else {
-          setSession({
-            user: { id: 0, name: bootstrap.user, role: bootstrap.role },
-            locked: false,
-          });
+          setSession({ user: { id: 0, name: b.user, role: b.role }, locked: false });
           setPhase("unlocked");
         }
       })
-      .catch((error) => {
+      .catch((err) => {
         if (cancelled) return;
-        setBootstrapError(error instanceof Error ? error.message : String(error));
+        setBootstrapError(err instanceof Error ? err.message : String(err));
         setSession(LOCKED_SESSION);
         setPhase("locked");
       });
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [setPhase, setSession]);
 
-  // Activity tracking + idle auto-lock
+  /* ── Hash routing ──────────────────────────────────────── */
+  useEffect(() => {
+    const onHash = () => setTab(readTab());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  /* ── Activity tracking ─────────────────────────────────── */
   useEffect(() => {
     if (phase !== "unlocked") return;
-
     const touch = () => {
       const now = Date.now();
       if (now - lastTouchAt.current < THIRTY_SECONDS) return;
       lastTouchAt.current = now;
       void invoke("touch_activity").catch(() => undefined);
     };
-
     window.addEventListener("mousemove", touch);
     window.addEventListener("keydown", touch);
     window.addEventListener("click", touch);
-
     return () => {
       window.removeEventListener("mousemove", touch);
       window.removeEventListener("keydown", touch);
@@ -76,52 +133,46 @@ export default function App() {
     };
   }, [phase]);
 
-  // Idle auto-lock: lock after 15 minutes of no interaction
+  /* ── Idle auto-lock ────────────────────────────────────── */
   useEffect(() => {
     if (phase !== "unlocked") return;
-
-    let idleTimer: ReturnType<typeof setTimeout>;
-
-    function resetIdleTimer() {
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(async () => {
-        try {
-          await invoke("lock");
-        } finally {
+    let timer: ReturnType<typeof setTimeout>;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        try { await invoke("lock"); } finally {
           setSession(LOCKED_SESSION);
           setPhase("locked");
         }
       }, FIFTEEN_MINUTES);
-    }
-
-    function onActivity() {
-      resetIdleTimer();
-    }
-
+    };
+    const onActivity = () => reset();
     window.addEventListener("mousemove", onActivity);
     window.addEventListener("keydown", onActivity);
     window.addEventListener("click", onActivity);
-
-    resetIdleTimer();
-
+    reset();
     return () => {
-      clearTimeout(idleTimer);
+      clearTimeout(timer);
       window.removeEventListener("mousemove", onActivity);
       window.removeEventListener("keydown", onActivity);
       window.removeEventListener("click", onActivity);
     };
   }, [phase, setPhase, setSession]);
 
+  /* ── Lock action ───────────────────────────────────────── */
   async function lockNow() {
-    try {
-      await invoke("lock");
-    } finally {
+    try { await invoke("lock"); } finally {
       setSession(LOCKED_SESSION);
       setPhase("locked");
     }
   }
 
-  // Loading screen
+  function navigate(t: AppTab) {
+    setTab(t);
+    window.location.hash = t === "dashboard" ? "#/" : `#/${t}`;
+  }
+
+  /* ── Security phases ───────────────────────────────────── */
   if (phase === "loading") {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
@@ -138,77 +189,126 @@ export default function App() {
   if (phase === "restore-recovery") return <RestoreFromRecovery />;
   if (phase === "user-management") return <UserManagement />;
 
-  // Unlocked dashboard
+  /* ── Unlocked: full app shell ──────────────────────────── */
+  const user = session.user;
+  const role = user?.role ?? "owner";
+
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6">
-      <section className="mx-auto max-w-lg">
-        <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8">
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-emerald-300">Database unlocked</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
-                Welcome, {session.user?.name ?? "Owner"}
-              </h1>
-              <p className="mt-1 text-sm text-zinc-400">
-                {session.user?.role === "owner" ? "You have full access to all features." : `Logged in as ${session.user?.role}.`}
-              </p>
-            </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-300">
-              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-            </div>
-          </div>
+    <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100">
+      {/* Sidebar */}
+      <aside className="hidden w-56 shrink-0 border-r border-white/10 bg-zinc-900/80 md:flex md:flex-col">
+        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-4">
+          <ShieldCheck className="h-5 w-5 text-emerald-400" aria-hidden="true" />
+          <span className="text-sm font-semibold tracking-tight text-white">PaintKiDukaan</span>
+        </div>
 
-          {/* Bootstrap warning */}
-          {bootstrapError ? (
-            <p className="mb-5 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200" role="alert">
-              {bootstrapError}
-            </p>
-          ) : null}
-
-          {/* Quick actions */}
-          <div className="space-y-3">
-            {session.user?.role === "owner" && (
-              <button
-                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left text-sm transition-colors duration-150 hover:border-white/20 hover:bg-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                type="button"
-                onClick={() => setPhase("user-management")}
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-300">
-                  <Users className="h-5 w-5" aria-hidden="true" />
-                </div>
-                <div>
-                  <p className="font-medium text-zinc-100">Staff accounts</p>
-                  <p className="mt-0.5 text-xs text-zinc-500">Add cashiers and stockers</p>
-                </div>
-              </button>
-            )}
-
+        <nav className="flex-1 space-y-0.5 px-2 py-3">
+          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
             <button
-              className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left text-sm transition-colors duration-150 hover:border-white/20 hover:bg-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              key={id}
               type="button"
-              disabled
+              onClick={() => navigate(id)}
+              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                tab === id
+                  ? "bg-white/10 text-white font-medium"
+                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+              }`}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-zinc-500">
-                <Settings className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <div>
-                <p className="font-medium text-zinc-400">Shop settings</p>
-                <p className="mt-0.5 text-xs text-zinc-600">Coming in future slice</p>
-              </div>
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {label}
             </button>
-          </div>
+          ))}
+        </nav>
 
-          {/* Lock button */}
+        <div className="border-t border-white/10 px-3 py-3">
+          <div className="mb-2 truncate text-xs text-zinc-500">
+            {user?.name ?? "Owner"} · {role}
+          </div>
           <button
-            className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-lg border border-white/10 px-4 text-sm font-medium text-zinc-200 transition-colors duration-150 hover:border-white/20 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
             type="button"
             onClick={lockNow}
+            className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-white/20 hover:bg-white/5"
           >
-            <Lock className="mr-2 h-4 w-4" aria-hidden="true" />
-            Lock now
+            <Lock className="h-4 w-4" aria-hidden="true" />
+            Lock
           </button>
         </div>
-      </section>
-    </main>
+      </aside>
+
+      {/* Mobile top bar */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex items-center justify-between border-b border-white/10 bg-zinc-900/80 px-4 py-3 md:hidden">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-emerald-400" aria-hidden="true" />
+            <span className="text-sm font-semibold text-white">PaintKiDukaan</span>
+          </div>
+          <button
+            type="button"
+            onClick={lockNow}
+            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/5"
+          >
+            <Lock className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </header>
+
+        {/* Mobile tab bar */}
+        <nav className="flex overflow-x-auto border-b border-white/10 bg-zinc-900/60 px-2 py-1 md:hidden">
+          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => navigate(id)}
+              className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors ${
+                tab === id
+                  ? "bg-white/10 text-white font-medium"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Content */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {/* Bootstrap error */}
+          {bootstrapError && (
+            <p className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200" role="alert">
+              {bootstrapError}
+            </p>
+          )}
+
+          {tab === "dashboard" && <Dashboard />}
+          {tab === "pos" && (
+            <PosLayout
+              user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+              onLock={lockNow}
+            />
+          )}
+          {tab === "items" && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Inventory</h2>
+              <ItemList role={role} />
+            </div>
+          )}
+          {tab === "customers" && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Customers</h2>
+              <CustomerList role={role} />
+            </div>
+          )}
+          {tab === "vendors" && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Vendors</h2>
+              <VendorList role={role} />
+            </div>
+          )}
+          {tab === "settings" && <SettingsPage />}
+          {tab === "health" && <MasterHealthPage />}
+          {tab === "logs" && <AdminLogs />}
+        </main>
+      </div>
+    </div>
   );
 }

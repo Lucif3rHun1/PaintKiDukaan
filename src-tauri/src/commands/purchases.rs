@@ -441,14 +441,14 @@ pub fn cmd_create_inward(
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
-    create_inward(&db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
+    create_inward(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
 pub fn cmd_last_cost(state: tauri::State<'_, AppState>, item_id: i64) -> AppResult<Option<i64>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    last_cost_for_item(&db, item_id).map_err(|e| AppError::Internal(e.to_string()))
+    last_cost_for_item(db, item_id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
@@ -461,7 +461,7 @@ pub fn cmd_list_purchases(
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     list(
-        &db,
+        db,
         from_date.as_deref(),
         to_date.as_deref(),
         limit.unwrap_or(100),
@@ -473,7 +473,7 @@ pub fn cmd_list_purchases(
 pub fn cmd_get_purchase(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Purchase>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    get(&db, id).map_err(|e| AppError::Internal(e.to_string()))
+    get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
@@ -484,7 +484,7 @@ pub fn cmd_movements_for_item(
 ) -> AppResult<Vec<StockMovement>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    movements_for_item(&db, item_id, limit.unwrap_or(200)).map_err(|e| AppError::Internal(e.to_string()))
+    movements_for_item(db, item_id, limit.unwrap_or(200)).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 // -----------------------------------------------------------------------------

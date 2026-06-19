@@ -409,7 +409,7 @@ pub fn cmd_cash_sales_for(
 ) -> AppResult<CashSalesSummary> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    cash_sales_for(&db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
+    cash_sales_for(db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
@@ -420,7 +420,7 @@ pub fn cmd_last_opening_for(
 ) -> AppResult<i64> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    last_opening_for(&db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
+    last_opening_for(db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
@@ -431,7 +431,7 @@ pub fn cmd_backup_gate_check(
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let now = now_epoch_secs.unwrap_or_else(|| chrono::Utc::now().timestamp());
-    backup_gate_check(&db, now).map_err(|e| AppError::Internal(e.to_string()))
+    backup_gate_check(db, now).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
@@ -443,7 +443,7 @@ pub fn cmd_trigger_day_close(
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
-    trigger_day_close(&db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
+    trigger_day_close(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
@@ -454,28 +454,28 @@ pub fn cmd_lock_state(
 ) -> AppResult<DayLockState> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    lock_state(&db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
+    lock_state(db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
 pub fn cmd_list_day_close(state: tauri::State<'_, AppState>, limit: Option<i64>) -> AppResult<Vec<DayClose>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    list(&db, limit.unwrap_or(60)).map_err(|e| AppError::Internal(e.to_string()))
+    list(db, limit.unwrap_or(60)).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
 pub fn cmd_get_day_close(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<DayClose>> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    get(&db, id).map_err(|e| AppError::Internal(e.to_string()))
+    get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command]
 pub fn cmd_admin_reopen_day(state: tauri::State<'_, AppState>, id: i64) -> AppResult<bool> {
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    admin_reopen(&db, id).map_err(|e| AppError::Internal(e.to_string()))
+    admin_reopen(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 // -----------------------------------------------------------------------------
