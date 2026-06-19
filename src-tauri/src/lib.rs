@@ -97,9 +97,19 @@ pub fn run() {
             if let Err(e) = hardening::tray::init(app) {
                 log::warn!("Tray init failed (non-fatal): {}", e);
             }
-            if let Err(e) = scan::init(app) {
-                log::warn!("Scan init failed (non-fatal): {}", e);
+
+            if !cfg!(target_os = "macos") {
+                if let Err(e) = scan::init(app) {
+                    log::warn!("Scan init failed (non-fatal): {}", e);
+                }
+            } else {
+                log::warn!(
+                    "Barcode scanner hook disabled on macOS: rdev calls \
+                     TSMGetInputSourceProperty off the main thread, which \
+                     triggers dispatch_assert_queue and crashes the process."
+                );
             }
+
             if let Err(e) = hardening::prevent_sleep::apply_on_launch(app) {
                 log::warn!("Prevent-sleep failed (non-fatal): {}", e);
             }
