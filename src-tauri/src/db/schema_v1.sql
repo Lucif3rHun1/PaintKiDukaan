@@ -6,7 +6,7 @@ CREATE TABLE locations (
   name TEXT NOT NULL UNIQUE,
   rack TEXT,
   is_active INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Devices
@@ -18,8 +18,8 @@ CREATE TABLE devices (
   cert_pem TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked')),
   enrolled_by INTEGER NOT NULL REFERENCES users(id),
-  enrolled_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-  last_seen_at INTEGER
+  enrolled_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen_at TEXT
 );
 
 -- Users
@@ -31,29 +31,15 @@ CREATE TABLE users (
   pin_verifier BLOB NOT NULL,
   pin_length INTEGER NOT NULL CHECK(pin_length IN (4,6)),
   active INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX idx_users_name ON users(name) WHERE active = 1;
-
--- Key-wrapping metadata (single row, system)
-CREATE TABLE keywrap (
-  id INTEGER PRIMARY KEY CHECK(id = 1),
-  pin_salt BLOB NOT NULL,
-  pin_params BLOB NOT NULL,
-  pin_wrapped_dek BLOB NOT NULL,
-  rec_salt BLOB NOT NULL,
-  rec_params BLOB NOT NULL,
-  rec_wrapped_dek BLOB NOT NULL,
-  version INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-  updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
-);
 
 -- Lockout state
 CREATE TABLE lockouts (
   user_id INTEGER PRIMARY KEY REFERENCES users(id),
   failed_attempts INTEGER NOT NULL DEFAULT 0,
-  locked_until INTEGER,
+  locked_until TEXT,
   wipe_on_next_fail INTEGER NOT NULL DEFAULT 0
 );
 
@@ -62,7 +48,7 @@ CREATE TABLE customer_types (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
   is_active INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 INSERT INTO customer_types(name) VALUES ('retail'),('painter'),('contractor'),('dealer');
 
@@ -76,7 +62,7 @@ CREATE TABLE customers (
   credit_limit INTEGER,
   opening_balance INTEGER NOT NULL DEFAULT 0,
   notes TEXT,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX idx_customers_phone ON customers(phone);
 CREATE INDEX idx_customers_name ON customers(name);
@@ -89,7 +75,7 @@ CREATE TABLE vendors (
   opening_balance INTEGER NOT NULL DEFAULT 0,
   notes TEXT,
   is_active INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Items
@@ -111,8 +97,8 @@ CREATE TABLE items (
   location_text TEXT,
   reorder_level INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-  updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_items_name ON items(name);
 CREATE INDEX idx_items_brand ON items(brand);
@@ -125,12 +111,12 @@ CREATE TABLE stock_movements (
   item_id INTEGER NOT NULL REFERENCES items(id),
   location_id INTEGER NOT NULL REFERENCES locations(id),
   qty INTEGER NOT NULL,
-  movement_kind TEXT NOT NULL CHECK(movement_kind IN ('purchase','sale','adjust_in','adjust_out','transfer_in','transfer_out','return_in','return_out')),
+  type TEXT NOT NULL CHECK(type IN ('inward','sale','transfer','adjust')),
   ref_type TEXT,
   ref_id INTEGER,
   reason TEXT,
   user_id INTEGER NOT NULL REFERENCES users(id),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_mov_item_loc_qty ON stock_movements(item_id, location_id, qty);
 CREATE INDEX idx_mov_item_loc_created_id ON stock_movements(item_id, location_id, created_at DESC, id DESC);
@@ -174,11 +160,11 @@ END;
 CREATE TABLE purchases (
   id INTEGER PRIMARY KEY,
   vendor_id INTEGER REFERENCES vendors(id),
-  date INTEGER NOT NULL,
+  date TEXT NOT NULL,
   total INTEGER NOT NULL,
   notes TEXT,
   user_id INTEGER NOT NULL REFERENCES users(id),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_purchases_date ON purchases(date);
 CREATE INDEX idx_purchases_vendor ON purchases(vendor_id);
@@ -201,10 +187,10 @@ CREATE TABLE vendor_payments (
   vendor_id INTEGER NOT NULL REFERENCES vendors(id),
   amount INTEGER NOT NULL,
   mode TEXT NOT NULL CHECK(mode IN ('cash','upi','card','bank','cheque')),
-  date INTEGER NOT NULL,
+  date TEXT NOT NULL,
   notes TEXT,
   user_id INTEGER NOT NULL REFERENCES users(id),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_vp_vendor ON vendor_payments(vendor_id);
 CREATE INDEX idx_vp_date ON vendor_payments(date);
@@ -214,7 +200,7 @@ CREATE TABLE sales (
   id INTEGER PRIMARY KEY,
   no TEXT NOT NULL UNIQUE,
   customer_id INTEGER REFERENCES customers(id),
-  date INTEGER NOT NULL,
+  date TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('quotation','final')),
   subtotal INTEGER NOT NULL,
   bill_discount INTEGER NOT NULL DEFAULT 0,
@@ -224,8 +210,8 @@ CREATE TABLE sales (
   validity_days INTEGER,
   converted_from_id INTEGER REFERENCES sales(id),
   user_id INTEGER NOT NULL REFERENCES users(id),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-  updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_sales_date ON sales(date);
 CREATE INDEX idx_sales_customer ON sales(customer_id);
@@ -254,11 +240,11 @@ CREATE TABLE customer_payments (
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   amount INTEGER NOT NULL,
   mode TEXT NOT NULL CHECK(mode IN ('cash','upi','card','bank','cheque')),
-  date INTEGER NOT NULL,
+  date TEXT NOT NULL,
   notes TEXT,
   sale_id INTEGER REFERENCES sales(id),
   user_id INTEGER NOT NULL REFERENCES users(id),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_cp_customer ON customer_payments(customer_id);
 CREATE INDEX idx_cp_date ON customer_payments(date);
@@ -266,7 +252,7 @@ CREATE INDEX idx_cp_date ON customer_payments(date);
 -- Day close (per-user, per-tender variance computed)
 CREATE TABLE day_close (
   id INTEGER PRIMARY KEY,
-  date INTEGER NOT NULL,
+  date TEXT NOT NULL,
   user_id INTEGER NOT NULL REFERENCES users(id),
   opening_cash INTEGER NOT NULL DEFAULT 0,
   cash_sales INTEGER NOT NULL DEFAULT 0,
@@ -277,7 +263,7 @@ CREATE TABLE day_close (
   variance INTEGER NOT NULL,
   notes TEXT,
   backup_check_status TEXT NOT NULL CHECK(backup_check_status IN ('fresh','stale','skipped')),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX idx_day_close_user_date ON day_close(user_id, date);
 
@@ -285,7 +271,7 @@ CREATE UNIQUE INDEX idx_day_close_user_date ON day_close(user_id, date);
 CREATE TABLE sequences (
   name TEXT PRIMARY KEY,
   last_value INTEGER NOT NULL DEFAULT 0,
-  updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 INSERT INTO sequences(name) VALUES ('sale_inv'),('sale_qtn'),('sku');
 
@@ -301,13 +287,13 @@ CREATE TABLE settings (
   idle_lock_minutes INTEGER NOT NULL DEFAULT 5,
   lockout_action TEXT NOT NULL DEFAULT 'timeout' CHECK(lockout_action IN ('timeout','wipe')),
   lockout_timeout_minutes INTEGER NOT NULL DEFAULT 15,
-  last_backup_at INTEGER,
-  last_test_restore_at INTEGER,
+  last_backup_at TEXT,
+  last_test_restore_at TEXT,
   scanner_avg_ms_per_char INTEGER NOT NULL DEFAULT 30,
   scanner_suffix_keycodes TEXT NOT NULL DEFAULT '[9,13]',
   scanner_min_length INTEGER NOT NULL DEFAULT 6,
   master_lan_ip TEXT,
   master_lan_port INTEGER NOT NULL DEFAULT 7842,
-  updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 INSERT INTO settings(id) VALUES (1);

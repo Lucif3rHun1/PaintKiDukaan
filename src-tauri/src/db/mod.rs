@@ -56,8 +56,7 @@ impl Db {
 
         // -- Run schema migrations ----------------------------------------
         migrations::run(&mut conn).map_err(|e| {
-            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
                 e.to_string(),
             )))
         })?;

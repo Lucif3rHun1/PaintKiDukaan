@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use rusqlite::Connection;
 use rusqlite_migration::{M, Migrations};
 
@@ -7,12 +5,13 @@ use rusqlite_migration::{M, Migrations};
 const SCHEMA_V1: &str = include_str!("schema_v1.sql");
 
 /// Migration set — currently a single schema v1.
-pub static MIGRATIONS: LazyLock<Migrations<'static>> =
-    LazyLock::new(|| Migrations::new(vec![M::up(SCHEMA_V1)]));
+fn migrations() -> Migrations<'static> {
+    Migrations::new(vec![M::up(SCHEMA_V1)])
+}
 
 /// Run all pending migrations against `conn`.
 pub fn run(conn: &mut Connection) -> Result<(), rusqlite_migration::Error> {
-    MIGRATIONS.to_latest(conn)
+    migrations().to_latest(conn)
 }
 
 #[cfg(test)]
