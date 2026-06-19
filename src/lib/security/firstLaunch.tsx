@@ -120,6 +120,7 @@ export function FirstLaunch() {
   async function onSubmit(input: FirstLaunchInput) {
     setBackendError(null);
     try {
+      console.log("[FIRST-LAUNCH] Submitting first_launch_setup...");
       const session = normalizeSession(
         await invoke<SetupResponse>("first_launch_setup", {
           pin: input.pin,
@@ -129,10 +130,12 @@ export function FirstLaunch() {
           phone: input.phone,
         }),
       );
+      console.log("[FIRST-LAUNCH] Setup complete, session:", JSON.stringify(session));
       const security = useSecurity.getState();
       security.setSession(session);
       security.setPhase("unlocked");
     } catch (error) {
+      console.error("[FIRST-LAUNCH] Setup failed:", error);
       setBackendError(error instanceof Error ? error.message : String(error));
     }
   }

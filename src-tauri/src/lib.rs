@@ -1,3 +1,5 @@
+use tauri::Manager;
+
 pub mod commands;
 pub mod crypto;
 pub mod db;
@@ -11,9 +13,46 @@ pub mod scan;
 
 pub use commands::auth::AppError;
 
+/// Simple frontend log command — routes JS console output to the Rust logger
+/// so everything ends up in `session.log`.
+#[tauri::command]
+fn log_frontend(level: String, message: String) {
+    match level.as_str() {
+        "error" => log::error!("{}", message),
+        "warn" => log::warn!("{}", message),
+        "info" => log::info!("{}", message),
+        "debug" => log::debug!("{}", message),
+        "trace" => log::trace!("{}", message),
+        _ => log::info!("{}", message),
+    }
+}
+
 pub fn run() {
+    // ── Session log setup ────────────────────────────────────────────
+    // Compute the app data directory using `dirs` (available before Tauri builder).
+    // On macOS: ~/Library/Application Support/in.paintkiduakan.master/
+    // On Linux: ~/.local/share/in.paintkiduakan.master/
+    // On Windows: %APPDATA%/in.paintkiduakan.master/
+    let log_dir = dirs::data_local_dir()
+        .unwrap_or_default()
+        .join("in.paintkiduakan.master");
+    let _ = std::fs::create_dir_all(&log_dir);
+
+    let log_file = log_dir.join("session.log");
+    let _ = std::fs::remove_file(&log_file);
+
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Folder {
+                        path: log_dir,
+                        file_name: Some("session.log".into()),
+                    },
+                ))
+                .level(log::LevelFilter::Trace)
+                .build(),
+        )
         .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {
             // Focus existing window on second launch.
         }))
@@ -26,6 +65,19 @@ pub fn run() {
         .plugin(tauri_plugin_oauth::init())
         .manage(commands::auth::AppState::default())
         .setup(|app| {
+            log::info!("=== PaintKiDukaan session started ===");
+
+            // Resolve the actual data directory from the app handle (authoritative).
+            if let Ok(app_data) = app.path().app_data_dir() {
+                log::info!("App data dir: {}", app_data.display());
+                if let Ok(db_path) = std::fs::canonicalize(app_data.join("paintkiduakan.db")) {
+                    log::info!("DB path: {}", db_path.display());
+                } else {
+                    log::info!("DB path: (not yet created)");
+                }
+                log::info!("Keystore exists: {}", app_data.join("paintkiduakan.keystore").exists());
+            }
+
             // Initialize Slice D shell subsystems (best-effort).
             let _ = hardening::tray::init(app);
             let _ = scan::init(app);
@@ -33,6 +85,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            log_frontend,
             // Auth & security (Slice A)
             commands::auth::app_bootstrap,
             commands::auth::unlock,

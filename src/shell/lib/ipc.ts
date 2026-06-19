@@ -23,7 +23,7 @@ export interface Session {
 
 export type Bootstrap =
   | { kind: "loading" }
-  | { kind: "first-launch" }
+  | { kind: "first_launch" }
   | { kind: "locked" }
   | { kind: "unlocked"; user: string; role: Role }
   | { kind: "error"; message: string };

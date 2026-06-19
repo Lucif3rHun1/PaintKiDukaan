@@ -90,7 +90,9 @@ export function LockScreen() {
   async function onSubmit(input: UnlockInput) {
     setBackendError(null);
     try {
+      console.log("[LOCK-SCREEN] Attempting unlock...");
       const session = normalizeSession(await invoke<UnlockResponse>("unlock", input));
+      console.log("[LOCK-SCREEN] Unlock success:", JSON.stringify(session));
       const security = useSecurity.getState();
       security.setSession(session);
       security.setPhase("unlocked");
@@ -98,6 +100,7 @@ export function LockScreen() {
       setLockedUntil(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      console.error("[LOCK-SCREEN] Unlock error:", message);
 
       // Check if wiped
       if (message.includes("data wiped")) {

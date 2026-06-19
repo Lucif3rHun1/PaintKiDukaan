@@ -1,4 +1,5 @@
 import { tauriInvoke as invoke } from "./lib/security/tauri";
+import { initSessionLog } from "./lib/security/sessionLog";
 import {
   LayoutDashboard,
   Loader2,
@@ -73,6 +74,7 @@ function readTab(): AppTab {
 }
 
 export default function App() {
+  initSessionLog();
   const phase = useSecurity((s) => s.phase);
   const session = useSecurity((s) => s.session);
   const setPhase = useSecurity((s) => s.setPhase);
@@ -84,10 +86,12 @@ export default function App() {
   /* ── Bootstrap ─────────────────────────────────────────── */
   useEffect(() => {
     let cancelled = false;
+    console.log("[BOOT] Calling app_bootstrap...");
     invoke<Bootstrap>("app_bootstrap")
       .then((b) => {
         if (cancelled) return;
-        if (b.kind === "first-launch") {
+        console.log("[BOOT] Bootstrap result:", JSON.stringify(b));
+        if (b.kind === "first_launch") {
           setSession(LOCKED_SESSION);
           setPhase("first-launch");
         } else if (b.kind === "locked") {
@@ -100,6 +104,7 @@ export default function App() {
       })
       .catch((err) => {
         if (cancelled) return;
+        console.error("[BOOT] Bootstrap error:", err);
         setBootstrapError(err instanceof Error ? err.message : String(err));
         setSession(LOCKED_SESSION);
         setPhase("locked");

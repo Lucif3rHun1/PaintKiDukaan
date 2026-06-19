@@ -91,7 +91,7 @@ export function ShellApp() {
     );
   }
 
-  if (boot.kind === "first-launch") {
+  if (boot.kind === "first_launch") {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
         <div className="max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-sm">

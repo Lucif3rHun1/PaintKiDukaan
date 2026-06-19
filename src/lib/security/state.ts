@@ -14,7 +14,7 @@ export interface Session {
 }
 
 export type Bootstrap =
-  | { kind: "first-launch" }
+  | { kind: "first_launch" }
   | { kind: "locked" }
   | { kind: "unlocked"; user: string; role: Role };
 
