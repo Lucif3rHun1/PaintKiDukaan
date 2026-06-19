@@ -2,7 +2,7 @@
  * Thin Tauri-invoke wrapper. Throws `AppError` on non-OK responses so
  * components can render field-level errors from the `code`.
  */
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { tauriInvoke } from "../lib/security/tauri";
 import { isAppError, AppError } from "./types";
 
 export async function invoke<T>(

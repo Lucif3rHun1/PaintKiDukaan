@@ -5,7 +5,7 @@
  * shell. Types are kept loose (primitives) on purpose so adding fields does
  * not cascade through the frontend.
  */
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { tauriInvoke } from "../../lib/security/tauri";
 
 export type Role = "owner" | "admin" | "cashier" | "stocker";
 

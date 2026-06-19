@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { invoke } from "@tauri-apps/api/core";
+import { tauriInvoke as invoke } from "./tauri";
 import { AlertCircle, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";

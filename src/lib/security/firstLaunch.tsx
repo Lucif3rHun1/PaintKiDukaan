@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { invoke } from "@tauri-apps/api/core";
+import { tauriInvoke as invoke } from "./tauri";
 import {
   AlertCircle,
   Eye,

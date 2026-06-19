@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { tauriInvoke as invoke } from "./lib/security/tauri";
 import {
   LayoutDashboard,
   Loader2,
