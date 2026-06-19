@@ -118,6 +118,8 @@ export const ipc = {
   listUsers: () => invoke<User[]>("list_users"),
   createUser: (name: string, role: string, pin: string) =>
     invoke<User>("create_user", { name, role, pin }),
+  verifyPin: (userId: number, pin: string) =>
+    invoke<boolean>("verify_pin", { userId, pin }),
   resetPin: (userId: number, newPin: string) =>
     invoke<void>("reset_pin", { userId, newPin }),
 
@@ -126,6 +128,18 @@ export const ipc = {
     invoke<Device>("enroll_device", { name, role }),
   revokeDevice: (deviceId: string) =>
     invoke<void>("revoke_device", { deviceId }),
+
+  listLocations: () => invoke<string[]>("list_locations"),
+  addLocation: (location: string) =>
+    invoke<string[]>("add_location", { location }),
+  removeLocation: (location: string) =>
+    invoke<string[]>("remove_location", { location }),
+
+  listCustomerTypes: () => invoke<string[]>("list_customer_types"),
+  addCustomerType: (customerType: string) =>
+    invoke<string[]>("add_customer_type", { customerType }),
+  removeCustomerType: (customerType: string) =>
+    invoke<string[]>("remove_customer_type", { customerType }),
 
   listBackupTargets: () => invoke<BackupTarget[]>("list_targets"),
   backupNow: (passphrase: string) =>
