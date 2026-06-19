@@ -1,6 +1,16 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { invoke } from "@tauri-apps/api/core";
-import { AlertCircle, Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import {
+  AlertCircle,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
+  ShieldCheck,
+  ShoppingBag,
+  Lock,
+  FileKey,
+} from "lucide-react";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
@@ -23,6 +33,12 @@ interface SetupResponse {
   locked?: boolean;
 }
 type Step = 0 | 1 | 2;
+
+const STEPS = [
+  { label: "Shop Details", icon: ShoppingBag, description: "Basic information about your shop" },
+  { label: "Owner PIN", icon: Lock, description: "Set a 6-digit PIN to lock and unlock the app" },
+  { label: "Recovery Passphrase", icon: FileKey, description: "A secret phrase to recover your data if you forget your PIN" },
+] as const;
 
 const inputClass =
   "h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 text-sm text-zinc-100 outline-none transition-colors duration-150 placeholder:text-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50";
@@ -54,7 +70,6 @@ export function FirstLaunch() {
   const [step, setStep] = useState<Step>(0);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [showPassphrase, setShowPassphrase] = useState(false);
-  const [showWhy, setShowWhy] = useState(false);
 
   const {
     register,
@@ -122,6 +137,8 @@ export function FirstLaunch() {
     }
   }
 
+  const CurrentStepIcon = STEPS[step].icon;
+
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6">
       <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
@@ -129,49 +146,77 @@ export function FirstLaunch() {
           className="w-full rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8"
           onSubmit={handleSubmit(onSubmit)}
         >
+          {/* Header */}
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-indigo-300">PaintKiDukaan security</p>
+              <p className="text-sm font-medium text-indigo-300">PaintKiDukaan</p>
               <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
-                First-launch setup
+                Set up your shop
               </h1>
+              <p className="mt-1 text-sm text-zinc-400">
+                A few quick steps to get your shop management system running.
+              </p>
             </div>
-            <ShieldCheck className="h-8 w-8 text-emerald-400" aria-hidden="true" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-300">
+              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+            </div>
           </div>
 
-          <button
-            className="mb-5 flex w-full items-start justify-between rounded-xl border border-white/10 bg-zinc-950/60 p-3 text-left text-sm text-zinc-300 transition-colors duration-150 hover:bg-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-            type="button"
-            onClick={() => setShowWhy((open) => !open)}
-            aria-expanded={showWhy}
-          >
-            <span>
-              <span className="block font-medium text-zinc-100">Why we need this</span>
-              {showWhy ? (
-                <span className="mt-1 block leading-6 text-zinc-400">
-                  Your PIN unlocks the app daily. Your recovery passphrase is the ONLY way to
-                  recover your data if you forget your PIN.
-                </span>
-              ) : null}
-            </span>
-            <KeyRound className="mt-0.5 h-4 w-4 text-indigo-300" aria-hidden="true" />
-          </button>
-
-          <div className="mb-6 flex items-center gap-2" aria-label="Setup progress">
-            {[0, 1, 2].map((dot) => (
-              <span
-                key={dot}
-                className={
-                  dot < step
-                    ? "h-2.5 flex-1 rounded-full bg-emerald-500"
-                    : dot === step
-                      ? "h-2.5 flex-1 rounded-full bg-indigo-500"
-                      : "h-2.5 flex-1 rounded-full bg-zinc-800"
-                }
-              />
-            ))}
+          {/* Step indicator with labels */}
+          <div className="mb-6" aria-label="Setup progress">
+            <div className="flex items-center gap-2 mb-2">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2"
+                >
+                  <div
+                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-200 ${
+                      i < step
+                        ? "bg-emerald-500 text-white"
+                        : i === step
+                          ? "bg-indigo-500 text-white"
+                          : "bg-zinc-800 text-zinc-500"
+                    }`}
+                  >
+                    {i < step ? "✓" : i + 1}
+                  </div>
+                  <span
+                    className={`text-xs font-medium hidden sm:inline ${
+                      i === step ? "text-zinc-100" : "text-zinc-500"
+                    }`}
+                  >
+                    {STEPS[i].label}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${
+                    i < step
+                      ? "bg-emerald-500"
+                      : i === step
+                        ? "bg-indigo-500"
+                        : "bg-zinc-800"
+                  }`}
+                />
+              ))}
+            </div>
           </div>
 
+          {/* Step description */}
+          <div className="mb-5 flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-3">
+            <CurrentStepIcon className="h-5 w-5 shrink-0 text-indigo-300" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-medium text-zinc-100">{STEPS[step].label}</p>
+              <p className="text-xs text-zinc-400">{STEPS[step].description}</p>
+            </div>
+          </div>
+
+          {/* Backend error */}
           {backendError ? (
             <div
               className="mb-5 flex gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
@@ -182,11 +227,12 @@ export function FirstLaunch() {
             </div>
           ) : null}
 
+          {/* Step 0: Shop Details */}
           {step === 0 ? (
             <div className="space-y-4">
               <div>
                 <label className={labelClass} htmlFor="shopName">
-                  Shop name
+                  Shop name *
                 </label>
                 <input
                   id="shopName"
@@ -194,29 +240,30 @@ export function FirstLaunch() {
                   aria-label="Shop name"
                   aria-invalid={Boolean(errors.shopName)}
                   autoComplete="organization"
-                  placeholder="Paint shop name"
+                  placeholder="e.g. Paint World"
                   {...register("shopName")}
                 />
+                <p className="mt-1 text-xs text-zinc-500">The name of your paint shop or business.</p>
                 {fieldError(errors.shopName?.message)}
               </div>
               <div>
                 <label className={labelClass} htmlFor="address">
-                  Address
+                  Address *
                 </label>
                 <textarea
                   id="address"
-                  className={`${inputClass} min-h-24 py-3`}
+                  className={`${inputClass} min-h-20 py-3`}
                   aria-label="Shop address"
                   aria-invalid={Boolean(errors.address)}
                   autoComplete="street-address"
-                  placeholder="Full shop address"
+                  placeholder="Full address including city and PIN code"
                   {...register("address")}
                 />
                 {fieldError(errors.address?.message)}
               </div>
               <div>
                 <label className={labelClass} htmlFor="phone">
-                  Phone
+                  Phone number *
                 </label>
                 <input
                   id="phone"
@@ -228,16 +275,18 @@ export function FirstLaunch() {
                   placeholder="9876543210"
                   {...register("phone")}
                 />
+                <p className="mt-1 text-xs text-zinc-500">10-digit Indian mobile number.</p>
                 {fieldError(errors.phone?.message)}
               </div>
             </div>
           ) : null}
 
+          {/* Step 1: Owner PIN */}
           {step === 1 ? (
             <div className="space-y-4">
               <div>
                 <label className={labelClass} htmlFor="pin">
-                  Owner PIN
+                  Create owner PIN *
                 </label>
                 <input
                   id="pin"
@@ -247,15 +296,18 @@ export function FirstLaunch() {
                   autoComplete="off"
                   inputMode="numeric"
                   maxLength={6}
-                  placeholder="6 digits"
+                  placeholder="6 digits (e.g. 123456)"
                   type="password"
                   {...register("pin")}
                 />
+                <p className="mt-1 text-xs text-zinc-500">
+                  This PIN will be used every time you open the app. Only you (the owner) know this.
+                </p>
                 {fieldError(errors.pin?.message)}
               </div>
               <div>
                 <label className={labelClass} htmlFor="pinConfirm">
-                  Confirm PIN
+                  Confirm PIN *
                 </label>
                 <input
                   id="pinConfirm"
@@ -265,7 +317,7 @@ export function FirstLaunch() {
                   autoComplete="off"
                   inputMode="numeric"
                   maxLength={6}
-                  placeholder="Repeat PIN"
+                  placeholder="Re-enter the same PIN"
                   type="password"
                   {...register("pinConfirm")}
                 />
@@ -274,11 +326,20 @@ export function FirstLaunch() {
             </div>
           ) : null}
 
+          {/* Step 2: Recovery Passphrase */}
           {step === 2 ? (
             <div className="space-y-4">
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                <p className="text-sm font-medium text-amber-200">Important — read this first</p>
+                <p className="mt-1 text-xs leading-5 text-amber-200/80">
+                  Your recovery passphrase is the <strong>only way</strong> to regain access if you
+                  forget your PIN. Write it down and store it somewhere safe (not on this device).
+                  We cannot recover it for you.
+                </p>
+              </div>
               <div>
                 <label className={labelClass} htmlFor="passphrase">
-                  Recovery passphrase
+                  Recovery passphrase *
                 </label>
                 <div className="relative">
                   <input
@@ -295,16 +356,19 @@ export function FirstLaunch() {
                     className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-400 transition-colors duration-150 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                     type="button"
                     onClick={() => setShowPassphrase((visible) => !visible)}
-                    aria-label={showPassphrase ? "Hide recovery passphrase" : "Show recovery passphrase"}
+                    aria-label={showPassphrase ? "Hide passphrase" : "Show passphrase"}
                   >
                     {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Use a memorable sentence, e.g. "my shop opened in 2024 summer"
+                </p>
                 {fieldError(errors.passphrase?.message)}
               </div>
               <div>
                 <label className={labelClass} htmlFor="passphraseConfirm">
-                  Confirm recovery passphrase
+                  Confirm recovery passphrase *
                 </label>
                 <input
                   id="passphraseConfirm"
@@ -312,7 +376,7 @@ export function FirstLaunch() {
                   aria-label="Confirm recovery passphrase"
                   aria-invalid={Boolean(errors.passphraseConfirm)}
                   autoComplete="off"
-                  placeholder="Repeat passphrase"
+                  placeholder="Re-enter the same passphrase"
                   type={showPassphrase ? "text" : "password"}
                   {...register("passphraseConfirm")}
                 />
@@ -321,20 +385,36 @@ export function FirstLaunch() {
             </div>
           ) : null}
 
+          {/* Navigation buttons */}
           <div className="mt-6 flex gap-3">
             {step > 0 ? (
-              <button className={ghostButtonClass} type="button" onClick={() => setStep((step - 1) as Step)}>
+              <button
+                className={ghostButtonClass}
+                type="button"
+                onClick={() => setStep((step - 1) as Step)}
+              >
                 Back
               </button>
             ) : null}
             {step < 2 ? (
-              <button className={`${buttonClass} flex-1`} type="button" onClick={goNext} disabled={!canContinue}>
-                Next
+              <button
+                className={`${buttonClass} flex-1`}
+                type="button"
+                onClick={goNext}
+                disabled={!canContinue}
+              >
+                Continue
               </button>
             ) : (
-              <button className={`${buttonClass} flex-1`} type="submit" disabled={!canContinue || isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-                Finish setup
+              <button
+                className={`${buttonClass} flex-1`}
+                type="submit"
+                disabled={!canContinue || isSubmitting}
+              >
+                {isSubmitting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : null}
+                Complete setup
               </button>
             )}
           </div>

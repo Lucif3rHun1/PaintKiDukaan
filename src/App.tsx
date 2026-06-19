@@ -1,13 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Loader2, Lock, ShieldCheck } from "lucide-react";
+import { Loader2, Lock, Settings, ShieldCheck, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { FirstLaunch } from "./lib/security/firstLaunch";
 import { LockScreen } from "./lib/security/lockScreen";
 import { RestoreFromRecovery } from "./lib/security/restoreFromRecovery";
 import { type Bootstrap, useSecurity } from "./lib/security/state";
+import { UserManagement } from "./lib/security/userManagement";
 
 const THIRTY_SECONDS = 30_000;
+const FIFTEEN_MINUTES = 15 * 60 * 1_000;
 
 const LOCKED_SESSION = { user: null, locked: true } as const;
 
@@ -19,6 +21,7 @@ export default function App() {
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 
+  // Bootstrap: determine initial app state
   useEffect(() => {
     let cancelled = false;
 
@@ -51,6 +54,7 @@ export default function App() {
     };
   }, [setPhase, setSession]);
 
+  // Activity tracking + idle auto-lock
   useEffect(() => {
     if (phase !== "unlocked") return;
 
@@ -72,6 +76,42 @@ export default function App() {
     };
   }, [phase]);
 
+  // Idle auto-lock: lock after 15 minutes of no interaction
+  useEffect(() => {
+    if (phase !== "unlocked") return;
+
+    let idleTimer: ReturnType<typeof setTimeout>;
+
+    function resetIdleTimer() {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(async () => {
+        try {
+          await invoke("lock");
+        } finally {
+          setSession(LOCKED_SESSION);
+          setPhase("locked");
+        }
+      }, FIFTEEN_MINUTES);
+    }
+
+    function onActivity() {
+      resetIdleTimer();
+    }
+
+    window.addEventListener("mousemove", onActivity);
+    window.addEventListener("keydown", onActivity);
+    window.addEventListener("click", onActivity);
+
+    resetIdleTimer();
+
+    return () => {
+      clearTimeout(idleTimer);
+      window.removeEventListener("mousemove", onActivity);
+      window.removeEventListener("keydown", onActivity);
+      window.removeEventListener("click", onActivity);
+    };
+  }, [phase, setPhase, setSession]);
+
   async function lockNow() {
     try {
       await invoke("lock");
@@ -81,6 +121,7 @@ export default function App() {
     }
   }
 
+  // Loading screen
   if (phase === "loading") {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
@@ -95,41 +136,76 @@ export default function App() {
   if (phase === "first-launch") return <FirstLaunch />;
   if (phase === "locked") return <LockScreen />;
   if (phase === "restore-recovery") return <RestoreFromRecovery />;
+  if (phase === "user-management") return <UserManagement />;
 
+  // Unlocked dashboard
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6">
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
-        <div className="w-full rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8">
+      <section className="mx-auto max-w-lg">
+        <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8">
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-emerald-300">Database unlocked</p>
               <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
-                Welcome {session.user?.name ?? "Owner"}
+                Welcome, {session.user?.name ?? "Owner"}
               </h1>
+              <p className="mt-1 text-sm text-zinc-400">
+                {session.user?.role === "owner" ? "You have full access to all features." : `Logged in as ${session.user?.role}.`}
+              </p>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-300">
               <ShieldCheck className="h-5 w-5" aria-hidden="true" />
             </div>
           </div>
 
+          {/* Bootstrap warning */}
           {bootstrapError ? (
             <p className="mb-5 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200" role="alert">
-              Bootstrap warning: {bootstrapError}
+              {bootstrapError}
             </p>
           ) : null}
 
-          <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-sm leading-6 text-zinc-300">
-            <p className="font-medium text-zinc-100">Slice A scaffold</p>
-            <p className="mt-1 text-zinc-400">Domain features coming in slice B/C/D.</p>
+          {/* Quick actions */}
+          <div className="space-y-3">
+            {session.user?.role === "owner" && (
+              <button
+                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left text-sm transition-colors duration-150 hover:border-white/20 hover:bg-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                type="button"
+                onClick={() => setPhase("user-management")}
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-300">
+                  <Users className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="font-medium text-zinc-100">Staff accounts</p>
+                  <p className="mt-0.5 text-xs text-zinc-500">Add cashiers and stockers</p>
+                </div>
+              </button>
+            )}
+
+            <button
+              className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left text-sm transition-colors duration-150 hover:border-white/20 hover:bg-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              type="button"
+              disabled
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-zinc-500">
+                <Settings className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="font-medium text-zinc-400">Shop settings</p>
+                <p className="mt-0.5 text-xs text-zinc-600">Coming in future slice</p>
+              </div>
+            </button>
           </div>
 
+          {/* Lock button */}
           <button
-            className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-lg bg-indigo-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50"
+            className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-lg border border-white/10 px-4 text-sm font-medium text-zinc-200 transition-colors duration-150 hover:border-white/20 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
             type="button"
             onClick={lockNow}
           >
             <Lock className="mr-2 h-4 w-4" aria-hidden="true" />
-            Lock Now
+            Lock now
           </button>
         </div>
       </section>
