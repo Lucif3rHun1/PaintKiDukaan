@@ -5,7 +5,7 @@ use std::time::UNIX_EPOCH;
 use chrono::{Duration, Utc};
 use rusqlite::Connection;
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::crypto::kdf;
 use crate::crypto::wrap;
@@ -200,9 +200,42 @@ pub(crate) fn read_keywrap_from_keystore(db_path: &Path) -> Result<KeywrapRow, A
 pub(crate) fn write_keywrap_to_keystore(db_path: &Path, row: &KeywrapRow) -> Result<(), AppError> {
     let kp = keystore_path(db_path);
     let conn = open_keystore(&kp)?;
-    // INSERT OR REPLACE for singleton semantics.
-    keywrap::write_initial(&conn, row).or_else(|_| keywrap::update(&conn, row))?;
+    keywrap::upsert(&conn, row)?;
     Ok(())
+}
+
+pub(crate) fn read_lockout_from_keystore(
+    db_path: &Path,
+) -> Result<keywrap::LockoutRow, AppError> {
+    let kp = keystore_path(db_path);
+    let conn = open_keystore(&kp)?;
+    keywrap::read_lockout(&conn, 1).map_err(AppError::Db)
+}
+
+pub(crate) fn write_lockout_to_keystore(
+    db_path: &Path,
+    row: &keywrap::LockoutRow,
+) -> Result<(), AppError> {
+    let kp = keystore_path(db_path);
+    let conn = open_keystore(&kp)?;
+    keywrap::write_lockout(&conn, row).map_err(AppError::Db)
+}
+
+pub(crate) fn clear_lockout_keystore(db_path: &Path) -> Result<(), AppError> {
+    let kp = keystore_path(db_path);
+    let conn = open_keystore(&kp)?;
+    keywrap::clear_lockout(&conn, 1).map_err(AppError::Db)
+}
+
+pub fn default_lockout_row() -> keywrap::LockoutRow {
+    keywrap::LockoutRow {
+        user_id: 1,
+        failed_attempts: 0,
+        locked_until: None,
+        wipe_on_next_fail: false,
+        action: "timeout".to_string(),
+        base_minutes: 15,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -211,19 +244,34 @@ pub(crate) fn write_keywrap_to_keystore(db_path: &Path, row: &KeywrapRow) -> Res
 
 /// Returns the current bootstrap state of the app.
 #[tauri::command]
-pub fn app_bootstrap(state: State<AppState>) -> Result<Bootstrap, AppError> {
-    let db_path = state.db_path.lock().unwrap();
-    let session = state.session.lock().unwrap();
+pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap, AppError> {
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
+    let db_path = app_dir.join("paintkiduakan.db");
+    let keystore_exists = keystore_path(&db_path).exists();
+    let db_exists = db_path.exists();
 
-    match (db_path.as_ref(), session.as_ref()) {
-        (None, _) => Ok(Bootstrap::FirstLaunch),
-        (Some(path), None) => {
-            if !path.exists() && !keystore_path(path).exists() {
-                return Ok(Bootstrap::FirstLaunch);
-            }
-            Ok(Bootstrap::Locked)
+    if !db_exists && !keystore_exists {
+        return Ok(Bootstrap::FirstLaunch);
+    }
+
+    *state.db_path.lock().unwrap() = Some(db_path.clone());
+
+    // Load persisted lockout counter so it survives process restarts.
+    match read_lockout_from_keystore(&db_path) {
+        Ok(row) => {
+            *state.failed_attempts.lock().unwrap() = row.failed_attempts as u32;
         }
-        (Some(_), Some(s)) => Ok(Bootstrap::Unlocked {
+        Err(AppError::Db(rusqlite::Error::QueryReturnedNoRows)) => {}
+        Err(e) => return Err(e),
+    }
+
+    let session = state.session.lock().unwrap();
+    match session.as_ref() {
+        None => Ok(Bootstrap::Locked),
+        Some(s) => Ok(Bootstrap::Unlocked {
             user: s.name.clone(),
             role: s.role.clone(),
         }),
@@ -267,13 +315,13 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
     validate_owner_pin(&pin)?;
 
     // Check active lockout first (spec §9.8: locked_until gates unlock).
-    if let Some(locked_until_unix) = current_lockout_until(&state)? {
+    if let Some(locked_until_unix) = current_lockout_until(&db_path)? {
         let now = now_unix();
         if now < locked_until_unix {
             return Err(AppError::LockedOut { until: locked_until_unix });
         }
         // Lockout window expired — clear it.
-        clear_lockout(&state)?;
+        clear_lockout(&db_path, &state)?;
     }
 
     // Read keywrap from keystore (unencrypted).
@@ -302,6 +350,7 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
             *state.db.lock().unwrap() = Some(db);
             *state.session.lock().unwrap() = Some(user.clone());
             *state.failed_attempts.lock().unwrap() = 0;
+            clear_lockout(&db_path, &state)?;
             state
                 .last_activity
                 .store(now_unix(), std::sync::atomic::Ordering::SeqCst);
@@ -313,12 +362,14 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
         }
         Err(e) => {
             // Wrong PIN (or crypto error). Increment failed attempts and
-            // consult settings for lockout policy (spec §4.4 + §9.8).
+            // persist the counter in the sidecar (spec §4.4 + §9.8 + DB6).
             let attempts = {
                 let mut failed = state.failed_attempts.lock().unwrap();
                 *failed += 1;
                 *failed
             };
+
+            record_failed_attempt(&db_path, attempts)?;
 
             if attempts >= MAX_FAILED_ATTEMPTS {
                 handle_lockout(&state, attempts)?;
@@ -329,19 +380,27 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
     }
 }
 
+/// Persist every failed PIN attempt to the sidecar so the counter survives
+/// process restarts (spec DB6).
+fn record_failed_attempt(db_path: &Path, attempts: u32) -> Result<(), AppError> {
+    let mut row = read_lockout_from_keystore(db_path).unwrap_or_else(|_| default_lockout_row());
+    row.failed_attempts = attempts as i64;
+    write_lockout_to_keystore(db_path, &row)
+}
+
 /// Apply the configured lockout action after too many wrong PINs.
 ///
-/// `action` is read from `settings.lockout_action`:
+/// Policy is read from the unencrypted keystore sidecar so it is available
+/// even when the main DB is locked. Defaults match the spec defaults.
 /// - `"timeout"`: store `locked_until = now + exponential_backoff_minutes`
-///   in the `lockouts` table (per-user) AND zeroize DEK in RAM.
+///   in the sidecar AND zeroize DEK in RAM.
 /// - `"wipe"`:    zeroize DEK in RAM + delete the keywrap row from the
-///   keystore (forcing recovery passphrase to rebuild).
+///   keystore (forcing recovery passphrase + backup to rebuild).
 fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
-    // Read policy from settings (may not exist yet on very first run — defaults).
-    let (action, base_minutes) = match read_lockout_policy(state) {
-        Ok((a, m)) => (a, m),
-        Err(_) => ("timeout".to_string(), 15), // spec default
-    };
+    let db_path = state.db_path.lock().unwrap().clone().ok_or(AppError::NoDb)?;
+    let lockout = read_lockout_from_keystore(&db_path).unwrap_or_else(|_| default_lockout_row());
+    let action = lockout.action.clone();
+    let base_minutes = lockout.base_minutes as u64;
 
     // Index into exponential backoff array by attempts / MAX.
     let idx = ((attempts / MAX_FAILED_ATTEMPTS) as usize).saturating_sub(1);
@@ -352,132 +411,51 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
         .max(base_minutes);
 
     let locked_until_dt = Utc::now() + Duration::minutes(backoff_minutes as i64);
-    let locked_until_iso = locked_until_dt.format("%Y-%m-%d %H:%M:%S").to_string();
-    let locked_until_unix = locked_until_dt.timestamp() as u64;
+    let locked_until_unix = locked_until_dt.timestamp();
+
+    // Always zeroize the decrypted DB handle and session on lockout.
+    *state.db.lock().unwrap() = None;
+    *state.session.lock().unwrap() = None;
 
     match action.as_str() {
         "wipe" => {
-            // Wipe: zeroize DEK + remove keywrap row.
-            *state.db.lock().unwrap() = None;
-            *state.session.lock().unwrap() = None;
-            if let Some(db_path) = state.db_path.lock().unwrap().clone() {
-                // Best-effort wipe of the keywrap row from the keystore.
-                if let Ok(conn) = open_keystore(&keystore_path(&db_path)) {
-                    let _ = conn.execute("DELETE FROM keywrap WHERE id = 1", []);
-                }
+            if let Ok(conn) = open_keystore(&keystore_path(&db_path)) {
+                let _ = conn.execute("DELETE FROM keywrap WHERE id = 1", []);
+                let _ = conn.execute("DELETE FROM lockouts WHERE user_id = 1", []);
             }
             Err(AppError::Wiped)
         }
         _ => {
-            // Timeout: store locked_until in lockouts table (per owner user).
-            // Zeroize DEK so a window-close can't keep the DB unencrypted.
-            *state.db.lock().unwrap() = None;
-            *state.session.lock().unwrap() = None;
-
-            // Persist locked_until in the main DB's lockouts table.
-            // Best-effort: if DB not currently unlocked, we still record
-            // attempts in memory (above) — next unlock will check.
-            if let Some(db) = state.db.lock().unwrap().as_ref() {
-                let _ = db.with_conn(|conn| -> Result<(), rusqlite::Error> {
-                    conn.execute(
-                        "INSERT INTO lockouts (user_id, failed_attempts, locked_until, wipe_on_next_fail) \
-                         VALUES (1, ?1, ?2, 0) \
-                         ON CONFLICT(user_id) DO UPDATE SET \
-                           failed_attempts = excluded.failed_attempts, \
-                           locked_until = excluded.locked_until",
-                        rusqlite::params![
-                            attempts as i64,
-                            locked_until_iso, // ISO timestamp text
-                        ],
-                    )?;
-                    Ok(())
-                });
-            }
-
-            Err(AppError::LockedOut { until: locked_until_unix })
+            let row = keywrap::LockoutRow {
+                user_id: 1,
+                failed_attempts: attempts as i64,
+                locked_until: Some(locked_until_unix),
+                wipe_on_next_fail: false,
+                action,
+                base_minutes: lockout.base_minutes,
+            };
+            write_lockout_to_keystore(&db_path, &row)?;
+            Err(AppError::LockedOut {
+                until: locked_until_unix as u64,
+            })
         }
     }
 }
 
-/// Read `(lockout_action, lockout_timeout_minutes)` from settings (if DB unlocked).
-fn read_lockout_policy(state: &AppState) -> Result<(String, u64), AppError> {
-    let db_guard = state.db.lock().unwrap();
-    let db = db_guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    db.with_conn(|conn| {
-        let mut stmt = conn
-            .prepare("SELECT lockout_action, lockout_timeout_minutes FROM settings WHERE id = 1")?;
-        stmt.query_row([], |r| {
-            let action: String = r.get(0)?;
-            let mins: i64 = r.get(1)?;
-            Ok((action, mins.max(0) as u64))
-        })
-    })
-    .map_err(AppError::Db)
-}
-
-/// If the lockouts table has a `locked_until` in the future, return it.
-fn current_lockout_until(state: &AppState) -> Result<Option<u64>, AppError> {
-    let db_guard = state.db.lock().unwrap();
-    let Some(db) = db_guard.as_ref() else {
-        return Ok(None);
+/// If the sidecar lockouts table has a `locked_until` in the future, return it.
+fn current_lockout_until(db_path: &Path) -> Result<Option<u64>, AppError> {
+    let row = match read_lockout_from_keystore(db_path) {
+        Ok(r) => r,
+        Err(AppError::Db(rusqlite::Error::QueryReturnedNoRows)) => return Ok(None),
+        Err(e) => return Err(e),
     };
-    db.with_conn(|conn| -> Result<Option<u64>, rusqlite::Error> {
-        // locked_until is ISO TEXT (SQLite datetime('now') format).
-        let mut stmt = conn
-            .prepare("SELECT locked_until FROM lockouts WHERE user_id = 1")?;
-        let result: Result<Option<String>, _> = stmt.query_row([], |r| r.get(0));
-        match result {
-            Ok(Some(iso)) => Ok(iso_ts_to_unix(&iso)),
-            Ok(None) => Ok(None),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
-    })
-    .map_err(AppError::Db)
+    Ok(row.locked_until.map(|u| u as u64))
 }
 
-/// Clear the lockout row after the timeout window has expired.
-fn clear_lockout(state: &AppState) -> Result<(), AppError> {
-    let db_guard = state.db.lock().unwrap();
-    let Some(db) = db_guard.as_ref() else {
-        return Ok(());
-    };
-    db.with_conn(|conn| {
-        conn.execute(
-            "UPDATE lockouts SET locked_until = NULL, failed_attempts = 0 WHERE user_id = 1",
-            [],
-        )?;
-        Ok(())
-    })
-    .map_err(AppError::Db)
-}
-
-/// Parse a SQLite `datetime('now')` ISO string ("YYYY-MM-DD HH:MM:SS") to unix seconds.
-fn iso_ts_to_unix(iso: &str) -> Option<u64> {
-    if iso.len() < 19 {
-        return None;
-    }
-    let y: i64 = iso.get(0..4)?.parse().ok()?;
-    let mo: i64 = iso.get(5..7)?.parse().ok()?;
-    let d: i64 = iso.get(8..10)?.parse().ok()?;
-    let h: i64 = iso.get(11..13)?.parse().ok()?;
-    let mi: i64 = iso.get(14..16)?.parse().ok()?;
-    let s: i64 = iso.get(17..19)?.parse().ok()?;
-    days_from_civil(y, mo, d).and_then(|days| {
-        let secs = days.checked_mul(86_400)?.checked_add(h * 3600 + mi * 60 + s)?;
-        if secs < 0 { None } else { Some(secs as u64) }
-    })
-}
-
-/// Howard Hinnant's days_from_civil — converts (y, m, d) → days since 1970-01-01.
-fn days_from_civil(y: i64, m: i64, d: i64) -> Option<i64> {
-    if !(1..=12).contains(&m) { return None; }
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = (y - era * 400) as u64; // [0, 399]
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1; // [0, 365]
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy as u64; // [0, 146096]
-    Some(era * 146_097 + doe as i64 - 719_468)
+/// Clear the sidecar lockout row and reset in-memory failed attempts.
+fn clear_lockout(db_path: &Path, state: &AppState) -> Result<(), AppError> {
+    *state.failed_attempts.lock().unwrap() = 0;
+    clear_lockout_keystore(db_path)
 }
 
 /// Lock the database — drops the DEK (zeroized via Drop).
@@ -595,22 +573,6 @@ mod tests {
         assert_eq!(LOCKOUT_BACKOFF_MINUTES, &[15, 30, 60, 240, 1440]);
     }
 
-    #[test]
-    fn test_iso_ts_to_unix_parses_sqlite_default_format() {
-        // SQLite datetime('now') → "YYYY-MM-DD HH:MM:SS"
-        let unix = iso_ts_to_unix("1970-01-01 00:00:00").unwrap();
-        assert_eq!(unix, 0);
-        let unix = iso_ts_to_unix("2026-01-01 00:00:00").unwrap();
-        // 56 years × ~31.56M seconds = ~1.768B seconds.
-        assert!(unix > 1_760_000_000 && unix < 1_800_000_000);
-    }
-
-    #[test]
-    fn test_iso_ts_to_unix_rejects_bad_input() {
-        assert_eq!(iso_ts_to_unix(""), None);
-        assert_eq!(iso_ts_to_unix("not-a-date"), None);
-        assert_eq!(iso_ts_to_unix("2026-13-99 25:99:99"), None);
-    }
 
     #[test]
     fn test_build_session_locked_when_db_is_none() {
@@ -618,5 +580,17 @@ mod tests {
         let s = build_session(&state);
         assert!(s.locked);
         assert!(s.user.is_none());
+    }
+
+    #[test]
+    fn test_record_failed_attempt_persists_to_sidecar() {
+        let dir = std::env::temp_dir().join(format!("pkd-auth-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("paintkiduakan.db");
+        record_failed_attempt(&db_path, 4).unwrap();
+        let row = read_lockout_from_keystore(&db_path).unwrap();
+        assert_eq!(row.failed_attempts, 4);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
