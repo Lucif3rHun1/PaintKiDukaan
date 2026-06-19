@@ -1,11 +1,12 @@
 import { tauriInvoke as invoke } from "./lib/security/tauri";
 import { initSessionLog } from "./lib/security/sessionLog";
+import logoSmall from "./assets/logo-32.png";
+import logo from "./assets/logo-64.png";
 import {
   LayoutDashboard,
   Loader2,
   Lock,
   Package,
-  ShieldCheck,
   ShoppingCart,
   Settings,
   Users,
@@ -182,7 +183,12 @@ export default function App() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-zinc-900/80 p-8 backdrop-blur">
-          <Loader2 className="h-7 w-7 animate-spin text-indigo-400" aria-hidden="true" />
+          <img
+            src={logo}
+            alt="PaintKiDukaan"
+            className="h-8 w-8 rounded-lg"
+          />
+          <Loader2 className="h-5 w-5 animate-spin text-indigo-400" aria-hidden="true" />
           <p className="text-sm text-zinc-400">Opening secure shop database…</p>
         </div>
       </main>
@@ -203,7 +209,11 @@ export default function App() {
       {/* Sidebar */}
       <aside className="hidden w-56 shrink-0 border-r border-white/10 bg-zinc-900/80 md:flex md:flex-col">
         <div className="flex items-center gap-2 border-b border-white/10 px-4 py-4">
-          <ShieldCheck className="h-5 w-5 text-emerald-400" aria-hidden="true" />
+          <img
+            src={logoSmall}
+            alt=""
+            className="h-7 w-7 rounded-lg"
+          />
           <span className="text-sm font-semibold tracking-tight text-white">PaintKiDukaan</span>
         </div>
 
@@ -244,7 +254,11 @@ export default function App() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex items-center justify-between border-b border-white/10 bg-zinc-900/80 px-4 py-3 md:hidden">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-emerald-400" aria-hidden="true" />
+            <img
+              src={logoSmall}
+              alt=""
+              className="h-6 w-6 rounded-lg"
+            />
             <span className="text-sm font-semibold text-white">PaintKiDukaan</span>
           </div>
           <button

@@ -1,12 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tauriInvoke as invoke } from "./tauri";
+import logo from "../../assets/logo-64.png";
 import {
   AlertCircle,
   Eye,
   EyeOff,
   KeyRound,
   Loader2,
-  ShieldCheck,
   ShoppingBag,
   Lock,
   FileKey,
@@ -160,9 +160,11 @@ export function FirstLaunch() {
                 A few quick steps to get your shop management system running.
               </p>
             </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-300">
-              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-            </div>
+            <img
+              src={logo}
+              alt="PaintKiDukaan"
+              className="h-12 w-12 rounded-xl"
+            />
           </div>
 
           {/* Step indicator with labels */}

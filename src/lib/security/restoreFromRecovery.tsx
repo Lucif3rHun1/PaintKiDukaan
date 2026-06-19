@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tauriInvoke as invoke } from "./tauri";
-import { AlertCircle, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
+import logo from "../../assets/logo-64.png";
+import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
@@ -111,9 +112,11 @@ export function RestoreFromRecovery() {
                 Restore with passphrase
               </h1>
             </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-300">
-              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-            </div>
+            <img
+              src={logo}
+              alt="PaintKiDukaan"
+              className="h-12 w-12 rounded-xl"
+            />
           </div>
 
           <div className="mb-6 flex items-center gap-2" aria-label="Recovery progress">

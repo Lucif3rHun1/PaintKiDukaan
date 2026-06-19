@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tauriInvoke as invoke } from "./tauri";
-import { AlertCircle, KeyRound, Loader2, Lock, ShieldAlert, Timer } from "lucide-react";
+import logo from "../../assets/logo-64.png";
+import { AlertCircle, KeyRound, Loader2, Lock, Timer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
@@ -136,8 +137,12 @@ export function LockScreen() {
                   Recovery required
                 </h1>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-500/10 text-red-300">
-                <ShieldAlert className="h-5 w-5" aria-hidden="true" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-500/10">
+                <img
+                  src={logo}
+                  alt=""
+                  className="h-10 w-10 rounded-xl"
+                />
               </div>
             </div>
 
@@ -178,9 +183,11 @@ export function LockScreen() {
                 Enter the 6-digit PIN to unlock the shop database.
               </p>
             </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-300">
-              <Lock className="h-5 w-5" aria-hidden="true" />
-            </div>
+            <img
+              src={logo}
+              alt="PaintKiDukaan"
+              className="h-12 w-12 rounded-xl"
+            />
           </div>
 
           {/* Error display */}
