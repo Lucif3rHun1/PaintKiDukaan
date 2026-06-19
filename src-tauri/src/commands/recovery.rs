@@ -112,6 +112,7 @@ pub fn first_launch_setup(
         id: 1,
         name: "Owner".into(),
         role: "owner".into(),
+        is_active: true,
     };
     *state.session.lock().unwrap() = Some(user.clone());
 
@@ -195,6 +196,7 @@ pub fn restore_from_recovery(
                 id: r.get(0)?,
                 name: r.get(1)?,
                 role: r.get(2)?,
+                is_active: true,
             })
         })
     })?;

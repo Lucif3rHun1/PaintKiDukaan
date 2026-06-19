@@ -125,6 +125,7 @@ pub struct User {
     pub id: i64,
     pub name: String,
     pub role: String,
+    pub is_active: bool,
 }
 
 /// Spec slice plan §1 cross-slice contract:
@@ -365,6 +366,7 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
                         id: r.get(0)?,
                         name: r.get(1)?,
                         role: r.get(2)?,
+                        is_active: true,
                     })
                 })
             })?;
@@ -608,6 +610,7 @@ pub fn create_user(
                 id: r.get(0)?,
                 name: r.get(1)?,
                 role: r.get(2)?,
+                is_active: true,
             })
         })
     })?;
@@ -631,12 +634,13 @@ pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
 
     let users = db.with_conn(|conn| {
         let mut stmt =
-            conn.prepare("SELECT id, name, role FROM users WHERE active = 1 ORDER BY role, name")?;
+            conn.prepare("SELECT id, name, role, active FROM users ORDER BY role, name")?;
         let rows = stmt.query_map([], |r| {
             Ok(User {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 role: r.get(2)?,
+                is_active: r.get::<_, i64>(3)? != 0,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>()
@@ -721,7 +725,7 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
     }
 
     // Don't overwrite owner session — just return the authenticated session.
-    let authenticated_user = User { id, name, role };
+    let authenticated_user = User { id, name, role, is_active: true };
 
     Ok(Session {
         user: Some(authenticated_user),
