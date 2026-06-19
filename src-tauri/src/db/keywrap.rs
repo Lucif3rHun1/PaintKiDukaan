@@ -1,5 +1,10 @@
 //! Reads and writes the `keywrap` singleton row, and provides DEK
 //! wrapping/unwrapping via the [`crypto`] module.
+//!
+//! The keywrap row lives in a separate unencrypted SQLite sidecar file
+//! (`<db_path>.keystore`) so it can be read without the DEK — needed to
+//! bootstrap `unlock`. See `commands::auth::open_keystore` for the file
+//! location and `KEYSTORE_SCHEMA` for the table DDL.
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -9,10 +14,32 @@ use crate::crypto::kdf::{self, derive_pin_kek, KdfParams};
 use crate::crypto::wrap::{unwrap_dek, wrap_dek};
 
 // ---------------------------------------------------------------------------
+// Schema (shared between production `open_keystore` and tests)
+// ---------------------------------------------------------------------------
+
+/// DDL for the unencrypted keywrap sidecar DB. Single `keywrap` row at id=1.
+pub const KEYSTORE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS keywrap (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  pin_salt BLOB NOT NULL,
+  pin_params BLOB NOT NULL,
+  pin_wrapped_dek BLOB NOT NULL,
+  rec_salt BLOB NOT NULL,
+  rec_params BLOB NOT NULL,
+  rec_wrapped_dek BLOB NOT NULL,
+  backup_salt BLOB NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);";
+
+// ---------------------------------------------------------------------------
 // Row type
 // ---------------------------------------------------------------------------
 
 /// Mirrors the `keywrap` table row (id = 1).
+///
+/// Column naming is internal to the keywrap layer; the operational location
+/// is the sidecar `<db_path>.keystore` file, not the encrypted main DB.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeywrapRow {
     pub id: i64,
@@ -22,6 +49,10 @@ pub struct KeywrapRow {
     pub rec_salt: Vec<u8>,
     pub rec_params: Vec<u8>,
     pub rec_wrapped_dek: Vec<u8>,
+    /// 16-byte salt for backup-key derivation (decision 0.14).
+    /// `backup_key = Argon2id(recovery_passphrase, backup_salt)` using the
+    /// recovery params (256 MiB / t=3 / p=1).
+    pub backup_salt: Vec<u8>,
     pub version: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -35,8 +66,8 @@ pub struct KeywrapRow {
 pub fn read(conn: &Connection) -> Result<KeywrapRow, crate::AppError> {
     let mut stmt = conn.prepare(
         "SELECT id, pin_salt, pin_params, pin_wrapped_dek, \
-         rec_salt, rec_params, rec_wrapped_dek, version, \
-         created_at, updated_at \
+         rec_salt, rec_params, rec_wrapped_dek, backup_salt, \
+         version, created_at, updated_at \
          FROM keywrap WHERE id = 1",
     )?;
 
@@ -50,9 +81,10 @@ pub fn read(conn: &Connection) -> Result<KeywrapRow, crate::AppError> {
                 rec_salt: r.get(4)?,
                 rec_params: r.get(5)?,
                 rec_wrapped_dek: r.get(6)?,
-                version: r.get(7)?,
-                created_at: r.get(8)?,
-                updated_at: r.get(9)?,
+                backup_salt: r.get(7)?,
+                version: r.get(8)?,
+                created_at: r.get(9)?,
+                updated_at: r.get(10)?,
             })
         })
         .map_err(|e| match e {
@@ -68,9 +100,9 @@ pub fn write_initial(conn: &Connection, row: &KeywrapRow) -> Result<(), rusqlite
     conn.execute(
         "INSERT OR IGNORE INTO keywrap \
          (id, pin_salt, pin_params, pin_wrapped_dek, \
-          rec_salt, rec_params, rec_wrapped_dek, version, \
-          created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+          rec_salt, rec_params, rec_wrapped_dek, backup_salt, \
+          version, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         rusqlite::params![
             1i64,
             &row.pin_salt,
@@ -79,6 +111,7 @@ pub fn write_initial(conn: &Connection, row: &KeywrapRow) -> Result<(), rusqlite
             &row.rec_salt,
             &row.rec_params,
             &row.rec_wrapped_dek,
+            &row.backup_salt,
             row.version,
             row.created_at,
             row.updated_at,
@@ -93,7 +126,7 @@ pub fn update(conn: &Connection, row: &KeywrapRow) -> Result<(), rusqlite::Error
         "UPDATE keywrap SET \
          pin_salt = ?1, pin_params = ?2, pin_wrapped_dek = ?3, \
          rec_salt = ?4, rec_params = ?5, rec_wrapped_dek = ?6, \
-         version = ?7, updated_at = ?8 \
+         backup_salt = ?7, version = ?8, updated_at = ?9 \
          WHERE id = 1",
         rusqlite::params![
             &row.pin_salt,
@@ -102,6 +135,7 @@ pub fn update(conn: &Connection, row: &KeywrapRow) -> Result<(), rusqlite::Error
             &row.rec_salt,
             &row.rec_params,
             &row.rec_wrapped_dek,
+            &row.backup_salt,
             row.version,
             row.updated_at,
         ],
@@ -144,6 +178,21 @@ pub fn unwrap_with_recovery(
 
     kdf::zeroize_key(&mut kek);
     Ok(Zeroizing::new(dek))
+}
+
+/// Derive the backup encryption key from the recovery passphrase and stored
+/// backup salt. Per decision 0.14: `Argon2id(recovery_passphrase, backup_salt)`
+/// using the recovery params (256 MiB / t=3 / p=1).
+///
+/// Slice D's backup module calls this. The returned `Zeroizing<[u8;32]>` is
+/// zeroized on drop.
+pub fn derive_backup_key(
+    row: &KeywrapRow,
+    recovery_passphrase: &str,
+) -> Result<Zeroizing<[u8; 32]>, crate::AppError> {
+    let raw = derive_pin_kek(recovery_passphrase, &row.backup_salt, &KdfParams::RECOVERY)
+        .map_err(|e| crate::AppError::Crypto(e.to_string()))?;
+    Ok(Zeroizing::new(raw))
 }
 
 // ---------------------------------------------------------------------------
@@ -213,13 +262,10 @@ fn now_unix() -> i64 {
 mod tests {
     use super::*;
     use crate::crypto::kdf::{random_dek, random_salt, KEK_LEN};
-    use rusqlite::Connection;
 
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("PRAGMA key = 'test';").unwrap();
-        // We need at least the keywrap table for these tests.
-        conn.execute_batch(include_str!("schema_v1.sql")).unwrap();
+        conn.execute_batch(KEYSTORE_SCHEMA).unwrap();
         conn
     }
 
@@ -230,6 +276,7 @@ mod tests {
     ) -> KeywrapRow {
         let pin_salt = random_salt().to_vec();
         let rec_salt = random_salt().to_vec();
+        let backup_salt = random_salt().to_vec();
         let pin_params = serde_json::to_vec(&KdfParams::PIN).unwrap();
         let rec_params = serde_json::to_vec(&KdfParams::RECOVERY).unwrap();
 
@@ -251,6 +298,7 @@ mod tests {
             rec_salt,
             rec_params,
             rec_wrapped_dek,
+            backup_salt,
             version: 1,
             created_at: ts,
             updated_at: ts,
@@ -297,5 +345,47 @@ mod tests {
 
         assert_eq!(*from_pin, *from_rec);
         assert_eq!(*from_pin, dek);
+    }
+
+    #[test]
+    fn test_backup_key_derivation_is_deterministic() {
+        let conn = setup_test_db();
+        let dek = random_dek();
+        let passphrase = "correct horse battery staple";
+
+        let row = make_row("123456", passphrase, &dek);
+        write_initial(&conn, &row).unwrap();
+
+        let k1 = derive_backup_key(&row, passphrase).unwrap();
+        let k2 = derive_backup_key(&row, passphrase).unwrap();
+        assert_eq!(*k1, *k2);
+        // Backup key must differ from the DEK itself.
+        assert_ne!(*k1, dek);
+    }
+
+    #[test]
+    fn test_backup_salt_persists() {
+        let conn = setup_test_db();
+        let dek = random_dek();
+        let row = make_row("123456", "long-passphrase", &dek);
+        let original_backup_salt = row.backup_salt.clone();
+        write_initial(&conn, &row).unwrap();
+
+        let read_back = read(&conn).unwrap();
+        assert_eq!(read_back.backup_salt, original_backup_salt);
+        assert_eq!(read_back.backup_salt.len(), 16); // spec §4.1: 16-byte salts
+    }
+
+    #[test]
+    fn test_wrong_passphrase_returns_wrong_pin() {
+        let conn = setup_test_db();
+        let dek = random_dek();
+        let row = make_row("123456", "long-passphrase", &dek);
+        write_initial(&conn, &row).unwrap();
+
+        match unwrap_with_pin(&row, "000000") {
+            Err(crate::AppError::WrongPin) => {} // expected
+            other => panic!("expected WrongPin, got {:?}", other),
+        }
     }
 }
