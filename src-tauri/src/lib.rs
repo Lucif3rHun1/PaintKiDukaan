@@ -15,6 +15,9 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_keyring_store::Builder::new().build())
+        .plugin(tauri_plugin_oauth::init())
         .manage(commands::auth::AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::auth::app_bootstrap,

@@ -6,6 +6,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::commands::auth::{
     now_unix, read_keywrap_from_keystore, write_keywrap_to_keystore, AppError, AppState, Session,
+    User,
 };
 use crate::crypto::kdf::{self, random_dek, random_salt, KdfParams, KEK_LEN};
 use crate::crypto::wrap::wrap_dek;
@@ -32,7 +33,7 @@ pub fn first_launch_setup(
     let app_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
     std::fs::create_dir_all(&app_dir)?;
     let db_path: PathBuf = app_dir.join("paintkiduakan.db");
 
@@ -40,6 +41,7 @@ pub fn first_launch_setup(
     let dek = random_dek();
     let pin_salt = random_salt();
     let rec_salt = random_salt();
+    let backup_salt = random_salt(); // spec §4.1: 16-byte random
 
     let pin_params = KdfParams::PIN;
     let rec_params = KdfParams::RECOVERY;
@@ -89,6 +91,7 @@ pub fn first_launch_setup(
         rec_salt: rec_salt.to_vec(),
         rec_params: serde_json::to_vec(&rec_params).unwrap(),
         rec_wrapped_dek,
+        backup_salt: backup_salt.to_vec(),
         version: 1,
         created_at: ts,
         updated_at: ts,
@@ -99,18 +102,21 @@ pub fn first_launch_setup(
     *state.db_path.lock().unwrap() = Some(db_path);
     *state.db.lock().unwrap() = Some(db);
 
-    let session = Session {
-        user_id: 1,
-        user_name: "Owner".into(),
+    let user = User {
+        id: 1,
+        name: "Owner".into(),
         role: "owner".into(),
     };
-    *state.session.lock().unwrap() = Some(session.clone());
+    *state.session.lock().unwrap() = Some(user.clone());
 
     state
         .last_activity
         .store(now_unix(), std::sync::atomic::Ordering::SeqCst);
 
-    Ok(session)
+    Ok(Session {
+        user: Some(user),
+        locked: false,
+    })
 }
 
 /// Change the recovery passphrase (owner-only).
@@ -162,24 +168,27 @@ pub fn restore_from_recovery(
     // Open the main DB.
     let db = db::Db::open(&db_path, &dek)?;
 
-    let session = db.with_conn(|conn: &Connection| {
+    let user = db.with_conn(|conn: &Connection| {
         let mut stmt = conn
             .prepare("SELECT id, name, role FROM users WHERE role = 'owner' AND active = 1 LIMIT 1")?;
         stmt.query_row([], |r| {
-            Ok(Session {
-                user_id: r.get(0)?,
-                user_name: r.get(1)?,
+            Ok(User {
+                id: r.get(0)?,
+                name: r.get(1)?,
                 role: r.get(2)?,
             })
         })
     })?;
 
     *state.db.lock().unwrap() = Some(db);
-    *state.session.lock().unwrap() = Some(session.clone());
+    *state.session.lock().unwrap() = Some(user.clone());
     *state.failed_attempts.lock().unwrap() = 0;
     state
         .last_activity
         .store(now_unix(), std::sync::atomic::Ordering::SeqCst);
 
-    Ok(session)
+    Ok(Session {
+        user: Some(user),
+        locked: false,
+    })
 }
