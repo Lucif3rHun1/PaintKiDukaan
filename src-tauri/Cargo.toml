@@ -29,7 +29,7 @@ tauri-plugin-oauth = "2"
 tauri-plugin-keyring-store = "0.2"
 
 # Database (SQLCipher)
-rusqlite = { version = "0.40", features = ["sqlcipher", "bundled", "backup"] }
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher", "backup"] }
 rusqlite_migration = "2.6"
 
 # Crypto
