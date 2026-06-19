@@ -7,7 +7,7 @@
  */
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 
-export type Role = "owner" | "cashier" | "stocker";
+export type Role = "owner" | "admin" | "cashier" | "stocker";
 
 export interface User {
   id: number;
@@ -111,7 +111,7 @@ export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<
 export const ipc = {
   appBootstrap: () => invoke<Bootstrap>("app_bootstrap"),
 
-  getSetting: (key: string) => invoke<unknown | null>("get_setting", { key }),
+  getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: unknown) =>
     invoke<void>("set_setting", { key, value }),
 
