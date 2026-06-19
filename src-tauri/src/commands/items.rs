@@ -23,12 +23,12 @@ pub struct Item {
     pub pack_size: Option<String>,
     pub units_per_box: Option<i64>,
     pub sell_unit: String,
-    pub retail_price: f64,
-    pub cost_price: f64,
+    pub retail_price: i64,
+    pub cost_price: i64,
     pub label_line1: Option<String>,
     pub label_line2: Option<String>,
     pub location_text: Option<String>,
-    pub reorder_level: f64,
+    pub reorder_level: i64,
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -47,7 +47,7 @@ pub enum ItemLookup {
         id: i64,
         sku_code: String,
         name: String,
-        retail_price: f64,
+        retail_price: i64,
         sell_unit: String,
         unit: String,
         units_per_box: Option<i64>,
@@ -58,7 +58,7 @@ pub enum ItemLookup {
         id: i64,
         sku_code: String,
         name: String,
-        reorder_level: f64,
+        reorder_level: i64,
         location_text: Option<String>,
         qty_per_loc: Vec<QtyPerLoc>,
     },
@@ -89,12 +89,12 @@ pub struct NewItem {
     pub pack_size: Option<String>,
     pub units_per_box: Option<i64>,
     pub sell_unit: Option<String>,
-    pub retail_price: f64,
-    pub cost_price: f64,
+    pub retail_price: i64,
+    pub cost_price: i64,
     pub label_line1: Option<String>,
     pub label_line2: Option<String>,
     pub location_text: Option<String>,
-    pub reorder_level: f64,
+    pub reorder_level: i64,
     pub barcode: Option<String>,
 }
 
@@ -107,12 +107,12 @@ pub struct ItemUpdate {
     pub pack_size: Option<String>,
     pub units_per_box: Option<i64>,
     pub sell_unit: Option<String>,
-    pub retail_price: Option<f64>,
-    pub cost_price: Option<f64>,
+    pub retail_price: Option<i64>,
+    pub cost_price: Option<i64>,
     pub label_line1: Option<String>,
     pub label_line2: Option<String>,
     pub location_text: Option<String>,
-    pub reorder_level: Option<f64>,
+    pub reorder_level: Option<i64>,
     pub barcode: Option<String>,
     pub is_active: Option<bool>,
 }
@@ -149,7 +149,7 @@ pub fn create_item(db: State<'_, Db>, payload: NewItem) -> AppResult<Item> {
     if payload.name.trim().is_empty() {
         return Err(AppError::Validation("name is required".into()));
     }
-    if payload.retail_price < 0.0 || payload.cost_price < 0.0 {
+    if payload.retail_price < 0 || payload.cost_price < 0 {
         return Err(AppError::Validation("prices must be >= 0".into()));
     }
 
@@ -421,12 +421,12 @@ mod tests {
             pack_size: Some("4L".into()),
             units_per_box: Some(4),
             sell_unit: Some("unit".into()),
-            retail_price: 850.0,
-            cost_price: 620.0,
+            retail_price: 850,
+            cost_price: 620,
             label_line1: Some("Asian Paints".into()),
             label_line2: Some("Ace 4L".into()),
             location_text: Some("Rack A / Bay 3".into()),
-            reorder_level: 5.0,
+            reorder_level: 5,
             barcode: None,
         };
         let item = db.with_conn_immediate(|tx| {
@@ -458,7 +458,7 @@ mod tests {
                 "SELECT id, sku_code, name, retail_price, cost_price FROM items WHERE id = ?1",
             ).unwrap();
             let mut rows = stmt.query_map([id], |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, f64>(3)?, r.get::<_, f64>(4)?))
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?, r.get::<_, i64>(4)?))
             }).unwrap();
             rows.next().unwrap().unwrap()
         });
@@ -485,7 +485,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let id = db.with_conn(|c| {
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, unit, sell_unit, retail_price, cost_price, reorder_level, is_active) VALUES ('SKU-000001','111','X','pc','unit',10.0,5.0,1.0,1)",
+                "INSERT INTO items (sku_code, barcode, name, unit, sell_unit, retail_price, cost_price, reorder_level, is_active) VALUES ('SKU-000001','111','X','pc','unit',10,5,1,1)",
                 [],
             ).unwrap();
             let id = c.last_insert_rowid();

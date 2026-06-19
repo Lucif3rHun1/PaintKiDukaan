@@ -4,11 +4,7 @@
 -- migrations are idempotent (IF NOT EXISTS) and Slice A's DB already has
 -- these tables, so this is a no-op there.
 --
--- KNOWN DIVERGENCE FROM MASTER PLAN §5.1 (to be resolved at Slice A merge):
--- Money/quantity fields use REAL here; plan says INTEGER (paise). When A's
--- authoritative schema lands, all migrations in this file are no-ops on its
--- DB and our code adapts via a thin field conversion in lib.rs. Tracking
--- this rather than rewriting mid-slice to avoid splitting the data model.
+-- Money fields are stored as INTEGER (whole rupees/paise not used).
 
 -- Customer types (seeded: retail/painter/contractor/dealer).
 CREATE TABLE IF NOT EXISTS customer_types (
@@ -34,7 +30,7 @@ CREATE TABLE IF NOT EXISTS vendors (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
   name             TEXT NOT NULL,
   phone            TEXT,
-  opening_balance  REAL NOT NULL DEFAULT 0,
+  opening_balance  INTEGER NOT NULL DEFAULT 0,
   notes            TEXT,
   is_active        INTEGER NOT NULL DEFAULT 1,
   created_at       TEXT NOT NULL DEFAULT (datetime('now')),
@@ -47,10 +43,11 @@ CREATE INDEX IF NOT EXISTS idx_vendors_active ON vendors(is_active);
 CREATE TABLE IF NOT EXISTS customers (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   name              TEXT NOT NULL,
-  phone             TEXT NOT NULL UNIQUE,        -- ^[6-9]\d{9}$ enforced in app layer
+  phone             TEXT NOT NULL UNIQUE
+                    CHECK(LENGTH(phone) = 10 AND phone GLOB '[6-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'),
   type_id           INTEGER REFERENCES customer_types(id),
   is_flagged        INTEGER NOT NULL DEFAULT 0,  -- owner-only set
-  opening_balance   REAL NOT NULL DEFAULT 0,
+  opening_balance   INTEGER NOT NULL DEFAULT 0 CHECK(opening_balance >= 0),
   notes             TEXT,
   is_active         INTEGER NOT NULL DEFAULT 1,
   created_at        TEXT NOT NULL DEFAULT (datetime('now')),
@@ -74,12 +71,12 @@ CREATE TABLE IF NOT EXISTS items (
   units_per_box   INTEGER,                               -- for box→unit conversion
   sell_unit       TEXT NOT NULL DEFAULT 'unit'
                   CHECK(sell_unit IN ('unit','box')),
-  retail_price    REAL NOT NULL DEFAULT 0,
-  cost_price      REAL NOT NULL DEFAULT 0,
+  retail_price    INTEGER NOT NULL DEFAULT 0,
+  cost_price      INTEGER NOT NULL DEFAULT 0,
   label_line1     TEXT,
   label_line2     TEXT,
   location_text   TEXT,                                  -- free-text "Rack A / Bay 3"
-  reorder_level   REAL NOT NULL DEFAULT 0,
+  reorder_level   INTEGER NOT NULL DEFAULT 0,
   is_active       INTEGER NOT NULL DEFAULT 1,
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
@@ -105,7 +102,7 @@ CREATE TABLE IF NOT EXISTS customer_payments (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_id  INTEGER NOT NULL REFERENCES customers(id),
   sale_id      INTEGER REFERENCES sales(id),
-  amount       REAL NOT NULL,
+  amount       INTEGER NOT NULL,
   mode         TEXT NOT NULL
               CHECK(mode IN ('cash','upi','card','bank','cheque')),
   date         TEXT NOT NULL,
@@ -120,7 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_cust_pay_date ON customer_payments(date);
 CREATE TABLE IF NOT EXISTS vendor_payments (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   vendor_id   INTEGER NOT NULL REFERENCES vendors(id),
-  amount      REAL NOT NULL,
+  amount      INTEGER NOT NULL,
   mode        TEXT NOT NULL
               CHECK(mode IN ('cash','upi','card','bank','cheque')),
   date        TEXT NOT NULL,
@@ -135,8 +132,8 @@ CREATE INDEX IF NOT EXISTS idx_vendor_pay_date   ON vendor_payments(date);
 CREATE TABLE IF NOT EXISTS sales (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_id   INTEGER REFERENCES customers(id),
-  total         REAL NOT NULL DEFAULT 0,
-  paid_amount   REAL NOT NULL DEFAULT 0,
+  total         INTEGER NOT NULL DEFAULT 0,
+  paid_amount   INTEGER NOT NULL DEFAULT 0,
   status        TEXT NOT NULL DEFAULT 'final',     -- 'quotation' | 'final' | 'cancelled'
   date          TEXT NOT NULL,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -148,7 +145,7 @@ CREATE INDEX IF NOT EXISTS idx_sales_status   ON sales(status);
 CREATE TABLE IF NOT EXISTS purchases (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   vendor_id   INTEGER NOT NULL REFERENCES vendors(id),
-  total       REAL NOT NULL DEFAULT 0,
+  total       INTEGER NOT NULL DEFAULT 0,
   date        TEXT NOT NULL,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

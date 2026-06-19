@@ -12,7 +12,7 @@ pub struct Vendor {
     pub id: i64,
     pub name: String,
     pub phone: Option<String>,
-    pub opening_balance: f64,
+    pub opening_balance: i64,
     pub notes: Option<String>,
     pub is_active: bool,
     pub created_at: String,
@@ -22,18 +22,18 @@ pub struct Vendor {
 #[derive(Debug, Serialize, Clone)]
 pub struct VendorOutstanding {
     pub vendor_id: i64,
-    pub opening_balance: f64,
-    pub total_purchases: f64,
-    pub total_payments: f64,
+    pub opening_balance: i64,
+    pub total_purchases: i64,
+    pub total_payments: i64,
     /// opening + total_purchases - total_payments
-    pub outstanding: f64,
+    pub outstanding: i64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct NewVendor {
     pub name: String,
     pub phone: Option<String>,
-    pub opening_balance: Option<f64>,
+    pub opening_balance: Option<i64>,
     pub notes: Option<String>,
 }
 
@@ -41,7 +41,7 @@ pub struct NewVendor {
 pub struct VendorUpdate {
     pub name: Option<String>,
     pub phone: Option<Option<String>>,
-    pub opening_balance: Option<f64>,
+    pub opening_balance: Option<i64>,
     pub notes: Option<Option<String>>,
     pub is_active: Option<bool>,
 }
@@ -49,7 +49,7 @@ pub struct VendorUpdate {
 #[derive(Debug, Deserialize)]
 pub struct VendorPayment {
     pub vendor_id: i64,
-    pub amount: f64,
+    pub amount: i64,
     pub mode: String,
     pub date: String,
     pub notes: Option<String>,
@@ -68,7 +68,7 @@ pub fn create_vendor(db: State<'_, Db>, payload: NewVendor) -> AppResult<Vendor>
             params![
                 payload.name,
                 payload.phone,
-                payload.opening_balance.unwrap_or(0.0),
+                payload.opening_balance.unwrap_or(0),
                 payload.notes,
             ],
         )?;
@@ -77,7 +77,7 @@ pub fn create_vendor(db: State<'_, Db>, payload: NewVendor) -> AppResult<Vendor>
             id,
             name: payload.name,
             phone: payload.phone,
-            opening_balance: payload.opening_balance.unwrap_or(0.0),
+            opening_balance: payload.opening_balance.unwrap_or(0),
             notes: payload.notes,
             is_active: true,
             created_at: tx.query_row(
@@ -213,7 +213,7 @@ pub fn record_vendor_payment(
 ) -> AppResult<VendorOutstanding> {
     let user = current_user()?;
     require_role(&user, &[Role::Owner])?;
-    if payload.amount <= 0.0 {
+    if payload.amount <= 0 {
         return Err(AppError::Validation("amount must be > 0".into()));
     }
     if payload.mode.trim().is_empty() {
@@ -248,15 +248,15 @@ pub fn record_vendor_payment(
 pub fn vendor_outstanding(db: State<'_, Db>, id: i64) -> AppResult<VendorOutstanding> {
     let _ = current_user()?;
     db.with_conn(|c| {
-        let total_purchases: f64 = c.query_row(
+        let total_purchases: i64 = c.query_row(
             "SELECT COALESCE(SUM(total), 0) FROM purchases WHERE vendor_id = ?1",
             params![id], |r| r.get(0),
         )?;
-        let total_payments: f64 = c.query_row(
+        let total_payments: i64 = c.query_row(
             "SELECT COALESCE(SUM(amount), 0) FROM vendor_payments WHERE vendor_id = ?1",
             params![id], |r| r.get(0),
         )?;
-        let opening: f64 = c.query_row(
+        let opening: i64 = c.query_row(
             "SELECT opening_balance FROM vendors WHERE id = ?1",
             params![id], |r| r.get(0),
         )?;
@@ -275,15 +275,15 @@ fn compute_outstanding_tx(
     tx: &rusqlite::Transaction<'_>,
     id: i64,
 ) -> AppResult<VendorOutstanding> {
-    let total_purchases: f64 = tx.query_row(
+    let total_purchases: i64 = tx.query_row(
         "SELECT COALESCE(SUM(total), 0) FROM purchases WHERE vendor_id = ?1",
         params![id], |r| r.get(0),
     )?;
-    let total_payments: f64 = tx.query_row(
+    let total_payments: i64 = tx.query_row(
         "SELECT COALESCE(SUM(amount), 0) FROM vendor_payments WHERE vendor_id = ?1",
         params![id], |r| r.get(0),
     )?;
-    let opening: f64 = tx.query_row(
+    let opening: i64 = tx.query_row(
         "SELECT opening_balance FROM vendors WHERE id = ?1",
         params![id], |r| r.get(0),
     )?;
@@ -353,12 +353,12 @@ mod tests {
         });
         let out = db.with_conn_immediate(|tx| {
             tx.execute(
-                "INSERT INTO vendor_payments (vendor_id, amount, mode, date, user_id) VALUES (?1, 100.0, 'cash', '2024-01-01', 1)",
+                "INSERT INTO vendor_payments (vendor_id, amount, mode, date, user_id) VALUES (?1, 100, 'cash', '2024-01-01', 1)",
                 [id],
             ).unwrap();
             compute_outstanding_tx(tx, id)
         }).unwrap();
         // opening=0, purchases=0, payments=100 → -100 (overpaid)
-        assert!((out.outstanding + 100.0).abs() < 1e-6, "got {}", out.outstanding);
+        assert_eq!(out.outstanding, -100, "got {}", out.outstanding);
     }
 }

@@ -20,7 +20,7 @@ pub struct Customer {
     pub type_id: Option<i64>,
     pub type_name: Option<String>,
     pub is_flagged: bool,
-    pub opening_balance: f64,
+    pub opening_balance: i64,
     pub notes: Option<String>,
     pub is_active: bool,
     pub created_at: String,
@@ -30,12 +30,12 @@ pub struct Customer {
 #[derive(Debug, Serialize, Clone)]
 pub struct CustomerOutstanding {
     pub customer_id: i64,
-    pub opening_balance: f64,
-    pub total_sales: f64,
-    pub total_paid: f64,
-    pub total_payments: f64,
+    pub opening_balance: i64,
+    pub total_sales: i64,
+    pub total_paid: i64,
+    pub total_payments: i64,
     /// opening + (total_sales - total_paid) - total_payments
-    pub outstanding: f64,
+    pub outstanding: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,7 +44,7 @@ pub struct NewCustomer {
     pub phone: String,
     pub type_id: Option<i64>,
     pub is_flagged: Option<bool>,
-    pub opening_balance: Option<f64>,
+    pub opening_balance: Option<i64>,
     pub notes: Option<String>,
 }
 
@@ -54,7 +54,7 @@ pub struct CustomerUpdate {
     pub phone: Option<String>,
     pub type_id: Option<Option<i64>>,
     pub is_flagged: Option<bool>,
-    pub opening_balance: Option<f64>,
+    pub opening_balance: Option<i64>,
     pub notes: Option<Option<String>>,
     pub is_active: Option<bool>,
 }
@@ -120,7 +120,7 @@ fn create_customer_impl(
                 payload.phone,
                 payload.type_id,
                 if is_flagged { 1_i64 } else { 0_i64 },
-                payload.opening_balance.unwrap_or(0.0),
+                payload.opening_balance.unwrap_or(0),
                 payload.notes,
             ],
         )?;
@@ -278,30 +278,25 @@ pub fn lookup_customer(db: State<'_, Db>, phone: String) -> AppResult<Option<Cus
     })
 }
 
-#[tauri::command]
-pub fn customer_outstanding(
-    db: State<'_, Db>,
-    id: i64,
-) -> AppResult<CustomerOutstanding> {
-    let _ = current_user()?;
+fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<CustomerOutstanding> {
     db.with_conn(|c| {
-        let opening: f64 = c.query_row(
+        let opening: i64 = c.query_row(
             "SELECT opening_balance FROM customers WHERE id = ?1",
             params![id],
             |r| r.get(0),
         )?;
-        let total_sales: f64 = c.query_row(
+        let total_sales: i64 = c.query_row(
             "SELECT COALESCE(SUM(total - paid_amount), 0) FROM sales WHERE customer_id = ?1 AND status = 'final'",
             params![id], |r| r.get(0),
         )?;
-        let total_payments: f64 = c.query_row(
+        let total_payments: i64 = c.query_row(
             "SELECT COALESCE(SUM(amount), 0) FROM customer_payments WHERE customer_id = ?1",
             params![id], |r| r.get(0),
         )?;
         // Per spec: outstanding = opening + Σ(sales.total - paid) - Σ(payments).
         // `total_sales` above already encodes Σ(sales.total - sales.paid_amount).
         // We expose `total_paid` for UI clarity but it is not subtracted again.
-        let total_paid: f64 = c.query_row(
+        let total_paid: i64 = c.query_row(
             "SELECT COALESCE(SUM(paid_amount), 0) FROM sales WHERE customer_id = ?1 AND status = 'final'",
             params![id], |r| r.get(0),
         )?;
@@ -317,12 +312,21 @@ pub fn customer_outstanding(
     })
 }
 
+#[tauri::command]
+pub fn customer_outstanding(
+    db: State<'_, Db>,
+    id: i64,
+) -> AppResult<CustomerOutstanding> {
+    let _ = current_user()?;
+    customer_outstanding_impl(db.inner(), id)
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct CustomerBill {
     pub sale_id: i64,
     pub date: String,
-    pub total: f64,
-    pub paid_amount: f64,
+    pub total: i64,
+    pub paid_amount: i64,
     pub status: String,
     pub created_at: String,
 }
@@ -494,7 +498,7 @@ mod tests {
                 phone: None,
                 type_id: None,
                 is_flagged: None,
-                opening_balance: Some(1000.0),
+                opening_balance: Some(1000),
                 notes: None,
                 is_active: None,
             },
@@ -511,13 +515,13 @@ mod tests {
                 phone: None,
                 type_id: None,
                 is_flagged: None,
-                opening_balance: Some(1000.0),
+                opening_balance: Some(1000),
                 notes: None,
                 is_active: None,
             },
         );
         assert!(ok.is_ok(), "owner should be allowed, got: {:?}", ok.as_ref().err());
-        assert_eq!(ok.unwrap().opening_balance, 1000.0);
+        assert_eq!(ok.unwrap().opening_balance, 1000);
     }
 
     #[test]
@@ -532,11 +536,11 @@ mod tests {
                 phone: "9876543210".into(),
                 type_id: None,
                 is_flagged: None,
-                opening_balance: Some(2500.0),
+                opening_balance: Some(2500),
                 notes: None,
             },
         ).unwrap();
-        assert_eq!(c.opening_balance, 2500.0);
+        assert_eq!(c.opening_balance, 2500);
     }
 
     #[test]
@@ -551,7 +555,7 @@ mod tests {
                 phone: "9876543210".into(),
                 type_id: None,
                 is_flagged: None,
-                opening_balance: Some(100.0),
+                opening_balance: Some(100),
                 notes: None,
             },
         )
@@ -577,7 +581,7 @@ mod tests {
         assert_eq!(c.name, "New");
         assert_eq!(c.phone, "8765432109");
         assert_eq!(c.notes.as_deref(), Some("updated"));
-        assert_eq!(c.opening_balance, 100.0);
+        assert_eq!(c.opening_balance, 100);
     }
 
     #[test]
@@ -626,7 +630,7 @@ mod tests {
                 phone: "9876543210".into(),
                 type_id: None,
                 is_flagged: None,
-                opening_balance: Some(0.0),
+                opening_balance: Some(0),
                 notes: None,
             },
         )
@@ -653,53 +657,38 @@ mod tests {
 
         let bills = list_customer_bills_impl(&db, customer.id).unwrap();
         assert_eq!(bills.len(), 3, "draft sale should be excluded");
-        assert_eq!(bills[0].total, 300.0);
-        assert_eq!(bills[1].total, 250.0);
-        assert_eq!(bills[2].total, 180.0);
+        assert_eq!(bills[0].total, 300);
+        assert_eq!(bills[1].total, 250);
+        assert_eq!(bills[2].total, 180);
     }
 
     #[test]
-    fn outstanding_formula() {
+    fn customer_outstanding_command() {
         set_current_user(Some(owner()));
         let db = Db::open_in_memory().unwrap();
         let cust_id = db.with_conn(|c| {
             c.execute(
-                "INSERT INTO customers (name, phone, opening_balance) VALUES ('X', '9876543210', 500.0)",
+                "INSERT INTO customers (name, phone, opening_balance) VALUES ('X', '9876543210', 500)",
                 [],
             ).unwrap();
             c.last_insert_rowid()
         });
         db.with_conn(|c| {
-            // sale: total=1000, paid=400. Unpaid=600.
             c.execute(
-                "INSERT INTO sales (customer_id, total, paid_amount, status, date) VALUES (?1, 1000.0, 400.0, 'final', '2024-01-01')",
+                "INSERT INTO sales (customer_id, total, paid_amount, status, date) VALUES (?1, 1000, 400, 'final', '2024-01-01')",
                 [cust_id],
             ).unwrap();
-            // payment: 200
             c.execute(
-                "INSERT INTO customer_payments (customer_id, amount, mode, date, user_id) VALUES (?1, 200.0, 'cash', '2024-01-02', 1)",
+                "INSERT INTO customer_payments (customer_id, amount, mode, date, user_id) VALUES (?1, 200, 'cash', '2024-01-02', 1)",
                 [cust_id],
             ).unwrap();
         });
-        let out = db.with_conn(|c| {
-            let total_sales: f64 = c.query_row(
-                "SELECT COALESCE(SUM(total - paid_amount), 0) FROM sales WHERE customer_id = ?1 AND status = 'final'",
-                [cust_id], |r| r.get(0),
-            ).unwrap();
-            let _total_paid: f64 = c.query_row(
-                "SELECT COALESCE(SUM(paid_amount), 0) FROM sales WHERE customer_id = ?1 AND status = 'final'",
-                [cust_id], |r| r.get(0),
-            ).unwrap();
-            let total_payments: f64 = c.query_row(
-                "SELECT COALESCE(SUM(amount), 0) FROM customer_payments WHERE customer_id = ?1",
-                [cust_id], |r| r.get(0),
-            ).unwrap();
-            let opening: f64 = c.query_row(
-                "SELECT opening_balance FROM customers WHERE id = ?1", [cust_id], |r| r.get(0),
-            ).unwrap();
-            opening + total_sales - total_payments
-        });
-        // 500 + 600 - 200 = 900
-        assert!((out - 900.0).abs() < 1e-6, "got {out}");
+        let out = customer_outstanding_impl(&db, cust_id).unwrap();
+        assert_eq!(out.customer_id, cust_id);
+        assert_eq!(out.opening_balance, 500);
+        assert_eq!(out.total_sales, 600);
+        assert_eq!(out.total_paid, 400);
+        assert_eq!(out.total_payments, 200);
+        assert_eq!(out.outstanding, 900);
     }
 }
