@@ -9,6 +9,8 @@ import { type Bootstrap, useSecurity } from "./lib/security/state";
 
 const THIRTY_SECONDS = 30_000;
 
+const LOCKED_SESSION = { user: null, locked: true } as const;
+
 export default function App() {
   const phase = useSecurity((state) => state.phase);
   const session = useSecurity((state) => state.session);
@@ -24,20 +26,23 @@ export default function App() {
       .then((bootstrap) => {
         if (cancelled) return;
         if (bootstrap.kind === "first-launch") {
-          setSession(null);
+          setSession(LOCKED_SESSION);
           setPhase("first-launch");
         } else if (bootstrap.kind === "locked") {
-          setSession(null);
+          setSession(LOCKED_SESSION);
           setPhase("locked");
         } else {
-          setSession({ user_id: 0, user_name: bootstrap.user, role: bootstrap.role });
+          setSession({
+            user: { id: 0, name: bootstrap.user, role: bootstrap.role },
+            locked: false,
+          });
           setPhase("unlocked");
         }
       })
       .catch((error) => {
         if (cancelled) return;
         setBootstrapError(error instanceof Error ? error.message : String(error));
-        setSession(null);
+        setSession(LOCKED_SESSION);
         setPhase("locked");
       });
 
@@ -71,7 +76,7 @@ export default function App() {
     try {
       await invoke("lock");
     } finally {
-      setSession(null);
+      setSession(LOCKED_SESSION);
       setPhase("locked");
     }
   }
@@ -99,7 +104,7 @@ export default function App() {
             <div>
               <p className="text-sm font-medium text-emerald-300">Database unlocked</p>
               <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
-                Welcome {session?.user_name ?? "Owner"}
+                Welcome {session.user?.name ?? "Owner"}
               </h1>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-300">

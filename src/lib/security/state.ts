@@ -2,10 +2,15 @@ import { create, type StoreApi, type UseBoundStore } from "zustand";
 
 export type Role = "owner" | "cashier" | "stocker";
 
-export interface Session {
-  user_id: number;
-  user_name: string;
+export interface User {
+  id: number;
+  name: string;
   role: Role;
+}
+
+export interface Session {
+  user: User | null;
+  locked: boolean;
 }
 
 export type Bootstrap =
@@ -22,22 +27,24 @@ export type AppPhase =
 
 interface SecurityState {
   phase: AppPhase;
-  session: Session | null;
+  session: Session;
   setPhase(p: AppPhase): void;
-  setSession(s: Session | null): void;
+  setSession(s: Session): void;
   reset(): void;
   isUnlocked(): boolean;
   isOwner(): boolean;
 }
 
+const emptySession: Session = { user: null, locked: true };
+
 export const useSecurity: UseBoundStore<StoreApi<SecurityState>> = create<SecurityState>(
   (set, get) => ({
     phase: "loading",
-    session: null,
+    session: emptySession,
     setPhase: (phase) => set({ phase }),
     setSession: (session) => set({ session }),
-    reset: () => set({ phase: "loading", session: null }),
-    isUnlocked: () => get().phase === "unlocked" && get().session !== null,
-    isOwner: () => get().session?.role === "owner",
+    reset: () => set({ phase: "loading", session: emptySession }),
+    isUnlocked: () => get().phase === "unlocked" && get().session.user !== null,
+    isOwner: () => get().session.user?.role === "owner",
   }),
 );
