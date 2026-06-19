@@ -122,7 +122,7 @@ export const ipc = {
   enrollDevice: (name: string, role: string) =>
     invoke<Device>("enroll_device", { name, role }),
   revokeDevice: (deviceId: string) =>
-    invoke<void>("revoke_device", { deviceId }),
+    invoke<void>("revoke_device", { device_id: deviceId }),
 
   listLocations: () =>
     tauriInvoke<Array<{ id: number; name: string; is_active: boolean }>>("list_locations").then(

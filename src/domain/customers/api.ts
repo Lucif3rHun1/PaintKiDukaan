@@ -28,7 +28,7 @@ export async function listCustomers(
 ): Promise<Customer[]> {
   return invoke<Customer[]>("list_customers", {
     query: query ?? null,
-    includeInactive,
+    include_inactive: includeInactive,
   });
 }
 

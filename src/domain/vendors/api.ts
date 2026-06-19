@@ -20,7 +20,7 @@ export async function listVendors(
 ): Promise<Vendor[]> {
   return invoke<Vendor[]>("list_vendors", {
     query: query ?? null,
-    includeInactive,
+    include_inactive: includeInactive,
   });
 }
 

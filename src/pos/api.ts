@@ -34,7 +34,7 @@ export const getSale = (id: number): Promise<Sale | null> =>
   isTauri() ? tauriInvoke<Sale | null>("cmd_get_sale", { id }) : Promise.resolve(null);
 export const listSales = (fromDate?: string, toDate?: string, limit = 100): Promise<Sale[]> =>
   isTauri()
-    ? tauriInvoke<Sale[]>("cmd_list_sales", { fromDate, toDate, limit })
+    ? tauriInvoke<Sale[]>("cmd_list_sales", { from_date: fromDate, to_date: toDate, limit })
     : Promise.resolve([]);
 export const holdBill = (hb: { payload_json: string; note?: string | null }): Promise<number> =>
   isTauri() ? tauriInvoke<number>("cmd_hold_bill", { hb }) : Promise.resolve(0);
@@ -47,26 +47,26 @@ export const deleteHeld = (id: number): Promise<boolean> =>
 export const createInward = (req: NewPurchase): Promise<PurchaseCreated> =>
   isTauri() ? tauriInvoke<PurchaseCreated>("cmd_create_inward", { req }) : Promise.resolve({ id: 0, print_label: false });
 export const lastCost = (itemId: number): Promise<number | null> =>
-  isTauri() ? tauriInvoke<number | null>("cmd_last_cost", { itemId }) : Promise.resolve(null);
+  isTauri() ? tauriInvoke<number | null>("cmd_last_cost", { item_id: itemId }) : Promise.resolve(null);
 export const listPurchases = (fromDate?: string, toDate?: string, limit = 100): Promise<Purchase[]> =>
   isTauri()
-    ? tauriInvoke<Purchase[]>("cmd_list_purchases", { fromDate, toDate, limit })
+    ? tauriInvoke<Purchase[]>("cmd_list_purchases", { from_date: fromDate, to_date: toDate, limit })
     : Promise.resolve([]);
 export const getPurchase = (id: number): Promise<Purchase | null> =>
   isTauri() ? tauriInvoke<Purchase | null>("cmd_get_purchase", { id }) : Promise.resolve(null);
 export const movementsForItem = (itemId: number, limit = 200): Promise<StockMovement[]> =>
   isTauri()
-    ? tauriInvoke<StockMovement[]>("cmd_movements_for_item", { itemId, limit })
+    ? tauriInvoke<StockMovement[]>("cmd_movements_for_item", { item_id: itemId, limit })
     : Promise.resolve([]);
 
 // ----- Day close -----
 export const cashSalesFor = (userId: number, date: string): Promise<CashSalesSummary> =>
   isTauri()
-    ? tauriInvoke<CashSalesSummary>("cmd_cash_sales_for", { userId, date })
+    ? tauriInvoke<CashSalesSummary>("cmd_cash_sales_for", { user_id: userId, date })
     : Promise.resolve({ date, user_id: userId, cash_sales_paise: 0, non_cash_sales_paise: 0, total_sales_paise: 0 });
 export const lastOpeningFor = (userId: number, date: string): Promise<number> =>
   isTauri()
-    ? tauriInvoke<number>("cmd_last_opening_for", { userId, date })
+    ? tauriInvoke<number>("cmd_last_opening_for", { user_id: userId, date })
     : Promise.resolve(0);
 export const backupGateCheck = (): Promise<BackupGate> =>
   isTauri() ? tauriInvoke<BackupGate>("cmd_backup_gate_check", {}) : Promise.resolve({ needs_prompt: false, age_hours: null, reason: "browser", last_backup_at: null });
@@ -74,7 +74,7 @@ export const triggerDayClose = (req: NewDayClose): Promise<number> =>
   isTauri() ? tauriInvoke<number>("cmd_trigger_day_close", { req }) : Promise.resolve(0);
 export const lockState = (userId: number, date: string): Promise<DayLockState> =>
   isTauri()
-    ? tauriInvoke<DayLockState>("cmd_lock_state", { userId, date })
+    ? tauriInvoke<DayLockState>("cmd_lock_state", { user_id: userId, date })
     : Promise.resolve({ date, user_id: userId, is_locked: false, day_close_id: null });
 export const listDayClose = (limit = 60): Promise<DayClose[]> =>
   isTauri() ? tauriInvoke<DayClose[]>("cmd_list_day_close", { limit }) : Promise.resolve([]);
@@ -86,7 +86,7 @@ export const adminReopenDay = (id: number): Promise<boolean> =>
 // ----- Reports -----
 export const dailySales = (fromDate: string, toDate: string): Promise<DailySalesReport> =>
   isTauri()
-    ? tauriInvoke<DailySalesReport>("cmd_daily_sales", { fromDate, toDate })
+    ? tauriInvoke<DailySalesReport>("cmd_daily_sales", { from_date: fromDate, to_date: toDate })
     : Promise.resolve({ from_date: fromDate, to_date: toDate, rows: [], grand_total: 0, total_discount: 0, bill_count: 0 });
 export const stockReport = (): Promise<StockReport> =>
   isTauri()

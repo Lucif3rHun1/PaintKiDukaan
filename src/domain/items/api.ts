@@ -40,7 +40,7 @@ export async function boxUnitConversion(
   qty: number,
 ): Promise<ConversionResult> {
   return invoke<ConversionResult>("box_unit_conversion", {
-    itemId,
+    item_id: itemId,
     qty,
   });
 }

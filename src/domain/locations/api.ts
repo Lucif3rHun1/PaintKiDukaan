@@ -8,7 +8,7 @@ import type { Location, NewLocation } from "../types";
 export async function listLocations(
   includeInactive = false,
 ): Promise<Location[]> {
-  return invoke<Location[]>("list_locations", { includeInactive });
+  return invoke<Location[]>("list_locations", { include_inactive: includeInactive });
 }
 
 export async function createLocation(
@@ -24,8 +24,8 @@ export async function renameLocation(
 ): Promise<Location> {
   return invoke<Location>("rename_location", {
     id,
-    newName,
-    newRack,
+    new_name: newName,
+    new_rack: newRack,
   });
 }
 

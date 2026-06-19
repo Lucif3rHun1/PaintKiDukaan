@@ -7,7 +7,7 @@ import type { CustomerType, NewCustomerType } from "../types";
 export async function listCustomerTypes(
   includeInactive = false,
 ): Promise<CustomerType[]> {
-  return invoke<CustomerType[]>("list_customer_types", { includeInactive });
+  return invoke<CustomerType[]>("list_customer_types", { include_inactive: includeInactive });
 }
 
 export async function addCustomerType(
@@ -20,7 +20,7 @@ export async function renameCustomerType(
   id: number,
   newName: string,
 ): Promise<CustomerType> {
-  return invoke<CustomerType>("rename_customer_type", { id, newName });
+  return invoke<CustomerType>("rename_customer_type", { id, new_name: newName });
 }
 
 export async function deactivateCustomerType(id: number): Promise<void> {
