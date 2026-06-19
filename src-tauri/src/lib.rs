@@ -5,9 +5,12 @@
 //! stubbed here so this slice compiles standalone; Slice A will replace
 //! the stubs with concrete implementations at merge time.
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use serde_json::json;
 use tauri::Manager;
 
 // Public shell-layer modules (all owned by Slice D).
@@ -68,7 +71,6 @@ pub struct User {
 // ============================================================================
 
 /// Application state injected into every Tauri command via `tauri::State`.
-#[derive(Default)]
 pub struct AppState {
     /// Open SQLCipher DB. `None` while locked / before first launch.
     pub db: Mutex<Option<Arc<Db>>>,
@@ -80,12 +82,49 @@ pub struct AppState {
     pub last_backup_unix_ms: Mutex<Option<i64>>,
     /// Last test-restore timestamp (unix ms).
     pub last_test_restore_unix_ms: Mutex<Option<i64>>,
+    /// In-memory settings store used until Slice A merges the real DB layer.
+    pub settings: Mutex<HashMap<String, serde_json::Value>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            db: Mutex::new(None),
+            session: Mutex::new(None),
+            scan_target: Mutex::new(scan::ScanTarget::default()),
+            last_backup_unix_ms: Mutex::new(None),
+            last_test_restore_unix_ms: Mutex::new(None),
+            settings: Mutex::new(default_settings()),
+        }
     }
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn default_settings() -> HashMap<String, serde_json::Value> {
+    let mut m = HashMap::new();
+    m.insert("shop_name".into(), json!("PaintKiDukaan"));
+    m.insert("shop_address".into(), json!(""));
+    m.insert("shop_phone".into(), json!(""));
+    m.insert("shop_gstin".into(), json!(""));
+    m.insert("currency".into(), json!("INR"));
+    m.insert("tax_inclusive".into(), json!(false));
+    m.insert("scanner_min_length".into(), json!(4));
+    m.insert("scanner_avg_ms_per_char".into(), json!(25));
+    m.insert("idle_lock_minutes".into(), json!(5));
+    m.insert("auto_lock_minutes".into(), json!(5));
+    m.insert("lockout_action".into(), json!("lock"));
+    m.insert("lockout_timeout_minutes".into(), json!(30));
+    m.insert("backup_retention_days".into(), json!(30));
+    m.insert("label_template".into(), json!("{name}\nMRP: {mrp}"));
+    m.insert("receipt_header".into(), json!(""));
+    m.insert("receipt_footer".into(), json!("Thank you for shopping with us!"));
+    m.insert("receipt_terms".into(), json!(""));
+    m
 }
 
 // ============================================================================
