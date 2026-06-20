@@ -11,11 +11,18 @@
  *
  * Bulk list is component-state (not persisted to DB) — re-decision v1.
  */
-import { useEffect, useMemo, useState } from "react";
-import { listItems } from "./api";
-import type { Item } from "../types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Printer } from "lucide-react";
+import { listItems, listLabelPrints, recordLabelPrint } from "./api";
+import type { Item, LabelPrintRecord } from "../types";
 import { BarcodeThumb } from "./BarcodeThumb";
-import { printLabelBatch, type BatchLabel, type PrintConfig } from "../../pos/print";
+import {
+  buildLabelPdfBlob,
+  LOCKED_FORMAT,
+  printLabelBatch,
+  type BatchLabel,
+  type PrintConfig,
+} from "../../pos/print";
 
 type PrinterType = "thermal" | "laser-a4";
 type ThermalSize = "50x25" | "50x50" | "38x25";
@@ -31,6 +38,20 @@ function configFromSelect(printer: PrinterType, choice: string): PrintConfig {
     return { type: "thermal", size: choice as ThermalSize };
   }
   return { type: "laser-a4", perSheet: Number(choice) as LaserPerSheet };
+}
+
+function formatFromSelect(printer: PrinterType, choice: string): string {
+  return `${printer}-${choice}`;
+}
+
+function configFromFormat(format: string): PrintConfig {
+  if (format.startsWith("thermal-")) {
+    return { type: "thermal", size: format.slice("thermal-".length) as ThermalSize };
+  }
+  if (format.startsWith("laser-a4-")) {
+    return { type: "laser-a4", perSheet: Number(format.slice("laser-a4-".length)) as LaserPerSheet };
+  }
+  return { type: "thermal", size: "50x25" };
 }
 
 interface GeneratedRow {
@@ -56,8 +77,11 @@ export function BulkLabelsPage() {
   const [sizeChoice, setSizeChoice] = useState<string>("50x25");
 
   const [batch, setBatch] = useState<GeneratedRow[]>([]);
+  const [history, setHistory] = useState<LabelPrintRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // Load items on mount.
   useEffect(() => {
@@ -70,6 +94,22 @@ export function BulkLabelsPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    try {
+      const rows = await listLabelPrints({ limit: 50 });
+      setHistory(rows);
+    } catch (e) {
+      setActionMsg(`Failed to load print history: ${String(e)}`);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadHistory();
   }, []);
 
   const selectedItem = useMemo(
@@ -132,6 +172,49 @@ export function BulkLabelsPage() {
     setActionMsg("Batch cleared.");
   }
 
+  async function recordCurrentBatch(format: string) {
+    const grouped = new Map<number, GeneratedRow & { qty: number }>();
+    for (const row of batch) {
+      const existing = grouped.get(row.itemId);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        grouped.set(row.itemId, { ...row, qty: 1 });
+      }
+    }
+    await Promise.all(
+      Array.from(grouped.values()).map((row) =>
+        recordLabelPrint({
+          itemId: row.itemId,
+          barcode: row.label.barcode,
+          qty: row.qty,
+          format,
+          line1: row.label.line1 ?? null,
+          line2: row.label.line2 ?? null,
+        }),
+      ),
+    );
+    await loadHistory();
+  }
+
+  async function reprint(record: LabelPrintRecord) {
+    setBusy(true);
+    setActionMsg(null);
+    try {
+      const labels = Array.from({ length: Math.max(1, record.qty) }, () => ({
+        barcode: record.barcode,
+        line1: record.line1 ?? undefined,
+        line2: record.line2 ?? undefined,
+      }));
+      await printLabelBatch(labels, configFromFormat(record.format));
+      setActionMsg(`Reprinted ${record.qty} label${record.qty === 1 ? "" : "s"} for ${record.itemName}.`);
+    } catch (e) {
+      setActionMsg(`Failed: ${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleDownload() {
     if (batch.length === 0) return;
     setBusy(true);
@@ -142,6 +225,7 @@ export function BulkLabelsPage() {
         batch.map((r) => r.label),
         cfg,
       );
+      await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
       setActionMsg(`Downloaded PDF with ${batch.length} label(s).`);
     } catch (e) {
       setActionMsg(`Failed: ${String(e)}`);
@@ -156,15 +240,12 @@ export function BulkLabelsPage() {
     setActionMsg(null);
     try {
       const cfg = configFromSelect(printer, sizeChoice);
-      // Generate to a Blob, open in a new tab — browsers' built-in PDF viewer.
-      const { jsPDF } = await import("jspdf");
       const labels = batch.map((r) => r.label);
-      // We can't easily intercept the save() blob, so we re-run the build
-      // here using a tiny inline PDF generator that returns a blob.
-      const blob = await buildLabelPdfBlob(labels, cfg, jsPDF);
+      const blob = await buildLabelPdfBlob(labels, cfg);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setActionMsg(`Opened preview with ${batch.length} label(s).`);
+      setPreviewUrl(url);
+      setActionMsg(`Preview ready — review before downloading or printing.`);
     } catch (e) {
       setActionMsg(`Failed: ${String(e)}`);
     } finally {
@@ -178,9 +259,8 @@ export function BulkLabelsPage() {
     setActionMsg(null);
     try {
       const cfg = configFromSelect(printer, sizeChoice);
-      const { jsPDF } = await import("jspdf");
       const labels = batch.map((r) => r.label);
-      const blob = await buildLabelPdfBlob(labels, cfg, jsPDF);
+      const blob = await buildLabelPdfBlob(labels, cfg);
       const url = URL.createObjectURL(blob);
       const iframe = document.createElement("iframe");
       iframe.style.display = "none";
@@ -195,6 +275,7 @@ export function BulkLabelsPage() {
           URL.revokeObjectURL(url);
         }
       };
+      await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
       setActionMsg(`Sent ${batch.length} label(s) to printer.`);
     } catch (e) {
       setActionMsg(`Failed: ${String(e)}`);
@@ -204,8 +285,9 @@ export function BulkLabelsPage() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-6 lg:grid-cols-3">
       {/* LEFT: composer */}
+      {/* INSERTED: nothing */}
       <div className="space-y-4 rounded-lg border border-white/10 bg-zinc-900/60 p-4">
         <h3 className="text-sm font-semibold text-zinc-100">Compose label</h3>
 
@@ -281,8 +363,8 @@ export function BulkLabelsPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <label className="block text-xs text-zinc-400">Printer type</label>
+<div className="space-y-2">
+          <label className="block text-xs text-zinc-400">Printer type</label>
             <select
               value={printer}
               onChange={(e) => setPrinter(e.target.value as PrinterType)}
@@ -291,6 +373,9 @@ export function BulkLabelsPage() {
               <option value="thermal">Thermal</option>
               <option value="laser-a4">Laser (A4 sheet)</option>
             </select>
+            <p className="text-[10px] text-zinc-500">
+              Format locked to <span className="font-mono">{LOCKED_FORMAT}</span> · monochrome · fixed DPI.
+            </p>
           </div>
           <div className="space-y-2">
             <label className="block text-xs text-zinc-400">
@@ -433,71 +518,97 @@ export function BulkLabelsPage() {
           </button>
         </div>
       </div>
+
+      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-100">Print history (last 50)</h3>
+          <button
+            type="button"
+            onClick={() => void loadHistory()}
+            disabled={historyLoading || busy}
+            className="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5 disabled:opacity-50"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="max-h-[510px] overflow-y-auto rounded border border-white/10 bg-zinc-950">
+          {historyLoading ? (
+            <p className="p-4 text-center text-xs text-zinc-500">Loading history…</p>
+          ) : history.length === 0 ? (
+            <p className="p-4 text-center text-xs text-zinc-500">
+              No print history yet. Print or download a batch to save it here.
+            </p>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {history.map((row) => (
+                <div key={row.id} className="space-y-2 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-zinc-100">{row.itemName}</p>
+                      <p className="mt-0.5 font-mono text-[10px] text-zinc-500">{row.barcode}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void reprint(row)}
+                      disabled={busy}
+                      className="inline-flex shrink-0 items-center gap-1 rounded border border-sky-400/30 px-2 py-1 text-[10px] text-sky-200 hover:bg-sky-400/10 disabled:opacity-50"
+                    >
+                      <Printer className="h-3 w-3" />
+                      Reprint
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-[10px] text-zinc-400">
+                    <span>Qty {row.qty}</span>
+                    <span>{row.format}</span>
+                    <span className="text-right">{row.createdAt}</span>
+                  </div>
+                  {(row.line1 || row.line2) && (
+                    <p className="truncate text-[10px] text-zinc-500">
+                      {[row.line1, row.line2].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Preview pane — verify-before-print */}
+      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-100">Verify before print</h3>
+          <button
+            type="button"
+            onClick={() => {
+              if (previewUrl) URL.revokeObjectURL(previewUrl);
+              setPreviewUrl(null);
+            }}
+            disabled={!previewUrl}
+            className="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5 disabled:opacity-50"
+          >
+            Clear
+          </button>
+        </div>
+        {previewUrl ? (
+          <iframe
+            src={previewUrl}
+            title="Label PDF preview"
+            className="h-[640px] w-full rounded border border-white/10 bg-zinc-950"
+          />
+        ) : (
+          <p className="rounded border border-dashed border-white/10 bg-zinc-950 p-6 text-center text-xs text-zinc-500">
+            Click <span className="rounded bg-zinc-800 px-1 text-[10px]">Preview PDF</span> to
+            render the batch here. Review the layout, then download or print.
+          </p>
+        )}
+        <p className="text-[10px] text-zinc-500">
+          Format locked to <span className="font-mono">{LOCKED_FORMAT}</span>.
+          Page size + density come from the Printer type + Label size dropdowns.
+        </p>
+      </div>
     </div>
   );
 }
 
-/**
- * Build a label PDF identical to printLabelBatch but return a Blob
- * instead of triggering save(), so the caller can open it in a new
- * tab (preview) or load it into a hidden iframe (print).
- */
-async function buildLabelPdfBlob(
-  batch: BatchLabel[],
-  config: PrintConfig,
-  jsPDFCtor: typeof import("jspdf").jsPDF,
-): Promise<Blob> {
-  // We duplicate printLabelBatch's layout here because printLabelBatch
-  // always calls save() — Tauri would treat that as a download.
-  const JsBarcode = (await import("jsbarcode")).default;
-  const renderPng = (value: string): string => {
-    const c = document.createElement("canvas");
-    JsBarcode(c, value, { format: "CODE128", displayValue: false, margin: 1, height: 40 });
-    return c.toDataURL("image/png");
-  };
-
-  let doc: import("jspdf").jsPDF;
-  if (config.type === "thermal") {
-    const SIZE: Record<string, [number, number]> = {
-      "50x25": [50, 25],
-      "50x50": [50, 50],
-      "38x25": [38, 25],
-    };
-    const [w, h] = SIZE[config.size];
-    doc = new jsPDFCtor({ unit: "mm", format: [w, h], orientation: "landscape" });
-    const fontSize = h <= 25 ? 7 : 9;
-    for (let i = 0; i < batch.length; i++) {
-      if (i > 0) doc.addPage([w, h], "landscape");
-      const label = batch[i];
-      const bcW = Math.min(h - 4, w * 0.55);
-      const bcH = h - 6;
-      doc.addImage(renderPng(label.barcode), "PNG", 2, 3, bcW, bcH);
-      doc.setFontSize(fontSize);
-      if (label.line1) doc.text(label.line1.slice(0, 30), bcW + 4, h / 2 - 2);
-      if (label.line2) doc.text(label.line2.slice(0, 30), bcW + 4, h / 2 + 2);
-    }
-  } else {
-    const layouts = {
-      21: { cols: 3, rows: 7, w: 70, h: 37 },
-      65: { cols: 5, rows: 13, w: 38, h: 21 },
-    } as const;
-    const layout = layouts[config.perSheet];
-    doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "portrait" });
-    doc.setFontSize(7);
-    for (let i = 0; i < batch.length; i++) {
-      const onPage = i % config.perSheet;
-      if (i > 0 && onPage === 0) doc.addPage();
-      const label = batch[i];
-      const col = onPage % layout.cols;
-      const row = Math.floor(onPage / layout.cols);
-      const x = col * layout.w;
-      const y = row * layout.h;
-      const bcW = layout.w - 4;
-      const bcH = layout.h - 8;
-      doc.addImage(renderPng(label.barcode), "PNG", x + 2, y + 2, bcW, bcH);
-      if (label.line1) doc.text(label.line1.slice(0, 22), x + 2, y + layout.h - 4);
-      if (label.line2) doc.text(label.line2.slice(0, 22), x + 2, y + layout.h - 1);
-    }
-  }
-  return doc.output("blob");
-}

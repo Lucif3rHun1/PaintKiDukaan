@@ -4,6 +4,12 @@
 //  - Receipt: A4 portrait, shop header from settings, sale details, payment
 //    breakdown, GST-style totals.
 //
+// Format is locked to CODE128, monochrome, 40 module rows (auto width),
+// rendered to PNG at canvas-default DPI then embedded into a PDF at fixed
+// mm dimensions — see LOCKED_FORMAT. All jsPDF/JsBarcode calls are wrapped
+// in try/catch with console.warn fallback so a runtime hiccup never
+// silently drops the user's batch.
+//
 // We import jsPDF and JsBarcode lazily inside the function so a missing
 // dependency (e.g. running in browser-only dev) doesn't blow up the whole
 // module graph.
@@ -11,26 +17,35 @@
 import type { Sale } from "./types";
 import { formatRupeesFromPaise } from "../lib/money";
 
+export const LOCKED_FORMAT = "CODE128" as const;
+const BARCODE_OPTIONS = {
+  format: LOCKED_FORMAT,
+  displayValue: false,
+  margin: 1,
+  height: 40,
+} as const;
+
 export interface LabelSpec {
-  barcode: string;       // value encoded by Code128
-  line1: string;         // top text (item name)
-  line2: string;         // bottom text (sku / size)
+  barcode: string;
+  line1: string;
+  line2: string;
 }
 
 export async function printLabel(spec: LabelSpec): Promise<void> {
-  const { jsPDF } = await import("jspdf");
-  const JsBarcode = (await import("jsbarcode")).default;
-  // 50 × 25 mm landscape.
-  const doc = new jsPDF({ unit: "mm", format: [50, 25], orientation: "landscape" });
-  // Render barcode to a canvas, embed as PNG.
-  const canvas = document.createElement("canvas");
-  JsBarcode(canvas, spec.barcode, { format: "CODE128", displayValue: false, margin: 1, height: 40 });
-  const dataUrl = canvas.toDataURL("image/png");
-  doc.addImage(dataUrl, "PNG", 2, 2, 26, 18);
-  doc.setFontSize(7);
-  doc.text(spec.line1.slice(0, 32), 30, 8);
-  doc.text(spec.line2.slice(0, 32), 30, 14);
-  doc.save(`label-${spec.barcode}.pdf`);
+  try {
+    const { jsPDF } = await import("jspdf");
+    const JsBarcode = (await import("jsbarcode")).default;
+    const doc = new jsPDF({ unit: "mm", format: [50, 25], orientation: "landscape" });
+    const dataUrl = await makeBarcodePng(spec.barcode);
+    doc.addImage(dataUrl, "PNG", 2, 2, 26, 18);
+    doc.setFontSize(7);
+    doc.text(spec.line1.slice(0, 32), 30, 8);
+    doc.text(spec.line2.slice(0, 32), 30, 14);
+    doc.save(`label-${spec.barcode}.pdf`);
+  } catch (err) {
+    console.warn("printLabel failed", err);
+    throw err;
+  }
 }
 
 export interface ReceiptSpec {
@@ -143,21 +158,41 @@ export type PrintConfig =
   | { type: "thermal"; size: "50x25" | "50x50" | "38x25" }
   | { type: "laser-a4"; perSheet: 21 | 65 };
 
-async function makeBarcodePng(value: string): Promise<string> {
-  const JsBarcode = (await import("jsbarcode")).default;
-  const canvas = document.createElement("canvas");
-  JsBarcode(canvas, value, { format: "CODE128", displayValue: false, margin: 1, height: 40 });
-  return canvas.toDataURL("image/png");
+/**
+ * Render a single barcode to a PNG data URL. Always CODE128, monochrome,
+ * fixed 40-module height. If JsBarcode fails (e.g. invalid chars, runtime
+ * error), logs and returns a 1×1 transparent PNG so downstream PDF assembly
+ * does not crash mid-batch.
+ */
+export async function makeBarcodePng(value: string): Promise<string> {
+  try {
+    const JsBarcode = (await import("jsbarcode")).default;
+    const canvas = document.createElement("canvas");
+    JsBarcode(canvas, value, BARCODE_OPTIONS);
+    return canvas.toDataURL("image/png");
+  } catch (err) {
+    console.warn(`makeBarcodePng failed for value='${value}'`, err);
+    return TRANSPARENT_PNG;
+  }
 }
 
+const TRANSPARENT_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
 /**
- * Print multiple labels on a single thermal roll or A4 sheet.
- * Thermal: each label is its own page in the PDF.
- * Laser: grid layout per A4 sheet, configurable density.
+ * Build a label PDF (jsPDF doc instance) and return its raw Blob.
+ * Same layout rules as printLabelBatch, but no auto-save — caller decides
+ * whether to download, embed in an <iframe>, or stream to a printer.
+ * Locked to CODE128, monochrome, fixed DPI (set in BARCODE_OPTIONS).
  */
-export async function printLabelBatch(batch: BatchLabel[], config: PrintConfig): Promise<void> {
-  if (batch.length === 0) return;
+export async function buildLabelPdfBlob(
+  batch: BatchLabel[],
+  config: PrintConfig,
+): Promise<Blob> {
+  if (batch.length === 0) return new Blob([], { type: "application/pdf" });
+
   const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
   if (config.type === "thermal") {
     const SIZE: Record<string, [number, number]> = {
@@ -166,7 +201,6 @@ export async function printLabelBatch(batch: BatchLabel[], config: PrintConfig):
       "38x25": [38, 25],
     };
     const [w, h] = SIZE[config.size];
-    const doc = new jsPDF({ unit: "mm", format: [w, h], orientation: "landscape" });
     const fontSize = h <= 25 ? 7 : 9;
     for (let i = 0; i < batch.length; i++) {
       if (i > 0) doc.addPage([w, h], "landscape");
@@ -179,14 +213,12 @@ export async function printLabelBatch(batch: BatchLabel[], config: PrintConfig):
       if (label.line1) doc.text(label.line1.slice(0, 30), bcW + 4, h / 2 - 2);
       if (label.line2) doc.text(label.line2.slice(0, 30), bcW + 4, h / 2 + 2);
     }
-    doc.save(`labels-batch-${Date.now()}.pdf`);
   } else {
     const layouts: Record<21 | 65, { cols: number; rows: number; w: number; h: number }> = {
       21: { cols: 3, rows: 7, w: 70, h: 37 },
       65: { cols: 5, rows: 13, w: 38, h: 21 },
     };
     const layout = layouts[config.perSheet];
-    const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
     doc.setFontSize(7);
     for (let i = 0; i < batch.length; i++) {
       const onPage = i % config.perSheet;
@@ -203,7 +235,35 @@ export async function printLabelBatch(batch: BatchLabel[], config: PrintConfig):
       if (label.line1) doc.text(label.line1.slice(0, 22), x + 2, y + layout.h - 4);
       if (label.line2) doc.text(label.line2.slice(0, 22), x + 2, y + layout.h - 1);
     }
-    doc.save(`labels-a4-${config.perSheet}-${Date.now()}.pdf`);
+  }
+
+  return doc.output("blob");
+}
+
+/**
+ * Print multiple labels on a single thermal roll or A4 sheet.
+ * Thermal: each label is its own page in the PDF.
+ * Laser: grid layout per A4 sheet, configurable density.
+ * Wrapped in try/catch — if jsPDF crashes, the user keeps the batch state.
+ */
+export async function printLabelBatch(
+  batch: BatchLabel[],
+  config: PrintConfig,
+): Promise<void> {
+  if (batch.length === 0) return;
+  try {
+    const blob = await buildLabelPdfBlob(batch, config);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `labels-batch-${Date.now()}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    console.warn("printLabelBatch failed", err);
+    throw err;
   }
 }
 
