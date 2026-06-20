@@ -13,7 +13,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Printer } from "lucide-react";
-import { listItems, listLabelPrints, recordLabelPrint } from "./api";
+import { getSetting, listItems, listLabelPrints, recordLabelPrint } from "./api";
 import type { Item, LabelPrintRecord } from "../types";
 import { BarcodeThumb } from "./BarcodeThumb";
 import {
@@ -82,8 +82,8 @@ export function BulkLabelsPage() {
   const [busy, setBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [shopName, setShopName] = useState("");
 
-  // Load items on mount.
   useEffect(() => {
     let cancelled = false;
     setLoadingItems(true);
@@ -91,6 +91,9 @@ export function BulkLabelsPage() {
       .then((rows) => !cancelled && setItems(rows))
       .catch((e: unknown) => !cancelled && setItemError(String(e)))
       .finally(() => !cancelled && setLoadingItems(false));
+    getSetting("shop_name")
+      .then((v) => !cancelled && setShopName(v || ""))
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -117,21 +120,20 @@ export function BulkLabelsPage() {
     [items, selectedItemId],
   );
 
-  // When the user picks a different item, auto-fill label fields.
   useEffect(() => {
     if (!selectedItem) {
       setLine1("");
       setLine2("");
       return;
     }
-    setLine1(selectedItem.label_line1 ?? selectedItem.name);
+    setLine1(shopName || selectedItem.label_line1 || "");
+    const brandPart = (selectedItem as Record<string, unknown>).brand ?? "";
+    const brandName = typeof brandPart === "string" ? brandPart : "";
+    const unitLabel = selectedItem.unit_label ?? selectedItem.unit_code ?? "";
     setLine2(
-      selectedItem.label_line2 ??
-        [selectedItem.sku_code, selectedItem.unit_label ?? selectedItem.unit_code ?? null]
-          .filter(Boolean)
-          .join(" · "),
+      [brandName, selectedItem.name, unitLabel].filter(Boolean).join(" "),
     );
-  }, [selectedItem]);
+  }, [selectedItem, shopName]);
 
   // When printer changes, snap size choice to a valid value.
   useEffect(() => {

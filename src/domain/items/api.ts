@@ -55,6 +55,14 @@ export async function getBrand(id: number): Promise<Brand> {
   return invoke<Brand>("get_brand", { id });
 }
 
+export async function createBrand(name: string, codePrefix: string): Promise<Brand> {
+  return invoke<Brand>("create_brand", { name, codePrefix });
+}
+
+export async function deactivateBrand(id: number): Promise<void> {
+  return invoke<void>("deactivate_brand", { id });
+}
+
 export async function updateBrandCodePrefix(
   id: number,
   codePrefix: string,
@@ -95,4 +103,8 @@ export async function listLabelPrints(args: {
   limit?: number | null;
 } = {}): Promise<LabelPrintRecord[]> {
   return invoke<LabelPrintRecord[]>("list_label_prints", args);
+}
+
+export async function getSetting(key: string): Promise<string> {
+  return invoke<string>("get_setting", { key });
 }

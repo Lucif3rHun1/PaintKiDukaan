@@ -6,9 +6,10 @@
 import { useEffect, useState } from "react";
 import { MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
-import { createItem, listBrands, updateItem } from "./api";
+import { createItem, listBrands, updateItem, previewNextBarcode } from "./api";
 import { LocationAutocomplete } from "./LocationAutocomplete";
 import { listLocations } from "../locations/api";
+import { BarcodeThumb } from "./BarcodeThumb";
 import type {
   AppError,
   Brand,
@@ -44,7 +45,6 @@ const SELL_UNITS: SellUnit[] = ["unit", "box"];
 
 export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [brand, setBrand] = useState(initial?.brand ?? "");
   const [brandId, setBrandId] = useState<number | null>(initial?.brand_id ?? null);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [category, setCategory] = useState(initial?.category ?? "");
@@ -62,23 +62,21 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   const [promoPricePaise, setPromoPricePaise] = useState<number | null>(
     initial?.promo_price_paise ?? null,
   );
-  const [labelLine1, setLabelLine1] = useState(initial?.label_line1 ?? "");
-  const [labelLine2, setLabelLine2] = useState(initial?.label_line2 ?? "");
   const [locationText, setLocationText] = useState(
     initial?.location_text ?? "",
   );
   const [primaryLocationId, setPrimaryLocationId] = useState<number>(
     initial?.primary_location_id ?? 0,
   );
-  const [barcodeFormat, setBarcodeFormat] = useState(
-    initial?.barcode_format ?? "CODE128",
-  );
-  const [minQty, setMinQty] = useState(initial?.min_qty?.toString() ?? "0");
-  const [barcode, setBarcode] = useState(initial?.barcode ?? "");
+  const [minQty, setMinQty] = useState(initial?.min_qty?.toString() ?? "1");
   const [locations, setLocations] = useState<Location[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [predictedBarcode, setPredictedBarcode] = useState<string>(
+    initial?.barcode ?? "",
+  );
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
 
   useEffect(() => {
     listLocations(false)
@@ -92,8 +90,22 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     listBrands()
       .then((b) => setBrands(b))
       .catch(() => setBrands([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Predict barcode when brand or name changes (create mode only).
+  useEffect(() => {
+    if (mode !== "create" || !brandId || !name.trim()) {
+      if (mode === "create" && !brandId) setPredictedBarcode("");
+      return;
+    }
+    setBarcodeLoading(true);
+    previewNextBarcode(brandId, name.trim())
+      .then((bc) => setPredictedBarcode(bc))
+      .catch(() => setPredictedBarcode(""))
+      .finally(() => setBarcodeLoading(false));
+  }, [brandId, name, mode]);
+
+  const selectedBrand = brands.find((b) => b.id === brandId) ?? null;
 
   function validate(): boolean {
     const e: Record<string, string> = {};
@@ -114,7 +126,6 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     try {
       const base = {
         name: name.trim(),
-        brand: brand || null,
         brand_id: brandId,
         category: category || null,
         unit,
@@ -123,13 +134,10 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         retail_price_paise: retailPricePaise,
         cost_paise: costPaise,
         promo_price_paise: promoPricePaise,
-        label_line1: labelLine1 || null,
-        label_line2: labelLine2 || null,
         location_text: locationText || null,
         primary_location_id: primaryLocationId,
         min_qty: Number(minQty),
-        barcode_format: barcodeFormat,
-        barcode: barcode || null,
+        barcode: null as string | null,
       };
       if (mode === "create") {
         const item = await toast.promise(createItem(base as NewItem), {
@@ -164,6 +172,9 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     }
   }
 
+  const displayBarcode =
+    mode === "edit" ? (initial?.barcode ?? "") : predictedBarcode;
+
   return (
     <form
       onSubmit={(e) => void submit(e)}
@@ -190,7 +201,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           />
         </Field>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Brand (mapped)">
+          <Field label="Brand">
             <select
               value={brandId ?? 0}
               onChange={(e) =>
@@ -206,27 +217,19 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               ))}
             </select>
           </Field>
-          <Field label="Brand (free text fallback)">
+          <Field label="Category">
             <input
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              placeholder="Only used when no mapped brand"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
               className="input-dark"
             />
           </Field>
         </div>
-        <Field label="Category">
-          <input
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="input-dark"
-          />
-        </Field>
       </Section>
 
-      {/* Units */}
+      {/* Units & pricing */}
       <Section title="Units & pricing">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           <Field label="Unit">
             <select
               value={unit}
@@ -261,6 +264,16 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                 </option>
               ))}
             </select>
+          </Field>
+          <Field label="Min qty" error={fieldErrors.min_qty}>
+            <input
+              value={minQty}
+              type="number"
+              step="0.01"
+              min="0"
+              onChange={(e) => setMinQty(e.target.value)}
+              className="input-dark"
+            />
           </Field>
         </div>
         <div className="grid grid-cols-3 gap-4">
@@ -301,53 +314,34 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         </div>
       </Section>
 
-      {/* Label */}
-      <Section title="Shelf label">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Line 1 (top)">
-            <input
-              value={labelLine1}
-              onChange={(e) => setLabelLine1(e.target.value)}
-              className="input-dark"
-            />
-          </Field>
-          <Field label="Line 2 (bottom)">
-            <input
-              value={labelLine2}
-              onChange={(e) => setLabelLine2(e.target.value)}
-              className="input-dark"
-            />
-          </Field>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <Field label="Format">
-            <select
-              value={barcodeFormat}
-              onChange={(e) => setBarcodeFormat(e.target.value)}
-              className="input-dark"
+      {/* Barcode */}
+      <Section title="Barcode">
+        <div className="flex items-end gap-4">
+          <div className="flex-1">
+            <Field
+              label="Barcode"
+              hint={mode === "create" ? "Auto-generated on save (from brand prefix)" : "Assigned on creation — cannot be changed"}
             >
-              <option value="CODE128">CODE128 (locked)</option>
-            </select>
-          </Field>
-          <Field label="Barcode value" hint="Leave blank to auto-generate">
-            <input
-              value={barcode}
-              onChange={(e) => setBarcode(e.target.value)}
-              placeholder={initial?.sku_code ?? "auto"}
-              className="input-dark font-mono"
-            />
-          </Field>
-          <Field label="Min qty" error={fieldErrors.min_qty}>
-            <input
-              value={minQty}
-              type="number"
-              step="0.01"
-              min="0"
-              onChange={(e) => setMinQty(e.target.value)}
-              className="input-dark"
-            />
-          </Field>
+              <input
+                value={displayBarcode}
+                readOnly
+                placeholder={barcodeLoading ? "Loading…" : "Will be auto-generated"}
+                className="input-dark cursor-not-allowed font-mono text-zinc-400"
+              />
+            </Field>
+          </div>
+          <div className="flex-shrink-0 pb-5">
+            <BarcodeThumb value={displayBarcode} containerWidth={140} containerHeight={48} />
+          </div>
         </div>
+        {selectedBrand && mode === "create" && predictedBarcode && (
+          <p className="text-[11px] text-zinc-500">
+            Predicted: <span className="font-mono text-zinc-400">{predictedBarcode}</span> — actual barcode assigned on save
+          </p>
+        )}
+        <p className="text-[11px] text-zinc-500">
+          Manage shelf labels in the <span className="text-zinc-400">Barcodes</span> tab
+        </p>
       </Section>
 
       {/* Location */}
