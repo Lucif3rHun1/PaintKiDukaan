@@ -1,9 +1,30 @@
 // POS shared types — mirror src-tauri/src/commands/{sales,purchases,day_close,reports,sequences}.rs
 // Keep these in sync; small drift here will break the IPC bridge.
 
+export type PaymentMode = "cash" | "upi" | "card" | "bank" | "cheque";
+
 export interface PaymentSplit {
-  mode: "cash" | "upi" | "card" | "bank" | "cheque";
+  mode: PaymentMode;
   amount: number; // paise
+}
+
+export interface SalePaymentRecord {
+  id: number;
+  sale_id: number;
+  mode: PaymentMode;
+  amount: number;
+  date: string;
+  notes: string | null;
+  user_id: number;
+  created_at: string;
+}
+
+export interface NewSalePayment {
+  sale_id: number;
+  mode: PaymentMode;
+  amount: number;
+  date?: string | null;
+  notes?: string | null;
 }
 
 export interface SaleItem {
@@ -11,7 +32,8 @@ export interface SaleItem {
   item_name: string;
   qty: number;             // base units (INTEGER)
   price: number;
-  unit_type: "unit" | "box";
+  unit_id: number;
+  unit_code: string;
   line_discount: number;
   shade_note?: string | null;
   line_order: number;
@@ -37,9 +59,13 @@ export interface Sale {
 
 export interface CartLine {
   item_id: number;
-  qty: number;
+  item_name: string;
+  in_stock_at_add: boolean;
+  current_qty_at_add: number;
+  qty: number;             // base units
   price: number;
-  unit_type: "unit" | "box";
+  unit_id: number;
+  unit_code: string;
   line_discount: number;
   shade_note?: string | null;
 }
@@ -63,19 +89,13 @@ export interface ConvertQuotation {
   acknowledge_flag: boolean;
 }
 
-export interface HeldBill {
-  id: number;
-  note: string | null;
-  created_at: string;
-  payload_json: string;
-}
-
 // ---- Inward / purchases ----
 
 export interface InwardLine {
   item_id: number;
   qty: number;
-  unit_type: "unit" | "box";
+  unit_id: number;
+  unit_code: string;
   cost_price: number;
   retail_price: number;
   location_id: number;
@@ -97,7 +117,9 @@ export interface PurchaseCreated {
 export interface PurchaseItem {
   item_id: number;
   item_name: string;
-  qty: number;             // base units (after box conversion)
+  qty: number;             // base units
+  unit_id: number;
+  unit_code: string;
   cost_price: number;
   retail_price: number;
   location_id: number;
@@ -234,6 +256,63 @@ export interface CustomerOutstanding {
 export interface VendorOutstanding {
   vendor_id: number;
   name: string;
+  outstanding: number;
+}
+
+export interface ItemSearchHit {
+  id: number;
+  sku_code: string;
+  barcode: string | null;
+  name: string;
+  brand: string | null;
+  retail_price_paise: number;
+  unit_id: number;
+  unit_code: string;
+  unit_label: string;
+  current_qty: number;
+}
+
+export interface CustomerLedgerPayment {
+  payment_id: number;
+  date: string;
+  amount: number;
+  mode: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface CustomerLedgerBill {
+  sale_id: number;
+  date: string;
+  total: number;
+  paid_amount: number;
+  status: string;
+  created_at: string;
+}
+
+export type LedgerEntry =
+  | { kind: "sale"; sale: CustomerLedgerBill }
+  | { kind: "payment"; payment: CustomerLedgerPayment };
+
+export interface LedgerRow {
+  date: string;
+  entry: LedgerEntry;
+  running_balance: number;
+}
+
+export interface CustomerLedger {
+  customer_id: number;
+  opening_balance: number;
+  rows: LedgerRow[];
+  closing_balance: number;
+}
+
+export interface CustomerCreditSale {
+  sale_id: number;
+  no: string;
+  date: string;
+  total: number;
+  paid_amount: number;
   outstanding: number;
 }
 

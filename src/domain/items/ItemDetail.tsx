@@ -2,10 +2,13 @@
  * ItemDetail — read view of a single item with Print label + Edit actions.
  * Dark theme consistent with the rest of the app shell.
  */
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Badge, Button, Card } from "../../components/ui";
 import type { Item } from "../types";
+import { listLocations } from "../locations/api";
+import type { Location } from "../types";
 
 interface Props {
   item: Item;
@@ -16,8 +19,24 @@ interface Props {
 
 export function ItemDetail({ item, onEdit, onPrintLabel, role }: Props) {
   const canEdit = role === "owner" || role === "stocker";
+  const [locations, setLocations] = useState<Location[]>([]);
+  useEffect(() => {
+    listLocations(false).then(setLocations).catch(() => setLocations([]));
+  }, []);
+  const primaryName = useMemo(
+    () => locations.find((l) => l.id === item.primary_location_id)?.name ?? "—",
+    [locations, item.primary_location_id],
+  );
+  const inStock = item.current_qty > 0;
+  const stockView =
+    role === "cashier"
+      ? inStock
+        ? <Badge variant="success">In stock</Badge>
+        : <Badge variant="danger">Out of stock</Badge>
+      : String(item.current_qty);
+
   return (
-    <Card className="space-y-4">
+    <Card className="space-y-4 border-white/10 bg-zinc-900 p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold text-zinc-100">{item.name}</h2>
@@ -48,13 +67,11 @@ export function ItemDetail({ item, onEdit, onPrintLabel, role }: Props) {
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <Row label="Brand" value={item.brand ?? "—"} />
         <Row label="Category" value={item.category ?? "—"} />
-        <Row label="Unit" value={item.unit} />
+        <Row label="Unit" value={item.unit_label ?? item.unit_code ?? "—"} />
         <Row
-          label="Sell unit"
-          value={`${item.sell_unit}${item.units_per_pack ? ` ×${item.units_per_pack}` : ""}`}
+          label="Location"
+          value={item.location_text ? `${primaryName} / ${item.location_text}` : primaryName}
         />
-        <Row label="Location hint" value={item.location_text ?? "—"} />
-        <Row label="Primary location" value={String(item.primary_location_id)} />
         <Row
           label="Retail"
           value={`₹${(item.retail_price_paise / 100).toFixed(2)}`}
@@ -72,7 +89,7 @@ export function ItemDetail({ item, onEdit, onPrintLabel, role }: Props) {
           />
         ) : null}
         <Row label="Min qty" value={String(item.min_qty)} />
-        <Row label="Stock" value={String(item.current_qty)} />
+        <Row label="Stock" value={stockView} />
         <Row label="Barcode" value={item.barcode ?? "—"} />
         <Row label="Format" value={item.barcode_format} />
         <Row label="Active" value={item.is_active ? "Yes" : "No"} />

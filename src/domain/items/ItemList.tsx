@@ -37,6 +37,8 @@ import { createItem, listItems, updateItem } from "./api";
 import type { Item, NewItem } from "../types";
 import { ItemForm } from "./ItemForm";
 import { printLabel } from "../../pos/print";
+import { listLocations } from "../locations/api";
+import type { Location } from "../types";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
@@ -46,6 +48,7 @@ type Mode = "list" | "create" | "edit" | "view";
 
 export function ItemList({ role }: Props) {
   const [items, setItems] = useState<Item[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [query, setQuery] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
@@ -80,6 +83,24 @@ export function ItemList({ role }: Props) {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, brand, category, lowStockOnly, includeInactive]);
+
+  useEffect(() => {
+    listLocations(false)
+      .then(setLocations)
+      .catch(() => setLocations([]));
+  }, []);
+
+  const locationNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const loc of locations) map.set(loc.id, loc.name);
+    return map;
+  }, [locations]);
+
+  function formatLocation(item: Item): string {
+    const where = locationNameById.get(item.primary_location_id) ?? "—";
+    const hint = item.location_text?.trim();
+    return hint ? `${where} / ${hint}` : where;
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -148,9 +169,7 @@ export function ItemList({ role }: Props) {
         line1: item.label_line1 ?? item.name,
         line2:
           item.label_line2 ??
-          [item.sku_code, item.units_per_pack ? `×${item.units_per_pack}` : ""]
-            .filter(Boolean)
-            .join(" · "),
+          item.sku_code,
       });
       toast.success("Label PDF generated");
     } catch (e) {
@@ -325,7 +344,7 @@ export function ItemList({ role }: Props) {
                     <tr>
                       <th className="py-2 pl-3">SKU</th>
                       <th>Name</th>
-                      <th>Units/pack</th>
+                      <th>Unit</th>
                       <th>Location</th>
                       {role === "owner" ? (
                         <th className="text-right">Cost</th>
@@ -345,7 +364,12 @@ export function ItemList({ role }: Props) {
                           onClick={() => openEdit(item)}
                           className={[
                             "cursor-pointer border-b border-white/5 hover:bg-white/5",
-                            lowStock ? "bg-red-500/5" : "",
+                            item.current_qty === 0
+                              ? "border-l-2 border-l-red-500/60 bg-red-500/5"
+                              : "",
+                            lowStock && item.current_qty > 0
+                              ? "border-l-2 border-l-amber-400/60 bg-amber-500/5"
+                              : "",
                             !item.is_active ? "opacity-60" : "",
                           ].join(" ")}
                         >
@@ -368,10 +392,10 @@ export function ItemList({ role }: Props) {
                             </div>
                           </td>
                           <td className="text-zinc-300">
-                            {item.units_per_pack ?? "—"}
+                            {item.unit_label ?? item.unit_code ?? "—"}
                           </td>
                           <td className="text-zinc-300">
-                            {item.location_text ?? "—"}
+                            {formatLocation(item)}
                           </td>
                           {role === "owner" ? (
                             <td className="text-right text-zinc-200">
@@ -388,6 +412,7 @@ export function ItemList({ role }: Props) {
                             <StockBadges
                               currentQty={item.current_qty}
                               minQty={item.min_qty}
+                              role={role}
                             />
                           </td>
                           <td
@@ -456,22 +481,40 @@ export function ItemList({ role }: Props) {
 function StockBadges({
   currentQty,
   minQty,
+  role,
 }: {
   currentQty: number;
   minQty: number;
+  role: "owner" | "cashier" | "stocker";
 }) {
-  if (currentQty === 0)
-    return <Badge variant="danger">Out of stock</Badge>;
-  if (currentQty <= minQty) {
+  const isOut = currentQty === 0;
+  const isLow = !isOut && currentQty <= minQty;
+  if (role === "cashier") {
+    if (isOut) return <Badge variant="danger">Out of stock</Badge>;
+    if (isLow) return <Badge variant="warning">Low in stock</Badge>;
+    return <Badge variant="success">In stock</Badge>;
+  }
+  if (isOut)
     return (
-      <span className="inline-flex items-center gap-1">
+      <Badge variant="danger" data-testid="stock-out">
+        Out of stock
+      </Badge>
+    );
+  if (isLow) {
+    return (
+      <span className="inline-flex items-center gap-1" data-testid="stock-low">
         <TriangleAlert
           className="h-4 w-4 text-amber-400"
           aria-hidden="true"
         />
-        <Badge variant="warning">Low · {currentQty}</Badge>
+        <Badge variant="warning">Low in stock · {currentQty}</Badge>
       </span>
     );
   }
-  return <span className="text-xs text-zinc-400">{currentQty}</span>;
+  return (
+    <span className="inline-flex items-center gap-1" data-testid="stock-in">
+      <Badge variant="success">In stock</Badge>
+      <span className="text-xs text-zinc-400">· {currentQty}</span>
+    </span>
+  );
 }
