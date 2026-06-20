@@ -51,6 +51,7 @@ export interface Item {
   current_qty: number;
   created_at: string;
   updated_at: string;
+  brand_id: number | null;
 }
 
 export interface QtyPerLoc {
@@ -137,6 +138,19 @@ export interface ConversionResult {
   sell_unit: SellUnit;
   units_per_pack: number | null;
   qty_in_base_units: number;
+}
+
+export interface LabelPrintRecord {
+  id: number;
+  itemId: number;
+  itemName: string;
+  barcode: string;
+  qty: number;
+  format: string;
+  line1: string | null;
+  line2: string | null;
+  createdAt: string;
+  userName: string | null;
 }
 
 export interface Customer {

@@ -8,6 +8,7 @@ import {
   DatabaseBackup,
   HardDrive,
   MapPin,
+  PaintBucket,
   ReceiptText,
   ScanBarcode,
   ShieldCheck,
@@ -68,7 +69,7 @@ const SETTINGS_ITEMS: SettingsItem[] = [
   { id: "currency", category: "shop", title: "Currency", description: "Currency code, paise display precision, and tax-inclusive pricing.", icon: BadgeIndianRupee, Component: CurrencySettings },
   { id: "customer-types", category: "catalog", title: "Customer types", description: "Maintain customer groups used in billing and reporting.", icon: Tags, Component: CustomerTypesSettings },
   { id: "locations", category: "catalog", title: "Locations", description: "Configure stock locations for inventory movement.", icon: MapPin, Component: LocationsSettings },
-  { id: "brands", category: "catalog", title: "Brands", description: "Paint brand prefixes used by auto-generated CODE128 barcodes.", icon: Tags, Component: CatalogBrandsSettings },
+  { id: "brands", category: "catalog", title: "Brands", description: "Paint brand prefixes used by auto-generated CODE128 barcodes.", icon: PaintBucket, Component: CatalogBrandsSettings },
   { id: "label", category: "printing", title: "Shelf labels", description: "Edit the barcode and shelf-label print template.", icon: Barcode, Component: LabelSettings },
   { id: "receipt", category: "printing", title: "Receipts", description: "Receipt header, footer, and terms printed for customers.", icon: ReceiptText, Component: ReceiptSettings },
   { id: "users", category: "team", title: "Users", description: "Create local accounts and assign operational roles.", icon: Users, Component: UsersSettings },
@@ -121,7 +122,7 @@ export function parseSettingsHash(hash: string): ParsedSettingsRoute {
 
   if (ITEM_IDS.has(first as SettingsItemId)) {
     const item = SETTINGS_ITEMS.find((candidate) => candidate.id === first);
-    return { category: item?.category ?? "shop", item: null };
+    return { category: item?.category ?? "shop", item: item?.id ?? null };
   }
 
   return { category: "shop", item: null, redirect: "#/settings/shop" };
@@ -180,9 +181,11 @@ function SettingsSubPageHeader({ categoryLabel, itemTitle, description, backHref
         Back to {categoryLabel}
       </Button>
       <div className="space-y-1">
-        <p className="text-sm text-slate-500">Settings &gt; {categoryLabel} &gt; {itemTitle}</p>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{itemTitle}</h1>
-        <p className="max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-300/80">
+          Settings &gt; {categoryLabel} &gt; {itemTitle}
+        </p>
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">{itemTitle}</h1>
+        <p className="max-w-3xl text-sm leading-6 text-zinc-400">{description}</p>
       </div>
     </header>
   );

@@ -36,6 +36,7 @@ pub struct Item {
     pub current_qty: i64,
     pub created_at: String,
     pub updated_at: String,
+    pub brand_id: Option<i64>,
 }
 
 /// Minimal projection for the role-aware `lookup_item`.
@@ -284,7 +285,7 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
-    let mut sql = String::from("SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty FROM items i WHERE 1=1");
+    let mut sql = String::from("SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE 1=1");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if !filter.include_inactive { sql.push_str(" AND i.is_active = 1"); }
     if let Some(q) = &filter.query {
@@ -324,7 +325,7 @@ pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty FROM items i WHERE i.id = ?1",
+            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE i.id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], row_to_item)?;
         rows.next()
@@ -341,7 +342,7 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
     // Search by barcode OR sku_code OR name match (best-effort).
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty FROM items i WHERE (i.barcode = ?1 OR i.sku_code = ?1) AND i.is_active = 1 LIMIT 1",
+            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE (i.barcode = ?1 OR i.sku_code = ?1) AND i.is_active = 1 LIMIT 1",
         )?;
         let mut rows = stmt.query_map(params![code], row_to_item)?;
         let item = match rows.next() {
@@ -513,12 +514,13 @@ fn row_to_item(r: &rusqlite::Row<'_>) -> rusqlite::Result<Item> {
         created_at: r.get(19)?,
         updated_at: r.get(20)?,
         current_qty: r.get(21)?,
+        brand_id: r.get(22)?,
     })
 }
 
 fn fetch_item_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Item> {
     let mut stmt = tx.prepare(
-        "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty FROM items i WHERE i.id = ?1",
+        "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE i.id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], row_to_item)?;
     rows.next()

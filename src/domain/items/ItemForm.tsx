@@ -6,11 +6,12 @@
 import { useEffect, useState } from "react";
 import { MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
-import { createItem, updateItem } from "./api";
+import { createItem, listBrands, updateItem } from "./api";
 import { LocationAutocomplete } from "./LocationAutocomplete";
 import { listLocations } from "../locations/api";
 import type {
   AppError,
+  Brand,
   Item,
   ItemUnit,
   NewItem,
@@ -44,6 +45,8 @@ const SELL_UNITS: SellUnit[] = ["unit", "box"];
 export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [brand, setBrand] = useState(initial?.brand ?? "");
+  const [brandId, setBrandId] = useState<number | null>(initial?.brand_id ?? null);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [category, setCategory] = useState(initial?.category ?? "");
   const [unit, setUnit] = useState<ItemUnit>((initial?.unit as ItemUnit) ?? "pc");
   const [unitsPerPack, setUnitsPerPack] = useState<string>(
@@ -86,6 +89,9 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         }
       })
       .catch(() => setLocations([]));
+    listBrands()
+      .then((b) => setBrands(b))
+      .catch(() => setBrands([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -109,6 +115,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       const base = {
         name: name.trim(),
         brand: brand || null,
+        brand_id: brandId,
         category: category || null,
         unit,
         units_per_pack: unitsPerPack ? Number(unitsPerPack) : null,
@@ -183,21 +190,38 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           />
         </Field>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Brand (free text)">
+          <Field label="Brand (mapped)">
+            <select
+              value={brandId ?? 0}
+              onChange={(e) =>
+                setBrandId(e.target.value === "0" ? null : Number(e.target.value))
+              }
+              className="input-dark"
+            >
+              <option value={0}>— None —</option>
+              {brands.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({b.code_prefix})
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Brand (free text fallback)">
             <input
               value={brand}
               onChange={(e) => setBrand(e.target.value)}
-              className="input-dark"
-            />
-          </Field>
-          <Field label="Category">
-            <input
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              placeholder="Only used when no mapped brand"
               className="input-dark"
             />
           </Field>
         </div>
+        <Field label="Category">
+          <input
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="input-dark"
+          />
+        </Field>
       </Section>
 
       {/* Units */}

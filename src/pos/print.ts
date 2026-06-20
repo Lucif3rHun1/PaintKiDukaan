@@ -14,6 +14,8 @@
 // dependency (e.g. running in browser-only dev) doesn't blow up the whole
 // module graph.
 
+import { jsPDF } from "jspdf";
+import JsBarcode from "jsbarcode";
 import type { Sale } from "./types";
 import { formatRupeesFromPaise } from "../lib/money";
 
@@ -33,8 +35,6 @@ export interface LabelSpec {
 
 export async function printLabel(spec: LabelSpec): Promise<void> {
   try {
-    const { jsPDF } = await import("jspdf");
-    const JsBarcode = (await import("jsbarcode")).default;
     const doc = new jsPDF({ unit: "mm", format: [50, 25], orientation: "landscape" });
     const dataUrl = await makeBarcodePng(spec.barcode);
     doc.addImage(dataUrl, "PNG", 2, 2, 26, 18);
@@ -57,7 +57,6 @@ export interface ReceiptSpec {
 }
 
 export async function printReceipt(spec: ReceiptSpec): Promise<void> {
-  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const margin = 12;
   let y = margin;
@@ -166,7 +165,6 @@ export type PrintConfig =
  */
 export async function makeBarcodePng(value: string): Promise<string> {
   try {
-    const JsBarcode = (await import("jsbarcode")).default;
     const canvas = document.createElement("canvas");
     JsBarcode(canvas, value, BARCODE_OPTIONS);
     return canvas.toDataURL("image/png");
@@ -203,7 +201,6 @@ async function buildLabelPdfBlobInner(
   batch: BatchLabel[],
   config: PrintConfig,
 ): Promise<Blob> {
-  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
   if (config.type === "thermal") {
