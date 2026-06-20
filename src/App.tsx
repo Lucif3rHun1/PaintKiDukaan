@@ -19,6 +19,7 @@ import { CustomerList } from "./domain/customers/CustomerList";
 import { CustomerForm } from "./domain/customers/CustomerForm";
 import { VendorList } from "./domain/vendors/VendorList";
 import { VendorForm } from "./domain/vendors/VendorForm";
+import { VendorDetail } from "./domain/vendors/VendorDetail";
 import { customerOutstanding } from "./domain/customers/api";
 import { listCustomerTypes } from "./domain/customerTypes/api";
 /* ── POS UI (Slice C) ────────────────────────────────────── */
@@ -63,11 +64,9 @@ function readTab(): AppShellTab {
   return "dashboard";
 }
 
-function readItemsSubRoute(): "list" | "barcodes" | "brands" | "outwards" {
+function readItemsSubRoute(): "list" | "barcodes" {
   const h = window.location.hash;
   if (h.startsWith("#/items/barcodes")) return "barcodes";
-  if (h.startsWith("#/items/brands")) return "brands";
-  if (h.startsWith("#/items/outwards")) return "outwards";
   return "list";
 }
 
@@ -100,11 +99,14 @@ export default function App() {
   const [customerCreateOpen, setCustomerCreateOpen] = useState(false);
   const [customerEditTarget, setCustomerEditTarget] = useState<Customer | null>(null);
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  // Fetch customer types once
+  // Fetch customer types once the app is unlocked
   useEffect(() => {
-    listCustomerTypes().then(setCustomerTypes).catch(() => {});
-  }, []);
+    if (phase === "unlocked") {
+      listCustomerTypes().then(setCustomerTypes).catch(() => {});
+    }
+  }, [phase]);
 
   /* ── Bootstrap ─────────────────────────────────────────── */
   useEffect(() => {
@@ -257,11 +259,7 @@ export default function App() {
           <h2 className="text-xl font-semibold">Inventory</h2>
           <ItemSubNav />
           {readItemsSubRoute() === "barcodes" && <BulkLabelsPage />}
-          {readItemsSubRoute() === "brands" && <BrandAdmin role={role} />}
           {readItemsSubRoute() === "list" && <ItemList role={role} />}
-          {readItemsSubRoute() === "outwards" && (
-            <p className="text-sm text-slate-500">Outwards view coming soon.</p>
-          )}
         </div>
       )}
       {tab === "vendors" && (
@@ -269,6 +267,7 @@ export default function App() {
           <h2 className="text-xl font-semibold">Vendors</h2>
           <VendorList
             role={role}
+            refreshKey={refreshKey}
             onCreate={() => setVendorCreateOpen(true)}
             onSelect={(v) => setVendorDetailTarget(v)}
             onRecordPayment={(v) => setVendorEditTarget(v)}
@@ -280,6 +279,7 @@ export default function App() {
           <h2 className="text-xl font-semibold">Customers</h2>
           <CustomerList
             role={role}
+            refreshKey={refreshKey}
             onCreate={() => setCustomerCreateOpen(true)}
             onSelect={(c) => setCustomerEditTarget(c)}
           />
@@ -297,7 +297,7 @@ export default function App() {
       >
         <VendorForm
           mode="create"
-          onSaved={(v) => { setVendorCreateOpen(false); setVendorDetailTarget(v); }}
+          onSaved={(v) => { setVendorCreateOpen(false); setRefreshKey((k) => k + 1); setVendorDetailTarget(v); }}
           onCancel={() => setVendorCreateOpen(false)}
         />
       </InlineDialog>
@@ -311,7 +311,7 @@ export default function App() {
           <VendorForm
             mode="edit"
             initial={vendorEditTarget}
-            onSaved={(v) => { setVendorEditTarget(null); setVendorDetailTarget(v); }}
+            onSaved={(v) => { setVendorEditTarget(null); setRefreshKey((k) => k + 1); setVendorDetailTarget(v); }}
             onCancel={() => setVendorEditTarget(null)}
           />
         )}
@@ -324,9 +324,11 @@ export default function App() {
         size="lg"
       >
         {vendorDetailTarget && (
-          <div className="text-sm text-slate-300">
-            Vendor detail for {vendorDetailTarget.name} (id={vendorDetailTarget.id}).
-          </div>
+          <VendorDetail
+            vendor={vendorDetailTarget}
+            onEdit={(v) => { setVendorDetailTarget(null); setVendorEditTarget(v); }}
+            onRecordPayment={(v) => { setVendorDetailTarget(null); setVendorEditTarget(v); }}
+          />
         )}
       </InlineDialog>
 
@@ -340,7 +342,7 @@ export default function App() {
           mode="create"
           types={customerTypes}
           canFlag={role === "owner"}
-          onSaved={(c) => { setCustomerCreateOpen(false); setCustomerEditTarget(c); }}
+          onSaved={(c) => { setCustomerCreateOpen(false); setRefreshKey((k) => k + 1); setCustomerEditTarget(c); }}
           onCancel={() => setCustomerCreateOpen(false)}
         />
       </InlineDialog>
@@ -356,7 +358,7 @@ export default function App() {
             initial={customerEditTarget}
             types={customerTypes}
             canFlag={role === "owner"}
-            onSaved={(c) => setCustomerEditTarget(null)}
+            onSaved={(c) => { setCustomerEditTarget(null); setRefreshKey((k) => k + 1); }}
             onCancel={() => setCustomerEditTarget(null)}
           />
         )}
@@ -367,11 +369,9 @@ export default function App() {
 
 function ItemSubNav() {
   const sub = readItemsSubRoute();
-  const tabs: ReadonlyArray<{ id: "list" | "barcodes" | "brands" | "outwards"; label: string; href: string }> = [
+  const tabs: ReadonlyArray<{ id: "list" | "barcodes"; label: string; href: string }> = [
     { id: "list", label: "Items", href: "#/items" },
     { id: "barcodes", label: "Barcode Labels", href: "#/items/barcodes" },
-    { id: "brands", label: "Brands", href: "#/items/brands" },
-    { id: "outwards", label: "Outwards", href: "#/items/outwards" },
   ];
   return (
     <div className="flex gap-1 border-b border-white/10">

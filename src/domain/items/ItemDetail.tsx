@@ -1,9 +1,11 @@
 /**
- * ItemDetail — read view of a single item with a "Print label" button.
- * The actual label PDF is rendered by Slice C (jsPDF Code128).
+ * ItemDetail — read view of a single item with Print label + Edit actions.
+ * Dark theme consistent with the rest of the app shell.
  */
+import type { ReactNode } from "react";
+
+import { Badge, Button, Card } from "../../components/ui";
 import type { Item } from "../types";
-import { formatINR } from "../types";
 
 interface Props {
   item: Item;
@@ -13,65 +15,79 @@ interface Props {
 }
 
 export function ItemDetail({ item, onEdit, onPrintLabel, role }: Props) {
+  const canEdit = role === "owner" || role === "stocker";
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="mb-4 flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">{item.name}</h2>
-          <p className="font-mono text-xs text-slate-500">{item.sku_code}</p>
+    <Card className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold text-zinc-100">{item.name}</h2>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-zinc-500">{item.sku_code}</span>
+            {!item.is_active ? <Badge variant="muted">Archived</Badge> : null}
+            {item.barcode ? (
+              <Badge variant="success">Mapped</Badge>
+            ) : (
+              <Badge variant="warning">Unmapped</Badge>
+            )}
+          </div>
         </div>
         <div className="flex gap-2">
-          {onEdit && (role === "owner" || role === "stocker") && (
-            <button
-              onClick={onEdit}
-              className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
-            >
+          {onEdit && canEdit ? (
+            <Button type="button" variant="secondary" onClick={onEdit}>
               Edit
-            </button>
-          )}
-          {onPrintLabel && (
-            <button
-              onClick={onPrintLabel}
-              className="rounded bg-sky-600 px-3 py-1 text-sm font-medium text-white hover:bg-sky-700"
-            >
+            </Button>
+          ) : null}
+          {onPrintLabel && item.barcode ? (
+            <Button type="button" onClick={onPrintLabel}>
               Print label
-            </button>
-          )}
+            </Button>
+          ) : null}
         </div>
       </div>
 
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <Row label="Brand" value={item.brand ?? "—"} />
         <Row label="Category" value={item.category ?? "—"} />
-        <Row label="Pack size" value={item.pack_size ?? "—"} />
         <Row label="Unit" value={item.unit} />
         <Row
           label="Sell unit"
-          value={`${item.sell_unit}${item.units_per_box ? ` ×${item.units_per_box}` : ""}`}
+          value={`${item.sell_unit}${item.units_per_pack ? ` ×${item.units_per_pack}` : ""}`}
         />
-        <Row label="Location" value={item.location_text ?? "—"} />
-        <Row label="Retail" value={formatINR(item.retail_price)} />
-        {role === "owner" && (
-          <Row label="Cost" value={formatINR(item.cost_price)} />
-        )}
-        <Row label="Reorder level" value={String(item.reorder_level)} />
-        <Row label="Barcode" value={item.barcode ?? "—"} />
+        <Row label="Location hint" value={item.location_text ?? "—"} />
+        <Row label="Primary location" value={String(item.primary_location_id)} />
         <Row
-          label="Active"
-          value={item.is_active ? "Yes" : "No"}
+          label="Retail"
+          value={`₹${(item.retail_price_paise / 100).toFixed(2)}`}
         />
+        {role === "owner" ? (
+          <Row
+            label="Cost"
+            value={`₹${(item.cost_paise / 100).toFixed(2)}`}
+          />
+        ) : null}
+        {item.promo_price_paise != null ? (
+          <Row
+            label="Promo"
+            value={`₹${(item.promo_price_paise / 100).toFixed(2)}`}
+          />
+        ) : null}
+        <Row label="Min qty" value={String(item.min_qty)} />
+        <Row label="Stock" value={String(item.current_qty)} />
+        <Row label="Barcode" value={item.barcode ?? "—"} />
+        <Row label="Format" value={item.barcode_format} />
+        <Row label="Active" value={item.is_active ? "Yes" : "No"} />
         <Row label="Label line 1" value={item.label_line1 ?? "—"} />
         <Row label="Label line 2" value={item.label_line2 ?? "—"} />
       </dl>
-    </div>
+    </Card>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
-      <dt className="text-xs uppercase text-slate-500">{label}</dt>
-      <dd className="text-slate-800">{value}</dd>
+      <dt className="text-xs uppercase text-zinc-500">{label}</dt>
+      <dd className="text-zinc-100">{value}</dd>
     </div>
   );
 }

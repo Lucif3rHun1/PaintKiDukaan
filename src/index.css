@@ -14,3 +14,43 @@ html, body, #root {
   height: 100%;
   margin: 0;
 }
+
+@layer components {
+  .input {
+    @apply h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400;
+  }
+  .input-dark {
+    @apply h-10 w-full rounded-md border border-white/10 bg-zinc-950 px-3 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-sky-600 text-white hover:bg-sky-700;
+  }
+  .btn-secondary {
+    @apply btn border border-white/10 bg-zinc-800 text-zinc-100 hover:bg-zinc-700;
+  }
+  .btn-ghost {
+    @apply btn text-zinc-400 hover:bg-white/5 hover:text-zinc-100;
+  }
+  .card {
+    @apply rounded-lg border border-white/10 bg-zinc-900/60 p-4;
+  }
+  .label-text {
+    @apply mb-1 block text-xs font-medium text-zinc-400;
+  }
+}
+
+dialog {
+  background: transparent;
+  padding: 0;
+  border: 0;
+  max-width: min(640px, calc(100vw - 2rem));
+  width: 100%;
+}
+dialog::backdrop {
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+}
+
