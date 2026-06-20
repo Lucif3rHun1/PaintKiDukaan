@@ -10,6 +10,7 @@ import type {
   ItemFilter,
   ItemLookup,
   ItemUpdate,
+  LabelPrintRecord,
   NewItem,
 } from "../types";
 
@@ -66,4 +67,32 @@ export async function previewNextBarcode(
   itemName: string,
 ): Promise<string> {
   return invoke<string>("preview_next_barcode", { brandId, itemName });
+}
+
+export async function recordLabelPrint(payload: {
+  itemId: number;
+  barcode: string;
+  qty: number;
+  format: string;
+  line1?: string | null;
+  line2?: string | null;
+}): Promise<number> {
+  // Tauri 2 expects snake_case keys when the Rust command uses
+  // `#[tauri::command(rename_all = "snake_case")]` and there is no global
+  // core.api rename config. record_label_print takes 7 positional kwargs.
+  return invoke<number>("record_label_print", {
+    item_id: payload.itemId,
+    barcode: payload.barcode,
+    qty: payload.qty,
+    format: payload.format,
+    line1: payload.line1 ?? null,
+    line2: payload.line2 ?? null,
+  });
+}
+
+export async function listLabelPrints(args: {
+  itemId?: number | null;
+  limit?: number | null;
+} = {}): Promise<LabelPrintRecord[]> {
+  return invoke<LabelPrintRecord[]>("list_label_prints", args);
 }

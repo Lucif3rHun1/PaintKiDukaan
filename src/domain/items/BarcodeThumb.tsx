@@ -3,23 +3,22 @@ import { useEffect, useRef } from "react";
 
 type Props = {
   value: string;
-  height?: number;
-  width?: number;
-  fontSize?: number;
-  displayValue?: boolean;
+  /** Container width in px (CSS). Barcode scales to fill it. */
+  containerWidth?: number;
+  /** Container height in px (CSS). Drives the bar height too. */
+  containerHeight?: number;
+  /** Optional className for the outer span wrapper. */
   className?: string;
 };
 
 /**
  * Lightweight CODE128 barcode thumbnail. Renders into an inline <svg>
- * so it scales cleanly in tables and previews.
+ * that fills its container so it works in tables, previews, and cards.
  */
 export function BarcodeThumb({
   value,
-  height = 36,
-  width = 1.4,
-  fontSize = 10,
-  displayValue = false,
+  containerWidth = 96,
+  containerHeight = 36,
   className = "",
 }: Props) {
   const ref = useRef<SVGSVGElement | null>(null);
@@ -27,27 +26,27 @@ export function BarcodeThumb({
   useEffect(() => {
     if (!ref.current || !value) return;
     try {
+      // Bar height in px = container height minus 4px quiet zone.
+      const barHeight = Math.max(20, containerHeight - 4);
       JsBarcode(ref.current, value, {
         format: "CODE128",
-        height,
-        width,
-        fontSize,
-        displayValue,
-        margin: 2,
+        height: barHeight,
+        displayValue: false,
+        margin: 0,
         background: "#ffffff",
         lineColor: "#0f172a",
       });
     } catch (err) {
-      // Render an empty svg on encode failure rather than crash the table.
       console.warn("BarcodeThumb encode failed:", err);
       if (ref.current) ref.current.innerHTML = "";
     }
-  }, [value, height, width, fontSize, displayValue]);
+  }, [value, containerHeight]);
 
   if (!value) {
     return (
       <span
-        className={`inline-block h-9 w-24 rounded border border-dashed border-slate-300 bg-slate-50 text-[10px] leading-9 text-slate-400 ${className}`}
+        style={{ width: containerWidth, height: containerHeight }}
+        className={`inline-flex items-center justify-center rounded border border-dashed border-white/10 bg-zinc-900 text-[10px] text-zinc-500 ${className}`}
         aria-label="No barcode"
       >
         —
@@ -55,11 +54,16 @@ export function BarcodeThumb({
     );
   }
   return (
-    <svg
-      ref={ref}
-      role="img"
-      aria-label={`Barcode ${value}`}
-      className={`block h-9 w-24 ${className}`}
-    />
+    <span
+      style={{ width: containerWidth, height: containerHeight }}
+      className={`inline-block rounded bg-white p-0.5 ${className}`}
+    >
+      <svg
+        ref={ref}
+        role="img"
+        aria-label={`Barcode ${value}`}
+        className="block h-full w-full"
+      />
+    </span>
   );
 }

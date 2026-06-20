@@ -17,8 +17,11 @@ import { BulkLabelsPage } from "./domain/items/BulkLabelsPage";
 import { BrandAdmin } from "./domain/items/BrandAdmin";
 import { CustomerList } from "./domain/customers/CustomerList";
 import { CustomerForm } from "./domain/customers/CustomerForm";
+import { CustomerDetail } from "./domain/customers/CustomerDetail";
+import { CustomerPaymentForm } from "./domain/customers/CustomerPaymentForm";
 import { VendorList } from "./domain/vendors/VendorList";
 import { VendorForm } from "./domain/vendors/VendorForm";
+import { VendorPaymentForm } from "./domain/vendors/VendorPaymentForm";
 import { VendorDetail } from "./domain/vendors/VendorDetail";
 import { customerOutstanding } from "./domain/customers/api";
 import { listCustomerTypes } from "./domain/customerTypes/api";
@@ -94,10 +97,13 @@ export default function App() {
   const [vendorCreateOpen, setVendorCreateOpen] = useState(false);
   const [vendorEditTarget, setVendorEditTarget] = useState<Vendor | null>(null);
   const [vendorDetailTarget, setVendorDetailTarget] = useState<Vendor | null>(null);
+  const [vendorPaymentTarget, setVendorPaymentTarget] = useState<Vendor | null>(null);
 
   /* ── Customer modal state ─────────────────────────────── */
   const [customerCreateOpen, setCustomerCreateOpen] = useState(false);
   const [customerEditTarget, setCustomerEditTarget] = useState<Customer | null>(null);
+  const [customerDetailTarget, setCustomerDetailTarget] = useState<Customer | null>(null);
+  const [customerPaymentTarget, setCustomerPaymentTarget] = useState<Customer | null>(null);
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -255,8 +261,8 @@ export default function App() {
         <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
       )}
       {tab === "items" && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Inventory</h2>
+        <div className="min-h-full space-y-4 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
+          <h2 className="text-xl font-semibold text-zinc-100">Inventory</h2>
           <ItemSubNav />
           {readItemsSubRoute() === "barcodes" && <BulkLabelsPage />}
           {readItemsSubRoute() === "list" && <ItemList role={role} />}
@@ -270,7 +276,7 @@ export default function App() {
             refreshKey={refreshKey}
             onCreate={() => setVendorCreateOpen(true)}
             onSelect={(v) => setVendorDetailTarget(v)}
-            onRecordPayment={(v) => setVendorEditTarget(v)}
+            onRecordPayment={(v) => setVendorPaymentTarget(v)}
           />
         </div>
       )}
@@ -281,7 +287,8 @@ export default function App() {
             role={role}
             refreshKey={refreshKey}
             onCreate={() => setCustomerCreateOpen(true)}
-            onSelect={(c) => setCustomerEditTarget(c)}
+            onSelect={(c) => setCustomerDetailTarget(c)}
+            onRecordPayment={(c) => setCustomerPaymentTarget(c)}
           />
         </div>
       )}
@@ -318,6 +325,20 @@ export default function App() {
       </InlineDialog>
 
       <InlineDialog
+        open={!!vendorPaymentTarget}
+        onClose={() => setVendorPaymentTarget(null)}
+        title="Record vendor payment"
+      >
+        {vendorPaymentTarget && (
+          <VendorPaymentForm
+            vendor={vendorPaymentTarget}
+            onSaved={() => { setVendorPaymentTarget(null); setRefreshKey((k) => k + 1); }}
+            onCancel={() => setVendorPaymentTarget(null)}
+          />
+        )}
+      </InlineDialog>
+
+      <InlineDialog
         open={!!vendorDetailTarget}
         onClose={() => setVendorDetailTarget(null)}
         title="Vendor Details"
@@ -327,7 +348,7 @@ export default function App() {
           <VendorDetail
             vendor={vendorDetailTarget}
             onEdit={(v) => { setVendorDetailTarget(null); setVendorEditTarget(v); }}
-            onRecordPayment={(v) => { setVendorDetailTarget(null); setVendorEditTarget(v); }}
+            onRecordPayment={(v) => { setVendorDetailTarget(null); setVendorPaymentTarget(v); }}
           />
         )}
       </InlineDialog>
@@ -360,6 +381,35 @@ export default function App() {
             canFlag={role === "owner"}
             onSaved={(c) => { setCustomerEditTarget(null); setRefreshKey((k) => k + 1); }}
             onCancel={() => setCustomerEditTarget(null)}
+          />
+        )}
+      </InlineDialog>
+
+      <InlineDialog
+        open={!!customerDetailTarget}
+        onClose={() => setCustomerDetailTarget(null)}
+        title="Customer Details"
+        size="lg"
+      >
+        {customerDetailTarget && (
+          <CustomerDetail
+            customer={customerDetailTarget}
+            onEdit={() => { setCustomerDetailTarget(null); setCustomerEditTarget(customerDetailTarget); }}
+            onRecordPayment={() => { setCustomerDetailTarget(null); setCustomerPaymentTarget(customerDetailTarget); }}
+          />
+        )}
+      </InlineDialog>
+
+      <InlineDialog
+        open={!!customerPaymentTarget}
+        onClose={() => setCustomerPaymentTarget(null)}
+        title="Record customer payment"
+      >
+        {customerPaymentTarget && (
+          <CustomerPaymentForm
+            customer={customerPaymentTarget}
+            onSaved={() => { setCustomerPaymentTarget(null); setRefreshKey((k) => k + 1); }}
+            onCancel={() => setCustomerPaymentTarget(null)}
           />
         )}
       </InlineDialog>

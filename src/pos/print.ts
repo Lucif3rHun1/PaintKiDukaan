@@ -263,13 +263,22 @@ export async function printLabelBatch(
   try {
     const blob = await buildLabelPdfBlob(batch, config);
     const url = URL.createObjectURL(blob);
+    // Tauri 2's WKWebView (macOS) and WebView2 (Windows) both honour
+    // location.assign with a blob URL as a download trigger — more reliable
+    // than a programmatic <a>.click() which is sometimes swallowed.
     const a = document.createElement("a");
     a.href = url;
     a.download = `labels-batch-${Date.now()}.pdf`;
+    a.rel = "noopener";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    // Fallback for webviews that block <a download>: open in new tab.
+    setTimeout(() => {
+      if (!document.hidden) return;
+      window.open(url, "_blank", "noopener");
+    }, 50);
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
   } catch (err) {
     console.warn("printLabelBatch failed", err);
     throw err;

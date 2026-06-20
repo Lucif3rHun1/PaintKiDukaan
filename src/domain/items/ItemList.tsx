@@ -190,7 +190,7 @@ export function ItemList({ role }: Props) {
   }
 
   return (
-    <Card className="space-y-4">
+    <Card className="space-y-4 border-white/10 bg-zinc-900 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-zinc-100">Inventory</h2>

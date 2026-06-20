@@ -285,10 +285,9 @@ export function BulkLabelsPage() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      {/* LEFT: composer */}
-      {/* INSERTED: nothing */}
-      <div className="space-y-4 rounded-lg border border-white/10 bg-zinc-900/60 p-4">
+    <div className="grid gap-6 xl:grid-cols-12">
+      {/* LEFT: composer (5 cols on xl) */}
+      <div className="space-y-4 rounded-lg border border-white/10 bg-zinc-900/60 p-4 xl:col-span-5">
         <h3 className="text-sm font-semibold text-zinc-100">Compose label</h3>
 
         <div className="space-y-2">
@@ -402,7 +401,7 @@ export function BulkLabelsPage() {
           <div className="rounded border border-white/10 bg-zinc-950 p-3">
             {selectedItem?.barcode ? (
               <div className="flex flex-col items-center gap-1">
-                <BarcodeThumb value={selectedItem.barcode} width={180} height={60} />
+                <BarcodeThumb value={selectedItem.barcode} containerWidth={200} containerHeight={72} />
                 <div className="text-center text-xs text-zinc-200">{line1 || "—"}</div>
                 <div className="text-center text-[10px] text-zinc-400">
                   {line2 || "—"}
@@ -430,8 +429,8 @@ export function BulkLabelsPage() {
         )}
       </div>
 
-      {/* RIGHT: batch table + actions */}
-      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4">
+      {/* BATCH: full width below composer */}
+      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4 xl:col-span-12">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-zinc-100">
             Generated labels ({batch.length})
@@ -467,7 +466,7 @@ export function BulkLabelsPage() {
                 {batch.map((row) => (
                   <tr key={row.id} className="border-b border-white/5">
                     <td className="px-2 py-1.5">
-                      <BarcodeThumb value={row.label.barcode} width={80} height={28} />
+                      <BarcodeThumb value={row.label.barcode} containerWidth={96} containerHeight={36} />
                       <div className="mt-1 font-mono text-[10px] text-zinc-400">
                         {row.label.barcode}
                       </div>
@@ -519,7 +518,7 @@ export function BulkLabelsPage() {
         </div>
       </div>
 
-      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4">
+      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4 xl:col-span-12">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-zinc-100">Print history (last 50)</h3>
           <button
@@ -575,8 +574,8 @@ export function BulkLabelsPage() {
         </div>
       </div>
 
-      {/* Preview pane — verify-before-print */}
-      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4">
+      {/* Preview pane — verify-before-print (7 cols, beside composer) */}
+      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4 xl:col-span-7">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-zinc-100">Verify before print</h3>
           <button
