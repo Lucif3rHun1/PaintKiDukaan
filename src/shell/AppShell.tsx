@@ -32,6 +32,7 @@ export type AppShellTab =
   | "sales"
   | "inward"
   | "items"
+  | "barcodes"
   | "customers"
   | "vendors"
   | "sales-report"
@@ -114,7 +115,7 @@ const groups: SidebarGroup[] = [
     items: [
       { id: "inward", label: "Inward", icon: Truck, tab: "inward", hash: "#/inward" },
       { id: "items", label: "Items", icon: Package, tab: "items", hash: "#/items" },
-      { id: "barcode-labels", label: "Barcode Labels", icon: Barcode, tab: "items", hash: "#/items/barcodes" },
+      { id: "barcode-labels", label: "Barcode Labels", icon: Barcode, tab: "barcodes", hash: "#/barcodes" },
     ],
   },
   {
@@ -301,7 +302,11 @@ function SidebarSectionLabel({ collapsed, children }: { collapsed: boolean; chil
   return <div className="mb-1 mt-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{children}</div>;
 }
 
-function isLinkActive(link: SidebarLink, activeTab: AppShellTab): boolean {
+function isLinkActive(
+  link: SidebarLink,
+  activeTab: AppShellTab,
+  siblings: SidebarLink[] = [],
+): boolean {
   if (link.tab !== activeTab) return false;
   if (typeof window === "undefined") return true;
   const hash = window.location.hash;
@@ -309,9 +314,20 @@ function isLinkActive(link: SidebarLink, activeTab: AppShellTab): boolean {
     if (link.category) return hash === link.hash || hash.startsWith(`${link.hash}/`);
     return hash === "" || hash === "#/" || hash === "#/settings";
   }
-  // Sub-route tabs (e.g. items vs items/barcodes) must match by hash too,
-  // otherwise every sibling with the same parent tab would light up.
-  return hash === link.hash || (link.hash !== "#/" && hash.startsWith(`${link.hash}/`));
+  // A parent link (e.g. "Items" at #/items) must yield to a more specific
+  // sibling (e.g. "Barcode Labels" at #/items/barcodes) when one exists in
+  // the same sidebar group. Otherwise both light up simultaneously.
+  if (!link.hash) return false;
+  const linkHash = link.hash;
+  const hasMoreSpecificSibling = siblings.some(
+    (other) =>
+      other !== link &&
+      !!other.hash &&
+      other.hash.length > linkHash.length &&
+      hash.startsWith(other.hash),
+  );
+  if (hasMoreSpecificSibling) return false;
+  return hash === linkHash || (linkHash !== "#/" && hash.startsWith(`${linkHash}/`));
 }
 
 function SidebarLinkButton({

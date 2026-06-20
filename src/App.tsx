@@ -58,6 +58,7 @@ function readTab(): AppShellTab {
   if (h.startsWith("#/sales-report")) return "sales-report";
   if (h.startsWith("#/inward")) return "inward";
   if (h.startsWith("#/sales")) return "sales";
+  if (h.startsWith("#/barcodes")) return "barcodes";
   if (h.startsWith("#/items")) return "items";
   if (h.startsWith("#/customers")) return "customers";
   if (h.startsWith("#/vendors")) return "vendors";
@@ -70,6 +71,7 @@ function readTab(): AppShellTab {
 function readItemsSubRoute(): "list" | "barcodes" {
   const h = window.location.hash;
   if (h.startsWith("#/items/barcodes")) return "barcodes";
+  if (h.startsWith("#/barcodes")) return "barcodes";
   return "list";
 }
 
@@ -146,6 +148,11 @@ export default function App() {
 
   /* ── Hash routing ──────────────────────────────────────── */
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash === "#/items/barcodes") {
+      window.location.replace("#/barcodes");
+      return;
+    }
     const onHash = () => setTab(readTab());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -255,7 +262,9 @@ export default function App() {
         <SalesPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
       )}
       {tab === "inward" && (
-        <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+        <div className="min-h-full space-y-4 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
+          <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+        </div>
       )}
       {tab === "sales-report" && (
         <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
@@ -263,9 +272,15 @@ export default function App() {
       {tab === "items" && (
         <div className="min-h-full space-y-4 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
           <h2 className="text-xl font-semibold text-zinc-100">Inventory</h2>
-          <ItemSubNav />
-          {readItemsSubRoute() === "barcodes" && <BulkLabelsPage />}
-          {readItemsSubRoute() === "list" && <ItemList role={role} />}
+          <ItemSubNav active="items" />
+          <ItemList role={role} />
+        </div>
+      )}
+      {tab === "barcodes" && (
+        <div className="min-h-full space-y-4 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
+          <h2 className="text-xl font-semibold text-zinc-100">Inventory</h2>
+          <ItemSubNav active="barcodes" />
+          <BulkLabelsPage />
         </div>
       )}
       {tab === "vendors" && (
@@ -417,11 +432,10 @@ export default function App() {
   );
 }
 
-function ItemSubNav() {
-  const sub = readItemsSubRoute();
-  const tabs: ReadonlyArray<{ id: "list" | "barcodes"; label: string; href: string }> = [
-    { id: "list", label: "Items", href: "#/items" },
-    { id: "barcodes", label: "Barcode Labels", href: "#/items/barcodes" },
+function ItemSubNav({ active }: { active: "items" | "barcodes" }) {
+  const tabs: ReadonlyArray<{ id: "items" | "barcodes"; label: string; href: string }> = [
+    { id: "items", label: "Items", href: "#/items" },
+    { id: "barcodes", label: "Barcode Labels", href: "#/barcodes" },
   ];
   return (
     <div className="flex gap-1 border-b border-white/10">
@@ -430,7 +444,7 @@ function ItemSubNav() {
           key={t.id}
           href={t.href}
           className={`rounded-t-md px-3 py-1.5 text-sm whitespace-nowrap ${
-            sub === t.id
+            active === t.id
               ? "border border-white/10 border-b-zinc-950 bg-zinc-950 font-medium text-zinc-100"
               : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
           }`}

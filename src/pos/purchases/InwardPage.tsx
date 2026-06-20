@@ -269,7 +269,7 @@ export default function InwardPage({ user: _user }: Props) {
                             else setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: "" } : x)));
                           }}
                           placeholder="Type or pick item…"
-                          className="h-9 w-full rounded-md border border-slate-300 bg-white py-2 pl-7 pr-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+                          className="h-9 w-full rounded-md border border-white/10 bg-zinc-950 py-2 pl-7 pr-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
                         />
                         <datalist id={`inward-items-${i}`}>
                           {items.map((it) => (
@@ -284,7 +284,7 @@ export default function InwardPage({ user: _user }: Props) {
                         onClick={() => setAddItemForRow(i)}
                         title="Add new item"
                         aria-label="Add new item"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-zinc-300 hover:bg-zinc-900/40"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-zinc-950 text-zinc-300 hover:bg-white/5"
                       >
                         <PackagePlus className="h-4 w-4" aria-hidden="true" />
                       </button>
@@ -400,13 +400,13 @@ export default function InwardPage({ user: _user }: Props) {
                   value={vendorQuery}
                   onChange={(e) => setVendorQuery(e.target.value)}
                   placeholder="Search vendor…"
-                  className="h-9 w-full rounded-md border border-slate-300 bg-white py-2 pl-7 pr-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+                  className="h-9 w-full rounded-md border border-white/10 bg-zinc-950 py-2 pl-7 pr-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
                 />
               </div>
               <select
                 value={vendorId ?? ""}
                 onChange={(e) => setVendorId(e.target.value ? Number(e.target.value) : null)}
-                className="h-9 w-56 rounded-md border border-slate-300 bg-white px-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+                className="h-9 w-56 rounded-md border border-white/10 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
                 aria-label="Select vendor"
               >
                 <option value="">— None —</option>

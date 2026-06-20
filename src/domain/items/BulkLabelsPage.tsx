@@ -285,10 +285,15 @@ export function BulkLabelsPage() {
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-12">
-      {/* LEFT: composer (5 cols on xl) */}
-      <div className="space-y-4 rounded-lg border border-white/10 bg-zinc-900/60 p-4 xl:col-span-5">
-        <h3 className="text-sm font-semibold text-zinc-100">Compose label</h3>
+    <div className="grid gap-4 lg:grid-cols-12">
+      {/* LEFT: composer (configure) — 5 cols */}
+      <section className="space-y-4 rounded-xl border border-white/10 bg-zinc-900 p-4 lg:col-span-5">
+        <header className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-100">Compose label</h3>
+          <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+            <span className="font-mono">{LOCKED_FORMAT}</span> · monochrome
+          </span>
+        </header>
 
         <div className="space-y-2">
           <label className="block text-xs text-zinc-400">Item</label>
@@ -307,9 +312,7 @@ export function BulkLabelsPage() {
               </option>
             ))}
           </select>
-          {itemError && (
-            <p className="text-xs text-red-400">{itemError}</p>
-          )}
+          {itemError && <p className="text-xs text-red-400">{itemError}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -325,9 +328,7 @@ export function BulkLabelsPage() {
             />
           </div>
           <div className="space-y-2">
-            <label className="block text-xs text-zinc-400">
-              Barcode value (locked to item)
-            </label>
+            <label className="block text-xs text-zinc-400">Barcode (locked)</label>
             <input
               type="text"
               value={selectedItem?.barcode ?? ""}
@@ -362,8 +363,8 @@ export function BulkLabelsPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-<div className="space-y-2">
-          <label className="block text-xs text-zinc-400">Printer type</label>
+          <div className="space-y-2">
+            <label className="block text-xs text-zinc-400">Printer type</label>
             <select
               value={printer}
               onChange={(e) => setPrinter(e.target.value as PrinterType)}
@@ -372,9 +373,6 @@ export function BulkLabelsPage() {
               <option value="thermal">Thermal</option>
               <option value="laser-a4">Laser (A4 sheet)</option>
             </select>
-            <p className="text-[10px] text-zinc-500">
-              Format locked to <span className="font-mono">{LOCKED_FORMAT}</span> · monochrome · fixed DPI.
-            </p>
           </div>
           <div className="space-y-2">
             <label className="block text-xs text-zinc-400">
@@ -397,19 +395,25 @@ export function BulkLabelsPage() {
 
         {/* Live preview of the currently composed label. */}
         <div className="space-y-2">
-          <label className="block text-xs text-zinc-400">Preview</label>
-          <div className="rounded border border-white/10 bg-zinc-950 p-3">
+          <label className="block text-xs text-zinc-400">Live preview</label>
+          <div className="rounded-lg border border-white/10 bg-zinc-950 p-3">
             {selectedItem?.barcode ? (
               <div className="flex flex-col items-center gap-1">
-                <BarcodeThumb value={selectedItem.barcode} containerWidth={200} containerHeight={72} />
-                <div className="text-center text-xs text-zinc-200">{line1 || "—"}</div>
+                <BarcodeThumb
+                  value={selectedItem.barcode}
+                  containerWidth={220}
+                  containerHeight={80}
+                />
+                <div className="text-center text-xs font-medium text-zinc-200">
+                  {line1 || "—"}
+                </div>
                 <div className="text-center text-[10px] text-zinc-400">
                   {line2 || "—"}
                 </div>
               </div>
             ) : (
-              <p className="text-center text-xs text-zinc-500">
-                Pick an item to see the label preview.
+              <p className="py-6 text-center text-xs text-zinc-500">
+                Pick an item to see the live preview.
               </p>
             )}
           </div>
@@ -419,133 +423,166 @@ export function BulkLabelsPage() {
           type="button"
           onClick={addToList}
           disabled={!selectedItem?.barcode}
-          className="w-full rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+          className="w-full rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:opacity-50"
         >
-          + Add to list
+          + Add {count} label{count === 1 ? "" : "s"} to batch
         </button>
 
-        {actionMsg && (
-          <p className="text-xs text-zinc-400">{actionMsg}</p>
-        )}
-      </div>
+        {actionMsg && <p className="text-xs text-zinc-400">{actionMsg}</p>}
+      </section>
 
-      {/* BATCH: full width below composer */}
-      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4 xl:col-span-12">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-zinc-100">
-            Generated labels ({batch.length})
-          </h3>
-          {batch.length > 0 && (
+      {/* RIGHT: batch + actions + preview + history — 7 cols */}
+      <section className="space-y-4 lg:col-span-7">
+        {/* Batch table with actions */}
+        <div className="rounded-xl border border-white/10 bg-zinc-900 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-zinc-100">
+              Batch ({batch.length} label{batch.length === 1 ? "" : "s"})
+            </h3>
+            {batch.length > 0 && (
+              <button
+                type="button"
+                onClick={clearBatch}
+                className="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+
+          <div className="max-h-[260px] overflow-y-auto rounded border border-white/10 bg-zinc-950">
+            {batch.length === 0 ? (
+              <p className="p-4 text-center text-xs text-zinc-500">
+                No labels yet — add one from the left.
+              </p>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-white/10 text-zinc-400">
+                  <tr>
+                    <th className="px-2 py-1.5">Barcode</th>
+                    <th>Item</th>
+                    <th className="text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batch.map((row) => (
+                    <tr key={row.id} className="border-b border-white/5">
+                      <td className="px-2 py-1.5">
+                        <BarcodeThumb
+                          value={row.label.barcode}
+                          containerWidth={88}
+                          containerHeight={32}
+                        />
+                        <div className="mt-1 font-mono text-[10px] text-zinc-400">
+                          {row.label.barcode}
+                        </div>
+                      </td>
+                      <td className="text-zinc-200">{row.itemName}</td>
+                      <td className="text-right">
+                        <button
+                          type="button"
+                          onClick={() => removeRow(row.id)}
+                          className="rounded border border-red-400/30 px-2 py-0.5 text-[10px] text-red-300 hover:bg-red-400/10"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               type="button"
-              onClick={clearBatch}
-              className="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5"
+              onClick={handlePreview}
+              disabled={batch.length === 0 || busy}
+              className="rounded-md border border-white/10 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
             >
-              Clear all
+              Preview PDF
             </button>
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={batch.length === 0 || busy}
+              className="rounded-md bg-sky-600 px-3 py-2 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+            >
+              Download PDF
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={batch.length === 0 || busy}
+              className="rounded-md border border-white/10 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              Print
+            </button>
+          </div>
+        </div>
+
+        {/* PDF preview — fills the right column */}
+        <div className="rounded-xl border border-white/10 bg-zinc-900 p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-zinc-100">Verify before print</h3>
+            <button
+              type="button"
+              onClick={() => {
+                if (previewUrl) URL.revokeObjectURL(previewUrl);
+                setPreviewUrl(null);
+              }}
+              disabled={!previewUrl}
+              className="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5 disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+          {previewUrl ? (
+            <iframe
+              src={previewUrl}
+              title="Label PDF preview"
+              className="h-[420px] w-full rounded border border-white/10 bg-zinc-950"
+            />
+          ) : (
+            <p className="rounded border border-dashed border-white/10 bg-zinc-950 p-6 text-center text-xs text-zinc-500">
+              Click <span className="rounded bg-zinc-800 px-1 text-[10px]">Preview PDF</span> to
+              render the batch here.
+            </p>
           )}
         </div>
 
-        <div className="max-h-[400px] overflow-y-auto rounded border border-white/10 bg-zinc-950">
-          {batch.length === 0 ? (
-            <p className="p-4 text-center text-xs text-zinc-500">
-              No labels yet. Compose a label on the left and click "Add to list".
-            </p>
-          ) : (
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-white/10 text-zinc-400">
-                <tr>
-                  <th className="px-2 py-1.5">Barcode</th>
-                  <th className="px-2 py-1.5">Item</th>
-                  <th className="px-2 py-1.5">Line 1</th>
-                  <th className="px-2 py-1.5">Line 2</th>
-                  <th className="px-2 py-1.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {batch.map((row) => (
-                  <tr key={row.id} className="border-b border-white/5">
-                    <td className="px-2 py-1.5">
-                      <BarcodeThumb value={row.label.barcode} containerWidth={96} containerHeight={36} />
-                      <div className="mt-1 font-mono text-[10px] text-zinc-400">
-                        {row.label.barcode}
-                      </div>
-                    </td>
-                    <td className="px-2 py-1.5 text-zinc-200">{row.itemName}</td>
-                    <td className="px-2 py-1.5 text-zinc-300">{row.label.line1 ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-zinc-400">{row.label.line2 ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => removeRow(row.id)}
-                        className="rounded border border-red-400/30 px-2 py-0.5 text-[10px] text-red-300 hover:bg-red-400/10"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <div className="grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            onClick={handlePreview}
-            disabled={batch.length === 0 || busy}
-            className="rounded border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
-          >
-            Preview PDF
-          </button>
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={batch.length === 0 || busy}
-            className="rounded bg-sky-600 px-3 py-2 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50"
-          >
-            Download PDF
-          </button>
-          <button
-            type="button"
-            onClick={handlePrint}
-            disabled={batch.length === 0 || busy}
-            className="rounded border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
-          >
-            Print
-          </button>
-        </div>
-      </div>
-
-      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4 xl:col-span-12">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-zinc-100">Print history (last 50)</h3>
-          <button
-            type="button"
-            onClick={() => void loadHistory()}
-            disabled={historyLoading || busy}
-            className="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5 disabled:opacity-50"
-          >
-            Refresh
-          </button>
-        </div>
-
-        <div className="max-h-[510px] overflow-y-auto rounded border border-white/10 bg-zinc-950">
-          {historyLoading ? (
-            <p className="p-4 text-center text-xs text-zinc-500">Loading history…</p>
-          ) : history.length === 0 ? (
-            <p className="p-4 text-center text-xs text-zinc-500">
-              No print history yet. Print or download a batch to save it here.
-            </p>
-          ) : (
-            <div className="divide-y divide-white/5">
-              {history.map((row) => (
-                <div key={row.id} className="space-y-2 p-3">
-                  <div className="flex items-start justify-between gap-3">
+        {/* History */}
+        <div className="rounded-xl border border-white/10 bg-zinc-900 p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-zinc-100">Recent prints</h3>
+            <button
+              type="button"
+              onClick={() => void loadHistory()}
+              disabled={historyLoading || busy}
+              className="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5 disabled:opacity-50"
+            >
+              Refresh
+            </button>
+          </div>
+          <div className="max-h-[260px] overflow-y-auto rounded border border-white/10 bg-zinc-950">
+            {historyLoading ? (
+              <p className="p-4 text-center text-xs text-zinc-500">Loading history…</p>
+            ) : history.length === 0 ? (
+              <p className="p-4 text-center text-xs text-zinc-500">
+                No print history yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {history.map((row) => (
+                  <div key={row.id} className="flex items-center justify-between gap-3 p-2">
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-medium text-zinc-100">{row.itemName}</p>
-                      <p className="mt-0.5 font-mono text-[10px] text-zinc-500">{row.barcode}</p>
+                      <p className="truncate text-xs font-medium text-zinc-100">
+                        {row.itemName}
+                      </p>
+                      <p className="font-mono text-[10px] text-zinc-500">
+                        {row.barcode} · qty {row.qty}
+                      </p>
                     </div>
                     <button
                       type="button"
@@ -557,56 +594,12 @@ export function BulkLabelsPage() {
                       Reprint
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-[10px] text-zinc-400">
-                    <span>Qty {row.qty}</span>
-                    <span>{row.format}</span>
-                    <span className="text-right">{row.createdAt}</span>
-                  </div>
-                  {(row.line1 || row.line2) && (
-                    <p className="truncate text-[10px] text-zinc-500">
-                      {[row.line1, row.line2].filter(Boolean).join(" · ")}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-
-      {/* Preview pane — verify-before-print (7 cols, beside composer) */}
-      <div className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4 xl:col-span-7">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-zinc-100">Verify before print</h3>
-          <button
-            type="button"
-            onClick={() => {
-              if (previewUrl) URL.revokeObjectURL(previewUrl);
-              setPreviewUrl(null);
-            }}
-            disabled={!previewUrl}
-            className="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5 disabled:opacity-50"
-          >
-            Clear
-          </button>
-        </div>
-        {previewUrl ? (
-          <iframe
-            src={previewUrl}
-            title="Label PDF preview"
-            className="h-[640px] w-full rounded border border-white/10 bg-zinc-950"
-          />
-        ) : (
-          <p className="rounded border border-dashed border-white/10 bg-zinc-950 p-6 text-center text-xs text-zinc-500">
-            Click <span className="rounded bg-zinc-800 px-1 text-[10px]">Preview PDF</span> to
-            render the batch here. Review the layout, then download or print.
-          </p>
-        )}
-        <p className="text-[10px] text-zinc-500">
-          Format locked to <span className="font-mono">{LOCKED_FORMAT}</span>.
-          Page size + density come from the Printer type + Label size dropdowns.
-        </p>
-      </div>
+      </section>
     </div>
   );
 }
