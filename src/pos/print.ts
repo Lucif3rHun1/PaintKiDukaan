@@ -9,6 +9,7 @@
 // module graph.
 
 import type { Sale } from "./types";
+import { formatRupeesFromPaise } from "../lib/money";
 
 export interface LabelSpec {
   barcode: string;       // value encoded by Code128
@@ -132,10 +133,80 @@ export async function printReceipt(spec: ReceiptSpec): Promise<void> {
   doc.save(`receipt-${spec.sale.no}.pdf`);
 }
 
+export interface BatchLabel {
+  barcode: string;
+  line1?: string;
+  line2?: string;
+}
+
+export type PrintConfig =
+  | { type: "thermal"; size: "50x25" | "50x50" | "38x25" }
+  | { type: "laser-a4"; perSheet: 21 | 65 };
+
+async function makeBarcodePng(value: string): Promise<string> {
+  const JsBarcode = (await import("jsbarcode")).default;
+  const canvas = document.createElement("canvas");
+  JsBarcode(canvas, value, { format: "CODE128", displayValue: false, margin: 1, height: 40 });
+  return canvas.toDataURL("image/png");
+}
+
+/**
+ * Print multiple labels on a single thermal roll or A4 sheet.
+ * Thermal: each label is its own page in the PDF.
+ * Laser: grid layout per A4 sheet, configurable density.
+ */
+export async function printLabelBatch(batch: BatchLabel[], config: PrintConfig): Promise<void> {
+  if (batch.length === 0) return;
+  const { jsPDF } = await import("jspdf");
+
+  if (config.type === "thermal") {
+    const SIZE: Record<string, [number, number]> = {
+      "50x25": [50, 25],
+      "50x50": [50, 50],
+      "38x25": [38, 25],
+    };
+    const [w, h] = SIZE[config.size];
+    const doc = new jsPDF({ unit: "mm", format: [w, h], orientation: "landscape" });
+    const fontSize = h <= 25 ? 7 : 9;
+    for (let i = 0; i < batch.length; i++) {
+      if (i > 0) doc.addPage([w, h], "landscape");
+      const label = batch[i];
+      const bcW = Math.min(h - 4, w * 0.55);
+      const bcH = h - 6;
+      const png = await makeBarcodePng(label.barcode);
+      doc.addImage(png, "PNG", 2, 3, bcW, bcH);
+      doc.setFontSize(fontSize);
+      if (label.line1) doc.text(label.line1.slice(0, 30), bcW + 4, h / 2 - 2);
+      if (label.line2) doc.text(label.line2.slice(0, 30), bcW + 4, h / 2 + 2);
+    }
+    doc.save(`labels-batch-${Date.now()}.pdf`);
+  } else {
+    const layouts: Record<21 | 65, { cols: number; rows: number; w: number; h: number }> = {
+      21: { cols: 3, rows: 7, w: 70, h: 37 },
+      65: { cols: 5, rows: 13, w: 38, h: 21 },
+    };
+    const layout = layouts[config.perSheet];
+    const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    doc.setFontSize(7);
+    for (let i = 0; i < batch.length; i++) {
+      const onPage = i % config.perSheet;
+      if (i > 0 && onPage === 0) doc.addPage();
+      const label = batch[i];
+      const col = onPage % layout.cols;
+      const row = Math.floor(onPage / layout.cols);
+      const x = col * layout.w;
+      const y = row * layout.h;
+      const bcW = layout.w - 4;
+      const bcH = layout.h - 8;
+      const png = await makeBarcodePng(label.barcode);
+      doc.addImage(png, "PNG", x + 2, y + 2, bcW, bcH);
+      if (label.line1) doc.text(label.line1.slice(0, 22), x + 2, y + layout.h - 4);
+      if (label.line2) doc.text(label.line2.slice(0, 22), x + 2, y + layout.h - 1);
+    }
+    doc.save(`labels-a4-${config.perSheet}-${Date.now()}.pdf`);
+  }
+}
+
 export function paiseToRupees(paise: number): string {
-  const sign = paise < 0 ? "-" : "";
-  const abs = Math.abs(paise);
-  const rupees = Math.floor(abs / 100);
-  const p = abs % 100;
-  return `${sign}₹${rupees.toLocaleString("en-IN")}.${p.toString().padStart(2, "0")}`;
+  return formatRupeesFromPaise(paise);
 }

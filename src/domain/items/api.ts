@@ -4,6 +4,7 @@
  */
 import { invoke } from "../ipc";
 import type {
+  Brand,
   ConversionResult,
   Item,
   ItemFilter,
@@ -43,4 +44,26 @@ export async function boxUnitConversion(
     item_id: itemId,
     qty,
   });
+}
+
+export async function listBrands(): Promise<Brand[]> {
+  return invoke<Brand[]>("list_brands");
+}
+
+export async function getBrand(id: number): Promise<Brand> {
+  return invoke<Brand>("get_brand", { id });
+}
+
+export async function updateBrandCodePrefix(
+  id: number,
+  codePrefix: string,
+): Promise<Brand> {
+  return invoke<Brand>("update_brand_code_prefix", { id, codePrefix });
+}
+
+export async function previewNextBarcode(
+  brandId: number,
+  itemName: string,
+): Promise<string> {
+  return invoke<string>("preview_next_barcode", { brandId, itemName });
 }

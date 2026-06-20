@@ -1,18 +1,7 @@
 import { tauriInvoke as invoke } from "./lib/security/tauri";
 import { initSessionLog } from "./lib/security/sessionLog";
-import logoSmall from "./assets/logo-32.png";
 import logo from "./assets/logo-64.png";
-import {
-  LayoutDashboard,
-  Loader2,
-  Lock,
-  Package,
-  ShoppingCart,
-  Settings,
-  Users,
-  UserCheck,
-  HeartPulse,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 /* ── Security UI ─────────────────────────────────────────── */
@@ -24,47 +13,47 @@ import { UserManagement } from "./lib/security/userManagement";
 
 /* ── Domain UI (Slice B) ─────────────────────────────────── */
 import { ItemList } from "./domain/items/ItemList";
+import { BulkLabelsPage } from "./domain/items/BulkLabelsPage";
+import { BrandAdmin } from "./domain/items/BrandAdmin";
 import { CustomerList } from "./domain/customers/CustomerList";
+import { CustomerForm } from "./domain/customers/CustomerForm";
 import { VendorList } from "./domain/vendors/VendorList";
-import { ManageTypes } from "./domain/customerTypes/ManageTypes";
-
+import { VendorForm } from "./domain/vendors/VendorForm";
+import { customerOutstanding } from "./domain/customers/api";
+import { listCustomerTypes } from "./domain/customerTypes/api";
 /* ── POS UI (Slice C) ────────────────────────────────────── */
-import PosLayout from "./pos/PosLayout";
+import SalesPage from "./pos/sales/SalesPage";
+import InwardPage from "./pos/purchases/InwardPage";
+import SalesReportPage from "./pos/salesReport/SalesReportPage";
 
 /* ── Shell UI (Slice D) ──────────────────────────────────── */
 import { Dashboard } from "./shell/routes/Dashboard";
 import { Settings as SettingsPage } from "./shell/routes/Settings";
 import { AdminLogs } from "./shell/routes/AdminLogs";
 import { MasterHealthPage } from "./shell/health/MasterHealthPage";
+import { AppShell, type AppShellTab } from "./shell/AppShell";
+import { InlineDialog } from "./components/ui/InlineDialog";
+import type { Customer, CustomerType, Vendor } from "./domain/types";
 
 const THIRTY_SECONDS = 30_000;
 const FIFTEEN_MINUTES = 15 * 60 * 1_000;
 const LOCKED_SESSION = { user: null, locked: true } as const;
 
-/* ── Navigation tabs ─────────────────────────────────────── */
-type AppTab =
-  | "dashboard"
-  | "pos"
-  | "items"
-  | "customers"
-  | "vendors"
-  | "settings"
-  | "health"
-  | "logs";
+/* ── Hash routing ───────────────────────────────────────── */
+const HASH_REDIRECTS: Record<string, string> = {
+  "#/pos": "#/sales",
+  "#/pos/inward": "#/inward",
+  "#/pos/held": "#/sales",
+  "#/pos/dayclose": "#/sales-report",
+  "#/pos/day-close": "#/sales-report",
+  "#/pos/reports": "#/sales-report",
+};
 
-const NAV_ITEMS: { id: AppTab; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "pos", label: "POS", icon: ShoppingCart },
-  { id: "items", label: "Items", icon: Package },
-  { id: "customers", label: "Customers", icon: Users },
-  { id: "vendors", label: "Vendors", icon: UserCheck },
-  { id: "settings", label: "Settings", icon: Settings },
-  { id: "health", label: "Health", icon: HeartPulse },
-];
-
-function readTab(): AppTab {
+function readTab(): AppShellTab {
   const h = typeof window !== "undefined" ? window.location.hash : "";
-  if (h.startsWith("#/pos")) return "pos";
+  if (h.startsWith("#/sales-report")) return "sales-report";
+  if (h.startsWith("#/inward")) return "inward";
+  if (h.startsWith("#/sales")) return "sales";
   if (h.startsWith("#/items")) return "items";
   if (h.startsWith("#/customers")) return "customers";
   if (h.startsWith("#/vendors")) return "vendors";
@@ -72,6 +61,24 @@ function readTab(): AppTab {
   if (h.startsWith("#/health")) return "health";
   if (h.startsWith("#/logs")) return "logs";
   return "dashboard";
+}
+
+function readItemsSubRoute(): "list" | "barcodes" | "brands" | "outwards" {
+  const h = window.location.hash;
+  if (h.startsWith("#/items/barcodes")) return "barcodes";
+  if (h.startsWith("#/items/brands")) return "brands";
+  if (h.startsWith("#/items/outwards")) return "outwards";
+  return "list";
+}
+
+function applyHashRedirect(): boolean {
+  if (typeof window === "undefined") return false;
+  const target = HASH_REDIRECTS[window.location.hash];
+  if (target) {
+    window.location.replace(target);
+    return true;
+  }
+  return false;
 }
 
 export default function App() {
@@ -82,11 +89,27 @@ export default function App() {
   const setSession = useSecurity((s) => s.setSession);
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
-  const [tab, setTab] = useState<AppTab>(readTab);
+  const [tab, setTab] = useState<AppShellTab>(readTab);
+
+  /* ── Vendor modal state ───────────────────────────────── */
+  const [vendorCreateOpen, setVendorCreateOpen] = useState(false);
+  const [vendorEditTarget, setVendorEditTarget] = useState<Vendor | null>(null);
+  const [vendorDetailTarget, setVendorDetailTarget] = useState<Vendor | null>(null);
+
+  /* ── Customer modal state ─────────────────────────────── */
+  const [customerCreateOpen, setCustomerCreateOpen] = useState(false);
+  const [customerEditTarget, setCustomerEditTarget] = useState<Customer | null>(null);
+  const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
+
+  // Fetch customer types once
+  useEffect(() => {
+    listCustomerTypes().then(setCustomerTypes).catch(() => {});
+  }, []);
 
   /* ── Bootstrap ─────────────────────────────────────────── */
   useEffect(() => {
     let cancelled = false;
+    if (applyHashRedirect()) return;
     console.log("[BOOT] Calling app_bootstrap...");
     invoke<Bootstrap>("app_bootstrap")
       .then((b) => {
@@ -173,9 +196,9 @@ export default function App() {
     }
   }
 
-  function navigate(t: AppTab) {
+  function navigate(t: AppShellTab, hash?: string) {
     setTab(t);
-    window.location.hash = t === "dashboard" ? "#/" : `#/${t}`;
+    window.location.hash = hash ?? (t === "dashboard" ? "#/" : `#/${t}`);
   }
 
   /* ── Security phases ───────────────────────────────────── */
@@ -205,129 +228,166 @@ export default function App() {
   const role = user?.role ?? "owner";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      {/* Sidebar */}
-      <aside className="hidden w-56 shrink-0 border-r border-white/10 bg-zinc-900/80 md:flex md:flex-col">
-        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-4">
-          <img
-            src={logoSmall}
-            alt=""
-            className="h-7 w-7 rounded-lg"
+    <AppShell
+      activeTab={tab}
+      user={user}
+      bootstrapError={bootstrapError}
+      onNavigate={navigate}
+      onLock={lockNow}
+      onLogout={lockNow}
+    >
+      {tab === "dashboard" && (
+        <Dashboard
+          user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+          onNavigate={navigate}
+          onLock={lockNow}
+        />
+      )}
+      {tab === "sales" && (
+        <SalesPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+      )}
+      {tab === "inward" && (
+        <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+      )}
+      {tab === "sales-report" && (
+        <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+      )}
+      {tab === "items" && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Inventory</h2>
+          <ItemSubNav />
+          {readItemsSubRoute() === "barcodes" && <BulkLabelsPage />}
+          {readItemsSubRoute() === "brands" && <BrandAdmin role={role} />}
+          {readItemsSubRoute() === "list" && <ItemList role={role} />}
+          {readItemsSubRoute() === "outwards" && (
+            <p className="text-sm text-slate-500">Outwards view coming soon.</p>
+          )}
+        </div>
+      )}
+      {tab === "vendors" && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Vendors</h2>
+          <VendorList
+            role={role}
+            onCreate={() => setVendorCreateOpen(true)}
+            onSelect={(v) => setVendorDetailTarget(v)}
+            onRecordPayment={(v) => setVendorEditTarget(v)}
           />
-          <span className="text-sm font-semibold tracking-tight text-white">PaintKiDukaan</span>
         </div>
-
-        <nav className="flex-1 space-y-0.5 px-2 py-3">
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => navigate(id)}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                tab === id
-                  ? "bg-white/10 text-white font-medium"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
-              }`}
-            >
-              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="border-t border-white/10 px-3 py-3">
-          <div className="mb-2 truncate text-xs text-zinc-500">
-            {user?.name ?? "Owner"} · {role}
-          </div>
-          <button
-            type="button"
-            onClick={lockNow}
-            className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-white/20 hover:bg-white/5"
-          >
-            <Lock className="h-4 w-4" aria-hidden="true" />
-            Lock
-          </button>
+      )}
+      {tab === "customers" && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Customers</h2>
+          <CustomerList
+            role={role}
+            onCreate={() => setCustomerCreateOpen(true)}
+            onSelect={(c) => setCustomerEditTarget(c)}
+          />
         </div>
-      </aside>
+      )}
+      {tab === "settings" && <SettingsPage />}
+      {tab === "health" && <MasterHealthPage />}
+      {tab === "logs" && <AdminLogs />}
 
-      {/* Mobile top bar */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex items-center justify-between border-b border-white/10 bg-zinc-900/80 px-4 py-3 md:hidden">
-          <div className="flex items-center gap-2">
-            <img
-              src={logoSmall}
-              alt=""
-              className="h-6 w-6 rounded-lg"
-            />
-            <span className="text-sm font-semibold text-white">PaintKiDukaan</span>
+      {/* ── Vendor modals ──────────────────────────────── */}
+      <InlineDialog
+        open={vendorCreateOpen}
+        onClose={() => setVendorCreateOpen(false)}
+        title="Add Vendor"
+      >
+        <VendorForm
+          mode="create"
+          onSaved={(v) => { setVendorCreateOpen(false); setVendorDetailTarget(v); }}
+          onCancel={() => setVendorCreateOpen(false)}
+        />
+      </InlineDialog>
+
+      <InlineDialog
+        open={!!vendorEditTarget}
+        onClose={() => setVendorEditTarget(null)}
+        title="Edit Vendor"
+      >
+        {vendorEditTarget && (
+          <VendorForm
+            mode="edit"
+            initial={vendorEditTarget}
+            onSaved={(v) => { setVendorEditTarget(null); setVendorDetailTarget(v); }}
+            onCancel={() => setVendorEditTarget(null)}
+          />
+        )}
+      </InlineDialog>
+
+      <InlineDialog
+        open={!!vendorDetailTarget}
+        onClose={() => setVendorDetailTarget(null)}
+        title="Vendor Details"
+        size="lg"
+      >
+        {vendorDetailTarget && (
+          <div className="text-sm text-slate-300">
+            Vendor detail for {vendorDetailTarget.name} (id={vendorDetailTarget.id}).
           </div>
-          <button
-            type="button"
-            onClick={lockNow}
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/5"
-          >
-            <Lock className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </header>
+        )}
+      </InlineDialog>
 
-        {/* Mobile tab bar */}
-        <nav className="flex overflow-x-auto border-b border-white/10 bg-zinc-900/60 px-2 py-1 md:hidden">
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => navigate(id)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors ${
-                tab === id
-                  ? "bg-white/10 text-white font-medium"
-                  : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-              {label}
-            </button>
-          ))}
-        </nav>
+      {/* ── Customer modals ────────────────────────────── */}
+      <InlineDialog
+        open={customerCreateOpen}
+        onClose={() => setCustomerCreateOpen(false)}
+        title="Add Customer"
+      >
+        <CustomerForm
+          mode="create"
+          types={customerTypes}
+          canFlag={role === "owner"}
+          onSaved={(c) => { setCustomerCreateOpen(false); setCustomerEditTarget(c); }}
+          onCancel={() => setCustomerCreateOpen(false)}
+        />
+      </InlineDialog>
 
-        {/* Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {/* Bootstrap error */}
-          {bootstrapError && (
-            <p className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200" role="alert">
-              {bootstrapError}
-            </p>
-          )}
+      <InlineDialog
+        open={!!customerEditTarget}
+        onClose={() => setCustomerEditTarget(null)}
+        title="Edit Customer"
+      >
+        {customerEditTarget && (
+          <CustomerForm
+            mode="edit"
+            initial={customerEditTarget}
+            types={customerTypes}
+            canFlag={role === "owner"}
+            onSaved={(c) => setCustomerEditTarget(null)}
+            onCancel={() => setCustomerEditTarget(null)}
+          />
+        )}
+      </InlineDialog>
+    </AppShell>
+  );
+}
 
-          {tab === "dashboard" && <Dashboard />}
-          {tab === "pos" && (
-            <PosLayout
-              user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-              onLock={lockNow}
-            />
-          )}
-          {tab === "items" && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold">Inventory</h2>
-              <ItemList role={role} />
-            </div>
-          )}
-          {tab === "customers" && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold">Customers</h2>
-              <CustomerList role={role} />
-            </div>
-          )}
-          {tab === "vendors" && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold">Vendors</h2>
-              <VendorList role={role} />
-            </div>
-          )}
-          {tab === "settings" && <SettingsPage />}
-          {tab === "health" && <MasterHealthPage />}
-          {tab === "logs" && <AdminLogs />}
-        </main>
-      </div>
+function ItemSubNav() {
+  const sub = readItemsSubRoute();
+  const tabs: ReadonlyArray<{ id: "list" | "barcodes" | "brands" | "outwards"; label: string; href: string }> = [
+    { id: "list", label: "Items", href: "#/items" },
+    { id: "barcodes", label: "Barcode Labels", href: "#/items/barcodes" },
+    { id: "brands", label: "Brands", href: "#/items/brands" },
+    { id: "outwards", label: "Outwards", href: "#/items/outwards" },
+  ];
+  return (
+    <div className="flex gap-1 border-b border-white/10">
+      {tabs.map((t) => (
+        <a
+          key={t.id}
+          href={t.href}
+          className={`rounded-t-md px-3 py-1.5 text-sm whitespace-nowrap ${
+            sub === t.id
+              ? "border border-white/10 border-b-zinc-950 bg-zinc-950 font-medium text-zinc-100"
+              : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+          }`}
+        >
+          {t.label}
+        </a>
+      ))}
     </div>
   );
 }

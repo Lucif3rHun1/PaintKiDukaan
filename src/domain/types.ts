@@ -1,3 +1,6 @@
+import { formatRupeesFromPaise as formatPaiseAsRupees } from "../lib/money";
+export { formatRupeesFromPaise } from "../lib/money";
+
 /**
  * Shared types for the Tauri command surface.
  * Mirrors the Rust structs in `src-tauri/src/commands/`.
@@ -33,16 +36,19 @@ export interface Item {
   brand: string | null;
   category: string | null;
   unit: ItemUnit;
-  pack_size: string | null;
-  units_per_box: number | null;
+  units_per_pack: number | null;
   sell_unit: SellUnit;
-  retail_price: number;
-  cost_price: number;
+  retail_price_paise: number;
+  cost_paise: number;
+  promo_price_paise: number | null;
   label_line1: string | null;
   label_line2: string | null;
   location_text: string | null;
-  reorder_level: number;
+  primary_location_id: number;
+  min_qty: number;
+  barcode_format: string;
   is_active: boolean;
+  current_qty: number;
   created_at: string;
   updated_at: string;
 }
@@ -59,10 +65,10 @@ export type ItemLookup =
       id: number;
       sku_code: string;
       name: string;
-      retail_price: number;
+      retail_price_paise: number;
       sell_unit: SellUnit;
       unit: ItemUnit;
-      units_per_box: number | null;
+      units_per_pack: number | null;
       in_stock: number;
       location_text: string | null;
     }
@@ -71,7 +77,7 @@ export type ItemLookup =
       id: number;
       sku_code: string;
       name: string;
-      reorder_level: number;
+      min_qty: number;
       location_text: string | null;
       qty_per_loc: QtyPerLoc[];
     };
@@ -88,34 +94,40 @@ export interface ItemFilter {
 export interface NewItem {
   name: string;
   brand?: string | null;
+  brand_id?: number | null;
   category?: string | null;
   unit?: string;
-  pack_size?: string | null;
-  units_per_box?: number | null;
+  units_per_pack?: number | null;
   sell_unit?: string;
-  retail_price: number;
-  cost_price: number;
+  retail_price_paise: number;
+  cost_paise: number;
+  promo_price_paise?: number | null;
   label_line1?: string | null;
   label_line2?: string | null;
   location_text?: string | null;
-  reorder_level: number;
+  primary_location_id: number;
+  min_qty: number;
+  barcode_format?: string;
   barcode?: string | null;
 }
 
 export interface ItemUpdate {
   name?: string | null;
   brand?: string | null;
+  brand_id?: number | null;
   category?: string | null;
   unit?: string | null;
-  pack_size?: string | null;
-  units_per_box?: number | null;
+  units_per_pack?: number | null;
   sell_unit?: string | null;
-  retail_price?: number | null;
-  cost_price?: number | null;
+  retail_price_paise?: number | null;
+  cost_paise?: number | null;
+  promo_price_paise?: number | null;
   label_line1?: string | null;
   label_line2?: string | null;
   location_text?: string | null;
-  reorder_level?: number | null;
+  primary_location_id?: number | null;
+  min_qty?: number | null;
+  barcode_format?: string | null;
   barcode?: string | null;
   is_active?: boolean | null;
 }
@@ -123,7 +135,7 @@ export interface ItemUpdate {
 export interface ConversionResult {
   qty: number;
   sell_unit: SellUnit;
-  units_per_box: number | null;
+  units_per_pack: number | null;
   qty_in_base_units: number;
 }
 
@@ -133,8 +145,8 @@ export interface Customer {
   phone: string;
   type_id: number | null;
   type_name: string | null;
-  is_flagged: boolean;
   credit_limit: number | null;
+  is_flagged: boolean;
   opening_balance: number;
   notes: string | null;
   is_active: boolean;
@@ -155,8 +167,8 @@ export interface NewCustomer {
   name: string;
   phone: string;
   type_id?: number | null;
-  is_flagged?: boolean;
   credit_limit?: number | null;
+  is_flagged?: boolean;
   opening_balance?: number;
   notes?: string | null;
 }
@@ -166,6 +178,7 @@ export interface CustomerUpdate {
   phone?: string;
   type_id?: number | null;
   credit_limit?: number | null;
+  is_flagged?: boolean;
   opening_balance?: number;
   notes?: string | null;
   is_active?: boolean;
@@ -175,6 +188,8 @@ export interface Vendor {
   id: number;
   name: string;
   phone: string | null;
+  contact_person: string | null;
+  credit_limit: number | null;
   opening_balance: number;
   notes: string | null;
   is_active: boolean;
@@ -193,6 +208,8 @@ export interface VendorOutstanding {
 export interface NewVendor {
   name: string;
   phone?: string | null;
+  contact_person?: string | null;
+  credit_limit?: number | null;
   opening_balance?: number;
   notes?: string | null;
 }
@@ -200,6 +217,8 @@ export interface NewVendor {
 export interface VendorUpdate {
   name?: string;
   phone?: string | null;
+  contact_person?: string | null;
+  credit_limit?: number | null;
   opening_balance?: number;
   notes?: string | null;
   is_active?: boolean;
@@ -211,6 +230,17 @@ export interface VendorPayment {
   mode: string;
   date: string;
   notes?: string | null;
+}
+
+export interface VendorPaymentRecord {
+  id: number;
+  vendor_id: number;
+  amount: number;
+  mode: string;
+  date: string;
+  notes: string | null;
+  user_id: number;
+  created_at: string;
 }
 
 export interface Location {
@@ -237,6 +267,13 @@ export interface NewCustomerType {
   name: string;
 }
 
+export interface Brand {
+  id: number;
+  name: string;
+  code_prefix: string;
+  next_seq: number;
+}
+
 export interface AppError {
   code:
     | "db"
@@ -259,11 +296,10 @@ export function isAppError(e: unknown): e is AppError {
   );
 }
 
-/** Indian-locale money formatter. */
-export function formatINR(n: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 2,
-  }).format(n);
+/**
+ * This function accepts PAISE (the backend wire format), not rupees.
+ * Prefer formatRupeesFromPaise for new call sites.
+ */
+export function formatINR(paise: number): string {
+  return formatPaiseAsRupees(paise);
 }
