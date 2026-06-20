@@ -16,10 +16,12 @@ import {
   ArrowUpFromLine,
   Barcode,
   Edit3,
+  IndianRupee,
   PackagePlus,
   Scale,
   Search,
   TriangleAlert,
+  TrendingDown,
 } from "lucide-react";
 
 import {
@@ -28,6 +30,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  Money,
   Skeleton,
 } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
@@ -47,9 +50,7 @@ type Mode = "list" | "create" | "edit" | "view";
 export function ItemList({ role }: Props) {
   const [items, setItems] = useState<Item[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [query, setQuery] = useState("");
-  const [brand, setBrand] = useState("");
-  const [category, setCategory] = useState("");
+  const [search, setSearch] = useState("");
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [includeInactive, setIncludeInactive] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -66,9 +67,7 @@ export function ItemList({ role }: Props) {
     setLoading(true);
     setError(null);
     listItems({
-      query: query || undefined,
-      brand: brand || undefined,
-      category: category || undefined,
+      query: search || undefined,
       low_stock_only: lowStockOnly,
       include_inactive: includeInactive,
     })
@@ -80,7 +79,7 @@ export function ItemList({ role }: Props) {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, brand, category, lowStockOnly, includeInactive]);
+  }, [search, lowStockOnly, includeInactive]);
 
   useEffect(() => {
     listLocations(false)
@@ -117,9 +116,45 @@ export function ItemList({ role }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [mode, canEdit]);
 
+  const metrics = useMemo(() => {
+    let lowStock = 0;
+    let outOfStock = 0;
+    let totalRetail = 0;
+    for (const item of items) {
+      if (item.current_qty === 0) outOfStock++;
+      else if (item.current_qty <= item.min_qty) lowStock++;
+      totalRetail += item.retail_price_paise;
+    }
+    return {
+      total: items.length,
+      lowStock,
+      outOfStock,
+      totalRetail,
+    };
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((item) => {
+      const name = item.name.toLowerCase();
+      const sku = item.sku_code.toLowerCase();
+      const barcode = item.barcode?.toLowerCase() ?? "";
+      const brand = item.brand?.toLowerCase() ?? "";
+      const category = item.category?.toLowerCase() ?? "";
+      return (
+        name.includes(q) ||
+        sku.includes(q) ||
+        barcode.includes(q) ||
+        brand.includes(q) ||
+        category.includes(q)
+      );
+    });
+  }, [items, search]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, Map<string, Item[]>>();
-    for (const item of items) {
+    for (const item of filteredItems) {
       const b = item.brand ?? "No brand";
       const c = item.category ?? "No category";
       if (!map.has(b)) map.set(b, new Map());
@@ -208,6 +243,32 @@ export function ItemList({ role }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* ── Metrics cards ────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <MetricCard
+          label="Total Items"
+          value={metrics.total}
+          icon={<PackagePlus className="h-4 w-4 text-zinc-400" />}
+        />
+        <MetricCard
+          label="Out of Stock"
+          value={metrics.outOfStock}
+          accent={metrics.outOfStock > 0 ? "red" : undefined}
+          icon={<TrendingDown className="h-4 w-4" />}
+        />
+        <MetricCard
+          label="Low Stock"
+          value={metrics.lowStock}
+          accent={metrics.lowStock > 0 ? "amber" : undefined}
+          icon={<TriangleAlert className="h-4 w-4" />}
+        />
+        <MetricCard
+          label="Total Value"
+          value={`₹${(metrics.totalRetail / 100).toLocaleString("en-IN")}`}
+          icon={<IndianRupee className="h-4 w-4 text-zinc-400" />}
+        />
+      </div>
+
       {/* ── Filter bar ───────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[200px] flex-1">
@@ -218,26 +279,12 @@ export function ItemList({ role }: Props) {
           <input
             ref={searchRef}
             type="search"
-            placeholder="Search name / SKU / barcode…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name, SKU, brand, category, barcode…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             className="input-dark pl-9"
           />
         </div>
-        <input
-          type="text"
-          placeholder="Brand"
-          value={brand}
-          onChange={(e) => setBrand(e.target.value)}
-          className="input-dark w-28"
-        />
-        <input
-          type="text"
-          placeholder="Category"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="input-dark w-28"
-        />
         <label className="flex h-9 items-center gap-1.5 text-xs text-zinc-400">
           <input
             type="checkbox"
@@ -273,16 +320,6 @@ export function ItemList({ role }: Props) {
           className="!text-xs"
         >
           Inwards
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          icon={ArrowUpFromLine}
-          onClick={() => (window.location.hash = "#/sales")}
-          className="!text-xs"
-        >
-          Outwards
         </Button>
         <Button
           type="button"
@@ -390,11 +427,11 @@ export function ItemList({ role }: Props) {
                           </td>
                           {role === "owner" ? (
                             <td className="px-3 py-2 text-right text-zinc-200">
-                              ₹{(item.cost_paise / 100).toFixed(2)}
+                              <Money paise={item.cost_paise} />
                             </td>
                           ) : null}
                           <td className="px-3 py-2 text-right text-zinc-100">
-                            ₹{(item.retail_price_paise / 100).toFixed(2)}
+                            <Money paise={item.retail_price_paise} />
                           </td>
                           <td className="px-3 py-2 text-right text-zinc-300">
                             {item.min_qty}
@@ -507,5 +544,39 @@ function StockBadges({
       <Badge variant="success">In stock</Badge>
       <span className="text-xs text-zinc-400">· {currentQty}</span>
     </span>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  icon,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ReactNode;
+  accent?: "red" | "amber" | "green";
+}) {
+  const border =
+    accent === "red"
+      ? "border-red-500/30"
+      : accent === "amber"
+        ? "border-amber-500/30"
+        : accent === "green"
+          ? "border-emerald-500/30"
+          : "border-white/5";
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-lg border ${border} bg-zinc-900/40 px-3 py-2.5`}
+    >
+      {icon}
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+          {label}
+        </p>
+        <p className="text-lg font-semibold text-zinc-100">{value}</p>
+      </div>
+    </div>
   );
 }

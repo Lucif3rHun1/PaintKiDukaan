@@ -127,7 +127,7 @@ export function BulkLabelsPage() {
       return;
     }
     setLine1(shopName || selectedItem.label_line1 || "");
-    const brandPart = (selectedItem as Record<string, unknown>).brand ?? "";
+    const brandPart = selectedItem.brand ?? "";
     const brandName = typeof brandPart === "string" ? brandPart : "";
     const unitLabel = selectedItem.unit_label ?? selectedItem.unit_code ?? "";
     setLine2(
