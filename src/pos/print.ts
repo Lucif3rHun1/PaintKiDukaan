@@ -191,6 +191,18 @@ export async function buildLabelPdfBlob(
 ): Promise<Blob> {
   if (batch.length === 0) return new Blob([], { type: "application/pdf" });
 
+  try {
+    return await buildLabelPdfBlobInner(batch, config);
+  } catch (err) {
+    console.warn("buildLabelPdfBlob failed", err);
+    throw err;
+  }
+}
+
+async function buildLabelPdfBlobInner(
+  batch: BatchLabel[],
+  config: PrintConfig,
+): Promise<Blob> {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 

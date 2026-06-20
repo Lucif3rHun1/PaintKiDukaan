@@ -149,6 +149,14 @@ pub fn run() {
             commands::items::get_item,
             commands::items::lookup_item,
             commands::items::box_unit_conversion,
+            commands::items::cmd_search_items,
+            // Brands (Slice B)
+            commands::brands::list_brands,
+            commands::brands::get_brand,
+            commands::brands::update_brand_code_prefix,
+            commands::brands::preview_next_barcode,
+            commands::label_log::record_label_print,
+            commands::label_log::list_label_prints,
             // Customers (Slice B)
             commands::customers::create_customer,
             commands::customers::update_customer,
@@ -156,6 +164,8 @@ pub fn run() {
             commands::customers::lookup_customer,
             commands::customers::customer_outstanding,
             commands::customers::list_customer_bills,
+            commands::customers::customer_ledger,
+            commands::customers::customer_credit_sales,
             // Vendors (Slice B)
             commands::vendors::create_vendor,
             commands::vendors::list_vendors,
@@ -163,20 +173,21 @@ pub fn run() {
             commands::vendors::update_vendor,
             commands::vendors::record_vendor_payment,
             commands::vendors::vendor_outstanding,
+            commands::vendors::list_vendor_payments,
             // Sales (Slice C)
             commands::sales::cmd_create_sale,
             commands::sales::cmd_convert_quotation,
             commands::sales::cmd_get_sale,
             commands::sales::cmd_list_sales,
-            commands::sales::cmd_hold_bill,
-            commands::sales::cmd_list_held,
-            commands::sales::cmd_delete_held,
+            commands::sales::cmd_list_sale_payments,
+            commands::sales::cmd_record_sale_payment,
             // Purchases (Slice C)
             commands::purchases::cmd_create_inward,
             commands::purchases::cmd_last_cost,
             commands::purchases::cmd_list_purchases,
             commands::purchases::cmd_get_purchase,
             commands::purchases::cmd_movements_for_item,
+            commands::purchases::cmd_list_purchases_by_vendor,
             // Day Close (Slice C)
             commands::day_close::cmd_cash_sales_for,
             commands::day_close::cmd_last_opening_for,
@@ -202,6 +213,7 @@ pub fn run() {
             commands::backup::list_targets,
             commands::backup::backup_now,
             commands::backup::restore,
+            commands::backup::restore_into_first_launch,
             commands::backup::test_restore,
             commands::backup::backup_status,
             // Hardening (Slice D)
