@@ -27,9 +27,7 @@ import {
   Alert,
   Badge,
   Button,
-  Card,
   EmptyState,
-  HelpHint,
   Skeleton,
 } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
@@ -209,52 +207,10 @@ export function ItemList({ role }: Props) {
   }
 
   return (
-    <Card className="space-y-4 border-white/10 bg-zinc-900 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-100">Inventory</h2>
-          <p className="text-sm text-zinc-400">
-            Search, count, and move stock without leaving this list.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {canEdit ? (
-            <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate}>
-              Add Item
-            </Button>
-          ) : null}
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            icon={ArrowDownToLine}
-            onClick={() => (window.location.hash = "#/inward")}
-          >
-            Inwards
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            icon={ArrowUpFromLine}
-            onClick={() => (window.location.hash = "#/sales")}
-          >
-            Outwards
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            icon={Scale}
-            onClick={() => (window.location.hash = "#/inward")}
-          >
-            Adjust
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_8rem_8rem_auto_auto]">
-        <div className="relative">
+    <div className="space-y-3">
+      {/* ── Filter bar ───────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
             aria-hidden="true"
@@ -262,7 +218,7 @@ export function ItemList({ role }: Props) {
           <input
             ref={searchRef}
             type="search"
-            placeholder="Search name / SKU / barcode…  (press /)"
+            placeholder="Search name / SKU / barcode…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="input-dark pl-9"
@@ -273,46 +229,78 @@ export function ItemList({ role }: Props) {
           placeholder="Brand"
           value={brand}
           onChange={(e) => setBrand(e.target.value)}
-          className="input-dark"
+          className="input-dark w-28"
         />
         <input
           type="text"
           placeholder="Category"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="input-dark"
+          className="input-dark w-28"
         />
-        <label className="flex min-h-10 items-center gap-2 text-sm text-zinc-300">
+        <label className="flex h-9 items-center gap-1.5 text-xs text-zinc-400">
           <input
             type="checkbox"
             checked={lowStockOnly}
             onChange={(e) => setLowStockOnly(e.target.checked)}
-            className="h-4 w-4"
+            className="h-3.5 w-3.5"
           />
           Low stock
         </label>
-        <label className="flex min-h-10 items-center gap-2 text-sm text-zinc-300">
+        <label className="flex h-9 items-center gap-1.5 text-xs text-zinc-400">
           <input
             type="checkbox"
             checked={includeInactive}
             onChange={(e) => setIncludeInactive(e.target.checked)}
-            className="h-4 w-4"
+            className="h-3.5 w-3.5"
           />
           Archived
         </label>
+
+        <div className="h-5 w-px bg-white/10" />
+
+        {canEdit ? (
+          <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} className="!text-xs">
+            Add Item
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          icon={ArrowDownToLine}
+          onClick={() => (window.location.hash = "#/inward")}
+          className="!text-xs"
+        >
+          Inwards
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          icon={ArrowUpFromLine}
+          onClick={() => (window.location.hash = "#/sales")}
+          className="!text-xs"
+        >
+          Outwards
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          icon={Scale}
+          onClick={() => (window.location.hash = "#/inward")}
+          className="!text-xs"
+        >
+          Adjust
+        </Button>
       </div>
 
-      <HelpHint>
-        Press <kbd className="rounded bg-zinc-800 px-1 text-[10px]">n</kbd> to add a
-        new item, <kbd className="rounded bg-zinc-800 px-1 text-[10px]">/</kbd>{" "}
-        to focus search. Click a row to view; row action menu lets you edit,
-        print barcode, archive.
-      </HelpHint>
-
+      {/* ── Status ───────────────────────────────────────────── */}
       {error ? <Alert title="Inventory failed to load">{error}</Alert> : null}
       {loading ? <Skeleton variant="card" className="h-40" /> : null}
 
-      {!loading && items.length === 0 ? (
+      {!loading && items.length === 0 && (
         <EmptyState
           icon={PackagePlus}
           title="No items match this view"
@@ -325,34 +313,37 @@ export function ItemList({ role }: Props) {
             ) : undefined
           }
         />
-      ) : null}
+      )}
 
+      {/* ── Grouped tables ───────────────────────────────────── */}
       {[...grouped.entries()].map(([itemBrand, categories]) => (
-        <section key={itemBrand} className="space-y-2">
-          <h3 className="text-sm font-semibold text-zinc-300">{itemBrand}</h3>
+        <section key={itemBrand} className="space-y-1.5">
+          <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            {itemBrand}
+          </h3>
           {[...categories.entries()].map(([itemCategory, rows]) => (
             <div
               key={itemCategory}
               className="overflow-hidden rounded-lg border border-white/10"
             >
-              <div className="bg-zinc-900/60 px-3 py-2 text-xs font-medium text-zinc-400">
+              <div className="border-b border-white/5 bg-zinc-900/40 px-3 py-1.5 text-[11px] font-medium text-zinc-500">
                 {itemCategory}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="border-b border-white/10 text-left text-xs uppercase text-zinc-500">
-                    <tr>
-                      <th className="py-2 pl-3">SKU</th>
-                      <th>Name</th>
-                      <th>Unit</th>
-                      <th>Location</th>
+                  <thead className="text-left text-xs text-zinc-500">
+                    <tr className="border-b border-white/10">
+                      <th className="px-3 py-2 font-medium">SKU</th>
+                      <th className="px-3 py-2 font-medium">Name</th>
+                      <th className="px-3 py-2 font-medium">Unit</th>
+                      <th className="px-3 py-2 font-medium">Location</th>
                       {role === "owner" ? (
-                        <th className="text-right">Cost</th>
+                        <th className="px-3 py-2 text-right font-medium">Cost</th>
                       ) : null}
-                      <th className="text-right">Retail</th>
-                      <th className="text-right">Min qty</th>
-                      <th>Stock</th>
-                      <th className="pr-3 text-right">Actions</th>
+                      <th className="px-3 py-2 text-right font-medium">Retail</th>
+                      <th className="px-3 py-2 text-right font-medium">Min qty</th>
+                      <th className="px-3 py-2 font-medium">Stock</th>
+                      <th className="px-3 py-2 text-right font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -363,21 +354,21 @@ export function ItemList({ role }: Props) {
                           key={item.id}
                           onClick={() => openEdit(item)}
                           className={[
-                            "cursor-pointer border-b border-white/5 hover:bg-white/5",
+                            "cursor-pointer border-b border-white/5 hover:bg-white/[0.03]",
                             item.current_qty === 0
                               ? "border-l-2 border-l-red-500/60 bg-red-500/5"
                               : "",
                             lowStock && item.current_qty > 0
                               ? "border-l-2 border-l-amber-400/60 bg-amber-500/5"
                               : "",
-                            !item.is_active ? "opacity-60" : "",
+                            !item.is_active ? "opacity-50" : "",
                           ].join(" ")}
                         >
-                          <td className="py-2 pl-3 font-mono text-xs text-zinc-300">
+                          <td className="px-3 py-2 font-mono text-xs text-zinc-400">
                             {item.sku_code}
                           </td>
-                          <td>
-                            <div className="flex flex-wrap items-center gap-2">
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-medium text-zinc-100">
                                 {item.name}
                               </span>
@@ -391,24 +382,24 @@ export function ItemList({ role }: Props) {
                               )}
                             </div>
                           </td>
-                          <td className="text-zinc-300">
+                          <td className="px-3 py-2 text-zinc-300">
                             {item.unit_label ?? item.unit_code ?? "—"}
                           </td>
-                          <td className="text-zinc-300">
+                          <td className="px-3 py-2 text-zinc-300">
                             {formatLocation(item)}
                           </td>
                           {role === "owner" ? (
-                            <td className="text-right text-zinc-200">
+                            <td className="px-3 py-2 text-right text-zinc-200">
                               ₹{(item.cost_paise / 100).toFixed(2)}
                             </td>
                           ) : null}
-                          <td className="text-right text-zinc-100">
+                          <td className="px-3 py-2 text-right text-zinc-100">
                             ₹{(item.retail_price_paise / 100).toFixed(2)}
                           </td>
-                          <td className="text-right text-zinc-300">
+                          <td className="px-3 py-2 text-right text-zinc-300">
                             {item.min_qty}
                           </td>
-                          <td>
+                          <td className="px-3 py-2">
                             <StockBadges
                               currentQty={item.current_qty}
                               minQty={item.min_qty}
@@ -416,7 +407,7 @@ export function ItemList({ role }: Props) {
                             />
                           </td>
                           <td
-                            className="pr-3 text-right"
+                            className="px-3 py-2 text-right"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <ActionMenu
@@ -474,7 +465,7 @@ export function ItemList({ role }: Props) {
           ))}
         </section>
       ))}
-    </Card>
+    </div>
   );
 }
 
@@ -507,7 +498,7 @@ function StockBadges({
           className="h-4 w-4 text-amber-400"
           aria-hidden="true"
         />
-        <Badge variant="warning">Low in stock · {currentQty}</Badge>
+        <Badge variant="warning">Low · {currentQty}</Badge>
       </span>
     );
   }

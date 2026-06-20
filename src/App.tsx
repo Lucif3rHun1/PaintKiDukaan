@@ -270,16 +270,20 @@ export default function App() {
         <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
       )}
       {tab === "items" && (
-        <div className="min-h-full space-y-4 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
-          <h2 className="text-xl font-semibold text-zinc-100">Inventory</h2>
-          <ItemSubNav active="items" />
+        <div className="min-h-full space-y-3 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-zinc-100">Inventory</h2>
+            <ItemSubNav active="items" />
+          </div>
           <ItemList role={role} />
         </div>
       )}
       {tab === "barcodes" && (
-        <div className="min-h-full space-y-4 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
-          <h2 className="text-xl font-semibold text-zinc-100">Inventory</h2>
-          <ItemSubNav active="barcodes" />
+        <div className="min-h-full space-y-3 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-zinc-100">Inventory</h2>
+            <ItemSubNav active="barcodes" />
+          </div>
           <BulkLabelsPage />
         </div>
       )}
