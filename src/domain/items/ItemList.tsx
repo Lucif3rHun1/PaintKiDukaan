@@ -9,7 +9,7 @@
  *   e — edit first selected row (after a row click)
  *   Esc — close any open modal
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArrowDownToLine,
@@ -31,11 +31,13 @@ import {
   Button,
   EmptyState,
   Money,
+  PaginationControls,
   Skeleton,
 } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
-import { createItem, listItems, updateItem } from "./api";
-import type { Item, NewItem } from "../types";
+import { usePaginatedQuery } from "../../lib/query";
+import { listBrands, listItems, updateItem } from "./api";
+import type { Brand, Item } from "../types";
 import { ItemForm } from "./ItemForm";
 import { printLabel } from "../../pos/print";
 import { listLocations } from "../locations/api";
@@ -46,15 +48,19 @@ interface Props {
 }
 
 type Mode = "list" | "create" | "edit" | "view";
+type ItemSortField = "name" | "sku" | "stock" | "retail";
+type SortDirection = "asc" | "desc";
+
+const ITEM_PAGE_SIZE = 25;
 
 export function ItemList({ role }: Props) {
-  const [items, setItems] = useState<Item[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [search, setSearch] = useState("");
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [includeInactive, setIncludeInactive] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<ItemSortField>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const [mode, setMode] = useState<Mode>("list");
   const [editing, setEditing] = useState<Item | null>(null);
@@ -63,28 +69,48 @@ export function ItemList({ role }: Props) {
 
   const canEdit = role === "owner" || role === "stocker";
 
-  const refresh = () => {
-    setLoading(true);
-    setError(null);
-    listItems({
-      query: search || undefined,
-      low_stock_only: lowStockOnly,
-      include_inactive: includeInactive,
-    })
-      .then(setItems)
-      .catch((e: unknown) => setError(String((e as { message?: string })?.message ?? e)))
-      .finally(() => setLoading(false));
-  };
+  const sorted = useCallback((a: Item, b: Item) => {
+    const direction = sortDirection === "asc" ? 1 : -1;
+    if (sortField === "sku") return a.sku_code.localeCompare(b.sku_code) * direction;
+    if (sortField === "stock") return (a.current_qty - b.current_qty) * direction;
+    if (sortField === "retail") return (a.retail_price_paise - b.retail_price_paise) * direction;
+    return a.name.localeCompare(b.name) * direction;
+  }, [sortDirection, sortField]);
 
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, lowStockOnly, includeInactive]);
+  const {
+    data: items,
+    allData: allItems,
+    isLoading: loading,
+    isFetching,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    totalItems,
+    totalPages,
+    pageSize,
+    refetch,
+  } = usePaginatedQuery<Item>({
+    queryKey: ["items", lowStockOnly, includeInactive, sortField, sortDirection],
+    pageSize: ITEM_PAGE_SIZE,
+    queryFn: ({ search: debouncedSearch }) =>
+      listItems({
+        query: debouncedSearch || undefined,
+        low_stock_only: lowStockOnly,
+        include_inactive: includeInactive,
+        limit: 500,
+      }),
+    clientSort: sorted,
+  });
 
   useEffect(() => {
     listLocations(false)
       .then(setLocations)
       .catch(() => setLocations([]));
+    listBrands()
+      .then(setBrands)
+      .catch(() => setBrands([]));
   }, []);
 
   const locationNameById = useMemo(() => {
@@ -93,10 +119,24 @@ export function ItemList({ role }: Props) {
     return map;
   }, [locations]);
 
+  const brandPrefixById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const b of brands) if (b.code_prefix) map.set(b.id, b.code_prefix);
+    return map;
+  }, [brands]);
+
   function formatLocation(item: Item): string {
     const where = locationNameById.get(item.primary_location_id) ?? "—";
     const hint = item.location_text?.trim();
     return hint ? `${where} / ${hint}` : where;
+  }
+
+  function displayName(item: Item): string {
+    if (item.brand_id != null) {
+      const prefix = brandPrefixById.get(item.brand_id);
+      if (prefix) return `${prefix}-${item.name}`;
+    }
+    return item.name;
   }
 
   useEffect(() => {
@@ -120,41 +160,22 @@ export function ItemList({ role }: Props) {
     let lowStock = 0;
     let outOfStock = 0;
     let totalRetail = 0;
-    for (const item of items) {
+    for (const item of allItems) {
       if (item.current_qty === 0) outOfStock++;
       else if (item.current_qty <= item.min_qty) lowStock++;
       totalRetail += item.retail_price_paise;
     }
     return {
-      total: items.length,
+      total: allItems.length,
       lowStock,
       outOfStock,
       totalRetail,
     };
-  }, [items]);
-
-  const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((item) => {
-      const name = item.name.toLowerCase();
-      const sku = item.sku_code.toLowerCase();
-      const barcode = item.barcode?.toLowerCase() ?? "";
-      const brand = item.brand?.toLowerCase() ?? "";
-      const category = item.category?.toLowerCase() ?? "";
-      return (
-        name.includes(q) ||
-        sku.includes(q) ||
-        barcode.includes(q) ||
-        brand.includes(q) ||
-        category.includes(q)
-      );
-    });
-  }, [items, search]);
+  }, [allItems]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Map<string, Item[]>>();
-    for (const item of filteredItems) {
+    for (const item of items) {
       const b = item.brand ?? "No brand";
       const c = item.category ?? "No category";
       if (!map.has(b)) map.set(b, new Map());
@@ -163,6 +184,17 @@ export function ItemList({ role }: Props) {
     }
     return map;
   }, [items]);
+
+  useEffect(() => {
+    setSelectedIds((current) => {
+      const visibleIds = new Set(items.map((item) => item.id));
+      const next = new Set([...current].filter((id) => visibleIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [items]);
+
+  const pageIds = useMemo(() => items.map((item) => item.id), [items]);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
 
   const openCreate = () => {
     setEditing(null);
@@ -178,14 +210,14 @@ export function ItemList({ role }: Props) {
     toast.success(`Saved ${saved.name}`);
     setMode("list");
     setEditing(null);
-    refresh();
+    refetch();
   };
 
   const handleArchive = async (item: Item) => {
     try {
       await updateItem(item.id, { is_active: !item.is_active });
       toast.success(item.is_active ? "Archived" : "Restored");
-      refresh();
+      refetch();
     } catch (e) {
       toast.error(String(e));
     }
@@ -211,11 +243,35 @@ export function ItemList({ role }: Props) {
     }
   };
 
-  const handleCreate = async (payload: NewItem) => {
-    const item = await createItem(payload);
-    toast.success(`Added ${item.name}`);
-    setMode("list");
-    refresh();
+  const handleBulkArchive = async () => {
+    const selected = allItems.filter((item) => selectedIds.has(item.id));
+    if (selected.length === 0) return;
+    try {
+      await Promise.all(selected.map((item) => updateItem(item.id, { is_active: false })));
+      toast.success(`Archived ${selected.length} item${selected.length === 1 ? "" : "s"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const togglePageSelected = () => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allPageSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
   };
 
   if (mode === "create") {
@@ -248,7 +304,7 @@ export function ItemList({ role }: Props) {
         <MetricCard
           label="Total Items"
           value={metrics.total}
-          icon={<PackagePlus className="h-4 w-4 text-zinc-400" />}
+          icon={<PackagePlus className="h-4 w-4 text-ink-muted" />}
         />
         <MetricCard
           label="Out of Stock"
@@ -265,7 +321,7 @@ export function ItemList({ role }: Props) {
         <MetricCard
           label="Total Value"
           value={`₹${(metrics.totalRetail / 100).toLocaleString("en-IN")}`}
-          icon={<IndianRupee className="h-4 w-4 text-zinc-400" />}
+          icon={<IndianRupee className="h-4 w-4 text-ink-muted" />}
         />
       </div>
 
@@ -273,7 +329,7 @@ export function ItemList({ role }: Props) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[200px] flex-1">
           <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle"
             aria-hidden="true"
           />
           <input
@@ -282,10 +338,10 @@ export function ItemList({ role }: Props) {
             placeholder="Search by name, SKU, brand, category, barcode…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input-dark pl-9"
+            className="input pl-9"
           />
         </div>
-        <label className="flex h-9 items-center gap-1.5 text-xs text-zinc-400">
+        <label className="flex h-9 items-center gap-1.5 text-xs text-ink-muted">
           <input
             type="checkbox"
             checked={lowStockOnly}
@@ -294,7 +350,7 @@ export function ItemList({ role }: Props) {
           />
           Low stock
         </label>
-        <label className="flex h-9 items-center gap-1.5 text-xs text-zinc-400">
+        <label className="flex h-9 items-center gap-1.5 text-xs text-ink-muted">
           <input
             type="checkbox"
             checked={includeInactive}
@@ -304,7 +360,27 @@ export function ItemList({ role }: Props) {
           Archived
         </label>
 
-        <div className="h-5 w-px bg-white/10" />
+        <select
+          value={`${sortField}:${sortDirection}`}
+          onChange={(e) => {
+            const [field, direction] = e.target.value.split(":");
+            setSortField(field as ItemSortField);
+            setSortDirection(direction as SortDirection);
+            setPage(1);
+          }}
+          className="input h-9 w-auto text-xs pr-8 appearance-none"
+          aria-label="Sort inventory"
+        >
+          <option value="name:asc">Name A-Z</option>
+          <option value="name:desc">Name Z-A</option>
+          <option value="sku:asc">SKU A-Z</option>
+          <option value="stock:asc">Lowest stock</option>
+          <option value="stock:desc">Highest stock</option>
+          <option value="retail:desc">Highest retail</option>
+          <option value="retail:asc">Lowest retail</option>
+        </select>
+
+        <div className="h-5 w-px bg-border" />
 
         {canEdit ? (
           <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} className="!text-xs">
@@ -331,13 +407,18 @@ export function ItemList({ role }: Props) {
         >
           Adjust
         </Button>
+        {selectedIds.size > 0 && canEdit ? (
+          <Button type="button" size="sm" variant="danger" icon={Archive} onClick={() => void handleBulkArchive()} className="!text-xs">
+            Archive {selectedIds.size}
+          </Button>
+        ) : null}
       </div>
 
       {/* ── Status ───────────────────────────────────────────── */}
-      {error ? <Alert title="Inventory failed to load">{error}</Alert> : null}
-      {loading ? <Skeleton variant="card" className="h-40" /> : null}
+      {error ? <Alert title="Inventory failed to load">{error.message}</Alert> : null}
+      {loading || isFetching ? <Skeleton variant="card" className="h-40" /> : null}
 
-      {!loading && items.length === 0 && (
+      {!loading && allItems.length === 0 && (
         <EmptyState
           icon={PackagePlus}
           title="No items match this view"
@@ -353,23 +434,42 @@ export function ItemList({ role }: Props) {
       )}
 
       {/* ── Grouped tables ───────────────────────────────────── */}
+      {!loading && allItems.length > 0 ? (
+        <PaginationControls
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          className="card !rounded-lg !border-border !bg-surface-sunken px-3 py-2"
+        />
+      ) : null}
       {[...grouped.entries()].map(([itemBrand, categories]) => (
         <section key={itemBrand} className="space-y-1.5">
-          <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-ink-subtle">
             {itemBrand}
           </h3>
           {[...categories.entries()].map(([itemCategory, rows]) => (
             <div
               key={itemCategory}
-              className="overflow-hidden rounded-lg border border-white/10"
+              className="overflow-hidden rounded-lg border border-border bg-surface-raised"
             >
-              <div className="border-b border-white/5 bg-zinc-900/40 px-3 py-1.5 text-[11px] font-medium text-zinc-500">
+              <div className="border-b border-border bg-surface-sunken px-3 py-1.5 text-[11px] font-medium text-ink-subtle">
                 {itemCategory}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="text-left text-xs text-zinc-500">
-                    <tr className="border-b border-white/10">
+                  <thead className="text-left text-xs text-ink-subtle">
+                    <tr className="border-b border-border">
+                      <th className="px-3 py-2 font-medium">
+                        <input
+                          type="checkbox"
+                          checked={allPageSelected}
+                          onChange={togglePageSelected}
+                          aria-label="Select all items on this page"
+                          className="h-3.5 w-3.5"
+                        />
+                      </th>
                       <th className="px-3 py-2 font-medium">SKU</th>
                       <th className="px-3 py-2 font-medium">Name</th>
                       <th className="px-3 py-2 font-medium">Unit</th>
@@ -391,7 +491,7 @@ export function ItemList({ role }: Props) {
                           key={item.id}
                           onClick={() => openEdit(item)}
                           className={[
-                            "cursor-pointer border-b border-white/5 hover:bg-white/[0.03]",
+                            "cursor-pointer border-b border-border hover:bg-surface-sunken",
                             item.current_qty === 0
                               ? "border-l-2 border-l-red-500/60 bg-red-500/5"
                               : "",
@@ -401,13 +501,22 @@ export function ItemList({ role }: Props) {
                             !item.is_active ? "opacity-50" : "",
                           ].join(" ")}
                         >
-                          <td className="px-3 py-2 font-mono text-xs text-zinc-400">
+                          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(item.id)}
+                              onChange={() => toggleSelected(item.id)}
+                              aria-label={`Select ${item.name}`}
+                              className="h-3.5 w-3.5"
+                            />
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs text-ink-muted">
                             {item.sku_code}
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-medium text-zinc-100">
-                                {item.name}
+                              <span className="font-medium text-ink">
+                                {displayName(item)}
                               </span>
                               {!item.is_active ? (
                                 <Badge variant="muted">Archived</Badge>
@@ -419,21 +528,21 @@ export function ItemList({ role }: Props) {
                               )}
                             </div>
                           </td>
-                          <td className="px-3 py-2 text-zinc-300">
+                          <td className="px-3 py-2 text-ink-muted">
                             {item.unit_label ?? item.unit_code ?? "—"}
                           </td>
-                          <td className="px-3 py-2 text-zinc-300">
+                          <td className="px-3 py-2 text-ink-muted">
                             {formatLocation(item)}
                           </td>
                           {role === "owner" ? (
-                            <td className="px-3 py-2 text-right text-zinc-200">
+                            <td className="px-3 py-2 text-right text-ink">
                               <Money paise={item.cost_paise} />
                             </td>
                           ) : null}
-                          <td className="px-3 py-2 text-right text-zinc-100">
+                          <td className="px-3 py-2 text-right text-ink">
                             <Money paise={item.retail_price_paise} />
                           </td>
-                          <td className="px-3 py-2 text-right text-zinc-300">
+                          <td className="px-3 py-2 text-right text-ink-muted">
                             {item.min_qty}
                           </td>
                           <td className="px-3 py-2">
@@ -542,7 +651,7 @@ function StockBadges({
   return (
     <span className="inline-flex items-center gap-1" data-testid="stock-in">
       <Badge variant="success">In stock</Badge>
-      <span className="text-xs text-zinc-400">· {currentQty}</span>
+      <span className="text-xs text-ink-muted">· {currentQty}</span>
     </span>
   );
 }
@@ -565,17 +674,17 @@ function MetricCard({
         ? "border-amber-500/30"
         : accent === "green"
           ? "border-emerald-500/30"
-          : "border-white/5";
+          : "border-border";
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border ${border} bg-zinc-900/40 px-3 py-2.5`}
+      className={`flex items-center gap-3 rounded-lg border ${border} bg-surface-raised px-3 py-2.5`}
     >
       {icon}
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-subtle">
           {label}
         </p>
-        <p className="text-lg font-semibold text-zinc-100">{value}</p>
+        <p className="text-lg font-semibold text-ink">{value}</p>
       </div>
     </div>
   );

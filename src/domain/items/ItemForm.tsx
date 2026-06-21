@@ -14,11 +14,11 @@ import type {
   AppError,
   Brand,
   Item,
-  ItemUnit,
+  Unit,
   NewItem,
-  SellUnit,
   Location,
 } from "../types";
+import { listUnits } from "../units/api";
 
 type Mode = "create" | "edit";
 
@@ -29,32 +29,13 @@ interface Props {
   onCancel: () => void;
 }
 
-const UNITS: ItemUnit[] = [
-  "L",
-  "ml",
-  "kg",
-  "g",
-  "pc",
-  "box",
-  "bundle",
-  "roll",
-  "sqft",
-  "sqm",
-];
-const SELL_UNITS: SellUnit[] = ["unit", "box"];
-
 export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [brandId, setBrandId] = useState<number | null>(initial?.brand_id ?? null);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [category, setCategory] = useState(initial?.category ?? "");
-  const [unit, setUnit] = useState<ItemUnit>((initial?.unit as ItemUnit) ?? "pc");
-  const [unitsPerPack, setUnitsPerPack] = useState<string>(
-    initial?.units_per_pack?.toString() ?? "",
-  );
-  const [sellUnit, setSellUnit] = useState<SellUnit>(
-    (initial?.sell_unit as SellUnit) ?? "unit",
-  );
+  const [unitId, setUnitId] = useState<number | null>(initial?.unit_id ?? null);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [retailPricePaise, setRetailPricePaise] = useState(
     initial?.retail_price_paise ?? 0,
   );
@@ -90,6 +71,9 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     listBrands()
       .then((b) => setBrands(b))
       .catch(() => setBrands([]));
+    listUnits()
+      .then((u) => setUnits(u))
+      .catch(() => setUnits([]));
   }, []);
 
   // Predict barcode when brand or name changes (create mode only).
@@ -128,9 +112,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         name: name.trim(),
         brand_id: brandId,
         category: category || null,
-        unit,
-        units_per_pack: unitsPerPack ? Number(unitsPerPack) : null,
-        sell_unit: sellUnit,
+        unit_id: unitId,
         retail_price_paise: retailPricePaise,
         cost_paise: costPaise,
         promo_price_paise: promoPricePaise,
@@ -229,41 +211,25 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
 
       {/* Units & pricing */}
       <Section title="Units & pricing">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <Field label="Unit">
             <select
-              value={unit}
-              onChange={(e) => setUnit(e.target.value as ItemUnit)}
+              value={unitId ?? 0}
+              onChange={(e) => setUnitId(Number(e.target.value) || null)}
               className="input-dark"
             >
-              {UNITS.map((u) => (
-                <option key={u} value={u}>
-                  {u}
+              <option value={0}>— Select unit —</option>
+              {units.filter((u) => u.is_active).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.label ?? u.code}
                 </option>
               ))}
             </select>
-          </Field>
-          <Field label="Units per pack">
-            <input
-              value={unitsPerPack}
-              type="number"
-              min="1"
-              onChange={(e) => setUnitsPerPack(e.target.value)}
-              className="input-dark"
-            />
-          </Field>
-          <Field label="Sell unit">
-            <select
-              value={sellUnit}
-              onChange={(e) => setSellUnit(e.target.value as SellUnit)}
-              className="input-dark"
-            >
-              {SELL_UNITS.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </select>
+            {units.filter((u) => u.is_active).length === 0 ? (
+              <span className="mt-1 block text-[10px] text-amber-400">
+                No units configured — add units in Settings.
+              </span>
+            ) : null}
           </Field>
           <Field label="Min qty" error={fieldErrors.min_qty}>
             <input
@@ -292,14 +258,13 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           </Field>
           <Field
             label="Cost price (₹)"
-            required
             error={fieldErrors.cost_paise}
+            hint={costPaise > 0 && retailPricePaise < costPaise ? "Retail is below cost — selling at a loss" : undefined}
           >
             <MoneyInput
               value={costPaise}
               min={0}
               onChange={setCostPaise}
-              required
               tone="dark"
             />
           </Field>
