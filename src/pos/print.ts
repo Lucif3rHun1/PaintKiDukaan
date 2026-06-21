@@ -1,10 +1,10 @@
 // jsPDF + JsBarcode helpers for Shelf Label and Receipt printing.
 // Per master plan §7.2 (E-IA1) and §7.3 (E71–E73):
-//  - Label: 50×25 mm landscape, JsBarcode Code128 + 2 text lines.
+//  - Label: 50×25 mm landscape, JsBarcode EAN-13 + 2 text lines.
 //  - Receipt: A4 portrait, shop header from settings, sale details, payment
 //    breakdown, GST-style totals.
 //
-// Format is locked to CODE128, monochrome, 40 module rows (auto width),
+// Format is locked to EAN-13 (international retail barcode), monochrome,
 // rendered to PNG at canvas-default DPI then embedded into a PDF at fixed
 // mm dimensions — see LOCKED_FORMAT. All jsPDF/JsBarcode calls are wrapped
 // in try/catch with console.warn fallback so a runtime hiccup never
@@ -19,12 +19,14 @@ import JsBarcode from "jsbarcode";
 import type { Sale } from "./types";
 import { formatRupeesFromPaise } from "../lib/money";
 
-export const LOCKED_FORMAT = "CODE128" as const;
+export const LOCKED_FORMAT = "EAN13" as const;
 const BARCODE_OPTIONS = {
   format: LOCKED_FORMAT,
-  displayValue: false,
+  displayValue: true,
+  fontSize: 10,
+  textMargin: 2,
   margin: 1,
-  height: 40,
+  height: 36,
 } as const;
 
 export interface LabelSpec {
@@ -37,10 +39,15 @@ export async function printLabel(spec: LabelSpec): Promise<void> {
   try {
     const doc = new jsPDF({ unit: "mm", format: [50, 25], orientation: "landscape" });
     const dataUrl = await makeBarcodePng(spec.barcode);
-    doc.addImage(dataUrl, "PNG", 2, 2, 26, 18);
-    doc.setFontSize(7);
-    doc.text(spec.line1.slice(0, 32), 30, 8);
-    doc.text(spec.line2.slice(0, 32), 30, 14);
+    const margin = 2;
+    const textAreaW = 50 * 0.38;
+    const bcW = 50 - textAreaW - margin * 3;
+    const bcH = 25 - margin * 2;
+    doc.addImage(dataUrl, "PNG", margin, margin, bcW, bcH);
+    doc.setFontSize(6);
+    const textX = bcW + margin * 2;
+    doc.text(spec.line1.slice(0, 28), textX, 25 / 2 - 1.5);
+    doc.text(spec.line2.slice(0, 28), textX, 25 / 2 + 2);
     doc.save(`label-${spec.barcode}.pdf`);
   } catch (err) {
     console.warn("printLabel failed", err);
@@ -98,7 +105,7 @@ export async function printReceipt(spec: ReceiptSpec): Promise<void> {
   y += 4;
   for (const it of spec.sale.items) {
     doc.text(it.item_name.slice(0, 50), margin, y);
-    doc.text(`${it.qty}${it.unit_type === "box" ? "×" : ""}`, 120, y, { align: "right" });
+    doc.text(`${it.qty}${it.unit_code ? " " + it.unit_code : ""}`, 120, y, { align: "right" });
     doc.text(paiseToRupees(it.price), 145, y, { align: "right" });
     doc.text(paiseToRupees(it.line_discount), 165, y, { align: "right" });
     const lineValue = it.qty * it.price - it.line_discount;
@@ -158,8 +165,8 @@ export type PrintConfig =
   | { type: "laser-a4"; perSheet: 21 | 65 };
 
 /**
- * Render a single barcode to a PNG data URL. Always CODE128, monochrome,
- * fixed 40-module height. If JsBarcode fails (e.g. invalid chars, runtime
+ * Render a single barcode to a PNG data URL. Always EAN-13, monochrome,
+ * fixed bar height. If JsBarcode fails (e.g. invalid chars, runtime
  * error), logs and returns a 1×1 transparent PNG so downstream PDF assembly
  * does not crash mid-batch.
  */
@@ -181,7 +188,7 @@ const TRANSPARENT_PNG =
  * Build a label PDF (jsPDF doc instance) and return its raw Blob.
  * Same layout rules as printLabelBatch, but no auto-save — caller decides
  * whether to download, embed in an <iframe>, or stream to a printer.
- * Locked to CODE128, monochrome, fixed DPI (set in BARCODE_OPTIONS).
+ * Locked to EAN-13, monochrome, fixed DPI (set in BARCODE_OPTIONS).
  */
 export async function buildLabelPdfBlob(
   batch: BatchLabel[],
@@ -210,17 +217,20 @@ async function buildLabelPdfBlobInner(
       "38x25": [38, 25],
     };
     const [w, h] = SIZE[config.size];
-    const fontSize = h <= 25 ? 7 : 9;
+    const fontSize = h <= 25 ? 6 : 7;
     for (let i = 0; i < batch.length; i++) {
       if (i > 0) doc.addPage([w, h], "landscape");
       const label = batch[i];
-      const bcW = Math.min(h - 4, w * 0.55);
-      const bcH = h - 6;
+      const margin = 2;
+      const textAreaW = w * 0.38;
+      const bcW = w - textAreaW - margin * 3;
+      const bcH = h - margin * 2;
       const png = await makeBarcodePng(label.barcode);
-      doc.addImage(png, "PNG", 2, 3, bcW, bcH);
+      doc.addImage(png, "PNG", margin, margin, bcW, bcH);
       doc.setFontSize(fontSize);
-      if (label.line1) doc.text(label.line1.slice(0, 30), bcW + 4, h / 2 - 2);
-      if (label.line2) doc.text(label.line2.slice(0, 30), bcW + 4, h / 2 + 2);
+      const textX = bcW + margin * 2;
+      if (label.line1) doc.text(label.line1.slice(0, 28), textX, h / 2 - 1.5);
+      if (label.line2) doc.text(label.line2.slice(0, 28), textX, h / 2 + 2);
     }
   } else {
     const layouts: Record<21 | 65, { cols: number; rows: number; w: number; h: number }> = {
@@ -228,7 +238,8 @@ async function buildLabelPdfBlobInner(
       65: { cols: 5, rows: 13, w: 38, h: 21 },
     };
     const layout = layouts[config.perSheet];
-    doc.setFontSize(7);
+    const fontSize = config.perSheet === 65 ? 5 : 6;
+    doc.setFontSize(fontSize);
     for (let i = 0; i < batch.length; i++) {
       const onPage = i % config.perSheet;
       if (i > 0 && onPage === 0) doc.addPage();
@@ -237,12 +248,14 @@ async function buildLabelPdfBlobInner(
       const row = Math.floor(onPage / layout.cols);
       const x = col * layout.w;
       const y = row * layout.h;
-      const bcW = layout.w - 4;
-      const bcH = layout.h - 8;
+      const margin = 1.5;
+      const textH = config.perSheet === 65 ? 5 : 6;
+      const bcW = layout.w - margin * 2;
+      const bcH = layout.h - textH - margin * 2;
       const png = await makeBarcodePng(label.barcode);
-      doc.addImage(png, "PNG", x + 2, y + 2, bcW, bcH);
-      if (label.line1) doc.text(label.line1.slice(0, 22), x + 2, y + layout.h - 4);
-      if (label.line2) doc.text(label.line2.slice(0, 22), x + 2, y + layout.h - 1);
+      doc.addImage(png, "PNG", x + margin, y + margin, bcW, bcH);
+      if (label.line1) doc.text(label.line1.slice(0, 22), x + margin, y + layout.h - textH);
+      if (label.line2) doc.text(label.line2.slice(0, 22), x + margin, y + layout.h - 1);
     }
   }
 

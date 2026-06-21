@@ -8,8 +8,10 @@ import {
   DatabaseBackup,
   HardDrive,
   MapPin,
+  Monitor,
   PaintBucket,
   ReceiptText,
+  Ruler,
   ScanBarcode,
   ShieldCheck,
   Tags,
@@ -19,26 +21,32 @@ import {
 
 import { SETTINGS_CATEGORIES, type SettingsCategoryId } from "../AppShell";
 import { Button } from "../../components/ui";
-import { CustomerTypesSettings, LocationsSettings, CatalogBrandsSettings } from "./settings/CatalogSettings";
-import { LabelSettings, ReceiptSettings } from "./settings/PrintingSettings";
+import { CustomerTypesSettings, LocationsSettings, CatalogBrandsSettings, CatalogUnitsSettings } from "./settings/CatalogSettings";
+import {
+  LabelSettings,
+  ReceiptSettings,
+  ScannerSettings as PrintingScannerSettings,
+} from "./settings/PrintingSettings";
 import { SettingsCategory } from "./settings/SettingsCategory";
 import { ShopInfoSettings, CurrencySettings } from "./settings/ShopSettings";
-import { BackupSettings, MasterHealthSettings, SecuritySettings } from "./settings/SystemSettings";
-import { DevicesSettings, ScannerSettings, UsersSettings } from "./settings/TeamSettings";
+import { BackupSettings, MasterHealthSettings, SecuritySettings, ThemeSettings } from "./settings/SystemSettings";
+import { UsersSettings, DevicesSettings } from "./settings/TeamSettings";
 
 type SettingsItemId =
   | "shop-info"
   | "currency"
   | "customer-types"
   | "locations"
+  | "units"
   | "brands"
   | "label"
   | "receipt"
-  | "users"
-  | "devices"
   | "scanner"
+  | "devices"
+  | "users"
   | "backup"
   | "security"
+  | "theme"
   | "master-health";
 
 interface SettingsItem {
@@ -59,24 +67,26 @@ interface ParsedSettingsRoute {
 const CATEGORY_DESCRIPTIONS: Record<SettingsCategoryId, string> = {
   shop: "Identity, currency, and tax defaults for this local shop profile.",
   catalog: "Reusable catalog lists that shape inventory, customers, and stock movement.",
-  printing: "Label and receipt templates for counter printing workflows.",
-  team: "Users, registered devices, and scanner wedge behavior.",
+  printing: "Label and receipt printers, templates, and scanner calibration.",
+  team: "Users, enrolled devices, and role assignments for sign-in.",
   system: "Backup, security, and operational health controls.",
 };
 
 const SETTINGS_ITEMS: SettingsItem[] = [
   { id: "shop-info", category: "shop", title: "Shop info", description: "Name, phone, GSTIN, and address shown on shop documents.", icon: Building2, Component: ShopInfoSettings },
-  { id: "currency", category: "shop", title: "Currency", description: "Currency code, paise display precision, and tax-inclusive pricing.", icon: BadgeIndianRupee, Component: CurrencySettings },
+  { id: "currency", category: "shop", title: "Currency", description: "Currency code, symbol, and decimal display precision.", icon: BadgeIndianRupee, Component: CurrencySettings },
   { id: "customer-types", category: "catalog", title: "Customer types", description: "Maintain customer groups used in billing and reporting.", icon: Tags, Component: CustomerTypesSettings },
   { id: "locations", category: "catalog", title: "Locations", description: "Configure stock locations for inventory movement.", icon: MapPin, Component: LocationsSettings },
-  { id: "brands", category: "catalog", title: "Brands", description: "Paint brand prefixes used by auto-generated CODE128 barcodes.", icon: PaintBucket, Component: CatalogBrandsSettings },
-  { id: "label", category: "printing", title: "Shelf labels", description: "Edit the barcode and shelf-label print template.", icon: Barcode, Component: LabelSettings },
-  { id: "receipt", category: "printing", title: "Receipts", description: "Receipt header, footer, and terms printed for customers.", icon: ReceiptText, Component: ReceiptSettings },
+  { id: "units", category: "catalog", title: "Units", description: "Define measurement units and conversion rules (e.g. 1 L = 1000 ml).", icon: Ruler, Component: CatalogUnitsSettings },
+  { id: "brands", category: "catalog", title: "Brands", description: "Paint brand prefixes used by auto-generated EAN-13 barcodes.", icon: PaintBucket, Component: CatalogBrandsSettings },
+  { id: "label", category: "printing", title: "Label printer", description: "Label template, printer, and stock size for barcode shelf labels.", icon: Barcode, Component: LabelSettings },
+  { id: "receipt", category: "printing", title: "Receipt printer", description: "Receipt template, printer, and paper size for customer invoices.", icon: ReceiptText, Component: ReceiptSettings },
+  { id: "scanner", category: "printing", title: "Barcode scanner", description: "Tune keyboard-wedge detection thresholds and test scanner input.", icon: ScanBarcode, Component: PrintingScannerSettings },
   { id: "users", category: "team", title: "Users", description: "Create local accounts and assign operational roles.", icon: Users, Component: UsersSettings },
-  { id: "devices", category: "team", title: "Devices", description: "Enroll and revoke devices trusted to unlock the app.", icon: HardDrive, Component: DevicesSettings },
-  { id: "scanner", category: "team", title: "Scanner", description: "Tune barcode wedge detection for fast counter scans.", icon: ScanBarcode, Component: ScannerSettings },
+  { id: "devices", category: "team", title: "Enrolled devices", description: "Devices trusted to unlock the app and their assigned roles.", icon: HardDrive, Component: DevicesSettings },
   { id: "backup", category: "system", title: "Backup", description: "Create encrypted backups and manage restore points.", icon: DatabaseBackup, Component: BackupSettings },
   { id: "security", category: "system", title: "Security", description: "Idle auto-lock and lockout policy for this device.", icon: ShieldCheck, Component: SecuritySettings },
+  { id: "theme", category: "system", title: "Appearance", description: "Theme mode — system, light, or dark.", icon: Monitor, Component: ThemeSettings },
   { id: "master-health", category: "system", title: "Master health", description: "Run diagnostics across data, network, and operations.", icon: ClipboardList, Component: MasterHealthSettings },
 ];
 
@@ -181,11 +191,11 @@ function SettingsSubPageHeader({ categoryLabel, itemTitle, description, backHref
         Back to {categoryLabel}
       </Button>
       <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-300/80">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
           Settings &gt; {categoryLabel} &gt; {itemTitle}
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">{itemTitle}</h1>
-        <p className="max-w-3xl text-sm leading-6 text-zinc-400">{description}</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">{itemTitle}</h1>
+        <p className="max-w-3xl text-sm leading-6 text-ink-muted">{description}</p>
       </div>
     </header>
   );

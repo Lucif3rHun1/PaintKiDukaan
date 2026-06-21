@@ -521,11 +521,6 @@ export function ItemList({ role }: Props) {
                               {!item.is_active ? (
                                 <Badge variant="muted">Archived</Badge>
                               ) : null}
-                              {item.barcode ? (
-                                <Badge variant="success">Mapped</Badge>
-                              ) : (
-                                <Badge variant="warning">Unmapped</Badge>
-                              )}
                             </div>
                           </td>
                           <td className="px-3 py-2 text-ink-muted">

@@ -12,8 +12,13 @@ type Props = {
 };
 
 /**
- * Lightweight CODE128 barcode thumbnail. Renders into an inline <svg>
+ * Lightweight EAN-13 barcode thumbnail. Renders into an inline <svg>
  * that fills its container so it works in tables, previews, and cards.
+ *
+ * EAN-13 is a 13-digit numeric format used internationally for retail
+ * products. JsBarcode auto-computes and appends the 13th check digit
+ * when given 12 digits — we feed it the full 13-digit value the backend
+ * generated (so the rendered digits match what's stored in the DB).
  */
 export function BarcodeThumb({
   value,
@@ -26,13 +31,15 @@ export function BarcodeThumb({
   useEffect(() => {
     if (!ref.current || !value) return;
     try {
-      // Bar height in px = container height minus 4px quiet zone.
-      const barHeight = Math.max(20, containerHeight - 4);
+      // Reserve 12px for human-readable digits below the bars.
+      const barHeight = Math.max(20, containerHeight - 16);
       JsBarcode(ref.current, value, {
-        format: "CODE128",
+        format: "EAN13",
         height: barHeight,
-        displayValue: false,
-        margin: 0,
+        displayValue: true,
+        fontSize: 9,
+        textMargin: 1,
+        margin: 2,
         background: "#ffffff",
         lineColor: "#0f172a",
       });
