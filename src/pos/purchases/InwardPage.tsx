@@ -1,19 +1,19 @@
 // Inward (purchase) page — single-column layout with sticky toolbar.
 // Item names prominent, vendor/notes compact, totals inline.
 
-import { useEffect, useMemo, useState } from "react";
-import { PackagePlus, Search, Truck } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PackagePlus, Search, Truck, X } from "lucide-react";
 
 import { Button, InlineDialog, Money, MoneyInput, ShortcutsHint } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useShortcut } from "../../lib/shortcuts";
-import { InlineItemForm } from "../../domain/items/InlineItemForm";
-import { listItems } from "../../domain/items/api";
+import { ItemForm } from "../../domain/items/ItemForm";
+import { listItems, updateItem } from "../../domain/items/api";
 import { listLocations } from "../../domain/locations/api";
 import { InlineVendorForm } from "../../domain/vendors/InlineVendorForm";
-import { listVendors, vendorOutstanding } from "../../domain/vendors/api";
+import { createVendor, listVendors, vendorOutstanding } from "../../domain/vendors/api";
 import type { Item, Location, Vendor } from "../../domain/types";
-import { createInward, lastCost, listPurchases } from "../api";
+import { createInward, lastCost, lastRetail, listPurchases } from "../api";
 import type { InwardLine, NewPurchase, Purchase } from "../types";
 
 interface Props {
@@ -27,6 +27,8 @@ interface DraftLine {
   unit_code: string;
   cost_price: number;
   retail_price: number;
+  last_retail: number | null;
+  retail_overridden: boolean;
   location_id: number;
   item_query: string;
   base_qty: number;
@@ -35,6 +37,8 @@ interface DraftLine {
 export default function InwardPage({ user: _user }: Props) {
   const [draft, setDraft] = useState<DraftLine[]>([]);
   const [vendorId, setVendorId] = useState<number | null>(null);
+  const [vendorQuery, setVendorQuery] = useState("");
+  const [vendorMenuOpen, setVendorMenuOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [autoPrint, setAutoPrint] = useState(true);
   const [recent, setRecent] = useState<Purchase[]>([]);
@@ -45,10 +49,11 @@ export default function InwardPage({ user: _user }: Props) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [defaultItemId, setDefaultItemId] = useState<number | null>(null);
   const [defaultLocationId, setDefaultLocationId] = useState<number>(0);
-  const [vendorQuery, setVendorQuery] = useState("");
   const [addVendorOpen, setAddVendorOpen] = useState(false);
   const [addItemForRow, setAddItemForRow] = useState<number | null>(null);
   const [vendorOutstandings, setVendorOutstandings] = useState<Record<number, number>>({});
+
+  const seededRef = useRef(false);
 
   useEffect(() => {
     listPurchases().then(setRecent).catch(() => {});
@@ -64,7 +69,27 @@ export default function InwardPage({ user: _user }: Props) {
     listLocations(false)
       .then((locs) => {
         setLocations(locs);
-        if (locs.length > 0) setDefaultLocationId((current) => (current > 0 ? current : locs[0].id));
+        const firstLoc = locs[0]?.id ?? 0;
+        setDefaultLocationId((current) => (current > 0 ? current : firstLoc));
+        // Seed one blank line so the operator has somewhere to type immediately.
+        if (!seededRef.current) {
+          seededRef.current = true;
+          setDraft([
+            {
+              item_id: 0,
+              qty: 1,
+              unit_id: 0,
+              unit_code: "",
+              cost_price: 0,
+              retail_price: 0,
+              last_retail: null,
+              retail_overridden: false,
+              location_id: firstLoc,
+              item_query: "",
+              base_qty: 1,
+            },
+          ]);
+        }
       })
       .catch(() => setLocations([]));
   }, []);
@@ -92,6 +117,33 @@ export default function InwardPage({ user: _user }: Props) {
     );
   }, [vendors, vendorQuery]);
 
+  // Auto-add a blank line when the LAST line transitions from item_id=0 to
+  // item_id>0. Operator fills current line → fresh blank line appears below.
+  // Already-present blank lines are NOT removed (so once a line is filled,
+  // the next blank stays even if the operator clears the item).
+  const lastLine = draft[draft.length - 1];
+  const lastLineHasItem = lastLine && lastLine.item_id > 0;
+  useEffect(() => {
+    if (lastLineHasItem && defaultLocationId > 0) {
+      setDraft((prev) => [
+        ...prev,
+        {
+          item_id: 0,
+          qty: 1,
+          unit_id: 0,
+          unit_code: "",
+          cost_price: 0,
+          retail_price: 0,
+          last_retail: null,
+          retail_overridden: false,
+          location_id: defaultLocationId,
+          item_query: "",
+          base_qty: 1,
+        },
+      ]);
+    }
+  }, [lastLineHasItem, defaultLocationId]);
+
   const total = useMemo(
     () => draft.reduce((s, l) => s + l.base_qty * l.cost_price, 0),
     [draft],
@@ -108,32 +160,17 @@ export default function InwardPage({ user: _user }: Props) {
       unit_code: unitCode,
       cost_price: 0,
       retail_price: 0,
+      last_retail: null,
+      retail_overridden: false,
       location_id: locationId,
       item_query: "",
       base_qty: 1,
     };
   }
 
-  async function addLine() {
-    const seedId = defaultItemId ?? items[0]?.id ?? 0;
-    const seedLoc = defaultLocationId || locations[0]?.id || 1;
-    let cost = 0;
-    let retail = 0;
-    if (seedId > 0) {
-      const item = items.find((i) => i.id === seedId);
-      retail = item?.retail_price_paise ?? 0;
-      try {
-        const c = await lastCost(seedId);
-        if (c != null) cost = c;
-        else if (item) cost = item.cost_paise;
-      } catch {
-        if (item) cost = item.cost_paise;
-      }
-    }
-    setDraft((p) => [
-      ...p,
-      { ...blankLine(seedId, seedLoc), cost_price: cost, retail_price: retail },
-    ]);
+  function addLine() {
+    // Empty line — auto-add-on-fill handles prefill with cost/retail when item picked.
+    setDraft((p) => [...p, blankLine(null, defaultLocationId || locations[0]?.id || 1)]);
   }
 
   async function changeItemForRow(row: number, newItemId: number) {
@@ -148,32 +185,29 @@ export default function InwardPage({ user: _user }: Props) {
       ),
     );
     if (!item) return;
-    try {
-      const c = await lastCost(newItemId);
-      setDraft((p) =>
-        p.map((x, j) =>
-          j === row
-            ? {
-                ...x,
-                cost_price: c != null ? c : item.cost_paise,
-                retail_price: x.retail_price > 0 ? x.retail_price : item.retail_price_paise,
-              }
-            : x,
-        ),
-      );
-    } catch {
-      setDraft((p) =>
-        p.map((x, j) =>
-          j === row
-            ? {
-                ...x,
-                cost_price: item.cost_paise,
-                retail_price: x.retail_price > 0 ? x.retail_price : item.retail_price_paise,
-              }
-            : x,
-        ),
-      );
-    }
+    // Fetch last cost + last retail in parallel; race-safe via item_id check
+    // on resolve so a later item selection doesn't get overwritten.
+    const [lastCostPaise, lastRetailPaise] = await Promise.all([
+      lastCost(newItemId).catch(() => null),
+      lastRetail(newItemId).catch(() => null),
+    ]);
+    setDraft((p) =>
+      p.map((x, j) =>
+        j === row && x.item_id === newItemId
+          ? {
+              ...x,
+              cost_price: lastCostPaise != null ? lastCostPaise : item.cost_paise,
+              retail_price: x.retail_overridden && x.retail_price > 0
+                ? x.retail_price
+                : lastRetailPaise != null
+                  ? lastRetailPaise
+                  : item.retail_price_paise,
+              last_retail: lastRetailPaise,
+              retail_overridden: false,
+            }
+          : x,
+      ),
+    );
   }
 
   function itemName(id: number): string {
@@ -183,17 +217,16 @@ export default function InwardPage({ user: _user }: Props) {
   }
 
   async function submit() {
-    const lines: InwardLine[] = draft
-      .filter((l) => l.item_id > 0)
-      .map((l) => ({
-        item_id: l.item_id,
-        qty: l.base_qty,
-        unit_id: l.unit_id,
-        unit_code: l.unit_code,
-        cost_price: l.cost_price,
-        retail_price: l.retail_price,
-        location_id: l.location_id,
-      }));
+    const filled = draft.filter((l) => l.item_id > 0);
+    const lines: InwardLine[] = filled.map((l) => ({
+      item_id: l.item_id,
+      qty: l.base_qty,
+      unit_id: l.unit_id,
+      unit_code: l.unit_code,
+      cost_price: l.cost_price,
+      retail_price: l.retail_price,
+      location_id: l.location_id,
+    }));
     if (lines.length === 0) {
       toast.warning("Pick at least one item before saving");
       return;
@@ -210,6 +243,21 @@ export default function InwardPage({ user: _user }: Props) {
         success: (r) => `Inward #${r.id} saved${r.print_label ? " — label will print" : ""}`,
         error: (e) => (e as Error)?.message ?? "Save failed",
       });
+      // Persist user-overridden retail prices back to items.retail_price_paise
+      // so future inwards (and POS sales) reflect the new price.
+      const overrides = filled.filter(
+        (l) =>
+          l.retail_overridden &&
+          l.retail_price > 0 &&
+          (l.last_retail == null || l.retail_price !== l.last_retail),
+      );
+      await Promise.allSettled(
+        overrides.map((l) =>
+          updateItem(l.item_id, { retail_price_paise: l.retail_price }).catch((e) => {
+            console.warn(`updateItem retail ${l.item_id} failed:`, e);
+          }),
+        ),
+      );
       setStatus(`Inward #${res.id} saved${res.print_label ? " — label will print" : ""}`);
       setDraft([]);
       setNotes("");
@@ -219,69 +267,122 @@ export default function InwardPage({ user: _user }: Props) {
     }
   }
 
-  useShortcut({ key: "F9", onMatch: () => void submit() });
+  useShortcut({ key: "F9", description: "Save inward", onMatch: () => void submit() });
   useShortcut({
     key: "Esc",
     preventDefault: false,
+    description: "Clear draft lines (keep one empty)",
     onMatch: () => {
       if (draft.length === 0) return;
-      setDraft([]);
+      setDraft([
+        {
+          item_id: 0,
+          qty: 1,
+          unit_id: 0,
+          unit_code: "",
+          cost_price: 0,
+          retail_price: 0,
+          last_retail: null,
+          retail_overridden: false,
+          location_id: defaultLocationId,
+          item_query: "",
+          base_qty: 1,
+        },
+      ]);
       setStatus("Draft lines cleared");
     },
   });
-  useShortcut({ key: "K", ctrl: true, meta: true, onMatch: () => undefined });
+  useShortcut({ key: "K", ctrl: true, meta: true, description: "Add vendor", onMatch: () => undefined });
 
   return (
     <div className="space-y-4">
       {/* ── Sticky toolbar: meta + save ─────────────────────── */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-zinc-900/95 px-4 py-2.5 backdrop-blur">
-        {/* Vendor */}
-        <div className="relative min-w-[180px] flex-1 sm:flex-none">
-          <Truck className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
-          <select
-            value={vendorId ?? ""}
-            onChange={(e) => setVendorId(e.target.value ? Number(e.target.value) : null)}
-            className="h-8 w-full rounded-md border border-white/10 bg-zinc-950 pl-7 pr-2 text-xs text-zinc-100 outline-none focus:border-indigo-400 sm:w-48"
-            aria-label="Select vendor"
-          >
-            <option value="">No vendor</option>
-            {filteredVendors.map((v) => {
-              const outstanding = vendorOutstandings[v.id] ?? 0;
-              const parts = [v.name];
-              if (v.contact_person) parts.push(v.contact_person);
-              if (v.phone) parts.push(v.phone);
-              if (outstanding > 0) parts.push(`₹${(outstanding / 100).toFixed(0)} due`);
-              return (
-                <option key={v.id} value={v.id}>
-                  {parts.join(" · ")}
-                </option>
-              );
-            })}
-          </select>
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-raised/95 px-4 py-2.5 backdrop-blur">
+        {/* Vendor typeahead — search + add combined into one input */}
+        <div className="relative min-w-[200px] flex-1 sm:flex-none sm:w-64">
+          <Truck className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
+          <input
+            type="text"
+            value={vendorId != null ? vendors.find((v) => v.id === vendorId)?.name ?? vendorQuery : vendorQuery}
+            onFocus={() => setVendorMenuOpen(true)}
+            onBlur={() => setTimeout(() => setVendorMenuOpen(false), 150)}
+            onChange={(e) => {
+              setVendorQuery(e.target.value);
+              setVendorId(null);
+              setVendorMenuOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && vendorId == null && vendorQuery.trim().length > 0) {
+                e.preventDefault();
+                const exact = vendors.find(
+                  (v) => v.name.toLowerCase() === vendorQuery.trim().toLowerCase(),
+                );
+                if (exact) {
+                  setVendorId(exact.id);
+                  setVendorQuery("");
+                  setVendorMenuOpen(false);
+                } else {
+                  setAddVendorOpen(true);
+                  setVendorMenuOpen(false);
+                }
+              }
+            }}
+            placeholder={vendorId != null ? "" : "Search or add vendor…"}
+            className="input h-8 w-full pl-7 pr-7 text-xs"
+            aria-label="Vendor"
+            data-testid="vendor-input"
+          />
+          {vendorId != null ? (
+            <button
+              type="button"
+              onClick={() => {
+                setVendorId(null);
+                setVendorQuery("");
+              }}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-subtle hover:bg-surface-sunken hover:text-ink"
+              aria-label="Clear vendor"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          ) : (
+            <svg
+              className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M5.5 7.5l4.5 5 4.5-5z" />
+            </svg>
+          )}
+          {vendorMenuOpen && filteredVendors.length > 0 ? (
+            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-surface-raised shadow-lg">
+              {filteredVendors.slice(0, 8).map((v) => {
+                const outstanding = vendorOutstandings[v.id] ?? 0;
+                const parts = [v.name];
+                if (v.contact_person) parts.push(v.contact_person);
+                if (v.phone) parts.push(v.phone);
+                if (outstanding > 0) parts.push(`₹${(outstanding / 100).toFixed(0)} due`);
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setVendorId(v.id);
+                      setVendorQuery("");
+                      setVendorMenuOpen(false);
+                    }}
+                    className="flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5 text-left text-xs hover:bg-surface-sunken"
+                  >
+                    <span className="text-ink">{parts.join(" · ")}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
 
-        {/* Vendor search */}
-        <input
-          type="text"
-          value={vendorQuery}
-          onChange={(e) => setVendorQuery(e.target.value)}
-          placeholder="Search vendor…"
-          className="h-8 w-32 rounded-md border border-white/10 bg-zinc-950 px-2 text-xs text-zinc-100 outline-none focus:border-indigo-400"
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          icon={Truck}
-          onClick={() => setAddVendorOpen(true)}
-          data-testid="inline-add-vendor"
-          aria-label="Add new vendor"
-          className="!h-8 !text-xs"
-        >
-          New
-        </Button>
-
-        <div className="h-5 w-px bg-white/10" />
+        <div className="h-5 w-px bg-border" />
 
         {/* Notes */}
         <input
@@ -289,11 +390,11 @@ export default function InwardPage({ user: _user }: Props) {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes / batch…"
-          className="h-8 w-36 flex-1 rounded-md border border-white/10 bg-zinc-950 px-2 text-xs text-zinc-100 outline-none focus:border-indigo-400 sm:w-48"
+          className="input h-8 w-36 flex-1 px-2 text-xs sm:w-48"
         />
 
         {/* Auto-print */}
-        <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+        <label className="flex items-center gap-1.5 text-xs text-ink-muted">
           <input
             type="checkbox"
             checked={autoPrint}
@@ -304,10 +405,10 @@ export default function InwardPage({ user: _user }: Props) {
           Auto-print
         </label>
 
-        <div className="h-5 w-px bg-white/10" />
+        <div className="h-5 w-px bg-border" />
 
         {/* Total */}
-        <span className="text-sm font-semibold text-zinc-200" data-testid="inward-total">
+        <span className="text-sm font-semibold text-ink" data-testid="inward-total">
           <Money paise={total} />
         </span>
 
@@ -328,10 +429,10 @@ export default function InwardPage({ user: _user }: Props) {
       )}
 
       {/* ── Items table ──────────────────────────────────────── */}
-      <section className="rounded-lg border border-white/10 bg-zinc-900/60">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-zinc-300">
-            Items {draft.length > 0 && <span className="text-zinc-500">· {draft.length} line{draft.length !== 1 ? "s" : ""}</span>}
+      <section className="rounded-lg border border-border bg-surface-raised">
+        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+          <h2 className="text-sm font-semibold text-ink">
+            Items {draft.length > 0 && <span className="text-ink-subtle">· {draft.length} line{draft.length !== 1 ? "s" : ""}</span>}
           </h2>
           <Button type="button" variant="secondary" size="sm" onClick={addLine} data-testid="inward-add-line" className="!text-xs">
             + Add line
@@ -339,12 +440,13 @@ export default function InwardPage({ user: _user }: Props) {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-zinc-500">
-              <tr className="border-b border-white/10">
+            <thead className="text-left text-xs uppercase text-ink-subtle">
+              <tr className="border-b border-border">
                 <th className="px-4 py-2 font-medium">Item</th>
                 <th className="px-3 py-2 font-medium">Qty</th>
                 <th className="px-3 py-2 font-medium">Cost</th>
                 <th className="px-3 py-2 font-medium">Retail</th>
+                <th className="px-3 py-2 font-medium">Last retail</th>
                 <th className="px-3 py-2 font-medium">Location</th>
                 <th className="px-3 py-2 font-medium">Base qty</th>
                 <th className="px-3 py-2 font-medium"></th>
@@ -352,16 +454,16 @@ export default function InwardPage({ user: _user }: Props) {
             </thead>
             <tbody>
               {draft.map((l, i) => (
-                <tr key={i} className="border-b border-white/5 align-top hover:bg-white/[0.02]">
+                <tr key={i} className="border-b border-border align-top hover:bg-surface-sunken">
                   {/* Item cell — prominent name + search */}
                   <td className="px-4 py-2">
                     <div className="flex gap-1.5">
                       <div className="relative flex-1">
-                        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
                         <input
                           type="text"
                           list={`inward-items-${i}`}
-                          value={l.item_query || itemName(l.item_id)}
+                          value={l.item_query || ""}
                           onChange={(e) =>
                             setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: e.target.value } : x)))
                           }
@@ -374,10 +476,15 @@ export default function InwardPage({ user: _user }: Props) {
                                 (it.barcode ?? "").toLowerCase() === value.toLowerCase(),
                             );
                             if (match) void changeItemForRow(i, match.id);
-                            else setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: "" } : x)));
+                            else
+                              setDraft((p) =>
+                                p.map((x, j) =>
+                                  j === i ? { ...x, item_query: "", item_id: 0 } : x,
+                                ),
+                              );
                           }}
                           placeholder="Type item name or SKU…"
-                          className="h-9 w-full rounded-md border border-white/10 bg-zinc-950 py-2 pl-7 pr-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+                          className="input h-9 w-full py-2 pl-7 pr-2 text-sm"
                         />
                         <datalist id={`inward-items-${i}`}>
                           {items.map((it) => (
@@ -392,14 +499,14 @@ export default function InwardPage({ user: _user }: Props) {
                         onClick={() => setAddItemForRow(i)}
                         title="Add new item"
                         aria-label="Add new item"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 bg-zinc-950 text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink-muted hover:bg-surface-sunken hover:text-ink"
                       >
                         <PackagePlus className="h-4 w-4" />
                       </button>
                     </div>
                     {/* Show item name below search when selected */}
                     {l.item_id > 0 && !l.item_query && (
-                      <p className="mt-0.5 text-xs text-zinc-500">
+                      <p className="mt-0.5 text-xs text-ink-subtle">
                         {items.find((it) => it.id === l.item_id)?.name ?? `#${l.item_id}`}
                       </p>
                     )}
@@ -413,12 +520,11 @@ export default function InwardPage({ user: _user }: Props) {
                       onChange={(e) =>
                         setDraft((p) => p.map((x, j) => (j === i ? { ...x, qty: Number(e.target.value) } : x)))
                       }
-                      className="h-9 w-16 rounded-md border border-white/10 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+                      className="input h-9 w-16 px-2 text-sm"
                     />
                   </td>
                   <td className="px-3 py-2">
                     <MoneyInput
-                      tone="dark"
                       min={0}
                       value={l.cost_price}
                       onChange={(cost_price) =>
@@ -431,16 +537,28 @@ export default function InwardPage({ user: _user }: Props) {
                   </td>
                   <td className="px-3 py-2">
                     <MoneyInput
-                      tone="dark"
                       min={0}
                       value={l.retail_price}
                       onChange={(retail_price) =>
                         setDraft((p) =>
-                          p.map((x, j) => (j === i ? { ...x, retail_price } : x))
+                          p.map((x, j) =>
+                            j === i ? { ...x, retail_price, retail_overridden: true } : x,
+                          ),
                         )
                       }
                       className="w-24"
                     />
+                  </td>
+                  <td className="px-3 py-2 text-ink-muted">
+                    {l.item_id > 0 ? (
+                      l.last_retail != null ? (
+                        <Money paise={l.last_retail} />
+                      ) : (
+                        <span className="text-ink-subtle">—</span>
+                      )
+                    ) : (
+                      <span className="text-ink-subtle">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <select
@@ -450,7 +568,7 @@ export default function InwardPage({ user: _user }: Props) {
                           p.map((x, j) => (j === i ? { ...x, location_id: Number(e.target.value) } : x))
                         )
                       }
-                      className="h-9 w-28 rounded-md border border-white/10 bg-zinc-950 px-2 text-xs text-zinc-100 outline-none focus:border-indigo-400"
+                      className="input h-9 w-28 px-2 text-xs appearance-none pr-7"
                     >
                       {locations.length === 0 ? <option value={l.location_id}>{l.location_id}</option> : null}
                       {locations.map((loc) => (
@@ -460,13 +578,13 @@ export default function InwardPage({ user: _user }: Props) {
                       ))}
                     </select>
                   </td>
-                  <td className="px-3 py-2 text-zinc-400">{l.base_qty}</td>
+                  <td className="px-3 py-2 text-ink-muted">{l.base_qty}</td>
                   <td className="px-3 py-2">
                     <button
                       type="button"
                       onClick={() => setDraft((p) => p.filter((_, j) => j !== i))}
                       aria-label={`Remove line ${i + 1}`}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-subtle hover:bg-red-500/10 hover:text-red-400"
                     >
                       ×
                     </button>
@@ -475,8 +593,8 @@ export default function InwardPage({ user: _user }: Props) {
               ))}
               {draft.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-zinc-500">
-                    No lines yet. Click <strong className="text-zinc-300">+ Add line</strong> to receive stock.
+                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-ink-subtle">
+                    Pick an item to start. New line appears automatically.
                   </td>
                 </tr>
               )}
@@ -487,14 +605,14 @@ export default function InwardPage({ user: _user }: Props) {
 
       {/* ── Recent inwards ──────────────────────────────────── */}
       {recent.length > 0 && (
-        <section className="rounded-lg border border-white/10 bg-zinc-900/60">
-          <div className="border-b border-white/10 px-4 py-2.5">
-            <h2 className="text-sm font-semibold text-zinc-400">Recent inwards</h2>
+        <section className="rounded-lg border border-border bg-surface-raised">
+          <div className="border-b border-border px-4 py-2.5">
+            <h2 className="text-sm font-semibold text-ink-muted">Recent inwards</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-zinc-500">
-                <tr className="border-b border-white/10">
+              <thead className="text-left text-xs uppercase text-ink-subtle">
+                <tr className="border-b border-border">
                   <th className="px-4 py-2 font-medium">#</th>
                   <th className="px-3 py-2 font-medium">Date</th>
                   <th className="px-3 py-2 font-medium">Vendor</th>
@@ -504,12 +622,12 @@ export default function InwardPage({ user: _user }: Props) {
               </thead>
               <tbody>
                 {recent.map((p) => (
-                  <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.02]">
-                    <td className="px-4 py-1.5 text-zinc-300">{p.id}</td>
-                    <td className="px-3 py-1.5 text-zinc-400">{p.date}</td>
-                    <td className="px-3 py-1.5 text-zinc-300">{p.vendor_name ?? <span className="text-zinc-600">—</span>}</td>
-                    <td className="px-3 py-1.5 text-right text-zinc-400">{p.items.length}</td>
-                    <td className="px-3 py-1.5 text-right text-zinc-200"><Money paise={p.total} /></td>
+                  <tr key={p.id} className="border-b border-border hover:bg-surface-sunken">
+                    <td className="px-4 py-1.5 text-ink">{p.id}</td>
+                    <td className="px-3 py-1.5 text-ink-muted">{p.date}</td>
+                    <td className="px-3 py-1.5 text-ink">{p.vendor_name ?? <span className="text-ink-subtle">—</span>}</td>
+                    <td className="px-3 py-1.5 text-right text-ink-muted">{p.items.length}</td>
+                    <td className="px-3 py-1.5 text-right text-ink"><Money paise={p.total} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -518,7 +636,13 @@ export default function InwardPage({ user: _user }: Props) {
         </section>
       )}
 
-      <ShortcutsHint group="pos" />
+      <ShortcutsHint
+        shortcuts={[
+          { key: "F9", label: "Save inward" },
+          { key: "Esc", label: "Clear draft lines" },
+          { key: "K", ctrl: true, meta: true, label: "Add vendor" },
+        ]}
+      />
 
       <InlineDialog
         open={addVendorOpen}
@@ -541,17 +665,18 @@ export default function InwardPage({ user: _user }: Props) {
         open={addItemForRow !== null}
         onClose={() => setAddItemForRow(null)}
         title="New item"
-        description="Add a SKU without leaving the inward flow."
-        size="md"
+        description="Add a SKU with full fields. All locations are available."
+        size="lg"
       >
-        <InlineItemForm
-          defaultLocationId={addItemForRow !== null ? draft[addItemForRow]?.location_id : undefined}
+        <ItemForm
+          mode="create"
           onSaved={(it) => {
             setItems((prev) => [...prev, it].sort((a, b) => a.name.localeCompare(b.name)));
             setDefaultItemId(it.id);
             if (addItemForRow !== null) void changeItemForRow(addItemForRow, it.id);
             setAddItemForRow(null);
           }}
+          onCancel={() => setAddItemForRow(null)}
         />
       </InlineDialog>
     </div>
