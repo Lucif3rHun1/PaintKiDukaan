@@ -157,7 +157,7 @@ export interface BatchLabel {
 }
 
 export type PrintConfig =
-  | { type: "thermal"; size: "50x25" | "50x50" | "38x25" }
+  | { type: "thermal"; size: "50x25" | "50x50" | "38x25"; labelsPerRow?: number }
   | { type: "laser-a4"; perSheet: 21 | 65 };
 
 /**
@@ -214,7 +214,7 @@ async function buildLabelPdfBlobInner(
   batch: BatchLabel[],
   config: PrintConfig,
 ): Promise<Blob> {
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  let doc: jsPDF;
 
   if (config.type === "thermal") {
     const SIZE: Record<string, [number, number]> = {
@@ -223,22 +223,27 @@ async function buildLabelPdfBlobInner(
       "38x25": [38, 25],
     };
     const [w, h] = SIZE[config.size];
+    const labelsPerRow = Math.min(4, Math.max(1, Math.floor(config.labelsPerRow ?? 1)));
+    const pageW = w * labelsPerRow;
+    const orientation = pageW >= h ? "landscape" : "portrait";
+    doc = new jsPDF({ orientation, unit: "mm", format: [pageW, h] });
     const fontSize = h <= 25 ? 6 : 7;
     for (let i = 0; i < batch.length; i++) {
-      if (i > 0) doc.addPage([w, h], "landscape");
+      const col = i % labelsPerRow;
+      if (i > 0 && col === 0) doc.addPage([pageW, h], orientation);
       const label = batch[i];
-      const margin = 2;
-      const textAreaW = w * 0.38;
-      const bcW = w - textAreaW - margin * 3;
-      const bcH = h - margin * 2;
+      const x = col * w;
+      // Stacked layout: Line 1 (top, centered) → Line 2 (below) → Barcode (bottom, full width).
+      doc.setFontSize(fontSize + 1);
+      if (label.line1) doc.text(label.line1.slice(0, 32), x + w / 2, 5, { align: "center" });
+      if (label.line2) doc.text(label.line2.slice(0, 32), x + w / 2, 9, { align: "center" });
+      const bcW = w - 10;
+      const bcH = h - 13;
       const png = await makeBarcodePng(label.barcode);
-      doc.addImage(png, "PNG", margin, margin, bcW, bcH);
-      doc.setFontSize(fontSize);
-      const textX = bcW + margin * 2;
-      if (label.line1) doc.text(label.line1.slice(0, 28), textX, h / 2 - 1.5);
-      if (label.line2) doc.text(label.line2.slice(0, 28), textX, h / 2 + 2);
+      doc.addImage(png, "PNG", x + 5, 11, bcW, bcH);
     }
   } else {
+    doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const layouts: Record<21 | 65, { cols: number; rows: number; w: number; h: number }> = {
       21: { cols: 3, rows: 7, w: 70, h: 37 },
       65: { cols: 5, rows: 13, w: 38, h: 21 },
