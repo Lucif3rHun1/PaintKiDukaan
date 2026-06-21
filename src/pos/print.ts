@@ -39,15 +39,11 @@ export async function printLabel(spec: LabelSpec): Promise<void> {
   try {
     const doc = new jsPDF({ unit: "mm", format: [50, 25], orientation: "landscape" });
     const dataUrl = await makeBarcodePng(spec.barcode);
-    const margin = 2;
-    const textAreaW = 50 * 0.38;
-    const bcW = 50 - textAreaW - margin * 3;
-    const bcH = 25 - margin * 2;
-    doc.addImage(dataUrl, "PNG", margin, margin, bcW, bcH);
-    doc.setFontSize(6);
-    const textX = bcW + margin * 2;
-    doc.text(spec.line1.slice(0, 28), textX, 25 / 2 - 1.5);
-    doc.text(spec.line2.slice(0, 28), textX, 25 / 2 + 2);
+    // Stacked layout: Line 1 (top, centered) → Line 2 (below) → Barcode (bottom, full width).
+    doc.setFontSize(8);
+    doc.text(spec.line1.slice(0, 32), 25, 5, { align: "center" });
+    doc.text(spec.line2.slice(0, 32), 25, 9, { align: "center" });
+    doc.addImage(dataUrl, "PNG", 5, 11, 40, 12);
     doc.save(`label-${spec.barcode}.pdf`);
   } catch (err) {
     console.warn("printLabel failed", err);
@@ -165,19 +161,29 @@ export type PrintConfig =
   | { type: "laser-a4"; perSheet: 21 | 65 };
 
 /**
- * Render a single barcode to a PNG data URL. Always EAN-13, monochrome,
- * fixed bar height. If JsBarcode fails (e.g. invalid chars, runtime
- * error), logs and returns a 1×1 transparent PNG so downstream PDF assembly
- * does not crash mid-batch.
+ * Render a single barcode to a PNG data URL. Tries EAN-13 first; on failure
+ * (non-numeric values like legacy `SKU-000001` SKUs) falls back to CODE128
+ * so the label still renders a scannable barcode. If both fail, returns a
+ * 1×1 transparent PNG so downstream PDF assembly does not crash mid-batch.
  */
 export async function makeBarcodePng(value: string): Promise<string> {
   try {
     const canvas = document.createElement("canvas");
-    JsBarcode(canvas, value, BARCODE_OPTIONS);
+    JsBarcode(canvas, value, { ...BARCODE_OPTIONS, format: "EAN13" });
     return canvas.toDataURL("image/png");
-  } catch (err) {
-    console.warn(`makeBarcodePng failed for value='${value}'`, err);
-    return TRANSPARENT_PNG;
+  } catch (eanErr) {
+    console.warn(
+      `EAN-13 encode failed for value='${value}', falling back to CODE128:`,
+      eanErr,
+    );
+    try {
+      const canvas = document.createElement("canvas");
+      JsBarcode(canvas, value, { ...BARCODE_OPTIONS, format: "CODE128" });
+      return canvas.toDataURL("image/png");
+    } catch (codeErr) {
+      console.warn(`CODE128 encode failed for value='${value}':`, codeErr);
+      return TRANSPARENT_PNG;
+    }
   }
 }
 
