@@ -3,15 +3,17 @@ use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection};
 use serde_json;
 use tauri::{AppHandle, Manager, State};
+use zeroize::Zeroizing;
 
 use crate::commands::auth::{
-    default_lockout_row, now_unix, read_keywrap_from_keystore, validate_owner_pin,
-    write_keywrap_to_keystore, write_lockout_to_keystore, AppError, AppState, Session, User,
+    default_lockout_row, now_unix, read_keywrap_from_keystore, sync_session_to_static,
+    validate_owner_pin, write_keywrap_to_keystore, write_lockout_to_keystore, AppError, AppState,
+    Session, User,
 };
 use crate::crypto::kdf::{self, random_dek, random_salt, KdfParams, KEK_LEN};
 use crate::crypto::wrap::wrap_dek;
 use crate::db;
-use crate::db::keywrap::{self, KeywrapRow};
+use crate::db::keywrap::{self, KeywrapRow, PinRole};
 
 /// Wipe any leftover database files and sidecar before first-launch setup.
 pub(crate) fn wipe_existing_setup(db_path: &Path) -> std::io::Result<()> {
@@ -65,22 +67,7 @@ pub(crate) fn first_launch_setup_at_path(
     log::info!("[SETUP] DB path: {:?}", db_path);
 
     // --- Wipe any leftover DB + sidecar from a previous attempt -----------
-    let kp_a = db_path.with_extension("keystore");
-    log::info!(
-        "[DIAG-a] BEFORE wipe: db={:?} keystore={:?} db_exists={} keystore_exists={}",
-        db_path,
-        kp_a,
-        db_path.exists(),
-        kp_a.exists()
-    );
     wipe_existing_setup(db_path)?;
-    log::info!(
-        "[DIAG-a] AFTER  wipe: db={:?} keystore={:?} db_exists={} keystore_exists={}",
-        db_path,
-        kp_a,
-        db_path.exists(),
-        kp_a.exists()
-    );
 
     // --- Generate crypto material ----------------------------------------
     log::info!("[SETUP] Generating crypto material...");
@@ -93,7 +80,7 @@ pub(crate) fn first_launch_setup_at_path(
     let pin_params = KdfParams::PIN;
     let rec_params = KdfParams::RECOVERY;
 
-    log::info!("[SETUP] Deriving PIN KEK (Argon2id 64 MiB)...");
+    log::info!("[SETUP] Deriving PIN KEK (Argon2id 256 MiB)...");
     let mut pin_kek = kdf::derive_pin_kek(&pin, &pin_salt, &pin_params)
         .map_err(|e| AppError::Crypto(e.to_string()))?;
     log::info!("[SETUP] PIN KEK derived OK");
@@ -116,13 +103,6 @@ pub(crate) fn first_launch_setup_at_path(
     // --- Open main encrypted DB and apply schema -------------------------
     log::info!("[SETUP] Opening encrypted DB...");
     let db = db::Db::open(db_path, &dek)?;
-    log::info!(
-        "[DIAG-b] AFTER  db::open: db={:?} db_size={} wal_exists={} shm_exists={}",
-        db_path,
-        std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0),
-        db_path.with_extension("db-wal").exists(),
-        db_path.with_extension("db-shm").exists()
-    );
     log::info!("[SETUP] DB opened OK, seeding data...");
 
     db.with_conn(|conn: &Connection| {
@@ -151,11 +131,19 @@ pub(crate) fn first_launch_setup_at_path(
         .map_err(|e| AppError::Crypto(format!("pin_params serialize: {e}")))?;
     let rec_params_json = serde_json::to_vec(&rec_params)
         .map_err(|e| AppError::Crypto(format!("rec_params serialize: {e}")))?;
+
+    let mut pin_kek_for_verifier = kdf::derive_pin_kek(&pin, &pin_salt, &pin_params)
+        .map_err(|e| AppError::Crypto(e.to_string()))?;
+    let verifier = keywrap::pin_verifier_for_kek(&pin_kek_for_verifier).to_vec();
+    kdf::zeroize_key(&mut pin_kek_for_verifier);
+
     let row = KeywrapRow {
         id: 1,
+        role: PinRole::Real,
         pin_salt: pin_salt.to_vec(),
         pin_params: pin_params_json,
         pin_wrapped_dek,
+        pin_verifier: verifier,
         rec_salt: rec_salt.to_vec(),
         rec_params: rec_params_json,
         rec_wrapped_dek,
@@ -165,13 +153,6 @@ pub(crate) fn first_launch_setup_at_path(
         updated_at: ts,
     };
     write_keywrap_to_keystore(db_path, &row)?;
-    let kp_c = db_path.with_extension("keystore");
-    log::info!(
-        "[DIAG-c] AFTER  write_keywrap: keystore={:?} exists={} size={}",
-        kp_c,
-        kp_c.exists(),
-        std::fs::metadata(&kp_c).map(|m| m.len()).unwrap_or(0)
-    );
     log::info!("[SETUP] Keywrap written OK");
 
     // Seed the sidecar lockout policy row with spec defaults.
@@ -191,6 +172,8 @@ pub(crate) fn first_launch_setup_at_path(
         is_active: true,
     };
     *state.session.lock().unwrap() = Some(user.clone());
+    sync_session_to_static(state);
+    *state.recovery_passphrase.lock().unwrap() = Some(Zeroizing::new(passphrase));
 
     state
         .last_activity
@@ -204,7 +187,9 @@ pub(crate) fn first_launch_setup_at_path(
 
 /// First-launch setup: create the encrypted database, seed users/settings,
 /// wrap the DEK, and store the keywrap metadata.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+/// If decoy_pin + duress_pin + fake_shop_name are all provided, provisions a
+/// decoy DB with plausible fake data (PDE feature).
+#[tauri::command(rename_all = "snake_case")]
 pub fn first_launch_setup<R: tauri::Runtime>(
     state: State<AppState>,
     app: AppHandle<R>,
@@ -213,6 +198,9 @@ pub fn first_launch_setup<R: tauri::Runtime>(
     shop_name: String,
     address: String,
     phone: String,
+    decoy_pin: Option<String>,
+    duress_pin: Option<String>,
+    fake_shop_name: Option<String>,
 ) -> Result<Session, AppError> {
     log::info!("[SETUP] first_launch_setup called");
     log::info!("[SETUP] Resolving app data dir...");
@@ -224,13 +212,22 @@ pub fn first_launch_setup<R: tauri::Runtime>(
     std::fs::create_dir_all(&app_dir)?;
     let db_path: PathBuf = app_dir.join("paintkiduakan.db");
 
-    first_launch_setup_at_path(
+    let session = first_launch_setup_at_path(
         &state, &db_path, pin, passphrase, shop_name, address, phone,
-    )
+    )?;
+
+    if let (Some(dp), Some(dup), Some(fs)) = (decoy_pin, duress_pin, fake_shop_name) {
+        log::info!("[SETUP] Provisioning decoy DB (PDE)...");
+        if let Err(e) = crate::security::pde::provision_decoy_db(&db_path, &dp, &dup, &fs) {
+            log::warn!("[SETUP] PDE provisioning failed (non-fatal): {e}");
+        }
+    }
+
+    Ok(session)
 }
 
 /// Change the recovery passphrase (owner-only).
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_recovery_passphrase(
     state: State<AppState>,
     current_pin: String,
@@ -259,7 +256,7 @@ pub fn set_recovery_passphrase(
 }
 
 /// Restore access using the recovery passphrase, then set a new PIN.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn restore_from_recovery(
     state: State<AppState>,
     app: AppHandle,
@@ -306,6 +303,7 @@ pub fn restore_from_recovery(
 
     *state.db.lock().unwrap() = Some(db);
     *state.session.lock().unwrap() = Some(user.clone());
+    sync_session_to_static(&state);
     *state.failed_attempts.lock().unwrap() = 0;
     state
         .last_activity
@@ -406,7 +404,7 @@ mod tests {
     fn pre_db_open_flow_with_prod_cipher() {
         use crate::crypto::kdf::{derive_pin_kek, random_dek, random_salt, KdfParams, KEK_LEN};
         use crate::crypto::wrap::wrap_dek;
-        use crate::db::keywrap::KeywrapRow;
+        use crate::db::keywrap::{KeywrapRow, PinRole, pin_verifier_for_kek};
 
         let dir = unique_test_dir("pre-open");
         let db_path = dir.join("paintkiduakan.db");
@@ -437,7 +435,6 @@ mod tests {
         })
         .expect("INSERTs in pre_open flow");
 
-        // Write the same keywrap row first_launch_setup would write.
         let pin = "123456";
         let passphrase = "correct horse battery staple";
         let pin_salt = random_salt();
@@ -450,15 +447,18 @@ mod tests {
         let mut rec_kek = derive_pin_kek(passphrase, &rec_salt, &rec_params).unwrap();
         let pin_wrapped_dek = wrap_dek(&dek, &pin_kek).unwrap();
         let rec_wrapped_dek = wrap_dek(&dek, &rec_kek).unwrap();
+        let verifier = pin_verifier_for_kek(&pin_kek).to_vec();
         crate::crypto::kdf::zeroize_key(&mut pin_kek);
         crate::crypto::kdf::zeroize_key(&mut rec_kek);
 
         let ts = now_unix() as i64;
         let row = KeywrapRow {
             id: 1,
+            role: PinRole::Real,
             pin_salt: pin_salt.to_vec(),
             pin_params: serde_json::to_vec(&pin_params).unwrap(),
             pin_wrapped_dek,
+            pin_verifier: verifier,
             rec_salt: rec_salt.to_vec(),
             rec_params: serde_json::to_vec(&rec_params).unwrap(),
             rec_wrapped_dek,
@@ -488,7 +488,6 @@ mod tests {
         })
         .expect("verify after re-open");
 
-        // Verify the keywrap sidecar survives a close/reopen of the main DB.
         let read_row = read_keywrap_from_keystore(&db_path)
             .expect("keywrap row should be readable after main DB close");
         assert_eq!(read_row.id, 1);
@@ -532,6 +531,8 @@ mod tests {
         let ts = now_unix() as i64;
         let row = KeywrapRow {
             id: 1,
+            role: PinRole::Real,
+            pin_verifier: vec![],
             pin_salt: pin_salt.to_vec(),
             pin_params: serde_json::to_vec(&pin_params).unwrap(),
             pin_wrapped_dek,
@@ -581,6 +582,9 @@ mod tests {
             "Test Shop".into(),
             "123 Test St".into(),
             "555-0100".into(),
+            None,
+            None,
+            None,
         )
         .expect("first_launch_setup should succeed");
 
@@ -614,5 +618,259 @@ mod tests {
             .expect("derive_pin_kek RECOVERY");
 
         assert_eq!(a, b, "RECOVERY KDF must be symmetric across write and read");
+    }
+
+    /// Simulates the E2E bug: after first_launch_setup returns, the keystore
+    /// sidecar MUST contain the keywrap row. Without this guarantee, unlock
+    /// after process restart fails with "no keywrap row found" (the b31 bug).
+    ///
+    /// This test simulates "process restart" by:
+    /// 1. running first_launch_setup_at_path (creates DB + keystore sidecar)
+    /// 2. dropping all handles (function returns)
+    /// 3. opening the keystore afresh via read_keywrap_from_keystore
+    /// 4. asserting the row is present and fields are non-empty
+    ///
+    /// Catches: synchronous=NORMAL with implicit Drop-based close silently
+    /// failing to fsync. Fixed by b79aa3a (synchronous=FULL + explicit close).
+    #[test]
+    fn setup_then_reopen_keywrap_row_survives() {
+        use crate::commands::auth::{read_keywrap_from_keystore, AppState};
+
+        let dir = unique_test_dir("setup-reopen");
+        let db_path = dir.join("paintkiduakan.db");
+
+        let state = AppState::default();
+        let pin = "123456".to_string();
+        let passphrase = "very-strong-recovery-passphrase".to_string();
+
+        let session = first_launch_setup_at_path(
+            &state,
+            &db_path,
+            pin.clone(),
+            passphrase,
+            "Test Shop".to_string(),
+            "123 Test St".to_string(),
+            "+919876543210".to_string(),
+        )
+        .expect("first_launch_setup_at_path should succeed");
+
+        assert_eq!(session.user.as_ref().unwrap().role, "owner");
+        assert!(db_path.exists(), "DB file must exist after setup");
+
+        let keystore_path = db_path.with_extension("keystore");
+        assert!(
+            keystore_path.exists(),
+            "keystore sidecar must exist after setup"
+        );
+
+        // Simulate "process restart" — open the keystore from scratch.
+        let row = read_keywrap_from_keystore(&db_path)
+            .expect("keywrap row must be readable after process restart");
+
+        assert_eq!(row.id, 1, "keywrap row must have id=1");
+        assert_eq!(row.pin_salt.len(), 32, "pin_salt must be 32 bytes (CWE-759)");
+        assert!(!row.pin_wrapped_dek.is_empty(), "pin_wrapped_dek must be non-empty");
+        assert_eq!(row.rec_salt.len(), 32, "rec_salt must be 32 bytes (CWE-759)");
+        assert!(!row.rec_wrapped_dek.is_empty(), "rec_wrapped_dek must be non-empty");
+        assert!(!row.pin_params.is_empty(), "pin_params must be serialized");
+        assert!(!row.rec_params.is_empty(), "rec_params must be serialized");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Full setup→restart→unlock roundtrip. Proves the entire cycle works
+    /// without a Tauri runtime by closing every handle between phases and
+    /// re-opening from scratch. Catches SQLCipher-key / Argon2id / AES-GCM
+    /// mismatches between the write path (setup) and read path (unlock).
+    #[test]
+    fn setup_then_unlock_roundtrip() {
+        use crate::commands::auth::{read_keywrap_from_keystore, AppState};
+        use crate::db;
+        use crate::db::keywrap;
+
+        let dir = unique_test_dir("setup-unlock-roundtrip");
+        let db_path = dir.join("paintkiduakan.db");
+
+        let state = AppState::default();
+        let pin = "123456".to_string();
+        let passphrase = "another-strong-recovery-passphrase";
+
+        first_launch_setup_at_path(
+            &state,
+            &db_path,
+            pin.clone(),
+            passphrase.to_string(),
+            "Roundtrip Shop".to_string(),
+            "Addr".to_string(),
+            "+919876543210".to_string(),
+        )
+        .expect("setup must succeed");
+
+        drop(state);
+
+        let row = read_keywrap_from_keystore(&db_path)
+            .expect("keywrap must survive restart");
+
+        let dek = keywrap::unwrap_with_pin(&row, &pin)
+            .expect("PIN unwrap must succeed");
+
+        let db = db::Db::open(&db_path, &dek)
+            .expect("SQLCipher DB must open with recovered DEK");
+
+        let table_count: i64 = db
+            .with_conn(|c| -> Result<i64, rusqlite::Error> {
+                let n: i64 = c.query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'",
+                    [],
+                    |r| r.get(0),
+                )?;
+                Ok(n)
+            })
+            .expect("schema query must succeed after unlock");
+        assert!(
+            table_count > 0,
+            "schema tables must exist after unlock (got {table_count})"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unlock_with_wrong_pin_fails_with_wrong_pin() {
+        use crate::db;
+        use crate::db::keywrap;
+
+        let dir = unique_test_dir("unlock-wrong-pin");
+        let db_path = dir.join("paintkiduakan.db");
+
+        let state = AppState::default();
+        let right_pin = "123456".to_string();
+        let wrong_pin = "000000".to_string();
+
+        first_launch_setup_at_path(
+            &state,
+            &db_path,
+            right_pin.clone(),
+            "a-recovery-passphrase".to_string(),
+            "Shop".to_string(),
+            "Addr".to_string(),
+            "+919876543210".to_string(),
+        )
+        .expect("setup must succeed");
+
+        drop(state);
+
+        let row = read_keywrap_from_keystore(&db_path)
+            .expect("keywrap must survive restart");
+
+        let err = keywrap::unwrap_with_pin(&row, &wrong_pin)
+            .expect_err("wrong PIN must be rejected");
+        match err {
+            crate::AppError::WrongPin => {}
+            other => panic!("expected WrongPin, got {other:?}"),
+        }
+
+        let _ = db::Db::open(&db_path, &[0u8; 32])
+            .err()
+            .ok_or_else(|| panic!("zero DEK must NOT open the SQLCipher DB"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn recovery_with_wrong_passphrase_returns_wrong_recovery_passphrase() {
+        use crate::db::keywrap;
+
+        let dir = unique_test_dir("recovery-wrong-passphrase");
+        let db_path = dir.join("paintkiduakan.db");
+
+        let state = AppState::default();
+        let right_passphrase = "right-recovery-passphrase";
+        let wrong_passphrase = "wrong-recovery-passphrase";
+
+        first_launch_setup_at_path(
+            &state,
+            &db_path,
+            "123456".to_string(),
+            right_passphrase.to_string(),
+            "Shop".to_string(),
+            "Addr".to_string(),
+            "+919876543210".to_string(),
+        )
+        .expect("setup must succeed");
+
+        drop(state);
+
+        let row = read_keywrap_from_keystore(&db_path)
+            .expect("keywrap must survive restart");
+
+        let err = keywrap::unwrap_with_recovery(&row, wrong_passphrase)
+            .expect_err("wrong recovery passphrase must be rejected");
+        match err {
+            crate::AppError::WrongRecoveryPassphrase => {}
+            other => panic!("expected WrongRecoveryPassphrase, got {other:?}"),
+        }
+
+        let ok = keywrap::unwrap_with_recovery(&row, right_passphrase);
+        assert!(
+            ok.is_ok(),
+            "correct recovery passphrase must unwrap DEK"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn setup_is_idempotent_wipes_then_rebuilds() {
+        use crate::db;
+        use crate::db::keywrap;
+
+        let dir = unique_test_dir("setup-idempotent");
+        let db_path = dir.join("paintkiduakan.db");
+
+        let state = AppState::default();
+        let old_pin = "111111".to_string();
+        first_launch_setup_at_path(
+            &state,
+            &db_path,
+            old_pin.clone(),
+            "old-passphrase".to_string(),
+            "Old Shop".to_string(),
+            "Old Addr".to_string(),
+            "+919876543210".to_string(),
+        )
+        .expect("first setup must succeed");
+        drop(state);
+
+        let state = AppState::default();
+        let new_pin = "222222".to_string();
+        first_launch_setup_at_path(
+            &state,
+            &db_path,
+            new_pin.clone(),
+            "new-passphrase".to_string(),
+            "New Shop".to_string(),
+            "New Addr".to_string(),
+            "+919876543210".to_string(),
+        )
+        .expect("re-setup on existing files must wipe and rebuild");
+        drop(state);
+
+        let row = read_keywrap_from_keystore(&db_path)
+            .expect("keywrap must exist after re-setup");
+
+        let err = keywrap::unwrap_with_pin(&row, &old_pin)
+            .expect_err("old PIN must be rejected after re-setup");
+        match err {
+            crate::AppError::WrongPin => {}
+            other => panic!("expected WrongPin for old PIN, got {other:?}"),
+        }
+
+        let dek = keywrap::unwrap_with_pin(&row, &new_pin)
+            .expect("new PIN must unwrap after re-setup");
+        let _db = db::Db::open(&db_path, &dek)
+            .expect("SQLCipher DB must open with new DEK after re-setup");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -10,6 +10,7 @@ import { LockScreen } from "./lib/security/lockScreen";
 import { RestoreFromRecovery } from "./lib/security/restoreFromRecovery";
 import { type Bootstrap, useSecurity } from "./lib/security/state";
 import { UserManagement } from "./lib/security/userManagement";
+import { RoleGuard } from "./lib/security/roleGuard";
 
 /* ── Domain UI (Slice B) ─────────────────────────────────── */
 import { ItemList } from "./domain/items/ItemList";
@@ -27,6 +28,8 @@ import { customerOutstanding } from "./domain/customers/api";
 import { listCustomerTypes } from "./domain/customerTypes/api";
 /* ── POS UI (Slice C) ────────────────────────────────────── */
 import SalesPage from "./pos/sales/SalesPage";
+import { SalesListPage } from "./pos/sales/SalesListPage";
+import ReturnPage from "./pos/sales/ReturnPage";
 import InwardPage from "./pos/purchases/InwardPage";
 import SalesReportPage from "./pos/salesReport/SalesReportPage";
 
@@ -37,17 +40,18 @@ import { AdminLogs } from "./shell/routes/AdminLogs";
 import { MasterHealthPage } from "./shell/health/MasterHealthPage";
 import { AppShell, type AppShellTab } from "./shell/AppShell";
 import { InlineDialog } from "./components/ui/InlineDialog";
+import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import type { Customer, CustomerType, Vendor } from "./domain/types";
 
 const THIRTY_SECONDS = 30_000;
 const FIFTEEN_MINUTES = 15 * 60 * 1_000;
-const LOCKED_SESSION = { user: null, locked: true } as const;
+const LOCKED_SESSION = { user: null, locked: true, pinRole: "real" as const };
 
 /* ── Hash routing ───────────────────────────────────────── */
 const HASH_REDIRECTS: Record<string, string> = {
   "#/pos": "#/sales",
   "#/pos/inward": "#/inward",
-  "#/pos/held": "#/sales",
+
   "#/pos/dayclose": "#/sales-report",
   "#/pos/day-close": "#/sales-report",
   "#/pos/reports": "#/sales-report",
@@ -75,6 +79,13 @@ function readItemsSubRoute(): "list" | "barcodes" {
   return "list";
 }
 
+function readSalesSubRoute(): "list" | "new" | "return" {
+  const h = window.location.hash;
+  if (h === "#/sales/new") return "new";
+  if (h === "#/sales/return") return "return";
+  return "list";
+}
+
 function applyHashRedirect(): boolean {
   if (typeof window === "undefined") return false;
   const target = HASH_REDIRECTS[window.location.hash];
@@ -94,6 +105,7 @@ export default function App() {
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [tab, setTab] = useState<AppShellTab>(readTab);
+  const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return">(readSalesSubRoute);
 
   /* ── Vendor modal state ───────────────────────────────── */
   const [vendorCreateOpen, setVendorCreateOpen] = useState(false);
@@ -132,7 +144,7 @@ export default function App() {
           setSession(LOCKED_SESSION);
           setPhase("locked");
         } else {
-          setSession({ user: { id: 0, name: b.user, role: b.role }, locked: false });
+          setSession({ user: { id: 0, name: b.user, role: b.role }, locked: false, pinRole: b.pin_role ?? "real" });
           setPhase("unlocked");
         }
       })
@@ -153,7 +165,10 @@ export default function App() {
       window.location.replace("#/barcodes");
       return;
     }
-    const onHash = () => setTab(readTab());
+    const onHash = () => {
+      setTab(readTab());
+      setSalesRoute(readSalesSubRoute());
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -252,44 +267,71 @@ export default function App() {
       onLogout={lockNow}
     >
       {tab === "dashboard" && (
-        <Dashboard
-          user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-          onNavigate={navigate}
-          onLock={lockNow}
-        />
+        <ErrorBoundary context="Dashboard">
+          <Dashboard
+            user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+            onNavigate={navigate}
+            onLock={lockNow}
+          />
+        </ErrorBoundary>
       )}
-      {tab === "sales" && (
-        <SalesPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
-      )}
+      {tab === "sales" && salesRoute === "new" ? (
+        <ErrorBoundary context="Sales — new">
+          <SalesPage
+            user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+            onBack={() => (window.location.hash = "#/sales")}
+          />
+        </ErrorBoundary>
+      ) : null}
+      {tab === "sales" && salesRoute === "return" ? (
+        <ErrorBoundary context="Sales — return">
+          <ReturnPage
+            user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+            onBack={() => (window.location.hash = "#/sales")}
+          />
+        </ErrorBoundary>
+      ) : null}
+      {tab === "sales" && salesRoute === "list" ? (
+        <ErrorBoundary context="Sales — list">
+          <SalesListPage onCreate={() => (window.location.hash = "#/sales/new")} />
+        </ErrorBoundary>
+      ) : null}
       {tab === "inward" && (
-        <div className="min-h-full space-y-4 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
+        <ErrorBoundary context="Inward">
           <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
-        </div>
+        </ErrorBoundary>
       )}
       {tab === "sales-report" && (
-        <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+        <RoleGuard minRole="stocker">
+          <ErrorBoundary context="Sales Report">
+            <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+          </ErrorBoundary>
+        </RoleGuard>
       )}
       {tab === "items" && (
-        <div className="min-h-full space-y-3 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
+        <div className="space-y-3">
           <div className="flex items-center gap-4">
-            <h2 className="text-lg font-semibold text-zinc-100">Inventory</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
             <ItemSubNav active="items" />
           </div>
-          <ItemList role={role} />
+          <ErrorBoundary context="Inventory">
+            <ItemList role={role} />
+          </ErrorBoundary>
         </div>
       )}
       {tab === "barcodes" && (
-        <div className="min-h-full space-y-3 rounded-xl bg-zinc-950 p-4 text-zinc-100 sm:p-6">
+        <div className="space-y-3">
           <div className="flex items-center gap-4">
-            <h2 className="text-lg font-semibold text-zinc-100">Inventory</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
             <ItemSubNav active="barcodes" />
           </div>
-          <BulkLabelsPage />
+          <ErrorBoundary context="Barcode Labels">
+            <BulkLabelsPage />
+          </ErrorBoundary>
         </div>
       )}
       {tab === "vendors" && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Vendors</h2>
+        <ErrorBoundary context="Vendors">
           <VendorList
             role={role}
             refreshKey={refreshKey}
@@ -297,11 +339,10 @@ export default function App() {
             onSelect={(v) => setVendorDetailTarget(v)}
             onRecordPayment={(v) => setVendorPaymentTarget(v)}
           />
-        </div>
+        </ErrorBoundary>
       )}
       {tab === "customers" && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Customers</h2>
+        <ErrorBoundary context="Customers">
           <CustomerList
             role={role}
             refreshKey={refreshKey}
@@ -309,11 +350,29 @@ export default function App() {
             onSelect={(c) => setCustomerDetailTarget(c)}
             onRecordPayment={(c) => setCustomerPaymentTarget(c)}
           />
-        </div>
+        </ErrorBoundary>
       )}
-      {tab === "settings" && <SettingsPage />}
-      {tab === "health" && <MasterHealthPage />}
-      {tab === "logs" && <AdminLogs />}
+      {tab === "settings" && (
+        <RoleGuard minRole="owner">
+          <ErrorBoundary context="Settings">
+            <SettingsPage />
+          </ErrorBoundary>
+        </RoleGuard>
+      )}
+      {tab === "health" && (
+        <RoleGuard minRole="owner">
+          <ErrorBoundary context="Health">
+            <MasterHealthPage />
+          </ErrorBoundary>
+        </RoleGuard>
+      )}
+      {tab === "logs" && (
+        <RoleGuard minRole="owner">
+          <ErrorBoundary context="Logs">
+            <AdminLogs />
+          </ErrorBoundary>
+        </RoleGuard>
+      )}
 
       {/* ── Vendor modals ──────────────────────────────── */}
       <InlineDialog
@@ -442,15 +501,15 @@ function ItemSubNav({ active }: { active: "items" | "barcodes" }) {
     { id: "barcodes", label: "Barcode Labels", href: "#/barcodes" },
   ];
   return (
-    <div className="flex gap-1 border-b border-white/10">
+    <div className="flex gap-1 border-b border-slate-200">
       {tabs.map((t) => (
         <a
           key={t.id}
           href={t.href}
-          className={`rounded-t-md px-3 py-1.5 text-sm whitespace-nowrap ${
+          className={`rounded-t-md border border-b-0 px-3 py-1.5 text-sm whitespace-nowrap transition-colors ${
             active === t.id
-              ? "border border-white/10 border-b-zinc-950 bg-zinc-950 font-medium text-zinc-100"
-              : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+              ? "border-slate-200 bg-white font-medium text-slate-900"
+              : "border-transparent text-slate-500 hover:bg-white hover:text-slate-700"
           }`}
         >
           {t.label}

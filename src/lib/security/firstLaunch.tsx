@@ -5,7 +5,7 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
-  KeyRound,
+  HardDrive,
   Loader2,
   ShoppingBag,
   Lock,
@@ -23,6 +23,7 @@ import {
   recoveryPassphraseSchema,
   shopNameSchema,
 } from "./pin";
+import { FirstLaunchRestore } from "./firstLaunchRestore";
 import { type Role, type Session, type User, useSecurity } from "./state";
 
 interface SetupResponse {
@@ -32,13 +33,30 @@ interface SetupResponse {
   role?: Role;
   locked?: boolean;
 }
-type Step = 0 | 1 | 2;
+type Step = "path" | "shop" | "pin" | "passphrase";
+type FreshStep = Exclude<Step, "path">;
 
 const STEPS = [
+  { key: "path", label: "Setup Path", icon: ShoppingBag, description: "Choose how you want to start PaintKiDukaan" },
   { label: "Shop Details", icon: ShoppingBag, description: "Basic information about your shop" },
   { label: "Owner PIN", icon: Lock, description: "Set a 6-digit PIN to lock and unlock the app" },
   { label: "Recovery Passphrase", icon: FileKey, description: "A secret phrase to recover your data if you forget your PIN" },
 ] as const;
+const FRESH_STEP_INDEX: Record<FreshStep, 0 | 1 | 2> = {
+  shop: 0,
+  pin: 1,
+  passphrase: 2,
+};
+const NEXT_STEP: Record<FreshStep, FreshStep> = {
+  shop: "pin",
+  pin: "passphrase",
+  passphrase: "passphrase",
+};
+const PREVIOUS_STEP: Record<FreshStep, Step> = {
+  shop: "path",
+  pin: "shop",
+  passphrase: "pin",
+};
 
 const inputClass =
   "h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 text-sm text-zinc-100 outline-none transition-colors duration-150 placeholder:text-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50";
@@ -53,7 +71,7 @@ function normalizeSession(result: SetupResponse): Session {
   const name = result.user?.name ?? result.user_name ?? "Owner";
   const id = result.user?.id ?? result.user_id ?? 0;
   const user: User | null = result.user === null ? null : { id, name, role };
-  return { user, locked: result.locked ?? false };
+  return { user, locked: result.locked ?? false, pinRole: "real" };
 }
 
 function fieldError(message?: string) {
@@ -67,7 +85,8 @@ function fieldError(message?: string) {
 }
 
 export function FirstLaunch() {
-  const [step, setStep] = useState<Step>(0);
+  const [step, setStep] = useState<Step>("path");
+  const [showRestore, setShowRestore] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [showPassphrase, setShowPassphrase] = useState(false);
 
@@ -105,16 +124,18 @@ export function FirstLaunch() {
     recoveryPassphraseSchema.safeParse(values.passphraseConfirm ?? "").success &&
     values.passphrase === values.passphraseConfirm;
 
-  const canContinue = [shopStepValid, pinStepValid, recoveryStepValid][step];
-  const stepFields = [
-    ["shopName", "address", "phone"],
-    ["pin", "pinConfirm"],
-    ["passphrase", "passphraseConfirm"],
-  ] as const;
+  const currentFreshIndex = step === "path" ? 0 : FRESH_STEP_INDEX[step];
+  const canContinue = step === "path" ? false : [shopStepValid, pinStepValid, recoveryStepValid][currentFreshIndex];
+  const stepFields: Record<FreshStep, readonly (keyof FirstLaunchInput)[]> = {
+    shop: ["shopName", "address", "phone"],
+    pin: ["pin", "pinConfirm"],
+    passphrase: ["passphrase", "passphraseConfirm"],
+  };
 
   async function goNext() {
+    if (step === "path") return;
     const ok = await trigger(stepFields[step]);
-    if (ok) setStep((current) => Math.min(current + 1, 2) as Step);
+    if (ok) setStep(NEXT_STEP[step]);
   }
 
   async function onSubmit(input: FirstLaunchInput) {
@@ -140,7 +161,16 @@ export function FirstLaunch() {
     }
   }
 
-  const CurrentStepIcon = STEPS[step].icon;
+  if (showRestore) {
+    return <FirstLaunchRestore onCancel={() => {
+      setShowRestore(false);
+      setStep("path");
+    }} />;
+  }
+
+  const currentStepMeta = step === "path" ? STEPS[0] : STEPS[currentFreshIndex + 1];
+  const CurrentStepIcon = currentStepMeta.icon;
+  const stepNumber = step === "path" ? 0 : currentFreshIndex + 1;
 
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6">
@@ -170,25 +200,25 @@ export function FirstLaunch() {
           {/* Step indicator with labels */}
           <div className="mb-6" aria-label="Setup progress">
             <div className="flex items-center gap-2 mb-2">
-              {[0, 1, 2].map((i) => (
+              {[0, 1, 2, 3].map((i) => (
                 <div
                   key={i}
                   className="flex items-center gap-2"
                 >
                   <div
                     className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-200 ${
-                      i < step
+                      i < stepNumber
                         ? "bg-emerald-500 text-white"
-                        : i === step
+                        : i === stepNumber
                           ? "bg-indigo-500 text-white"
                           : "bg-zinc-800 text-zinc-500"
                     }`}
                   >
-                    {i < step ? "✓" : i + 1}
+                    {i < stepNumber ? "✓" : i + 1}
                   </div>
                   <span
                     className={`text-xs font-medium hidden sm:inline ${
-                      i === step ? "text-zinc-100" : "text-zinc-500"
+                      i === stepNumber ? "text-zinc-100" : "text-zinc-500"
                     }`}
                   >
                     {STEPS[i].label}
@@ -197,13 +227,13 @@ export function FirstLaunch() {
               ))}
             </div>
             <div className="flex items-center gap-1.5">
-              {[0, 1, 2].map((i) => (
+              {[0, 1, 2, 3].map((i) => (
                 <span
                   key={i}
                   className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${
-                    i < step
+                    i < stepNumber
                       ? "bg-emerald-500"
-                      : i === step
+                      : i === stepNumber
                         ? "bg-indigo-500"
                         : "bg-zinc-800"
                   }`}
@@ -216,8 +246,8 @@ export function FirstLaunch() {
           <div className="mb-5 flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-3">
             <CurrentStepIcon className="h-5 w-5 shrink-0 text-indigo-300" aria-hidden="true" />
             <div>
-              <p className="text-sm font-medium text-zinc-100">{STEPS[step].label}</p>
-              <p className="text-xs text-zinc-400">{STEPS[step].description}</p>
+              <p className="text-sm font-medium text-zinc-100">{currentStepMeta.label}</p>
+              <p className="text-xs text-zinc-400">{currentStepMeta.description}</p>
             </div>
           </div>
 
@@ -232,8 +262,42 @@ export function FirstLaunch() {
             </div>
           ) : null}
 
-          {/* Step 0: Shop Details */}
-          {step === 0 ? (
+          {step === "path" ? (
+            <div className="space-y-3">
+              <button
+                className="group flex w-full items-start gap-4 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left transition-colors duration-150 hover:border-indigo-500/60 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+                type="button"
+                onClick={() => setStep("shop")}
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-300 transition-colors duration-150 group-hover:bg-indigo-500 group-hover:text-white">
+                  <ShoppingBag className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold text-zinc-100">Set up a new shop</span>
+                  <span className="mt-1 block text-sm leading-5 text-zinc-400">
+                    Start fresh with a new shop. You'll set your shop details, owner PIN, and recovery passphrase.
+                  </span>
+                </span>
+              </button>
+              <button
+                className="group flex w-full items-start gap-4 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left transition-colors duration-150 hover:border-indigo-500/60 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+                type="button"
+                onClick={() => setShowRestore(true)}
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-300 transition-colors duration-150 group-hover:bg-indigo-500 group-hover:text-white">
+                  <HardDrive className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold text-zinc-100">Restore from a backup</span>
+                  <span className="mt-1 block text-sm leading-5 text-zinc-400">
+                    Restore from a .pkb1 backup file. Use this if you previously backed up and want to continue.
+                  </span>
+                </span>
+              </button>
+            </div>
+          ) : null}
+
+          {step === "shop" ? (
             <div className="space-y-4">
               <div>
                 <label className={labelClass} htmlFor="shopName">
@@ -286,8 +350,7 @@ export function FirstLaunch() {
             </div>
           ) : null}
 
-          {/* Step 1: Owner PIN */}
-          {step === 1 ? (
+          {step === "pin" ? (
             <div className="space-y-4">
               <div>
                 <label className={labelClass} htmlFor="pin">
@@ -331,8 +394,7 @@ export function FirstLaunch() {
             </div>
           ) : null}
 
-          {/* Step 2: Recovery Passphrase */}
-          {step === 2 ? (
+          {step === "passphrase" ? (
             <div className="space-y-4">
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
                 <p className="text-sm font-medium text-amber-200">Important — read this first</p>
@@ -391,38 +453,38 @@ export function FirstLaunch() {
           ) : null}
 
           {/* Navigation buttons */}
-          <div className="mt-6 flex gap-3">
-            {step > 0 ? (
+          {step !== "path" ? (
+            <div className="mt-6 flex gap-3">
               <button
                 className={ghostButtonClass}
                 type="button"
-                onClick={() => setStep((step - 1) as Step)}
+                onClick={() => setStep(PREVIOUS_STEP[step])}
               >
                 Back
               </button>
-            ) : null}
-            {step < 2 ? (
-              <button
-                className={`${buttonClass} flex-1`}
-                type="button"
-                onClick={goNext}
-                disabled={!canContinue}
-              >
-                Continue
-              </button>
-            ) : (
-              <button
-                className={`${buttonClass} flex-1`}
-                type="submit"
-                disabled={!canContinue || isSubmitting}
-              >
-                {isSubmitting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                Complete setup
-              </button>
-            )}
-          </div>
+              {step !== "passphrase" ? (
+                <button
+                  className={`${buttonClass} flex-1`}
+                  type="button"
+                  onClick={goNext}
+                  disabled={!canContinue}
+                >
+                  Continue
+                </button>
+              ) : (
+                <button
+                  className={`${buttonClass} flex-1`}
+                  type="submit"
+                  disabled={!canContinue || isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : null}
+                  Complete setup
+                </button>
+              )}
+            </div>
+          ) : null}
         </form>
       </section>
     </main>

@@ -98,6 +98,17 @@ pub fn scan_target(
         .clone())
 }
 
+/// Zero the keyboard hook buffer. Called on lock events to prevent
+/// stale scan fragments from leaking across sessions.
+pub fn clear_hook_buffer<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(buf) = app.try_state::<Arc<Mutex<ScanBuffer>>>() {
+        let mut b = buf.lock();
+        b.chars.clear();
+        b.started = None;
+        b.shift = false;
+    }
+}
+
 /// Tauri command proxy for emitting a synthetic scan event (used by the
 /// frontend to validate the round-trip end-to-end during E67).
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
@@ -121,8 +132,8 @@ pub fn init<R: tauri::Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn st
     let buffer = Arc::new(Mutex::new(ScanBuffer::default()));
     let last_emit_ms = Arc::new(AtomicU64::new(0));
 
-    // Spawn the hook on a dedicated OS thread. rdev::listen is blocking
-    // and runs until the process exits.
+    app.manage(buffer.clone());
+
     let buffer_for_thread = buffer.clone();
     let last_emit_for_thread = last_emit_ms.clone();
     let app_for_thread = app_handle.clone();
@@ -152,8 +163,28 @@ fn run_hook<R: tauri::Runtime>(
                 buffer.lock().shift = false;
             }
             EventType::KeyPress(key) => {
-                // Read runtime scanner settings from app state.
                 let app_state = app.state::<crate::commands::auth::AppState>();
+
+                let is_unlocked = app_state
+                    .session
+                    .lock()
+                    .map(|s| s.is_some())
+                    .unwrap_or(false);
+                if !is_unlocked {
+                    buffer.lock().chars.clear();
+                    buffer.lock().started = None;
+                    return;
+                }
+
+                let target = app_state
+                    .scan_target
+                    .lock()
+                    .map(|t| t.clone())
+                    .unwrap_or_default();
+                if target.is_empty() || target == "none" {
+                    return;
+                }
+
                 let settings = app_state.settings.lock().unwrap();
                 let min_length = settings
                     .get("scanner_min_length")

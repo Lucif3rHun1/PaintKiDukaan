@@ -1,4 +1,5 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
+import type { PinRole } from "../../domain/types";
 
 export type Role = "owner" | "cashier" | "stocker";
 
@@ -11,12 +12,13 @@ export interface User {
 export interface Session {
   user: User | null;
   locked: boolean;
+  pinRole: PinRole;
 }
 
 export type Bootstrap =
   | { kind: "first_launch" }
   | { kind: "locked" }
-  | { kind: "unlocked"; user: string; role: Role };
+  | { kind: "unlocked"; user: string; role: Role; pin_role?: PinRole };
 
 export type AppPhase =
   | "loading"
@@ -34,9 +36,11 @@ interface SecurityState {
   reset(): void;
   isUnlocked(): boolean;
   isOwner(): boolean;
+  isDecoy(): boolean;
+  isDuress(): boolean;
 }
 
-const emptySession: Session = { user: null, locked: true };
+const emptySession: Session = { user: null, locked: true, pinRole: "real" };
 
 export const useSecurity: UseBoundStore<StoreApi<SecurityState>> = create<SecurityState>(
   (set, get) => ({
@@ -47,5 +51,7 @@ export const useSecurity: UseBoundStore<StoreApi<SecurityState>> = create<Securi
     reset: () => set({ phase: "loading", session: emptySession }),
     isUnlocked: () => get().phase === "unlocked" && get().session.user !== null,
     isOwner: () => get().session.user?.role === "owner",
+    isDecoy: () => get().session.pinRole === "decoy",
+    isDuress: () => get().session.pinRole === "duress",
   }),
 );

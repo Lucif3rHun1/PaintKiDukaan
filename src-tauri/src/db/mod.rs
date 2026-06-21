@@ -197,3 +197,63 @@ impl Drop for Db {
         self.dek.zeroize();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::params;
+
+    /// Reproduce `first_launch_setup`'s INSERT statements against production
+    /// SQLCipher (raw-hex key + cipher_compatibility=4 + cipher_page_size=4096).
+    ///
+    /// `migrations::tests::test_migrations_idempotent` uses
+    /// `PRAGMA key = 'test'` (string mode) and never exercises prod cipher.
+    /// This test fills that gap. If it fails, the failure message is the
+    /// real reason `first_launch_setup` errors out on the wizard's final step.
+    #[test]
+    fn first_launch_setup_inserts_against_prod_cipher() {
+        let db = Db::open_in_memory().expect("Db::open_in_memory should open with prod cipher");
+
+        // Exact pattern from recovery.rs::first_launch_setup:
+        db.with_conn::<_, _, rusqlite::Error>(|c| {
+            // users (Owner) — 6 columns, 3 placeholders.
+            c.execute(
+                "INSERT OR IGNORE INTO users \
+                 (name, role, pin_salt, pin_verifier, pin_length, active) \
+                 VALUES (?1, 'owner', ?2, ?3, 6, 1)",
+                params!["Owner", &[0u8; 16][..], &[0u8; 32][..]],
+            )?;
+
+            // settings — INSERT OR REPLACE (our fix).
+            c.execute(
+                "INSERT OR REPLACE INTO settings (id, shop_name, address, phone) \
+                 VALUES (1, 'Test Shop', 'Test Address', 'Test Phone')",
+                [],
+            )?;
+
+            // locations (Shop, Godown) — multi-row VALUES.
+            c.execute(
+                "INSERT INTO locations (name) VALUES ('Shop'), ('Godown')",
+                [],
+            )?;
+
+            // Verify we can read them back.
+            let shop_name: String = c.query_row(
+                "SELECT shop_name FROM settings WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(shop_name, "Test Shop");
+
+            let owner: String = c.query_row(
+                "SELECT name FROM users WHERE role = 'owner' AND active = 1",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(owner, "Owner");
+
+            Ok(())
+        })
+        .expect("first_launch_setup INSERTs should succeed against prod cipher");
+    }
+}

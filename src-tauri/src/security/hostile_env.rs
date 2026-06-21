@@ -6,6 +6,7 @@ use serde::Serialize;
 use super::anti_debug::{self, DebugReport};
 use super::anti_sniff::{self, SniffReport};
 use super::anti_vm::{self, VmReport};
+use super::ntdll_integrity::{self, NtdllReport};
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -37,36 +38,39 @@ pub struct HostileEnvReport {
     pub debug: DebugReport,
     pub vm: VmReport,
     pub sniff: SniffReport,
+    pub ntdll: NtdllReport,
     /// Weighted risk score (0-100).
     pub score: u8,
 }
 
 // ─── Score weights ─────────────────────────────────────────────────────────
 
-const DEBUG_WEIGHT: u8 = 40;
-const VM_WEIGHT: u8 = 40;
-const SNIFF_WEIGHT: u8 = 20;
+const DEBUG_WEIGHT: u8 = 35;
+const VM_WEIGHT: u8 = 35;
+const SNIFF_WEIGHT: u8 = 15;
+const NTDLL_WEIGHT: u8 = 15;
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /// Run all hostile environment detectors and compute a weighted risk score.
 ///
 /// Score weighting:
-/// - debug:  40 points max (debugger_present=15, remote=10, hw_bp=5,
-///           timing=5, ptrace=5)
-/// - vm:     40 points max (cpuid=15, registry=10, mac_oui=10, dll=3,
-///           disk=2)
-/// - sniff:  20 points max (pcap=8, analyzer=6, proxy=3, loopback=3)
+/// - debug:  35 points max
+/// - vm:     35 points max
+/// - sniff:  15 points max
+/// - ntdll:  15 points max (hooks detected = 100 → 15 weighted)
 pub fn check_all() -> HostileEnvReport {
     let debug = anti_debug::detect();
     let vm = anti_vm::detect();
     let sniff = anti_sniff::detect();
-    let score = compute_score(&debug, &vm, &sniff);
+    let ntdll = ntdll_integrity::check_ntdll_integrity();
+    let score = compute_score(&debug, &vm, &sniff, &ntdll);
 
     HostileEnvReport {
         debug,
         vm,
         sniff,
+        ntdll,
         score,
     }
 }
@@ -100,15 +104,16 @@ pub fn respond(report: &HostileEnvReport, action: HostileResponse) -> ResponseAc
 
 /// Compute weighted risk score from detection reports.
 /// Returns 0-100.
-fn compute_score(debug: &DebugReport, vm: &VmReport, sniff: &SniffReport) -> u8 {
+fn compute_score(debug: &DebugReport, vm: &VmReport, sniff: &SniffReport, ntdll: &NtdllReport) -> u8 {
     let debug_score = compute_debug_score(debug);
     let vm_score = compute_vm_score(vm);
     let sniff_score = compute_sniff_score(sniff);
+    let ntdll_score = compute_ntdll_score(ntdll);
 
-    // Weighted sum: each sub-score is 0-100, scaled by weight.
     let total = (debug_score as u16 * DEBUG_WEIGHT as u16
         + vm_score as u16 * VM_WEIGHT as u16
-        + sniff_score as u16 * SNIFF_WEIGHT as u16)
+        + sniff_score as u16 * SNIFF_WEIGHT as u16
+        + ntdll_score as u16 * NTDLL_WEIGHT as u16)
         / 100;
 
     total.min(100) as u8
@@ -157,16 +162,27 @@ fn compute_vm_score(report: &VmReport) -> u8 {
 fn compute_sniff_score(report: &SniffReport) -> u8 {
     let mut score: u8 = 0;
     if report.pcap_driver {
-        score = score.saturating_add(40); // ~8/20
+        score = score.saturating_add(40);
     }
     if report.analyzer_process {
-        score = score.saturating_add(30); // ~6/20
+        score = score.saturating_add(30);
     }
     if report.proxy_env {
-        score = score.saturating_add(15); // ~3/20
+        score = score.saturating_add(15);
     }
     if report.loopback_listener {
-        score = score.saturating_add(15); // ~3/20
+        score = score.saturating_add(15);
+    }
+    score.min(100)
+}
+
+fn compute_ntdll_score(report: &NtdllReport) -> u8 {
+    let mut score: u8 = 0;
+    if !report.text_hash_match {
+        score = score.saturating_add(50);
+    }
+    if report.hook_count > 0 {
+        score = score.saturating_add(50);
     }
     score.min(100)
 }
@@ -183,6 +199,7 @@ mod tests {
             debug: DebugReport::default(),
             vm: VmReport::default(),
             sniff: SniffReport::default(),
+            ntdll: NtdllReport::default(),
             score: 0,
         };
         assert_eq!(report.score, 0);
@@ -201,6 +218,7 @@ mod tests {
             debug: DebugReport::default(),
             vm: VmReport::default(),
             sniff: SniffReport::default(),
+            ntdll: NtdllReport::default(),
             score: 50,
         };
         assert_eq!(respond(&report, HostileResponse::Warn), ResponseAction::Log);
@@ -212,6 +230,7 @@ mod tests {
             debug: DebugReport::default(),
             vm: VmReport::default(),
             sniff: SniffReport::default(),
+            ntdll: NtdllReport::default(),
             score: 50,
         };
         assert_eq!(
@@ -226,7 +245,8 @@ mod tests {
             debug: DebugReport::default(),
             vm: VmReport::default(),
             sniff: SniffReport::default(),
-            score: 30, // Below 60
+            ntdll: NtdllReport::default(),
+            score: 30,
         };
         assert_eq!(
             respond(&report, HostileResponse::Wipe),
@@ -247,6 +267,7 @@ mod tests {
                 ..Default::default()
             },
             sniff: SniffReport::default(),
+            ntdll: NtdllReport::default(),
             score: 70,
         };
         assert_eq!(
@@ -261,6 +282,7 @@ mod tests {
             debug: DebugReport::default(),
             vm: VmReport::default(),
             sniff: SniffReport::default(),
+            ntdll: NtdllReport::default(),
             score: 5,
         };
         assert_eq!(
@@ -306,6 +328,7 @@ mod tests {
             timing_anomaly: true,
             ptrace_attached: true,
             evidence: vec![],
+            ..Default::default()
         };
         let vm = VmReport {
             hypervisor_cpu: true,
@@ -322,10 +345,54 @@ mod tests {
             loopback_listener: true,
             evidence: vec![],
         };
-        let total = compute_score(&debug, &vm, &sniff);
-        // All flags set should score high.
+        let ntdll = NtdllReport {
+            text_hash_match: false,
+            hook_count: 10,
+            hooked_functions: vec!["NtOpenProcess".into()],
+            error: None,
+        };
+        let total = compute_score(&debug, &vm, &sniff, &ntdll);
         assert!(total >= 80, "expected >= 80, got {}", total);
         assert!(total <= 100);
+    }
+
+    #[test]
+    fn score_ntdll_hooks() {
+        let score = compute_ntdll_score(&NtdllReport {
+            text_hash_match: false,
+            hook_count: 5,
+            ..Default::default()
+        });
+        assert_eq!(score, 100);
+    }
+
+    #[test]
+    fn score_ntdll_clean() {
+        let score = compute_ntdll_score(&NtdllReport {
+            text_hash_match: true,
+            hook_count: 0,
+            ..Default::default()
+        });
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn ntdll_hooked_score_triggers_lock() {
+        let report = HostileEnvReport {
+            debug: DebugReport::default(),
+            vm: VmReport::default(),
+            sniff: SniffReport::default(),
+            ntdll: NtdllReport {
+                text_hash_match: false,
+                hook_count: 3,
+                ..Default::default()
+            },
+            score: 15,
+        };
+        assert_eq!(
+            respond(&report, HostileResponse::Lock),
+            ResponseAction::LockSession
+        );
     }
 
     #[test]
@@ -346,6 +413,7 @@ mod tests {
             debug: DebugReport::default(),
             vm: VmReport::default(),
             sniff: SniffReport::default(),
+            ntdll: NtdllReport::default(),
             score: 42,
         };
         let json = serde_json::to_string(&report).unwrap();
@@ -353,5 +421,6 @@ mod tests {
         assert!(json.contains("debug"));
         assert!(json.contains("vm"));
         assert!(json.contains("sniff"));
+        assert!(json.contains("ntdll"));
     }
 }

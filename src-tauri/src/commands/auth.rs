@@ -7,7 +7,9 @@ use chrono::{Duration, Utc};
 use rusqlite::Connection;
 use serde::Serialize;
 use serde_json::Value;
+use subtle::ConstantTimeEq;
 use tauri::{AppHandle, Manager, State};
+use zeroize::Zeroizing;
 
 use crate::crypto::kdf::{self, random_salt};
 use crate::crypto::wrap;
@@ -26,12 +28,16 @@ pub enum AppError {
     NoDb,
     NotUnlocked,
     WrongPin,
+    WrongRecoveryPassphrase,
     TooManyAttempts,
     Unauthorized,
     Io(std::io::Error),
     InvalidPinFormat,
     LockedOut { until: u64 },
     Wiped,
+    Internal(String),
+    PathTraversal(String),
+    LogInjection(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -43,12 +49,16 @@ impl std::fmt::Display for AppError {
             AppError::NoDb => write!(f, "no database configured"),
             AppError::NotUnlocked => write!(f, "database is locked"),
             AppError::WrongPin => write!(f, "incorrect PIN or passphrase"),
+            AppError::WrongRecoveryPassphrase => write!(f, "incorrect recovery passphrase"),
             AppError::TooManyAttempts => write!(f, "too many failed attempts"),
             AppError::Unauthorized => write!(f, "unauthorized"),
             AppError::Io(e) => write!(f, "I/O error: {e}"),
             AppError::InvalidPinFormat => write!(f, "PIN must be exactly 6 digits"),
             AppError::LockedOut { until } => write!(f, "locked out until unix {}", until),
             AppError::Wiped => write!(f, "data wiped — recovery passphrase required"),
+            AppError::Internal(s) => write!(f, "internal error: {s}"),
+            AppError::PathTraversal(s) => write!(f, "path traversal rejected: {s}"),
+            AppError::LogInjection(s) => write!(f, "log injection rejected: {s}"),
         }
     }
 }
@@ -82,12 +92,16 @@ impl AppError {
             AppError::NoDb => "no_db",
             AppError::NotUnlocked => "not_unlocked",
             AppError::WrongPin => "wrong_pin",
+            AppError::WrongRecoveryPassphrase => "wrong_recovery_passphrase",
             AppError::TooManyAttempts => "too_many_attempts",
             AppError::Unauthorized => "unauthorized",
             AppError::Io(_) => "io",
             AppError::InvalidPinFormat => "invalid_pin_format",
             AppError::LockedOut { .. } => "locked_out",
             AppError::Wiped => "wiped",
+            AppError::Internal(_) => "internal",
+            AppError::PathTraversal(_) => "path_traversal",
+            AppError::LogInjection(_) => "log_injection",
         }
     }
 }
@@ -149,6 +163,7 @@ pub struct AppState {
     pub scan_target: Mutex<String>,
     /// Timestamp of last successful backup (unix ms).
     pub last_backup_unix_ms: Mutex<Option<i64>>,
+    pub recovery_passphrase: Mutex<Option<Zeroizing<String>>>,
     /// Timestamp of last successful test-restore (unix ms).
     pub last_test_restore_unix_ms: Mutex<Option<i64>>,
 }
@@ -174,6 +189,7 @@ impl Default for AppState {
             scan_target: Mutex::new(String::new()),
             last_backup_unix_ms: Mutex::new(None),
             last_test_restore_unix_ms: Mutex::new(None),
+            recovery_passphrase: Mutex::new(None),
         }
     }
 }
@@ -201,19 +217,17 @@ pub(crate) fn now_unix() -> u64 {
         .as_secs()
 }
 
-fn keystore_path(db_path: &Path) -> PathBuf {
+pub(crate) fn keystore_path(db_path: &Path) -> PathBuf {
     let mut p = db_path.to_path_buf();
     p.set_extension("keystore");
     p
 }
 
 /// Open (or create) the keystore and ensure the keywrap table exists.
-fn open_keystore(path: &Path) -> Result<Connection, AppError> {
+pub(crate) fn open_keystore(path: &Path) -> Result<Connection, AppError> {
     let conn = Connection::open(path)?;
     conn.execute_batch(db::keywrap::KEYSTORE_SCHEMA)?;
-    // Force full durability on the sidecar so a committed keywrap row survives
-    // an immediate process restart / crash (defense against the empty-keystore
-    // symptom where the file exists but contains no row).
+    db::keywrap::migrate_keystore_schema(&conn).map_err(AppError::Db)?;
     conn.execute_batch("PRAGMA synchronous = FULL;")?;
     Ok(conn)
 }
@@ -271,22 +285,51 @@ pub fn default_lockout_row() -> keywrap::LockoutRow {
     }
 }
 
+/// Encrypt the keystore blob with the DEK (CWE-312, CWE-732).
+/// Returns `nonce(12) || ciphertext || tag(16)`.
+pub fn encrypt_keystore_blob(dek: &[u8; 32], plaintext: &[u8]) -> Vec<u8> {
+    wrap::encrypt_blob(dek, plaintext).expect("keystore encryption should not fail")
+}
+
+/// Decrypt the keystore blob with the DEK.
+pub fn decrypt_keystore_blob(dek: &[u8; 32], ciphertext: &[u8]) -> Result<Vec<u8>, AppError> {
+    wrap::decrypt_blob(dek, ciphertext)
+        .map_err(|e| AppError::Crypto(format!("keystore decryption failed: {e}")))
+}
+
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
 /// Returns the current bootstrap state of the app.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap, AppError> {
     let app_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
     let db_path = app_dir.join("paintkiduakan.db");
-    let keystore_exists = keystore_path(&db_path).exists();
     let db_exists = db_path.exists();
 
-    if !db_exists && !keystore_exists {
+    // Source of truth for first-launch is the ENCRYPTED DB, not the keystore.
+    // A stale keystore (from a crashed setup attempt) without a DB must NOT
+    // look "locked" — it should rerun setup, which wipes the sidecar first.
+    if !db_exists {
+        return Ok(Bootstrap::FirstLaunch);
+    }
+
+    // DB exists. Verify the keystore holds a valid keywrap row. If the row is
+    // missing (the previous setup crashed after opening the DB but before
+    // committing the row, or the user manually cleared the keystore), the
+    // state is unrecoverable from inside the wizard — wipe DB + keystore
+    // and return FirstLaunch so the wizard starts from a clean slate. This
+    // is destructive; the user has explicitly authorized destructive recovery.
+    if let Err(e) = read_keywrap_from_keystore(&db_path) {
+        log::warn!(
+            "[BOOTSTRAP] Stale state detected (db_exists=true, keywrap unreadable: {e}); wiping and returning FirstLaunch"
+        );
+        crate::commands::recovery::wipe_existing_setup(&db_path)
+            .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
         return Ok(Bootstrap::FirstLaunch);
     }
 
@@ -311,8 +354,18 @@ pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap
     }
 }
 
-/// Maximum wrong PIN attempts before lockout triggers (spec §4.4 / §9.8).
-const MAX_FAILED_ATTEMPTS: u32 = 5;
+/// Default maximum wrong PIN attempts before lockout triggers (spec §4.4 / §9.8).
+const DEFAULT_MAX_FAILED_ATTEMPTS: u32 = 5;
+
+/// Read the configured max-failed-attempts from settings (falls back to default).
+fn max_failed_attempts(state: &AppState) -> u32 {
+    let settings = state.settings.lock().unwrap();
+    let raw = settings.get("failed_attempts_lockout").and_then(|v| v.as_u64());
+    match raw {
+        Some(0) | None => DEFAULT_MAX_FAILED_ATTEMPTS,
+        Some(n) => n.min(20) as u32,
+    }
+}
 
 /// Exponential backoff schedule in minutes, keyed by how many lockouts
 /// have fired (spec §9.8: 15 → 30 → 60 → 240 → 1440).
@@ -337,7 +390,7 @@ fn build_session(state: &AppState) -> Session {
 }
 
 /// Unlock the database with the owner's PIN.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> {
     let db_path = {
         let guard = state.db_path.lock().unwrap();
@@ -383,6 +436,7 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
             // Update state.
             *state.db.lock().unwrap() = Some(db);
             *state.session.lock().unwrap() = Some(user.clone());
+            sync_session_to_static(&state);
             *state.failed_attempts.lock().unwrap() = 0;
             clear_lockout(&db_path, &state)?;
             state
@@ -405,7 +459,7 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
 
             record_failed_attempt(&db_path, attempts)?;
 
-            if attempts >= MAX_FAILED_ATTEMPTS {
+            if attempts >= max_failed_attempts(&state) {
                 handle_lockout(&state, attempts)?;
             }
 
@@ -437,7 +491,8 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
     let base_minutes = lockout.base_minutes as u64;
 
     // Index into exponential backoff array by attempts / MAX.
-    let idx = ((attempts / MAX_FAILED_ATTEMPTS) as usize).saturating_sub(1);
+    let max = max_failed_attempts(state);
+    let idx = ((attempts / max) as usize).saturating_sub(1);
     let backoff_minutes = LOCKOUT_BACKOFF_MINUTES
         .get(idx)
         .copied()
@@ -453,10 +508,12 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
 
     match action.as_str() {
         "wipe" => {
-            if let Ok(conn) = open_keystore(&keystore_path(&db_path)) {
-                let _ = conn.execute("DELETE FROM keywrap WHERE id = 1", []);
-                let _ = conn.execute("DELETE FROM lockouts WHERE user_id = 1", []);
-            }
+            // CWE-693: secure-delete the DB and keystore files.
+            let keystore = keystore_path(&db_path);
+            let _ = crate::security::anti_forensic::secure_delete(&db_path);
+            let _ = crate::security::anti_forensic::secure_delete(&keystore);
+            *state.failed_attempts.lock().unwrap() = 0;
+            *state.db_path.lock().unwrap() = None;
             Err(AppError::Wiped)
         }
         _ => {
@@ -493,15 +550,31 @@ fn clear_lockout(db_path: &Path, state: &AppState) -> Result<(), AppError> {
 }
 
 /// Lock the database — drops the DEK (zeroized via Drop).
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn lock(state: State<AppState>) -> Result<(), AppError> {
     *state.db.lock().unwrap() = None;
     *state.session.lock().unwrap() = None;
+    sync_session_to_static(&state);
     Ok(())
 }
 
+/// Mirror `AppState.session` into the process-local `session::CURRENT`
+/// static that slice B/C commands read via `current_user()`. Without this
+/// sync, those commands would forever return `Unauthorized("no user signed in")`
+/// because `unlock`/`login_user`/`lock` only write to `AppState`.
+pub(crate) fn sync_session_to_static(state: &AppState) {
+    use crate::session::{set_current_user, Role, User as SessionUser};
+    let app_user = state.session.lock().unwrap().clone();
+    let session_user = app_user.as_ref().map(|u| SessionUser {
+        id: u.id,
+        name: u.name.clone(),
+        role: Role::from_db(&u.role),
+    });
+    set_current_user(session_user);
+}
+
 /// Change the owner PIN (owner-only).
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn change_pin(
     state: State<AppState>,
     old_pin: String,
@@ -537,7 +610,7 @@ pub fn change_pin(
 }
 
 /// Update the last-activity timestamp (called by frontend on user interaction).
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn touch_activity(state: State<AppState>) -> Result<(), AppError> {
     state
         .last_activity
@@ -546,7 +619,7 @@ pub fn touch_activity(state: State<AppState>) -> Result<(), AppError> {
 }
 
 /// Return the current session (spec-shaped: `{ user, locked }`).
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn current_session(state: State<AppState>) -> Result<Session, AppError> {
     Ok(build_session(&state))
 }
@@ -556,7 +629,7 @@ pub fn current_session(state: State<AppState>) -> Result<Session, AppError> {
 // ---------------------------------------------------------------------------
 
 /// Create a new cashier or stocker user. Owner-only.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_user(
     state: State<AppState>,
     name: String,
@@ -628,7 +701,7 @@ pub fn create_user(
 }
 
 /// List all active users (owner-only).
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
     {
         let session = state.session.lock().unwrap();
@@ -659,7 +732,7 @@ pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
 }
 
 /// Deactivate a user. Owner-only. Cannot deactivate yourself.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError> {
     {
         let session = state.session.lock().unwrap();
@@ -695,9 +768,20 @@ pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError>
 ///
 /// Only works when the DB is already decrypted (owner must have unlocked first).
 /// Returns a Session with the authenticated user.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+/// Enforces the same lockout/backoff policy as owner unlock (CWE custom #9).
+#[tauri::command(rename_all = "snake_case")]
 pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<Session, AppError> {
     validate_owner_pin(&pin)?;
+
+    // Check active lockout (same policy as owner unlock — CWE custom #9).
+    let db_path = state.db_path.lock().unwrap().clone().ok_or(AppError::NoDb)?;
+    if let Some(locked_until_unix) = current_lockout_until(&db_path)? {
+        let now = now_unix();
+        if now < locked_until_unix {
+            return Err(AppError::LockedOut { until: locked_until_unix });
+        }
+        clear_lockout(&db_path, &state)?;
+    }
 
     let db = state.db.lock().unwrap();
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
@@ -729,12 +813,26 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
     let derived_verifier = kek.to_vec();
     kdf::zeroize_key(&mut kek);
 
-    if derived_verifier != verifier {
+    // CWE-208: constant-time compare to prevent timing side-channel.
+    if derived_verifier.ct_eq(&verifier).unwrap_u8() == 0 {
+        // Record failed attempt and enforce lockout (CWE custom #9).
+        let attempts = {
+            let mut failed = state.failed_attempts.lock().unwrap();
+            *failed += 1;
+            *failed
+        };
+        record_failed_attempt(&db_path, attempts)?;
+        if attempts >= max_failed_attempts(&state) {
+            handle_lockout(&state, attempts)?;
+        }
         return Err(AppError::WrongPin);
     }
 
-    // Don't overwrite owner session — just return the authenticated session.
     let authenticated_user = User { id, name, role, is_active: true };
+    *state.session.lock().unwrap() = Some(authenticated_user.clone());
+    sync_session_to_static(&state);
+    *state.failed_attempts.lock().unwrap() = 0;
+    clear_lockout(&db_path, &state)?;
 
     Ok(Session {
         user: Some(authenticated_user),
@@ -789,7 +887,7 @@ mod tests {
 
     #[test]
     fn test_max_failed_attempts_is_five() {
-        assert_eq!(MAX_FAILED_ATTEMPTS, 5);
+        assert_eq!(DEFAULT_MAX_FAILED_ATTEMPTS, 5);
     }
 
     #[test]
@@ -817,5 +915,63 @@ mod tests {
         let row = read_lockout_from_keystore(&db_path).unwrap();
         assert_eq!(row.failed_attempts, 4);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recovery_passphrase_is_zeroizing_string() {
+        use std::any::{type_name, type_name_of_val};
+        use zeroize::Zeroizing;
+
+        let state = AppState::default();
+        *state.recovery_passphrase.lock().unwrap() = Some(Zeroizing::new("toy-recovery-passphrase".to_string()));
+
+        let guard = state.recovery_passphrase.lock().unwrap();
+        let stored = guard.as_ref().unwrap();
+        assert_eq!(
+            type_name::<Zeroizing<String>>(),
+            type_name_of_val(stored),
+            "recovery_passphrase should be Zeroizing<String>"
+        );
+    }
+
+    #[test]
+    fn wipe_lockout_action_secure_deletes_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("paintkiduakan.db");
+
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            drop(conn);
+        }
+
+        write_lockout_to_keystore(
+            &db_path,
+            &keywrap::LockoutRow {
+                user_id: 1,
+                failed_attempts: 5,
+                locked_until: None,
+                wipe_on_next_fail: false,
+                action: "wipe".into(),
+                base_minutes: 15,
+            },
+        )
+        .unwrap();
+
+        let state = AppState::default();
+        *state.db_path.lock().unwrap() = Some(db_path.clone());
+
+        let result = handle_lockout(&state, 5);
+        assert!(matches!(result, Err(AppError::Wiped)), "expected Wiped, got {:?}", result);
+
+        assert!(
+            !db_path.exists(),
+            "CWE-693: wipe action should secure-delete the main database file"
+        );
+
+        let keystore = keystore_path(&db_path);
+        assert!(
+            !keystore.exists(),
+            "CWE-693: wipe action should secure-delete the keystore file"
+        );
     }
 }

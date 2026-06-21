@@ -34,7 +34,7 @@ function normalizeSession(result: RestoreResponse): Session {
   const name = result.user?.name ?? result.user_name ?? "Owner";
   const id = result.user?.id ?? result.user_id ?? 0;
   const user: User | null = result.user === null ? null : { id, name, role };
-  return { user, locked: result.locked ?? false };
+  return { user, locked: result.locked ?? false, pinRole: "real" };
 }
 
 function fieldError(message?: string) {

@@ -1,0 +1,459 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Loader2,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Store,
+} from "lucide-react";
+import { useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
+
+import { provisionDecoyDb } from "../../domain/ipc";
+import {
+  pdeSetupSchema,
+  type PdeSetupInput,
+  pinSchema,
+  shopNameSchema,
+} from "./pin";
+
+type Step = "opt-in" | "decoy-pin" | "duress-pin" | "fake-data" | "confirm";
+
+const STEPS: ReadonlyArray<{ key: Step; label: string; icon: typeof Shield }> = [
+  { key: "opt-in", label: "Enable PDE", icon: Shield },
+  { key: "decoy-pin", label: "Decoy PIN", icon: ShieldCheck },
+  { key: "duress-pin", label: "Duress PIN", icon: ShieldAlert },
+  { key: "fake-data", label: "Fake Shop", icon: Store },
+  { key: "confirm", label: "Confirm", icon: CheckCircle2 },
+];
+
+const inputClass =
+  "h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 text-sm text-zinc-100 outline-none transition-colors duration-150 placeholder:text-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50";
+const labelClass = "text-sm font-medium text-zinc-200";
+const buttonClass =
+  "inline-flex h-11 items-center justify-center rounded-lg bg-indigo-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+const ghostButtonClass =
+  "inline-flex h-11 items-center justify-center rounded-lg border border-white/10 px-4 text-sm font-medium text-zinc-200 transition-colors duration-150 hover:border-white/20 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+
+function fieldError(message?: string) {
+  if (!message) return null;
+  return (
+    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-red-400" role="alert">
+      <AlertCircle className="h-4 w-4" aria-hidden="true" />
+      {message}
+    </p>
+  );
+}
+
+function pinStrength(pin: string): { label: string; color: string; width: string } {
+  if (pin.length === 0) return { label: "", color: "bg-zinc-700", width: "w-0" };
+  if (pin.length < 4) return { label: "Weak", color: "bg-red-500", width: "w-1/4" };
+  const uniqueDigits = new Set(pin).size;
+  const isSequential = /0123|1234|2345|3456|4567|5678|6789|9876|8765|7654|6543|5432|4321|3210/.test(pin);
+  const isRepeating = /^(\d)\1{5}$/.test(pin);
+  if (isRepeating || isSequential) return { label: "Weak", color: "bg-red-500", width: "w-1/4" };
+  if (uniqueDigits <= 2) return { label: "Fair", color: "bg-amber-500", width: "w-2/4" };
+  if (uniqueDigits <= 4) return { label: "Good", color: "bg-emerald-500", width: "w-3/4" };
+  return { label: "Strong", color: "bg-emerald-400", width: "w-full" };
+}
+
+function PinStrengthMeter({ pin }: { pin: string }) {
+  const s = pinStrength(pin);
+  if (!s.label) return null;
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      <div className="h-1.5 flex-1 rounded-full bg-zinc-800">
+        <div className={`h-full rounded-full transition-all duration-300 ${s.color} ${s.width}`} />
+      </div>
+      <span className={`text-xs font-medium ${s.color.replace("bg-", "text-")}`}>{s.label}</span>
+    </div>
+  );
+}
+
+interface PdeSetupWizardProps {
+  onComplete: () => void;
+  onCancel: () => void;
+}
+
+export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
+  const [step, setStep] = useState<Step>("opt-in");
+  const [showPins, setShowPins] = useState(false);
+  const [backendError, setBackendError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const {
+    register,
+    control,
+    formState: { errors },
+    handleSubmit,
+    trigger,
+    getValues,
+  } = useForm<PdeSetupInput>({
+    resolver: zodResolver(pdeSetupSchema),
+    mode: "onChange",
+    defaultValues: {
+      enabled: true,
+      decoyPin: "",
+      decoyPinConfirm: "",
+      duressPin: "",
+      duressPinConfirm: "",
+      fakeShopName: "Sunrise Paints",
+    },
+  });
+
+  const values = useWatch({ control });
+  const stepIndex = STEPS.findIndex((s) => s.key === step);
+  const currentMeta = STEPS[stepIndex];
+
+  const decoyValid =
+    pinSchema.safeParse(values.decoyPin).success &&
+    pinSchema.safeParse(values.decoyPinConfirm).success &&
+    values.decoyPin === values.decoyPinConfirm;
+
+  const duressValid =
+    pinSchema.safeParse(values.duressPin).success &&
+    pinSchema.safeParse(values.duressPinConfirm).success &&
+    values.duressPin === values.duressPinConfirm &&
+    values.duressPin !== values.decoyPin;
+
+  const fakeDataValid = shopNameSchema.safeParse(values.fakeShopName ?? "").success;
+
+  const canContinue: Record<Step, boolean> = {
+    "opt-in": true,
+    "decoy-pin": decoyValid,
+    "duress-pin": duressValid,
+    "fake-data": fakeDataValid,
+    confirm: true,
+  };
+
+  const stepFields: Record<Step, readonly (keyof PdeSetupInput)[]> = {
+    "opt-in": [],
+    "decoy-pin": ["decoyPin", "decoyPinConfirm"],
+    "duress-pin": ["duressPin", "duressPinConfirm"],
+    "fake-data": ["fakeShopName"],
+    confirm: [],
+  };
+
+  async function goNext() {
+    if (step === "opt-in") {
+      setStep("decoy-pin");
+      return;
+    }
+    const ok = await trigger(stepFields[step]);
+    if (ok) {
+      const order: Step[] = ["opt-in", "decoy-pin", "duress-pin", "fake-data", "confirm"];
+      const next = order[order.indexOf(step) + 1];
+      if (next) setStep(next);
+    }
+  }
+
+  function goBack() {
+    const order: Step[] = ["opt-in", "decoy-pin", "duress-pin", "fake-data", "confirm"];
+    const prev = order[order.indexOf(step) - 1];
+    if (prev) setStep(prev);
+  }
+
+  async function onSubmit() {
+    setBackendError(null);
+    setSubmitting(true);
+    try {
+      const v = getValues();
+      await provisionDecoyDb({
+        decoy_pin: v.decoyPin,
+        duress_pin: v.duressPin,
+        fake_shop_name: v.fakeShopName,
+      });
+      onComplete();
+    } catch (err) {
+      setBackendError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Step indicator */}
+      <div aria-label="PDE setup progress">
+        <div className="flex items-center gap-2 mb-2">
+          {STEPS.map((s, i) => (
+            <div key={s.key} className="flex items-center gap-2">
+              <div
+                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-200 ${
+                  i < stepIndex
+                    ? "bg-emerald-500 text-white"
+                    : i === stepIndex
+                      ? "bg-indigo-500 text-white"
+                      : "bg-zinc-800 text-zinc-500"
+                }`}
+              >
+                {i < stepIndex ? "✓" : i + 1}
+              </div>
+              <span
+                className={`text-xs font-medium hidden sm:inline ${
+                  i === stepIndex ? "text-zinc-100" : "text-zinc-500"
+                }`}
+              >
+                {s.label}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {STEPS.map((_, i) => (
+            <span
+              key={i}
+              className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${
+                i < stepIndex
+                  ? "bg-emerald-500"
+                  : i === stepIndex
+                    ? "bg-indigo-500"
+                    : "bg-zinc-800"
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Step description */}
+      <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-3">
+        <currentMeta.icon className="h-5 w-5 shrink-0 text-indigo-300" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-medium text-zinc-100">{currentMeta.label}</p>
+          <p className="text-xs text-zinc-400">
+            {step === "opt-in" && "Set up a Plausible Deniability Environment with decoy and duress PINs."}
+            {step === "decoy-pin" && "This PIN opens a plausible fake shop database."}
+            {step === "duress-pin" && "This PIN triggers silent secure deletion, then opens the decoy database."}
+            {step === "fake-data" && "Configure what the decoy database looks like to an intruder."}
+            {step === "confirm" && "Review your PDE configuration before provisioning."}
+          </p>
+        </div>
+      </div>
+
+      {/* Backend error */}
+      {backendError && (
+        <div className="flex gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200" role="alert">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{backendError}</span>
+        </div>
+      )}
+
+      {/* Step: opt-in */}
+      {step === "opt-in" && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <p className="text-sm font-medium text-amber-200">What is Plausible Deniability?</p>
+            <p className="mt-1 text-xs leading-5 text-amber-200/80">
+              PDE creates a separate encrypted database with fake shop data. If someone forces you
+              to unlock the app, the <strong>decoy PIN</strong> shows plausible fake data. The{" "}
+              <strong>duress PIN</strong> silently wipes the real database and shows the decoy data.
+              An attacker cannot tell which PIN is real.
+            </p>
+          </div>
+          <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-4 cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-5 w-5 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500"
+              {...register("enabled")}
+            />
+            <div>
+              <span className="text-sm font-medium text-zinc-100">Enable Plausible Deniability</span>
+              <p className="text-xs text-zinc-400">Create decoy and duress PINs for hostile situations.</p>
+            </div>
+          </label>
+        </div>
+      )}
+
+      {/* Step: decoy PIN */}
+      {step === "decoy-pin" && (
+        <div className="space-y-4">
+          <div>
+            <label className={labelClass} htmlFor="decoyPin">Decoy PIN *</label>
+            <div className="relative">
+              <input
+                id="decoyPin"
+                className={`${inputClass} pr-11`}
+                autoComplete="off"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="6 digits"
+                type={showPins ? "text" : "password"}
+                {...register("decoyPin")}
+              />
+              <button
+                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-100"
+                type="button"
+                onClick={() => setShowPins((v) => !v)}
+                aria-label={showPins ? "Hide PINs" : "Show PINs"}
+              >
+                {showPins ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <PinStrengthMeter pin={values.decoyPin ?? ""} />
+            {fieldError(errors.decoyPin?.message)}
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="decoyPinConfirm">Confirm decoy PIN *</label>
+            <input
+              id="decoyPinConfirm"
+              className={inputClass}
+              autoComplete="off"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="Re-enter decoy PIN"
+              type={showPins ? "text" : "password"}
+              {...register("decoyPinConfirm")}
+            />
+            {fieldError(errors.decoyPinConfirm?.message)}
+          </div>
+        </div>
+      )}
+
+      {/* Step: duress PIN */}
+      {step === "duress-pin" && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3">
+            <p className="text-sm font-medium text-red-200">Warning</p>
+            <p className="mt-1 text-xs leading-5 text-red-200/80">
+              The duress PIN will <strong>permanently and irreversibly</strong> wipe your real shop
+              data after unlock. Only set this if you understand the consequences.
+            </p>
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="duressPin">Duress PIN *</label>
+            <div className="relative">
+              <input
+                id="duressPin"
+                className={`${inputClass} pr-11`}
+                autoComplete="off"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="6 digits — different from decoy"
+                type={showPins ? "text" : "password"}
+                {...register("duressPin")}
+              />
+              <button
+                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-100"
+                type="button"
+                onClick={() => setShowPins((v) => !v)}
+                aria-label={showPins ? "Hide PINs" : "Show PINs"}
+              >
+                {showPins ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <PinStrengthMeter pin={values.duressPin ?? ""} />
+            {fieldError(errors.duressPin?.message)}
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="duressPinConfirm">Confirm duress PIN *</label>
+            <input
+              id="duressPinConfirm"
+              className={inputClass}
+              autoComplete="off"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="Re-enter duress PIN"
+              type={showPins ? "text" : "password"}
+              {...register("duressPinConfirm")}
+            />
+            {fieldError(errors.duressPinConfirm?.message)}
+          </div>
+        </div>
+      )}
+
+      {/* Step: fake data */}
+      {step === "fake-data" && (
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-400">
+            Configure the fake shop that appears when the decoy or duress PIN is used.
+            Default values create a believable paint shop.
+          </p>
+          <div>
+            <label className={labelClass} htmlFor="fakeShopName">Fake shop name *</label>
+            <input
+              id="fakeShopName"
+              className={inputClass}
+              autoComplete="organization"
+              placeholder="e.g. Sunrise Paints"
+              {...register("fakeShopName")}
+            />
+            {fieldError(errors.fakeShopName?.message)}
+          </div>
+        </div>
+      )}
+
+      {/* Step: confirm */}
+      {step === "confirm" && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-3">
+            <p className="text-sm font-medium text-emerald-200">PDE Configuration Summary</p>
+            <div className="space-y-2 text-sm text-emerald-200/80">
+              <div className="flex justify-between">
+                <span>Decoy PIN:</span>
+                <span className="font-mono text-emerald-100">{"•".repeat(6)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Duress PIN:</span>
+                <span className="font-mono text-emerald-100">{"•".repeat(6)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Fake shop name:</span>
+                <span className="font-medium text-emerald-100">{values.fakeShopName}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 space-y-2">
+            <p className="text-sm font-medium text-indigo-200">What happens next</p>
+            <ul className="space-y-1 text-xs leading-5 text-indigo-200/80">
+              <li>• A separate encrypted decoy database will be created with fake shop data.</li>
+              <li>• Your <strong>decoy PIN</strong> shows plausible fake data — the intruder sees a real-looking shop.</li>
+              <li>• Your <strong>duress PIN</strong> silently wipes the real database after unlock, then shows the decoy data.</li>
+              <li>• An attacker cannot distinguish real, decoy, or duress PINs from each other.</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* Navigation */}
+      <div className="flex gap-3">
+        {step !== "opt-in" && (
+          <button className={ghostButtonClass} type="button" onClick={goBack}>
+            Back
+          </button>
+        )}
+        {step === "opt-in" && (
+          <button className={ghostButtonClass} type="button" onClick={onCancel}>
+            Cancel
+          </button>
+        )}
+        {step !== "confirm" ? (
+          <button
+            className={`${buttonClass} flex-1`}
+            type="button"
+            onClick={goNext}
+            disabled={!canContinue[step]}
+          >
+            Continue
+          </button>
+        ) : (
+          <button
+            className={`${buttonClass} flex-1`}
+            type="button"
+            onClick={onSubmit}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : null}
+            Provision decoy database
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

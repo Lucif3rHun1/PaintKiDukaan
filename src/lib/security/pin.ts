@@ -41,6 +41,11 @@ export const restoreFromRecoverySchema = z
     message: "PINs do not match",
   });
 
+export const firstLaunchRestoreSchema = z.object({
+  envelopePath: z.string().min(1, "Pick a backup file"),
+  passphrase: recoveryPassphraseSchema,
+});
+
 export const changePinSchema = z
   .object({
     oldPin: pinSchema,
@@ -65,4 +70,61 @@ export const createUserSchema = z.object({
 export type FirstLaunchInput = z.infer<typeof firstLaunchSchema>;
 export type UnlockInput = z.infer<typeof unlockSchema>;
 export type RestoreFromRecoveryInput = z.infer<typeof restoreFromRecoverySchema>;
+export type FirstLaunchRestoreInput = z.infer<typeof firstLaunchRestoreSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+export const pdeSetupSchema = z
+  .object({
+    enabled: z.boolean(),
+    decoyPin: pinSchema,
+    decoyPinConfirm: pinSchema,
+    duressPin: pinSchema,
+    duressPinConfirm: pinSchema,
+    fakeShopName: z.string().min(1, "Shop name is required").max(100),
+  })
+  .refine((d) => d.decoyPin === d.decoyPinConfirm, {
+    path: ["decoyPinConfirm"],
+    message: "Decoy PINs do not match",
+  })
+  .refine((d) => d.duressPin === d.duressPinConfirm, {
+    path: ["duressPinConfirm"],
+    message: "Duress PINs do not match",
+  })
+  .refine((d) => d.decoyPin !== d.duressPin, {
+    path: ["duressPin"],
+    message: "Duress PIN must differ from decoy PIN",
+  });
+
+export const changeDecoyPinSchema = z
+  .object({
+    currentRealPin: pinSchema,
+    newDecoyPin: pinSchema,
+    newDecoyPinConfirm: pinSchema,
+  })
+  .refine((d) => d.newDecoyPin === d.newDecoyPinConfirm, {
+    path: ["newDecoyPinConfirm"],
+    message: "PINs do not match",
+  })
+  .refine((d) => d.currentRealPin !== d.newDecoyPin, {
+    path: ["newDecoyPin"],
+    message: "Decoy PIN must differ from real PIN",
+  });
+
+export const changeDuressPinSchema = z
+  .object({
+    currentRealPin: pinSchema,
+    newDuressPin: pinSchema,
+    newDuressPinConfirm: pinSchema,
+  })
+  .refine((d) => d.newDuressPin === d.newDuressPinConfirm, {
+    path: ["newDuressPinConfirm"],
+    message: "PINs do not match",
+  })
+  .refine((d) => d.currentRealPin !== d.newDuressPin, {
+    path: ["newDuressPin"],
+    message: "Duress PIN must differ from real PIN",
+  });
+
+export type PdeSetupInput = z.infer<typeof pdeSetupSchema>;
+export type ChangeDecoyPinInput = z.infer<typeof changeDecoyPinSchema>;
+export type ChangeDuressPinInput = z.infer<typeof changeDuressPinSchema>;

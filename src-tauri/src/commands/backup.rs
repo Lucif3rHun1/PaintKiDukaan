@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use chrono::Utc;
-use tauri::State;
+use tauri::{Manager, State};
 use tempfile::NamedTempFile;
 use zeroize::Zeroize;
 
@@ -16,6 +16,72 @@ use crate::backup::{
     BackupError, BackupMetadata, BackupTarget, TestRestoreResult,
 };
 use crate::commands::auth::AppState;
+use crate::commands::recovery::wipe_existing_setup;
+
+const PKB1_MAGIC: &[u8; 4] = b"PKB1";
+
+fn canonicalize_and_validate_path<R: tauri::Runtime>(
+    raw: &str,
+    app: &tauri::AppHandle<R>,
+) -> Result<PathBuf, String> {
+    let path = PathBuf::from(raw);
+    let canonical = dunce::canonicalize(&path)
+        .map_err(|e| format!("path not found or inaccessible: {e}"))?;
+
+    if canonical != dunce::canonicalize(&canonical).unwrap_or(canonical.clone()) {
+        return Err("path canonicalization failed".into());
+    }
+
+    let live_db_dir = resolve_live_db_path(app)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let allowed_dirs: Vec<PathBuf> = vec![
+        live_db_dir,
+        std::env::temp_dir(),
+    ];
+
+    let is_allowed = allowed_dirs.iter().any(|dir| {
+        if let Ok(canon_dir) = dunce::canonicalize(dir) {
+            canonical.starts_with(&canon_dir)
+        } else {
+            false
+        }
+    });
+
+    if !is_allowed {
+        let ext = canonical
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if ext == "pkb1" {
+            if let Some(parent) = canonical.parent() {
+                if parent.exists() {
+                    return Ok(canonical);
+                }
+            }
+        }
+        return Err(format!(
+            "path not in allowed directory: {}",
+            canonical.display()
+        ));
+    }
+
+    Ok(canonical)
+}
+
+fn validate_envelope_magic(path: &std::path::Path) -> Result<(), String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| format!("cannot read envelope: {e}"))?;
+    let mut magic = [0u8; 4];
+    file.read_exact(&mut magic)
+        .map_err(|_| "envelope too small to contain magic bytes".to_string())?;
+    if &magic != PKB1_MAGIC {
+        return Err("invalid envelope: bad magic bytes".into());
+    }
+    Ok(())
+}
 
 /// Summary of backup health returned by [`backup_status`].
 #[derive(Clone, Debug, serde::Serialize)]
@@ -41,15 +107,23 @@ fn err_str(e: BackupError) -> String {
 }
 
 /// List available backup targets.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_targets() -> Result<Vec<BackupTarget>, String> {
     list_backup_targets().map_err(err_str)
 }
 
 /// Create a new `.pkb1` backup of the live database.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn backup_now(state: State<'_, AppState>, passphrase: String) -> Result<BackupMetadata, String> {
-    let mut passphrase = passphrase;
+#[tauri::command(rename_all = "snake_case")]
+pub fn backup_now<R: tauri::Runtime>(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle<R>,
+) -> Result<BackupMetadata, String> {
+    let mut passphrase = state
+        .recovery_passphrase
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "backup failed: no recovery passphrase on file. Re-run onboarding or use Settings → System to reset.".to_string())?;
 
     let targets = list_backup_targets().map_err(err_str)?;
     let target = targets
@@ -57,7 +131,7 @@ pub fn backup_now(state: State<'_, AppState>, passphrase: String) -> Result<Back
         .find(|t| t.available)
         .ok_or_else(|| "backup failed: no available backup target".to_string())?;
 
-    let live_db = resolve_live_db_path(&state);
+    let live_db = resolve_live_db_path(&app);
     if !live_db.exists() {
         passphrase.zeroize();
         return Err("backup failed: no live database to back up".into());
@@ -94,30 +168,32 @@ pub fn backup_now(state: State<'_, AppState>, passphrase: String) -> Result<Back
 }
 
 /// Restore the live database from a `.pkb1` envelope.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn restore(state: State<'_, AppState>, path: String, passphrase: String) -> Result<(), String> {
-    let mut passphrase = passphrase;
+#[tauri::command(rename_all = "snake_case")]
+pub fn restore<R: tauri::Runtime>(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle<R>,
+    path: String,
+) -> Result<(), String> {
+    let mut passphrase = state
+        .recovery_passphrase
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "restore failed: no recovery passphrase on file".to_string())?;
 
-    let envelope = PathBuf::from(path);
-    if !envelope.exists() {
-        passphrase.zeroize();
-        return Err("backup failed: envelope not found".into());
-    }
+    let canonical = canonicalize_and_validate_path(&path, &app)?;
+    validate_envelope_magic(&canonical)?;
 
-    let live_db = resolve_live_db_path(&state);
+    let live_db = resolve_live_db_path(&app);
 
-    // Decrypt into the OS temporary directory so a crash never leaves a
-    // plaintext copy next to the backup envelope.
     let temp_plaintext = NamedTempFile::new().map_err(|e| err_str(BackupError::Io(e)))?;
     let temp_path = temp_plaintext.path().to_path_buf();
 
-    decrypt_and_verify(&envelope, &passphrase, &temp_path)
+    decrypt_and_verify(&canonical, &passphrase, &temp_path)
         .map_err(err_str)?;
 
     atomic_swap(&live_db, &temp_path).map_err(err_str)?;
 
-    // The tempfile guard is dropped after the swap, cleaning up any leftover
-    // plaintext copy (important when atomic_swap falls back to copy+remove).
     drop(temp_plaintext);
     passphrase.zeroize();
 
@@ -126,22 +202,72 @@ pub fn restore(state: State<'_, AppState>, path: String, passphrase: String) -> 
     Ok(())
 }
 
-/// Decrypt and verify a `.pkb1` envelope without modifying the live database.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn test_restore(
+/// Decrypt a `.pkb1` envelope directly into the first-launch target location.
+#[tauri::command(rename_all = "snake_case")]
+pub fn restore_into_first_launch<R: tauri::Runtime>(
     state: State<'_, AppState>,
+    app: tauri::AppHandle<R>,
     path: String,
-    passphrase: String,
-) -> Result<TestRestoreResult, String> {
-    let mut passphrase = passphrase;
+) -> Result<(), String> {
+    let mut passphrase = state
+        .recovery_passphrase
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "restore failed: no recovery passphrase on file".to_string())?;
 
-    let envelope = PathBuf::from(path);
-    if !envelope.exists() {
+    let canonical = canonicalize_and_validate_path(&path, &app)?;
+    validate_envelope_magic(&canonical)?;
+
+    let target_db = app
+        .path()
+        .app_data_dir()
+        .map(|d| d.join("paintkiduakan.db"))
+        .unwrap_or_else(|_| PathBuf::from("paintkiduakan.db"));
+
+    if let Err(e) = wipe_existing_setup(&target_db) {
         passphrase.zeroize();
-        return Err("backup failed: envelope not found".into());
+        return Err(e.to_string());
     }
 
-    let result = crate::backup::test_restore(&envelope, &passphrase).map_err(err_str)?;
+    let temp_plaintext = NamedTempFile::new().map_err(|e| err_str(BackupError::Io(e)))?;
+    let temp_path = temp_plaintext.path().to_path_buf();
+
+    if let Err(e) = decrypt_and_verify(&canonical, &passphrase, &temp_path) {
+        passphrase.zeroize();
+        return Err(err_str(e));
+    }
+
+    if let Err(e) = std::fs::rename(&temp_path, &target_db) {
+        log::warn!("rename failed ({e}), falling back to copy+remove");
+        std::fs::copy(&temp_path, &target_db).map_err(|e| err_str(BackupError::Io(e)))?;
+        std::fs::remove_file(&temp_path).map_err(|e| err_str(BackupError::Io(e)))?;
+    }
+
+    drop(temp_plaintext);
+    passphrase.zeroize();
+
+    Ok(())
+}
+
+/// Decrypt and verify a `.pkb1` envelope without modifying the live database.
+#[tauri::command(rename_all = "snake_case")]
+pub fn test_restore<R: tauri::Runtime>(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle<R>,
+    path: String,
+) -> Result<TestRestoreResult, String> {
+    let mut passphrase = state
+        .recovery_passphrase
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "test-restore failed: no recovery passphrase on file".to_string())?;
+
+    let canonical = canonicalize_and_validate_path(&path, &app)?;
+    validate_envelope_magic(&canonical)?;
+
+    let result = crate::backup::test_restore(&canonical, &passphrase).map_err(err_str)?;
     passphrase.zeroize();
 
     if result.ok {
@@ -152,7 +278,7 @@ pub fn test_restore(
 }
 
 /// Return the current backup health status.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn backup_status(state: State<'_, AppState>) -> Result<BackupStatus, String> {
     let now = Utc::now().timestamp_millis();
     let last_backup = *state.last_backup_unix_ms.lock().unwrap();
@@ -177,10 +303,11 @@ pub fn backup_status(state: State<'_, AppState>) -> Result<BackupStatus, String>
 ///
 /// TODO(slice-A): Read `settings.db_path` from the persistent settings store
 /// once Slice A exposes it. Until then the default data-local path is used.
-fn resolve_live_db_path(_state: &AppState) -> PathBuf {
-    dirs::data_local_dir()
-        .map(|d| d.join("paintkiduakan").join("db.sqlite"))
-        .unwrap_or_else(|| PathBuf::from("paintkiduakan.db"))
+fn resolve_live_db_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .map(|d| d.join("paintkiduakan.db"))
+        .unwrap_or_else(|_| PathBuf::from("paintkiduakan.db"))
 }
 
 #[cfg(test)]
@@ -192,5 +319,108 @@ mod tests {
         let e = BackupError::Integrity;
         let s: String = e.into();
         assert!(s.contains("integrity check failed"));
+    }
+
+    #[test]
+    fn validate_envelope_magic_rejects_non_magic_file() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), b"NOT_A_PKB1_FILE").unwrap();
+        let result = validate_envelope_magic(tmp.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("bad magic bytes"));
+    }
+
+    #[test]
+    fn validate_envelope_magic_rejects_too_small() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), b"AB").unwrap();
+        let result = validate_envelope_magic(tmp.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too small"));
+    }
+
+    #[test]
+    fn validate_envelope_magic_accepts_valid_magic() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let mut data = vec![0u8; 64];
+        data[..4].copy_from_slice(b"PKB1");
+        std::fs::write(tmp.path(), &data).unwrap();
+        assert!(validate_envelope_magic(tmp.path()).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod poc_tests {
+    use tauri::Manager;
+
+    #[test]
+    fn test_restore_rejects_path_traversal() {
+        let app = tauri::test::mock_builder()
+            .manage(super::AppState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("mock app should build");
+        let state = app.state::<super::AppState>();
+        *state.recovery_passphrase.lock().unwrap() = Some("toy-passphrase".to_string().into());
+
+        let err = super::test_restore(
+            state.clone(),
+            app.handle().clone(),
+            "../../../etc/passwd".into(),
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("path not found") || err.contains("not in allowed"),
+            "traversal path should be rejected: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_restore_rejects_bad_magic() {
+        let app = tauri::test::mock_builder()
+            .manage(super::AppState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("mock app should build");
+        let state = app.state::<super::AppState>();
+        *state.recovery_passphrase.lock().unwrap() = Some("toy-passphrase".to_string().into());
+
+        let dir = tempfile::tempdir().unwrap();
+        let probe = dir.path().join("fake.pkb1");
+        std::fs::write(&probe, b"NOT_PKB1_MAGIC_BYTES_HERE").unwrap();
+
+        let err = super::test_restore(
+            state.clone(),
+            app.handle().clone(),
+            probe.to_string_lossy().into_owned(),
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("bad magic bytes") || err.contains("too small"),
+            "bad magic should be rejected: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_restore_rejects_missing_path() {
+        let app = tauri::test::mock_builder()
+            .manage(super::AppState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("mock app should build");
+        let state = app.state::<super::AppState>();
+        *state.recovery_passphrase.lock().unwrap() = Some("toy-passphrase".to_string().into());
+
+        let missing = std::env::temp_dir().join("missing-file.pkb1");
+        let err = super::test_restore(
+            state,
+            app.handle().clone(),
+            missing.to_string_lossy().into_owned(),
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("path not found") || err.contains("not found"),
+            "missing path should be rejected: {}",
+            err
+        );
     }
 }

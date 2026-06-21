@@ -184,7 +184,6 @@ pub fn install<R: tauri::Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
 
     #[test]
     fn secure_delete_removes_file() {

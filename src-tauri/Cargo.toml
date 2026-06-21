@@ -41,6 +41,8 @@ rand_core = "0.6"
 sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
+# Constant-time comparison (CWE-208 fix)
+subtle = "2"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -80,9 +82,14 @@ tempfile = "3"
 # Security: path canonicalization (Windows UTF-8 safe)
 dunce = "1"
 
-# Security: Windows registry for uninstall hook
+# Security: Windows APIs (registry, firewall COM, system)
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.58", features = ["Win32_System_Registry", "Win32_Foundation"] }
+windows = { version = "0.58", features = [
+    "Win32_System_Registry",
+    "Win32_Foundation",
+    "Win32_NetworkManagement_WindowsFirewall",
+    "Win32_System_Com",
+] }
 
 [dev-dependencies]
 
@@ -91,10 +98,7 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 test-harness = []
 
-[[test]]
-name = "sales_integration"
-required-features = ["test-harness"]
-
-[[test]]
-name = "parties_integration"
-required-features = ["test-harness"]
+# Integration tests (sales_integration, parties_integration, inventory_integration)
+# were archived to docs/schema-archive/integration_tests_legacy/ after the schema
+# reset. They referenced the v1..v14 column names and won't compile against the
+# new schema. They will be rewritten in the L3 phase and re-added here.

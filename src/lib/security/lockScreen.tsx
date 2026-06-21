@@ -5,6 +5,7 @@ import { AlertCircle, KeyRound, Loader2, Lock, Timer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
+import type { PinRole } from "../../domain/types";
 import { type UnlockInput, unlockSchema } from "./pin";
 import { type Role, type Session, type User, useSecurity } from "./state";
 
@@ -14,6 +15,8 @@ interface UnlockResponse {
   user_name?: string;
   role?: Role;
   locked?: boolean;
+  pin_role?: PinRole;
+  wipe_triggered?: boolean;
 }
 
 const inputClass =
@@ -26,7 +29,8 @@ function normalizeSession(result: UnlockResponse): Session {
   const name = result.user?.name ?? result.user_name ?? "Owner";
   const id = result.user?.id ?? result.user_id ?? 0;
   const user: User | null = result.user === null ? null : { id, name, role };
-  return { user, locked: result.locked ?? false };
+  const pinRole: PinRole = result.pin_role ?? "real";
+  return { user, locked: result.locked ?? false, pinRole };
 }
 
 function extractLockedUntil(message: string): number | null {

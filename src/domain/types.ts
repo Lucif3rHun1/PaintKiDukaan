@@ -8,25 +8,47 @@ export { formatRupeesFromPaise } from "../lib/money";
 
 export type Role = "owner" | "cashier" | "stocker";
 
+/**
+ * Which PIN was used to unlock the database.
+ * - "real": normal owner PIN → full access to real data
+ * - "decoy": decoy PIN → opens plausible fake dataset
+ * - "duress": duress PIN → triggers silent wipe, then opens decoy dataset
+ */
+export type PinRole = "real" | "decoy" | "duress";
+
+export interface UnlockResult {
+  role: PinRole;
+  /** wipe_triggered is true when duress PIN triggered background secure deletion */
+  wipe_triggered: boolean;
+}
+
+export interface PdeStatus {
+  enabled: boolean;
+  has_decoy: boolean;
+  has_duress: boolean;
+}
+
+export interface ProvisionDecoyDbArgs {
+  decoy_pin: string;
+  duress_pin: string;
+  fake_shop_name: string;
+}
+
+export interface ChangeDecoyPinArgs {
+  current_real_pin: string;
+  new_decoy_pin: string;
+}
+
+export interface ChangeDuressPinArgs {
+  current_real_pin: string;
+  new_duress_pin: string;
+}
+
 export interface User {
   id: number;
   name: string;
   role: Role;
 }
-
-export type ItemUnit =
-  | "L"
-  | "ml"
-  | "kg"
-  | "g"
-  | "pc"
-  | "box"
-  | "bundle"
-  | "roll"
-  | "sqft"
-  | "sqm";
-
-export type SellUnit = "unit" | "box";
 
 export interface Item {
   id: number;
@@ -35,9 +57,9 @@ export interface Item {
   name: string;
   brand: string | null;
   category: string | null;
-  unit: ItemUnit;
-  units_per_pack: number | null;
-  sell_unit: SellUnit;
+  unit_id: number;
+  unit_code: string;
+  unit_label: string | null;
   retail_price_paise: number;
   cost_paise: number;
   promo_price_paise: number | null;
@@ -45,6 +67,8 @@ export interface Item {
   label_line2: string | null;
   location_text: string | null;
   primary_location_id: number;
+  sub_location_id: number | null;
+  position: number;
   min_qty: number;
   barcode_format: string;
   is_active: boolean;
@@ -67,9 +91,9 @@ export type ItemLookup =
       sku_code: string;
       name: string;
       retail_price_paise: number;
-      sell_unit: SellUnit;
-      unit: ItemUnit;
-      units_per_pack: number | null;
+      unit_id: number;
+      unit_code: string;
+      unit_label: string;
       in_stock: number;
       location_text: string | null;
     }
@@ -87,6 +111,7 @@ export interface ItemFilter {
   query?: string;
   brand?: string;
   category?: string;
+  unit_id?: number;
   low_stock_only?: boolean;
   include_inactive?: boolean;
   limit?: number;
@@ -97,9 +122,7 @@ export interface NewItem {
   brand?: string | null;
   brand_id?: number | null;
   category?: string | null;
-  unit?: string;
-  units_per_pack?: number | null;
-  sell_unit?: string;
+  unit_id?: number;
   retail_price_paise: number;
   cost_paise: number;
   promo_price_paise?: number | null;
@@ -107,6 +130,8 @@ export interface NewItem {
   label_line2?: string | null;
   location_text?: string | null;
   primary_location_id: number;
+  sub_location_id?: number | null;
+  position?: number | null;
   min_qty: number;
   barcode_format?: string;
   barcode?: string | null;
@@ -117,9 +142,7 @@ export interface ItemUpdate {
   brand?: string | null;
   brand_id?: number | null;
   category?: string | null;
-  unit?: string | null;
-  units_per_pack?: number | null;
-  sell_unit?: string | null;
+  unit_id?: number | null;
   retail_price_paise?: number | null;
   cost_paise?: number | null;
   promo_price_paise?: number | null;
@@ -127,17 +150,12 @@ export interface ItemUpdate {
   label_line2?: string | null;
   location_text?: string | null;
   primary_location_id?: number | null;
+  sub_location_id?: number | null;
+  position?: number | null;
   min_qty?: number | null;
   barcode_format?: string | null;
   barcode?: string | null;
   is_active?: boolean | null;
-}
-
-export interface ConversionResult {
-  qty: number;
-  sell_unit: SellUnit;
-  units_per_pack: number | null;
-  qty_in_base_units: number;
 }
 
 export interface LabelPrintRecord {
@@ -261,6 +279,16 @@ export interface Location {
   id: number;
   name: string;
   rack: string | null;
+  zone: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface SubLocation {
+  id: number;
+  location_id: number;
+  name: string;
+  sort_order: number;
   is_active: boolean;
   created_at: string;
 }
@@ -268,6 +296,7 @@ export interface Location {
 export interface NewLocation {
   name: string;
   rack?: string | null;
+  zone?: string | null;
 }
 
 export interface CustomerType {
@@ -286,6 +315,29 @@ export interface Brand {
   name: string;
   code_prefix: string;
   next_seq: number;
+}
+
+export interface HeldBill {
+  id: number;
+  created_at: string;
+  note: string | null;
+  cart_json: string;
+  total_paise: number;
+}
+
+export interface Unit {
+  id: number;
+  code: string;
+  label: string;
+  dimension: "volume" | "mass" | "area" | "count";
+  is_active: boolean;
+}
+
+export interface UnitConversion {
+  id: number;
+  from_unit_id: number;
+  to_unit_id: number;
+  factor: number;
 }
 
 export interface AppError {

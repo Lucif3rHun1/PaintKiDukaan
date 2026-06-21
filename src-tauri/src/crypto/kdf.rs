@@ -1,9 +1,9 @@
 //! Argon2id KDF helpers. Derives 32-byte keys from PINs / passphrases.
 //!
-//! PIN params: 64 MiB / t=2 / p=1
+//! PIN params: 256 MiB / t=2 / p=1 (CWE-916: bumped from 64 MiB for 6-digit PIN brute-force resistance)
 //! Recovery / backup params: 256 MiB / t=3 / p=1
 //!
-//! Per plan §4.1 (decision 0.11).
+//! Per plan §4.1 (decision 0.11), updated for security uplift Wave 2B+E.
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use rand_core::{OsRng, RngCore};
@@ -23,7 +23,7 @@ pub struct KdfParams {
 
 impl KdfParams {
     pub const PIN: Self = Self {
-        m_cost_kib: 64 * 1024, // 64 MiB
+        m_cost_kib: 256 * 1024, // 256 MiB (CWE-916: 6-digit PIN needs high cost)
         t_cost: 2,
         p_cost: 1,
     };
@@ -49,9 +49,10 @@ fn argon2_with(params: &KdfParams) -> Result<Argon2<'_>, KdfError> {
 }
 
 /// Derive a 32-byte KEK from an owner PIN (4 or 6 digits) and salt.
-/// Uses PIN params (64 MiB / t=2 / p=1).
+/// Uses PIN params (256 MiB / t=2 / p=1).
+/// Accepts salt lengths from 16 to 64 bytes (Argon2id minimum is 8, we enforce 16+).
 pub fn derive_pin_kek(pin: &str, salt: &[u8], params: &KdfParams) -> Result<[u8; KEK_LEN], KdfError> {
-    if salt.len() != 16 {
+    if salt.len() < 16 {
         return Err(KdfError::InvalidSalt(salt.len()));
     }
     let a2 = argon2_with(params)?;
@@ -83,9 +84,9 @@ pub fn random_dek() -> [u8; KEK_LEN] {
     dek
 }
 
-/// Generate a 16-byte salt for KDF inputs.
-pub fn random_salt() -> [u8; 16] {
-    let mut salt = [0u8; 16];
+/// Generate a 32-byte salt for KDF inputs (CWE-759: minimum 32 bytes per OWASP).
+pub fn random_salt() -> [u8; 32] {
+    let mut salt = [0u8; 32];
     OsRng.fill_bytes(&mut salt);
     salt
 }
@@ -101,7 +102,7 @@ mod tests {
 
     #[test]
     fn pin_kek_is_deterministic() {
-        let salt = [1u8; 16];
+        let salt = [1u8; 32];
         let k1 = derive_pin_kek("123456", &salt, &KdfParams::PIN).unwrap();
         let k2 = derive_pin_kek("123456", &salt, &KdfParams::PIN).unwrap();
         assert_eq!(k1, k2);
@@ -109,7 +110,7 @@ mod tests {
 
     #[test]
     fn pin_kek_differs_for_different_pins() {
-        let salt = [1u8; 16];
+        let salt = [1u8; 32];
         let k1 = derive_pin_kek("123456", &salt, &KdfParams::PIN).unwrap();
         let k2 = derive_pin_kek("654321", &salt, &KdfParams::PIN).unwrap();
         assert_ne!(k1, k2);
@@ -117,18 +118,25 @@ mod tests {
 
     #[test]
     fn pin_kek_differs_for_different_salts() {
-        let s1 = [0u8; 16];
-        let mut s2 = [0u8; 16];
-        s2[15] = 1;
+        let s1 = [0u8; 32];
+        let mut s2 = [0u8; 32];
+        s2[31] = 1;
         let k1 = derive_pin_kek("123456", &s1, &KdfParams::PIN).unwrap();
         let k2 = derive_pin_kek("123456", &s2, &KdfParams::PIN).unwrap();
         assert_ne!(k1, k2);
     }
 
     #[test]
+    fn pin_kek_accepts_legacy_16_byte_salt() {
+        let salt = [1u8; 16];
+        let k = derive_pin_kek("123456", &salt, &KdfParams::PIN);
+        assert!(k.is_ok(), "16-byte salts from existing keywrap rows must still work");
+    }
+
+    #[test]
     fn recovery_and_backup_keys_differ_with_different_salts() {
-        let r_salt = [1u8; 16];
-        let b_salt = [2u8; 16];
+        let r_salt = [1u8; 32];
+        let b_salt = [2u8; 32];
         let kr = derive_recovery_k("long passphrase here", &r_salt).unwrap();
         let kb = derive_backup_key("long passphrase here", &b_salt).unwrap();
         assert_ne!(kr, kb);
@@ -145,5 +153,11 @@ mod tests {
         let a = random_dek();
         let b = random_dek();
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn random_salt_is_32_bytes() {
+        let s = random_salt();
+        assert_eq!(s.len(), 32);
     }
 }

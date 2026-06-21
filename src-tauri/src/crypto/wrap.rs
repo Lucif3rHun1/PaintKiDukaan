@@ -80,6 +80,41 @@ pub fn zeroize_kek(k: &mut [u8; KEK_LEN]) {
     k.zeroize();
 }
 
+/// Encrypt an arbitrary-length blob with a 32-byte key using AES-256-GCM.
+/// Returns `nonce(12) || ciphertext || tag(16)`.
+/// Used for keystore sidecar encryption (CWE-312, CWE-732).
+pub fn encrypt_blob(key: &[u8; KEK_LEN], plaintext: &[u8]) -> Result<Vec<u8>, WrapError> {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| WrapError::Aead(e.to_string()))?;
+    let mut nonce_bytes = [0u8; NONCE_LEN];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let nonce: Nonce<U12> = nonce_bytes.into();
+
+    let mut ct = cipher
+        .encrypt(&nonce, plaintext)
+        .map_err(|e| WrapError::Aead(e.to_string()))?;
+
+    let mut out = Vec::with_capacity(NONCE_LEN + ct.len());
+    out.extend_from_slice(&nonce_bytes);
+    out.append(&mut ct);
+    Ok(out)
+}
+
+/// Decrypt an arbitrary-length blob with a 32-byte key using AES-256-GCM.
+/// Input must be `nonce(12) || ciphertext || tag(16)`.
+pub fn decrypt_blob(key: &[u8; KEK_LEN], ciphertext: &[u8]) -> Result<Vec<u8>, WrapError> {
+    if ciphertext.len() < NONCE_LEN + 16 {
+        return Err(WrapError::TooShort(ciphertext.len()));
+    }
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| WrapError::Aead(e.to_string()))?;
+    let nonce_bytes: [u8; NONCE_LEN] = ciphertext[..NONCE_LEN]
+        .try_into()
+        .map_err(|_| WrapError::TooShort(ciphertext.len()))?;
+    let nonce: Nonce<U12> = nonce_bytes.into();
+    cipher
+        .decrypt(&nonce, &ciphertext[NONCE_LEN..])
+        .map_err(|e| WrapError::Aead(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

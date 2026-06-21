@@ -7,7 +7,10 @@ pub mod brands;
 pub mod customer_types;
 pub mod customers;
 pub mod items;
+pub mod label_log;
 pub mod locations;
+pub mod sub_locations;
+pub mod units;
 pub mod vendors;
 
 // Slice C — POS commands
@@ -19,4 +22,8 @@ pub mod sequences;
 
 // Slice D — shell commands
 pub mod backup;
+pub mod discover_printers;
 pub mod settings;
+
+// Slice E — cross-cutting alerts feed
+pub mod alerts;
