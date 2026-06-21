@@ -259,14 +259,14 @@ async function buildLabelPdfBlobInner(
       const row = Math.floor(onPage / layout.cols);
       const x = col * layout.w;
       const y = row * layout.h;
+      // Stacked layout: Line 1 (top) → Line 2 (below) → Barcode (bottom, full width).
       const margin = 1.5;
-      const textH = config.perSheet === 65 ? 5 : 6;
       const bcW = layout.w - margin * 2;
-      const bcH = layout.h - textH - margin * 2;
+      const bcH = layout.h - 13;
+      if (label.line1) doc.text(label.line1.slice(0, 32), x + layout.w / 2, y + 5, { align: "center" });
+      if (label.line2) doc.text(label.line2.slice(0, 32), x + layout.w / 2, y + 9, { align: "center" });
       const png = await makeBarcodePng(label.barcode);
-      doc.addImage(png, "PNG", x + margin, y + margin, bcW, bcH);
-      if (label.line1) doc.text(label.line1.slice(0, 22), x + margin, y + layout.h - textH);
-      if (label.line2) doc.text(label.line2.slice(0, 22), x + margin, y + layout.h - 1);
+      doc.addImage(png, "PNG", x + margin, y + 11, bcW, bcH);
     }
   }
 

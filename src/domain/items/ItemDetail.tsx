@@ -65,9 +65,9 @@ export function ItemDetail({ item, onEdit, onPrintLabel, role }: Props) {
       </div>
 
       <dl className="grid grid-cols-2 gap-3 text-sm">
-        <Row label="Brand" value={item.brand ?? "—"} />
-        <Row label="Category" value={item.category ?? "—"} />
-        <Row label="Unit" value={item.unit_label ?? item.unit_code ?? "—"} />
+        <Row label="Brand" value={showOrDash(item.brand)} />
+        <Row label="Category" value={showOrDash(item.category)} />
+        <Row label="Unit" value={showOrDash(item.unit_label ?? item.unit_code)} />
         <Row
           label="Location"
           value={item.location_text ? `${primaryName} / ${item.location_text}` : primaryName}
@@ -90,14 +90,20 @@ export function ItemDetail({ item, onEdit, onPrintLabel, role }: Props) {
         ) : null}
         <Row label="Min qty" value={String(item.min_qty)} />
         <Row label="Stock" value={stockView} />
-        <Row label="Barcode" value={item.barcode ?? "—"} />
-        <Row label="Format" value={item.barcode_format} />
+        <Row label="Barcode" value={showOrDash(item.barcode)} />
+        <Row label="Format" value={item.barcode_format || "—"} />
         <Row label="Active" value={item.is_active ? "Yes" : "No"} />
-        <Row label="Label line 1" value={item.label_line1 ?? "—"} />
-        <Row label="Label line 2" value={item.label_line2 ?? "—"} />
+        <Row label="Label line 1" value={showOrDash(item.label_line1)} />
+        <Row label="Label line 2" value={showOrDash(item.label_line2)} />
       </dl>
     </Card>
   );
+}
+
+function showOrDash(value: string | null | undefined): string {
+  if (value == null) return "—";
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? "—" : trimmed;
 }
 
 function Row({ label, value }: { label: string; value: ReactNode }) {

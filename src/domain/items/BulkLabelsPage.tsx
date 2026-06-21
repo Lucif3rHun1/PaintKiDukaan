@@ -13,6 +13,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Printer } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { getSetting, listItems, listLabelPrints, recordLabelPrint } from "./api";
 import type { Item, LabelPrintRecord } from "../types";
 import { BarcodeThumb } from "./BarcodeThumb";
@@ -33,9 +34,9 @@ const PRINTER_PRESETS: Record<PrinterType, string[]> = {
   "laser-a4": ["21", "65"],
 };
 
-function configFromSelect(printer: PrinterType, choice: string): PrintConfig {
+function configFromSelect(printer: PrinterType, choice: string, labelsPerRow = 1): PrintConfig {
   if (printer === "thermal") {
-    return { type: "thermal", size: choice as ThermalSize };
+    return { type: "thermal", size: choice as ThermalSize, labelsPerRow };
   }
   return { type: "laser-a4", perSheet: Number(choice) as LaserPerSheet };
 }
@@ -64,10 +65,6 @@ interface GeneratedRow {
 let nextRowId = 1;
 
 export function BulkLabelsPage() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [loadingItems, setLoadingItems] = useState(false);
-  const [itemError, setItemError] = useState<string | null>(null);
-
   const [selectedItemId, setSelectedItemId] = useState<number | "">("");
   const [count, setCount] = useState<number>(1);
   const [line1, setLine1] = useState("");
@@ -75,6 +72,7 @@ export function BulkLabelsPage() {
 
   const [printer, setPrinter] = useState<PrinterType>("thermal");
   const [sizeChoice, setSizeChoice] = useState<string>("50x25");
+  const [labelsPerRow, setLabelsPerRow] = useState(1);
 
   const [batch, setBatch] = useState<GeneratedRow[]>([]);
   const [history, setHistory] = useState<LabelPrintRecord[]>([]);
@@ -84,15 +82,50 @@ export function BulkLabelsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [shopName, setShopName] = useState("");
 
+  // Items query — refetches on every mount + on window focus so the
+  // barcode picker always reflects the latest items.barcode values
+  // (e.g. after editing an item from ItemList).
+  const itemsQuery = useQuery({
+    queryKey: ["bulk-labels-items"],
+    queryFn: () => listItems({ limit: 500 }),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
+  const items = itemsQuery.data ?? [];
+  const loadingItems = itemsQuery.isLoading;
+  const itemError = itemsQuery.error ? String(itemsQuery.error) : null;
+
   useEffect(() => {
     let cancelled = false;
-    setLoadingItems(true);
-    listItems({})
-      .then((rows) => !cancelled && setItems(rows))
-      .catch((e: unknown) => !cancelled && setItemError(String(e)))
-      .finally(() => !cancelled && setLoadingItems(false));
     getSetting("shop_name")
       .then((v) => !cancelled && setShopName(v || ""))
+      .catch(() => {});
+    Promise.all([
+      getSetting("label_size").catch(() => ""),
+      getSetting("receipt_template").catch(() => ""),
+    ])
+      .then(([sizeRaw, templateRaw]) => {
+        if (cancelled) return;
+        if (sizeRaw) {
+          if (sizeRaw.startsWith("thermal-")) {
+            const parsed = configFromFormat(sizeRaw);
+            setPrinter(parsed.type);
+            if (parsed.type === "thermal") setSizeChoice(parsed.size);
+          } else if (PRINTER_PRESETS.thermal.includes(sizeRaw)) {
+            setPrinter("thermal");
+            setSizeChoice(sizeRaw);
+          }
+        }
+        if (templateRaw) {
+          try {
+            const tpl = JSON.parse(templateRaw);
+            if (tpl.label_line1) setLine1(tpl.label_line1);
+            if (tpl.label_line2) setLine2(tpl.label_line2);
+          } catch {
+            /* ignore corrupt JSON */
+          }
+        }
+      })
       .catch(() => {});
     return () => {
       cancelled = true;
@@ -126,12 +159,13 @@ export function BulkLabelsPage() {
       setLine2("");
       return;
     }
-    setLine1(shopName || selectedItem.label_line1 || "");
+    // Strip surrounding double quotes from template values
+    const rawLine1 = shopName || selectedItem.label_line1 || "";
+    setLine1(rawLine1.replace(/^"|"$/g, ""));
     const brandPart = selectedItem.brand ?? "";
     const brandName = typeof brandPart === "string" ? brandPart : "";
-    const unitLabel = selectedItem.unit_label ?? selectedItem.unit_code ?? "";
     setLine2(
-      [brandName, selectedItem.name, unitLabel].filter(Boolean).join(" "),
+      [brandName, selectedItem.name].filter(Boolean).join(" "),
     );
   }, [selectedItem, shopName]);
 
@@ -221,7 +255,7 @@ export function BulkLabelsPage() {
     setBusy(true);
     setActionMsg(null);
     try {
-      const cfg = configFromSelect(printer, sizeChoice);
+      const cfg = configFromSelect(printer, sizeChoice, labelsPerRow);
       await printLabelBatch(
         batch.map((r) => r.label),
         cfg,
@@ -240,7 +274,7 @@ export function BulkLabelsPage() {
     setBusy(true);
     setActionMsg(null);
     try {
-      const cfg = configFromSelect(printer, sizeChoice);
+      const cfg = configFromSelect(printer, sizeChoice, labelsPerRow);
       const labels = batch.map((r) => r.label);
       const blob = await buildLabelPdfBlob(labels, cfg);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -259,7 +293,7 @@ export function BulkLabelsPage() {
     setBusy(true);
     setActionMsg(null);
     try {
-      const cfg = configFromSelect(printer, sizeChoice);
+      const cfg = configFromSelect(printer, sizeChoice, labelsPerRow);
       const labels = batch.map((r) => r.label);
       const blob = await buildLabelPdfBlob(labels, cfg);
       const url = URL.createObjectURL(blob);
@@ -367,7 +401,7 @@ export function BulkLabelsPage() {
         </div>
 
         {/* Printer settings */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-zinc-400">Printer</label>
             <select
@@ -396,6 +430,22 @@ export function BulkLabelsPage() {
               ))}
             </select>
           </div>
+          {printer === "thermal" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-zinc-400">Labels per row</label>
+              <select
+                value={labelsPerRow}
+                onChange={(e) => setLabelsPerRow(Number(e.target.value) || 1)}
+                className="w-full rounded-md border border-white/10 bg-zinc-950 px-2.5 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+              >
+                {[1, 2, 3, 4].map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Live preview */}
@@ -403,17 +453,19 @@ export function BulkLabelsPage() {
           <label className="text-xs font-medium text-zinc-400">Preview</label>
           <div className="rounded-lg border border-white/10 bg-zinc-950 p-4">
             {selectedItem?.barcode ? (
-              <div className="flex flex-col items-center gap-1.5">
-                <BarcodeThumb
-                  value={selectedItem.barcode}
-                  containerWidth={200}
-                  containerHeight={70}
-                />
-                <div className="text-center text-xs font-medium text-zinc-200">
+              <div className="flex flex-col items-center gap-1">
+                <div className="text-center text-[10px] font-medium leading-tight text-zinc-200">
                   {line1 || "—"}
                 </div>
-                <div className="text-center text-[10px] text-zinc-500">
+                <div className="text-center text-[9px] leading-tight text-zinc-500">
                   {line2 || "—"}
+                </div>
+                <div className="w-full px-2">
+                  <BarcodeThumb
+                    value={selectedItem.barcode}
+                    containerWidth={200}
+                    containerHeight={56}
+                  />
                 </div>
               </div>
             ) : (

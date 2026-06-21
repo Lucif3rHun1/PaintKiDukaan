@@ -37,6 +37,7 @@ import {
 import { toast } from "../../lib/feedback/toast";
 import { usePaginatedQuery } from "../../lib/query";
 import { listBrands, listItems, updateItem } from "./api";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Brand, Item } from "../types";
 import { ItemForm } from "./ItemForm";
 import { printLabel } from "../../pos/print";
@@ -54,6 +55,7 @@ type SortDirection = "asc" | "desc";
 const ITEM_PAGE_SIZE = 25;
 
 export function ItemList({ role }: Props) {
+  const queryClient = useQueryClient();
   const [locations, setLocations] = useState<Location[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [lowStockOnly, setLowStockOnly] = useState(false);
@@ -217,7 +219,12 @@ export function ItemList({ role }: Props) {
     try {
       await updateItem(item.id, { is_active: !item.is_active });
       toast.success(item.is_active ? "Archived" : "Restored");
-      refetch();
+      // Invalidate ALL ["items"] queries, not just the current one. When the
+      // user toggles includeInactive, react-query would otherwise serve the
+      // stale cache from before the toggle (the restored item would be
+      // missing). invalidateQueries with a partial key invalidates every
+      // page/filter combination so the next read pulls fresh data.
+      queryClient.invalidateQueries({ queryKey: ["items"] });
     } catch (e) {
       toast.error(String(e));
     }
@@ -250,7 +257,7 @@ export function ItemList({ role }: Props) {
       await Promise.all(selected.map((item) => updateItem(item.id, { is_active: false })));
       toast.success(`Archived ${selected.length} item${selected.length === 1 ? "" : "s"}`);
       setSelectedIds(new Set());
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ["items"] });
     } catch (e) {
       toast.error(String(e));
     }
