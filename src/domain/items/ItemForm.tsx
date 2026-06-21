@@ -72,9 +72,18 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       .then((b) => setBrands(b))
       .catch(() => setBrands([]));
     listUnits()
-      .then((u) => setUnits(u))
+      .then((u) => {
+        setUnits(u);
+        // Auto-select first active unit if item has no unit yet. This way
+        // the form never lands on "— Select unit —" for brand-new items
+        // when at least one unit is configured.
+        const firstActive = u.find((x) => x.is_active);
+        if (firstActive && mode === "create") {
+          setUnitId((current) => current ?? firstActive.id);
+        }
+      })
       .catch(() => setUnits([]));
-  }, []);
+  }, [mode]);
 
   // Predict barcode when brand or name changes (create mode only).
   useEffect(() => {

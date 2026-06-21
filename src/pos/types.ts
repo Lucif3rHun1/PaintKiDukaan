@@ -66,6 +66,7 @@ export interface CartLine {
   price: number;
   unit_id: number;
   unit_code: string;
+  unit_label?: string | null;
   line_discount: number;
   shade_note?: string | null;
 }
@@ -322,3 +323,4 @@ export interface OutstandingReport {
   vendors: VendorOutstanding[];
   vendor_total: number;
 }
+
