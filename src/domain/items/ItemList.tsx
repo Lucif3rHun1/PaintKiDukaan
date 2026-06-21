@@ -127,6 +127,12 @@ export function ItemList({ role }: Props) {
     return map;
   }, [brands]);
 
+  const brandNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const b of brands) map.set(b.id, b.name);
+    return map;
+  }, [brands]);
+
   function formatLocation(item: Item): string {
     const where = locationNameById.get(item.primary_location_id) ?? "—";
     const hint = item.location_text?.trim();
@@ -139,6 +145,14 @@ export function ItemList({ role }: Props) {
       if (prefix) return `${prefix}-${item.name}`;
     }
     return item.name;
+  }
+
+  function brandGroupLabel(item: Item): string {
+    if (item.brand_id != null) {
+      const fullName = brandNameById.get(item.brand_id);
+      if (fullName) return fullName;
+    }
+    return item.brand?.trim() || "No brand";
   }
 
   useEffect(() => {
@@ -161,9 +175,11 @@ export function ItemList({ role }: Props) {
   const metrics = useMemo(() => {
     let lowStock = 0;
     let outOfStock = 0;
+    let stockAnomaly = 0;
     let totalRetail = 0;
     for (const item of allItems) {
-      if (item.current_qty === 0) outOfStock++;
+      if (item.current_qty < 0) stockAnomaly++;
+      else if (item.current_qty === 0) outOfStock++;
       else if (item.current_qty <= item.min_qty) lowStock++;
       totalRetail += item.retail_price_paise;
     }
@@ -171,6 +187,7 @@ export function ItemList({ role }: Props) {
       total: allItems.length,
       lowStock,
       outOfStock,
+      stockAnomaly,
       totalRetail,
     };
   }, [allItems]);
@@ -178,14 +195,14 @@ export function ItemList({ role }: Props) {
   const grouped = useMemo(() => {
     const map = new Map<string, Map<string, Item[]>>();
     for (const item of items) {
-      const b = item.brand ?? "No brand";
-      const c = item.category ?? "No category";
+      const b = brandGroupLabel(item);
+      const c = item.category?.trim() || "No category";
       if (!map.has(b)) map.set(b, new Map());
       if (!map.get(b)!.has(c)) map.get(b)!.set(c, []);
       map.get(b)!.get(c)!.push(item);
     }
     return map;
-  }, [items]);
+  }, [items, brandNameById]);
 
   useEffect(() => {
     setSelectedIds((current) => {
@@ -307,7 +324,11 @@ export function ItemList({ role }: Props) {
   return (
     <div className="space-y-3">
       {/* ── Metrics cards ────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div
+        className={`grid grid-cols-2 gap-3 ${
+          metrics.stockAnomaly > 0 ? "sm:grid-cols-5" : "sm:grid-cols-4"
+        }`}
+      >
         <MetricCard
           label="Total Items"
           value={metrics.total}
@@ -325,6 +346,14 @@ export function ItemList({ role }: Props) {
           accent={metrics.lowStock > 0 ? "amber" : undefined}
           icon={<TriangleAlert className="h-4 w-4" />}
         />
+        {metrics.stockAnomaly > 0 ? (
+          <MetricCard
+            label="Stock Anomaly"
+            value={metrics.stockAnomaly}
+            accent="red"
+            icon={<TriangleAlert className="h-4 w-4" />}
+          />
+        ) : null}
         <MetricCard
           label="Total Value"
           value={`₹${(metrics.totalRetail / 100).toLocaleString("en-IN")}`}
@@ -492,17 +521,21 @@ export function ItemList({ role }: Props) {
                   </thead>
                   <tbody>
                     {rows.map((item) => {
-                      const lowStock = item.current_qty <= item.min_qty;
+                      const stockAnomaly = item.current_qty < 0;
+                      const isOut = item.current_qty === 0;
+                      const lowStock = !isOut && !stockAnomaly && item.current_qty <= item.min_qty;
                       return (
                         <tr
                           key={item.id}
                           onClick={() => openEdit(item)}
                           className={[
                             "cursor-pointer border-b border-border hover:bg-surface-sunken",
-                            item.current_qty === 0
-                              ? "border-l-2 border-l-red-500/60 bg-red-500/5"
-                              : "",
-                            lowStock && item.current_qty > 0
+                            stockAnomaly
+                              ? "border-l-2 border-l-red-500/80 bg-red-500/10"
+                              : isOut
+                                ? "border-l-2 border-l-red-500/60 bg-red-500/5"
+                                : "",
+                            lowStock
                               ? "border-l-2 border-l-amber-400/60 bg-amber-500/5"
                               : "",
                             !item.is_active ? "opacity-50" : "",
@@ -626,12 +659,22 @@ function StockBadges({
   minQty: number;
   role: "owner" | "cashier" | "stocker";
 }) {
-  const isOut = currentQty === 0;
-  const isLow = !isOut && currentQty <= minQty;
+  const stockAnomaly = currentQty < 0;
+  const isOut = !stockAnomaly && currentQty === 0;
+  const isLow = !isOut && !stockAnomaly && currentQty <= minQty;
   if (role === "cashier") {
+    if (stockAnomaly) return <Badge variant="danger">Out of stock</Badge>;
     if (isOut) return <Badge variant="danger">Out of stock</Badge>;
     if (isLow) return <Badge variant="warning">Low in stock</Badge>;
     return <Badge variant="success">In stock</Badge>;
+  }
+  if (stockAnomaly) {
+    return (
+      <span className="inline-flex items-center gap-1" data-testid="stock-anomaly">
+        <TriangleAlert className="h-4 w-4 text-red-400" aria-hidden="true" />
+        <Badge variant="danger">Stock anomaly · {currentQty}</Badge>
+      </span>
+    );
   }
   if (isOut)
     return (
