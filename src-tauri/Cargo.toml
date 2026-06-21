@@ -24,9 +24,9 @@ tauri = { version = "2", features = ["tray-icon", "test"] }
 tauri-plugin-log = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
-tauri-plugin-global-shortcut = "2"
-tauri-plugin-oauth = "2"
-tauri-plugin-keyring-store = "0.2"
+# tauri-plugin-global-shortcut — removed (unused, CWE-1104)
+# tauri-plugin-oauth — removed (unused, CWE-1104)
+# tauri-plugin-keyring-store — removed (unused, CWE-1104)
 
 # Database (SQLCipher)
 rusqlite = { version = "0.40", features = ["sqlcipher", "bundled-sqlcipher", "backup"] }
@@ -70,8 +70,19 @@ rdev = "0.5"
 dirs = "5"
 fs2 = "0.4"
 
+# Anti-forensic (Track A — secure delete needs rand + libc)
+rand = "0.8"
+libc = "0.2"
+
 # Temp paths used at runtime by backup test_restore and snapshot flows
 tempfile = "3"
+
+# Security: path canonicalization (Windows UTF-8 safe)
+dunce = "1"
+
+# Security: Windows registry for uninstall hook
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = ["Win32_System_Registry", "Win32_Foundation"] }
 
 [dev-dependencies]
 
@@ -79,3 +90,11 @@ tempfile = "3"
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 test-harness = []
+
+[[test]]
+name = "sales_integration"
+required-features = ["test-harness"]
+
+[[test]]
+name = "parties_integration"
+required-features = ["test-harness"]

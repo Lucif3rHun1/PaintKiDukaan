@@ -17,6 +17,9 @@ pub enum AppError {
     #[error("unauthorized: {0}")]
     Unauthorized(String),
 
+    #[error("incorrect PIN or passphrase")]
+    WrongPin,
+
     #[error("forbidden: {0}")]
     Forbidden(String),
 
@@ -25,6 +28,15 @@ pub enum AppError {
 
     #[error("database is locked — please unlock first")]
     NotUnlocked,
+
+    #[error("path traversal rejected: {0}")]
+    PathTraversal(String),
+
+    #[error("log injection rejected: {0}")]
+    LogInjection(String),
+
+    #[error("I/O error: {0}")]
+    Io(std::io::Error),
 }
 
 impl AppError {
@@ -35,9 +47,13 @@ impl AppError {
             AppError::Validation(_) => "validation",
             AppError::Conflict(_) => "conflict",
             AppError::Unauthorized(_) => "unauthorized",
+            AppError::WrongPin => "wrong_pin",
             AppError::Forbidden(_) => "forbidden",
             AppError::Internal(_) => "internal",
             AppError::NotUnlocked => "not_unlocked",
+            AppError::PathTraversal(_) => "path_traversal",
+            AppError::LogInjection(_) => "log_injection",
+            AppError::Io(_) => "io",
         }
     }
 }
