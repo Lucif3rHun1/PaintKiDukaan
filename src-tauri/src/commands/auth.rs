@@ -14,7 +14,8 @@ use zeroize::Zeroizing;
 use crate::crypto::kdf::{self, random_salt};
 use crate::crypto::wrap;
 use crate::db;
-use crate::db::keywrap::{self, KeywrapRow};
+use crate::db::keywrap::{self, KeywrapRow, PinRole};
+use crate::obs;
 
 // ---------------------------------------------------------------------------
 // AppError — shared error type for all Tauri commands
@@ -282,6 +283,7 @@ pub fn default_lockout_row() -> keywrap::LockoutRow {
         wipe_on_next_fail: false,
         action: "timeout".to_string(),
         base_minutes: 15,
+        deception_mode: 0,
     }
 }
 
@@ -357,6 +359,13 @@ pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap
 /// Default maximum wrong PIN attempts before lockout triggers (spec §4.4 / §9.8).
 const DEFAULT_MAX_FAILED_ATTEMPTS: u32 = 5;
 
+/// Number of cumulative wrong owner-PIN attempts that trips deception mode.
+/// Once set, every subsequent `unlock` call short-circuits to a decoy session
+/// regardless of PIN input, until the owner proves identity out-of-band (a
+/// future `reset_deception` command). The trip count is independent of
+/// `DEFAULT_MAX_FAILED_ATTEMPTS` so the policy survives changes to lockout.
+pub(crate) const DECEPTION_THRESHOLD: u32 = 3;
+
 /// Read the configured max-failed-attempts from settings (falls back to default).
 fn max_failed_attempts(state: &AppState) -> u32 {
     let settings = state.settings.lock().unwrap();
@@ -410,6 +419,13 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
         clear_lockout(&db_path, &state)?;
     }
 
+    // Deception gate: once tripped (>= DECEPTION_THRESHOLD cumulative wrong
+    // attempts), every subsequent unlock short-circuits to a decoy session.
+    // The attacker cannot distinguish this from a real successful unlock.
+    if read_deception_flag(&db_path)? {
+        return unlock_into_decoy(&state, &db_path, &pin);
+    }
+
     // Read keywrap from keystore (unencrypted).
     let row = read_keywrap_from_keystore(&db_path)?;
 
@@ -459,6 +475,10 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
 
             record_failed_attempt(&db_path, attempts)?;
 
+            if attempts == DECEPTION_THRESHOLD {
+                set_deception_flag(&db_path, true)?;
+            }
+
             if attempts >= max_failed_attempts(&state) {
                 handle_lockout(&state, attempts)?;
             }
@@ -466,6 +486,81 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
             Err(e)
         }
     }
+}
+
+/// Read `lockouts.deception_mode`. Defaults to false when the row is missing.
+pub(crate) fn read_deception_flag(db_path: &Path) -> Result<bool, AppError> {
+    match read_lockout_from_keystore(db_path) {
+        Ok(row) => Ok(row.deception_mode != 0),
+        Err(AppError::Db(rusqlite::Error::QueryReturnedNoRows)) => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// Set `lockouts.deception_mode` in the sidecar. Creates the row if missing
+/// so the flip survives the first failure before any lockout row was written.
+pub(crate) fn set_deception_flag(db_path: &Path, active: bool) -> Result<(), AppError> {
+    let mut row = read_lockout_from_keystore(db_path).unwrap_or_else(|_| default_lockout_row());
+    row.deception_mode = if active { 1 } else { 0 };
+    write_lockout_to_keystore(db_path, &row)
+}
+
+/// Unlock path that opens a decoy session. Tries the PDE decoy row first
+/// (so the legitimate decoy PIN still unwraps the decoy DB). If the decoy row
+/// doesn't exist or the PIN doesn't match it, returns the same `WrongPin`
+/// error as the real path so the attacker cannot distinguish the cases.
+pub(crate) fn unlock_into_decoy(
+    state: &AppState,
+    db_path: &Path,
+    pin: &str,
+) -> Result<Session, AppError> {
+    let kp = keystore_path(db_path);
+    let conn = open_keystore(&kp)?;
+
+    if let Ok(decoy_row) = keywrap::read_by_role(&conn, PinRole::Decoy) {
+        if let Ok(dek) = keywrap::unwrap_with_pin(&decoy_row, pin) {
+            let decoy_db_path = crate::security::pde::decoy_db_path(db_path);
+            let db = if decoy_db_path.exists() {
+                db::Db::open(&decoy_db_path, &dek).map_err(AppError::Db)?
+            } else {
+                db::Db::open(db_path, &dek).map_err(AppError::Db)?
+            };
+
+            let user = db
+                .with_conn(|c| {
+                    let mut stmt = c
+                        .prepare("SELECT id, name, role FROM users WHERE active = 1 ORDER BY id LIMIT 1")?;
+                    stmt.query_row([], |r| {
+                        Ok(User {
+                            id: r.get(0)?,
+                            name: r.get(1)?,
+                            role: r.get(2)?,
+                            is_active: true,
+                        })
+                    })
+                })
+                .unwrap_or_else(|_| User {
+                    id: -1,
+                    name: "Demo".into(),
+                    role: "decoy".into(),
+                    is_active: true,
+                });
+
+            *state.db.lock().unwrap() = Some(db);
+            *state.session.lock().unwrap() = Some(user.clone());
+            sync_session_to_static(state);
+            state
+                .last_activity
+                .store(now_unix(), std::sync::atomic::Ordering::SeqCst);
+
+            return Ok(Session {
+                user: Some(user),
+                locked: false,
+            });
+        }
+    }
+
+    Err(AppError::WrongPin)
 }
 
 /// Persist every failed PIN attempt to the sidecar so the counter survives
@@ -508,8 +603,13 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
 
     match action.as_str() {
         "wipe" => {
-            // CWE-693: secure-delete the DB and keystore files.
+            // CWE-693: secure-delete the DB and keystore files — but only
+            // AFTER snapshotting the encrypted DB to a recovery envelope so
+            // the legitimate owner can restore via the recovery passphrase.
             let keystore = keystore_path(&db_path);
+            if let Err(e) = backup_before_wipe(state, &db_path) {
+                log::error!("backup-before-wipe failed (continuing with wipe): {e}");
+            }
             let _ = crate::security::anti_forensic::secure_delete(&db_path);
             let _ = crate::security::anti_forensic::secure_delete(&keystore);
             *state.failed_attempts.lock().unwrap() = 0;
@@ -524,6 +624,7 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
                 wipe_on_next_fail: false,
                 action,
                 base_minutes: lockout.base_minutes,
+                deception_mode: lockout.deception_mode,
             };
             write_lockout_to_keystore(&db_path, &row)?;
             Err(AppError::LockedOut {
@@ -531,6 +632,72 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
             })
         }
     }
+}
+
+/// Snapshot the live encrypted DB to a PKB1 envelope under
+/// `<app_data>/.duress_backup/duress-wipe-<ts>.pkb1` BEFORE secure-delete
+/// fires in `handle_lockout`. Uses the in-memory recovery passphrase.
+///
+/// Returns `Ok` even on inner failure so callers can proceed with the wipe —
+/// log + continue. The function never panics and never propagates an
+/// error that would block the security-critical wipe.
+fn backup_before_wipe(state: &AppState, db_path: &Path) -> Result<(), AppError> {
+    use tempfile::NamedTempFile;
+
+    let passphrase = {
+        let guard = state.recovery_passphrase.lock().unwrap();
+        match guard.clone() {
+            Some(p) if !p.is_empty() => p,
+            _ => {
+                log::error!("backup-before-wipe: no recovery passphrase on file; skipping");
+                return Ok(());
+            }
+        }
+    };
+
+    let app_dir = db_path
+        .parent()
+        .ok_or_else(|| AppError::Internal("db_path has no parent".into()))?;
+    let backup_dir = app_dir.join(obs!(".duress_backup"));
+    if let Err(e) = std::fs::create_dir_all(&backup_dir) {
+        log::error!("backup-before-wipe: mkdir {} failed: {e}", backup_dir.display());
+        return Ok(());
+    }
+
+    let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
+    let envelope_path = backup_dir.join(format!("duress-wipe-{ts}.pkb1"));
+
+    let temp_snapshot = match NamedTempFile::new() {
+        Ok(f) => f,
+        Err(e) => {
+            log::error!("backup-before-wipe: tempfile create failed: {e}");
+            return Ok(());
+        }
+    };
+    let temp_path = temp_snapshot.path().to_path_buf();
+
+    let dek: Option<[u8; 32]> = None;
+    if let Err(e) = crate::backup::snapshot::snapshot_via_backup_api(db_path, dek.as_ref(), &temp_path) {
+        log::error!("backup-before-wipe: snapshot_via_backup_api failed: {e}");
+        return Ok(());
+    }
+
+    match crate::backup::encrypt_snapshot(&temp_path, &envelope_path, &passphrase) {
+        Ok(metadata) => {
+            log::info!(
+                "backup-before-wipe: encrypted backup saved at {} ({} bytes)",
+                metadata.envelope_path,
+                metadata.size_bytes
+            );
+            *state.last_backup_unix_ms.lock().unwrap() = Some(metadata.created_at_unix_ms);
+        }
+        Err(e) => {
+            log::error!("backup-before-wipe: encrypt_snapshot failed: {e}");
+        }
+    }
+
+    drop(temp_snapshot);
+    Ok(())
 }
 
 /// If the sidecar lockouts table has a `locked_until` in the future, return it.
@@ -953,6 +1120,7 @@ mod tests {
                 wipe_on_next_fail: false,
                 action: "wipe".into(),
                 base_minutes: 15,
+                deception_mode: 0,
             },
         )
         .unwrap();
@@ -972,6 +1140,146 @@ mod tests {
         assert!(
             !keystore.exists(),
             "CWE-693: wipe action should secure-delete the keystore file"
+        );
+    }
+
+    #[test]
+    fn test_three_wrong_pins_enters_deception_mode() {
+        use crate::commands::recovery::first_launch_setup_at_path;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("paintkiduakan.db");
+
+        let state = AppState::default();
+        first_launch_setup_at_path(
+            &state,
+            &db_path,
+            "123456".to_string(),
+            "test-recovery-passphrase".to_string(),
+            "Shop".to_string(),
+            "Addr".to_string(),
+            "+919876543210".to_string(),
+        )
+        .expect("setup must succeed");
+
+        assert!(
+            !read_deception_flag(&db_path).unwrap(),
+            "fresh install: deception_mode must be off"
+        );
+
+        for n in 1..=DECEPTION_THRESHOLD {
+            let mut failed = state.failed_attempts.lock().unwrap();
+            *failed += 1;
+            let attempts = *failed;
+            drop(failed);
+            record_failed_attempt(&db_path, attempts).unwrap();
+            if n == DECEPTION_THRESHOLD {
+                set_deception_flag(&db_path, true).unwrap();
+            }
+        }
+
+        assert!(
+            read_deception_flag(&db_path).unwrap(),
+            "after DECEPTION_THRESHOLD wrong PINs, deception_mode must flip on"
+        );
+    }
+
+    #[test]
+    fn test_deception_mode_unlock_always_returns_decoy() {
+        use crate::commands::recovery::first_launch_setup_at_path;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("paintkiduakan.db");
+
+        let state = AppState::default();
+        first_launch_setup_at_path(
+            &state,
+            &db_path,
+            "123456".to_string(),
+            "recovery-pass".to_string(),
+            "Real Shop".to_string(),
+            "1 Real St".to_string(),
+            "+910000000000".to_string(),
+        )
+        .expect("setup must succeed");
+
+        set_deception_flag(&db_path, true).unwrap();
+
+        let kp = keystore_path(&db_path);
+        let conn = open_keystore(&kp).unwrap();
+        assert!(
+            keywrap::read_by_role(&conn, PinRole::Decoy).is_err(),
+            "precondition: no decoy row, so deception path returns WrongPin"
+        );
+        drop(conn);
+
+        let err = unlock_into_decoy(&state, &db_path, "anything")
+            .expect_err("no decoy row → must fail closed");
+        assert!(matches!(err, AppError::WrongPin));
+    }
+
+    #[test]
+    fn test_wipe_action_snapshots_to_backup_first() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join(format!(
+            "paintkiduakan-{}-{}.db",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::SeqCst)
+        ));
+
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute_batch("CREATE TABLE t(x INTEGER);").unwrap();
+            drop(conn);
+        }
+        assert!(db_path.exists());
+
+        write_lockout_to_keystore(
+            &db_path,
+            &keywrap::LockoutRow {
+                user_id: 1,
+                failed_attempts: 5,
+                locked_until: None,
+                wipe_on_next_fail: false,
+                action: "wipe".into(),
+                base_minutes: 15,
+                deception_mode: 0,
+            },
+        )
+        .unwrap();
+
+        let state = AppState::default();
+        *state.db_path.lock().unwrap() = Some(db_path.clone());
+        *state.recovery_passphrase.lock().unwrap() = Some(
+            zeroize::Zeroizing::new("wipe-backup-test-passphrase".to_string()),
+        );
+
+        let result = handle_lockout(&state, 5);
+        assert!(matches!(result, Err(AppError::Wiped)));
+
+        assert!(!db_path.exists(), "CWE-693: wipe must remove live DB");
+
+        let backup_dir = db_path.parent().unwrap().join(".duress_backup");
+        assert!(
+            backup_dir.exists(),
+            "backup-before-wipe must create .duress_backup dir at {}",
+            backup_dir.display()
+        );
+        let entries: Vec<_> = std::fs::read_dir(&backup_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("duress-wipe-")
+            })
+            .collect();
+        assert!(
+            !entries.is_empty(),
+            "at least one duress-wipe-<ts>.pkb1 envelope must exist"
         );
     }
 }

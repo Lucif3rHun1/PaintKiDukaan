@@ -83,3 +83,9 @@ impl From<rusqlite::Error> for AppError {
 }
 
 pub type AppResult<T> = std::result::Result<T, AppError>;
+
+impl From<AppError> for String {
+    fn from(e: AppError) -> String {
+        e.to_string()
+    }
+}

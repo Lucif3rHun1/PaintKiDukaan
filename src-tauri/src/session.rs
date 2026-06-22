@@ -6,6 +6,7 @@
 //! re-exported from Slice A's `auth` module and these tests will be replaced.
 
 use crate::error::{AppError, AppResult};
+use crate::obs;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -90,11 +91,11 @@ pub fn require_role(user: &User, allowed: &[Role]) -> AppResult<()> {
 fn log_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_default()
-        .join("in.paintkiduakan.master")
+        .join(obs!("in.paintkiduakan.master"))
 }
 
 fn log_path() -> PathBuf {
-    log_dir().join("session.log")
+    log_dir().join(obs!("session.log"))
 }
 
 /// Rotate `session.log` when it exceeds 10 MB. Keeps up to 3 generations

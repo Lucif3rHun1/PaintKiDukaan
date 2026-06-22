@@ -7,6 +7,7 @@
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::security::ipc_auth;
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -720,4 +721,31 @@ mod tests {
         assert_eq!(out.total_payments, 200);
         assert_eq!(out.outstanding, 900);
     }
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn customer_ledger(
+    state: State<'_, AppState>,
+    _customer_id: i64,
+) -> AppResult<serde_json::Value> {
+    ipc_auth::authorize_err("customer_ledger", state.inner())?;
+    Ok(serde_json::Value::Null)
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn customer_credit_sales(
+    state: State<'_, AppState>,
+    _customer_id: i64,
+) -> AppResult<Vec<serde_json::Value>> {
+    ipc_auth::authorize_err("customer_credit_sales", state.inner())?;
+    Ok(Vec::new())
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn record_customer_payment(
+    state: State<'_, AppState>,
+    _payload: serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    ipc_auth::authorize_err("record_customer_payment", state.inner())?;
+    Ok(serde_json::Value::Null)
 }

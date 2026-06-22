@@ -11,6 +11,8 @@ use serde::Serialize;
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::commands::auth::AppState;
+use crate::security::ipc_auth;
+use tauri::Manager;
 
 pub mod prevent_sleep;
 pub mod tray;
@@ -76,6 +78,7 @@ pub struct OpsHealth {
 /// Read the aggregated master health snapshot.
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, String> {
+    ipc_auth::authorize_err("master_health", state.inner())?;
     let last_backup_unix_ms = *state.last_backup_unix_ms.lock().unwrap();
     let last_test_unix_ms = *state.last_test_restore_unix_ms.lock().unwrap();
     let now = now_unix_ms();
@@ -134,6 +137,7 @@ pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, 
 /// Enable auto-launch on boot via tauri-plugin-autostart.
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn autostart_enable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
+    ipc_auth::authorize_err("autostart_enable", app.state::<AppState>().inner())?;
     let manager = app.autolaunch();
     manager.enable().map_err(|e| e.to_string())?;
     manager.is_enabled().map_err(|e| e.to_string())
@@ -142,6 +146,7 @@ pub fn autostart_enable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<b
 /// Disable auto-launch on boot.
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn autostart_disable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
+    ipc_auth::authorize_err("autostart_disable", app.state::<AppState>().inner())?;
     let manager = app.autolaunch();
     manager.disable().map_err(|e| e.to_string())?;
     manager.is_enabled().map_err(|e| e.to_string())
@@ -150,6 +155,7 @@ pub fn autostart_disable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<
 /// Return whether auto-launch is currently enabled.
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn autostart_is_enabled<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
+    ipc_auth::authorize_err("autostart_is_enabled", app.state::<AppState>().inner())?;
     app.autolaunch().is_enabled().map_err(|e| e.to_string())
 }
 

@@ -102,3 +102,18 @@ test-harness = []
 # were archived to docs/schema-archive/integration_tests_legacy/ after the schema
 # reset. They referenced the v1..v14 column names and won't compile against the
 # new schema. They will be rewritten in the L3 phase and re-added here.
+
+# Release hardening: strip symbols and file paths from the production binary,
+# enable fat LTO + opt-level 3, and use panic = "unwind" so Tauri's panic hook
+# (lib.rs run() setup) can still log + invoke the default hook before unwinding.
+# panic = "abort" was avoided because it bypasses destructors, breaking the
+# zeroize::Drop chains in crypto/keystore paths.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+strip = "symbols"
+debug = false
+incremental = false
+overflow-checks = false

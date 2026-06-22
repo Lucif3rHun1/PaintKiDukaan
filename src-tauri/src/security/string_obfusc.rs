@@ -103,6 +103,17 @@ pub fn decode_bytes(encoded: &[u8]) -> Vec<u8> {
         .collect()
 }
 
+/// Convenience wrapper around [`obfstr!`] that returns an owned `String`.
+/// The literal is XOR-encoded at compile time so it never appears in plaintext
+/// inside the release binary's `.rodata` section.
+#[macro_export]
+macro_rules! obs {
+    ($lit:expr) => {{
+        let _buf = $crate::obfstr!($lit);
+        String::from_utf8(_buf.to_vec()).expect("obfstr literal must be ASCII")
+    }};
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

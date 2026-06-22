@@ -17,6 +17,8 @@ use crate::backup::{
 };
 use crate::commands::auth::AppState;
 use crate::commands::recovery::wipe_existing_setup;
+use crate::security::ipc_auth;
+use crate::obs;
 
 const PKB1_MAGIC: &[u8; 4] = b"PKB1";
 
@@ -222,8 +224,8 @@ pub fn restore_into_first_launch<R: tauri::Runtime>(
     let target_db = app
         .path()
         .app_data_dir()
-        .map(|d| d.join("paintkiduakan.db"))
-        .unwrap_or_else(|_| PathBuf::from("paintkiduakan.db"));
+        .map(|d| d.join(obs!("paintkiduakan.db")))
+        .unwrap_or_else(|_| PathBuf::from(obs!("paintkiduakan.db")));
 
     if let Err(e) = wipe_existing_setup(&target_db) {
         passphrase.zeroize();
@@ -280,6 +282,7 @@ pub fn test_restore<R: tauri::Runtime>(
 /// Return the current backup health status.
 #[tauri::command(rename_all = "snake_case")]
 pub fn backup_status(state: State<'_, AppState>) -> Result<BackupStatus, String> {
+    ipc_auth::authorize_err("backup_status", state.inner())?;
     let now = Utc::now().timestamp_millis();
     let last_backup = *state.last_backup_unix_ms.lock().unwrap();
     let last_test_restore = *state.last_test_restore_unix_ms.lock().unwrap();
@@ -306,8 +309,8 @@ pub fn backup_status(state: State<'_, AppState>) -> Result<BackupStatus, String>
 fn resolve_live_db_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> PathBuf {
     app.path()
         .app_data_dir()
-        .map(|d| d.join("paintkiduakan.db"))
-        .unwrap_or_else(|_| PathBuf::from("paintkiduakan.db"))
+        .map(|d| d.join(obs!("paintkiduakan.db")))
+        .unwrap_or_else(|_| PathBuf::from(obs!("paintkiduakan.db")))
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ use serde_json::Value;
 use tauri::State;
 
 use crate::commands::auth::AppState;
+use crate::security::ipc_auth;
 
 static DEVICES: OnceLock<RwLock<Vec<Device>>> = OnceLock::new();
 
@@ -24,6 +25,7 @@ pub struct Device {
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn get_setting(state: State<'_, AppState>, key: String) -> Result<String, String> {
+    ipc_auth::authorize_err("get_setting", state.inner())?;
     let settings = state.settings.lock().map_err(|e| e.to_string())?;
     match settings.get(&key) {
         Some(v) => serde_json::to_string(v).map_err(|e| e.to_string()),
@@ -37,6 +39,7 @@ pub fn set_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    ipc_auth::authorize_err("set_setting", state.inner())?;
     let parsed: Value = serde_json::from_str(&value).unwrap_or(Value::String(value));
     state
         .settings
@@ -48,6 +51,7 @@ pub fn set_setting(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_devices(_state: State<'_, AppState>) -> Result<Vec<Device>, String> {
+    ipc_auth::authorize_err("list_devices", _state.inner())?;
     Ok(devices_store().read().clone())
 }
 
@@ -57,6 +61,7 @@ pub fn enroll_device(
     name: String,
     role: String,
 ) -> Result<Device, String> {
+    ipc_auth::authorize_err("enroll_device", _state.inner())?;
     if name.trim().is_empty() {
         return Err("device name is required".into());
     }
@@ -80,6 +85,7 @@ pub fn revoke_device(
     _state: State<'_, AppState>,
     device_id: String,
 ) -> Result<(), String> {
+    ipc_auth::authorize_err("revoke_device", _state.inner())?;
     let mut devices = devices_store().write();
     let device = devices
         .iter_mut()

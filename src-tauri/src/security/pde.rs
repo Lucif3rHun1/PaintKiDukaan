@@ -6,6 +6,7 @@ use crate::crypto::kdf::{self, random_dek, random_salt, KdfParams};
 use crate::crypto::wrap::wrap_dek;
 use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
+use crate::obs;
 
 /// Provision a decoy DB with plausible fake data and set up decoy + duress
 /// keywrap rows. Both decoy and duress share the same DEK_decoy so a single
@@ -170,7 +171,7 @@ pub fn decoy_db_path(real_db_path: &Path) -> std::path::PathBuf {
     real_db_path
         .parent()
         .unwrap_or(std::path::Path::new("."))
-        .join("paintkiduakan.decoy.db")
+        .join(obs!("paintkiduakan.decoy.db"))
 }
 
 #[cfg(test)]

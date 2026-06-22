@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::commands::auth::AppState;
+use crate::security::ipc_auth;
 
 // -----------------------------------------------------------------------------
 // Public types.
@@ -640,4 +641,23 @@ mod tests {
         let v = last_cost_for_item(&db, 999).expect("query");
         assert!(v.is_none());
     }
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_last_retail(
+    state: tauri::State<'_, AppState>,
+    _item_id: i64,
+) -> AppResult<Option<i64>> {
+    ipc_auth::authorize_err("cmd_last_retail", state.inner())?;
+    Ok(None)
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_list_purchases_by_vendor(
+    state: tauri::State<'_, AppState>,
+    _vendor_id: i64,
+    _limit: Option<i64>,
+) -> AppResult<Vec<Purchase>> {
+    ipc_auth::authorize_err("cmd_list_purchases_by_vendor", state.inner())?;
+    Ok(Vec::new())
 }

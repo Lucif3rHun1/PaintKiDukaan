@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS lockouts (
   locked_until INTEGER,
   wipe_on_next_fail INTEGER NOT NULL DEFAULT 0,
   action TEXT NOT NULL DEFAULT 'timeout',
-  base_minutes INTEGER NOT NULL DEFAULT 15
+  base_minutes INTEGER NOT NULL DEFAULT 15,
+  deception_mode INTEGER NOT NULL DEFAULT 0
 );";
 
 /// Migrate an existing single-row keywrap table (pre-PDE) to the new schema
@@ -171,6 +172,10 @@ pub struct LockoutRow {
     pub wipe_on_next_fail: bool,
     pub action: String,
     pub base_minutes: i64,
+    /// v2 column: 1 once the owner has hit `commands::auth::DECEPTION_THRESHOLD`
+    /// wrong PINs. Future unlocks short-circuit to a decoy session until reset.
+    #[serde(default)]
+    pub deception_mode: i64,
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +360,7 @@ pub fn delete_by_role(conn: &Connection, role: PinRole) -> Result<(), rusqlite::
 /// Read the lockout row for `user_id` from the sidecar.
 pub fn read_lockout(conn: &Connection, user_id: i64) -> Result<LockoutRow, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT user_id, failed_attempts, locked_until, wipe_on_next_fail, action, base_minutes \
+        "SELECT user_id, failed_attempts, locked_until, wipe_on_next_fail, action, base_minutes, deception_mode \
          FROM lockouts WHERE user_id = ?1",
     )?;
     stmt.query_row([user_id], |r| {
@@ -366,6 +371,7 @@ pub fn read_lockout(conn: &Connection, user_id: i64) -> Result<LockoutRow, rusql
             wipe_on_next_fail: r.get::<_, i64>(3)? != 0,
             action: r.get(4)?,
             base_minutes: r.get(5)?,
+            deception_mode: r.get::<_, i64>(6).unwrap_or(0),
         })
     })
 }
@@ -373,14 +379,15 @@ pub fn read_lockout(conn: &Connection, user_id: i64) -> Result<LockoutRow, rusql
 /// Upsert a lockout row.
 pub fn write_lockout(conn: &Connection, row: &LockoutRow) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "INSERT INTO lockouts (user_id, failed_attempts, locked_until, wipe_on_next_fail, action, base_minutes) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+        "INSERT INTO lockouts (user_id, failed_attempts, locked_until, wipe_on_next_fail, action, base_minutes, deception_mode) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
          ON CONFLICT(user_id) DO UPDATE SET \
            failed_attempts = excluded.failed_attempts, \
            locked_until = excluded.locked_until, \
            wipe_on_next_fail = excluded.wipe_on_next_fail, \
            action = excluded.action, \
-           base_minutes = excluded.base_minutes",
+           base_minutes = excluded.base_minutes, \
+           deception_mode = excluded.deception_mode",
         params![
             row.user_id,
             row.failed_attempts,
@@ -388,6 +395,7 @@ pub fn write_lockout(conn: &Connection, row: &LockoutRow) -> Result<(), rusqlite
             row.wipe_on_next_fail as i64,
             row.action,
             row.base_minutes,
+            row.deception_mode,
         ],
     )?;
     Ok(())
@@ -670,6 +678,7 @@ mod tests {
             wipe_on_next_fail: true,
             action: "timeout".to_string(),
             base_minutes: 15,
+            deception_mode: 0,
         };
         write_lockout(&conn, &row).unwrap();
 

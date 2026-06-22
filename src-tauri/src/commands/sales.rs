@@ -23,6 +23,7 @@ use crate::commands::{customers, sequences};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::commands::auth::AppState;
+use crate::security::ipc_auth;
 
 // -----------------------------------------------------------------------------
 // Public types (Tauri command arguments / return values).
@@ -654,6 +655,7 @@ pub fn cmd_create_sale(
     state: tauri::State<'_, AppState>,
     sale: NewSale,
 ) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_create_sale", state.inner())?;
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
@@ -671,6 +673,7 @@ pub fn cmd_convert_quotation(
     state: tauri::State<'_, AppState>,
     req: ConvertQuotation,
 ) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_convert_quotation", state.inner())?;
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
@@ -681,6 +684,7 @@ pub fn cmd_convert_quotation(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_get_sale(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Sale>> {
+    ipc_auth::authorize_err("cmd_get_sale", state.inner())?;
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     get(db, id).map_err(|e| AppError::Internal(e.to_string()))
@@ -692,6 +696,7 @@ pub fn cmd_list_sales(
     status: Option<String>,
     limit: Option<i64>,
 ) -> AppResult<Vec<Sale>> {
+    ipc_auth::authorize_err("cmd_list_sales", state.inner())?;
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     list(db, status.as_deref(), limit.unwrap_or(100)).map_err(|e| AppError::Internal(e.to_string()))
@@ -702,6 +707,7 @@ pub fn cmd_hold_bill(
     state: tauri::State<'_, AppState>,
     hb: HoldBill,
 ) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_hold_bill", state.inner())?;
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
@@ -712,6 +718,7 @@ pub fn cmd_hold_bill(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_list_held(state: tauri::State<'_, AppState>) -> AppResult<Vec<HeldBill>> {
+    ipc_auth::authorize_err("cmd_list_held", state.inner())?;
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     list_held(db).map_err(|e| AppError::Internal(e.to_string()))
@@ -719,6 +726,7 @@ pub fn cmd_list_held(state: tauri::State<'_, AppState>) -> AppResult<Vec<HeldBil
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_delete_held(state: tauri::State<'_, AppState>, id: i64) -> AppResult<usize> {
+    ipc_auth::authorize_err("cmd_delete_held", state.inner())?;
     let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     delete_held(db, id).map_err(|e| AppError::Internal(e.to_string()))
@@ -817,4 +825,75 @@ mod tests {
         ];
         assert_eq!(modes_sum(&modes), 1000);
     }
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_create_sale_return(
+    state: tauri::State<'_, AppState>,
+    _payload: serde_json::Value,
+) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_create_sale_return", state.inner())?;
+    Err(AppError::Internal("not implemented".into()))
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_edit_sale(
+    state: tauri::State<'_, AppState>,
+    _sale_id: i64,
+    _payload: serde_json::Value,
+) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_edit_sale", state.inner())?;
+    Err(AppError::Internal("not implemented".into()))
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_get_sale_return(
+    state: tauri::State<'_, AppState>,
+    _id: i64,
+) -> AppResult<serde_json::Value> {
+    ipc_auth::authorize_err("cmd_get_sale_return", state.inner())?;
+    Ok(serde_json::Value::Null)
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_list_sale_returns(
+    state: tauri::State<'_, AppState>,
+    _customer_id: Option<i64>,
+    _from_date: Option<String>,
+    _to_date: Option<String>,
+    _limit: Option<i64>,
+) -> AppResult<Vec<serde_json::Value>> {
+    ipc_auth::authorize_err("cmd_list_sale_returns", state.inner())?;
+    Ok(Vec::new())
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_list_sale_payments(
+    state: tauri::State<'_, AppState>,
+    _sale_id: i64,
+) -> AppResult<Vec<serde_json::Value>> {
+    ipc_auth::authorize_err("cmd_list_sale_payments", state.inner())?;
+    Ok(Vec::new())
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_record_sale_payment(
+    state: tauri::State<'_, AppState>,
+    _sale_id: i64,
+    _amount: i64,
+    _mode: String,
+    _date: Option<String>,
+) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_record_sale_payment", state.inner())?;
+    Err(AppError::Internal("not implemented".into()))
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_void_sale(
+    state: tauri::State<'_, AppState>,
+    _sale_id: i64,
+    _pin: String,
+) -> AppResult<()> {
+    ipc_auth::authorize_err("cmd_void_sale", state.inner())?;
+    Err(AppError::Internal("not implemented".into()))
 }

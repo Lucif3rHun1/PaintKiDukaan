@@ -14,6 +14,7 @@ use crate::crypto::kdf::{self, random_dek, random_salt, KdfParams, KEK_LEN};
 use crate::crypto::wrap::wrap_dek;
 use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
+use crate::obs;
 
 /// Wipe any leftover database files and sidecar before first-launch setup.
 pub(crate) fn wipe_existing_setup(db_path: &Path) -> std::io::Result<()> {
@@ -210,7 +211,7 @@ pub fn first_launch_setup<R: tauri::Runtime>(
         .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
     log::info!("[SETUP] App dir: {:?}", app_dir);
     std::fs::create_dir_all(&app_dir)?;
-    let db_path: PathBuf = app_dir.join("paintkiduakan.db");
+    let db_path: PathBuf = app_dir.join(obs!("paintkiduakan.db"));
 
     let session = first_launch_setup_at_path(
         &state, &db_path, pin, passphrase, shop_name, address, phone,
@@ -272,7 +273,7 @@ pub fn restore_from_recovery(
                 .path()
                 .app_data_dir()
                 .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
-            app_dir.join("paintkiduakan.db")
+            app_dir.join(obs!("paintkiduakan.db"))
         }
     };
 

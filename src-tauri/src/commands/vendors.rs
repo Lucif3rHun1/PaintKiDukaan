@@ -1,6 +1,7 @@
 //! Vendors CRUD + payments + outstanding balance.
 
 use crate::error::{AppError, AppResult};
+use crate::security::ipc_auth;
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -379,4 +380,14 @@ mod tests {
         // opening=0, purchases=0, payments=100 → -100 (overpaid)
         assert_eq!(out.outstanding, -100, "got {}", out.outstanding);
     }
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn list_vendor_payments(
+    state: State<'_, AppState>,
+    _vendor_id: i64,
+    _limit: Option<i64>,
+) -> AppResult<Vec<serde_json::Value>> {
+    ipc_auth::authorize_err("list_vendor_payments", state.inner())?;
+    Ok(Vec::new())
 }

@@ -295,6 +295,15 @@ pub fn authorize(cmd_name: &str, state: &AppState) -> Result<(), AppError> {
     }
 }
 
+pub fn authorize_err(
+    cmd_name: &str,
+    state: &AppState,
+) -> Result<(), crate::error::AppError> {
+    authorize(cmd_name, state).map_err(|_| {
+        crate::error::AppError::Unauthorized(format!("command '{cmd_name}' denied"))
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tauri builder integration
 // ---------------------------------------------------------------------------

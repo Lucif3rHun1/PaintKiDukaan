@@ -81,6 +81,7 @@ pub fn set_scan_target(
     target: String,
     state: tauri::State<'_, crate::commands::auth::AppState>,
 ) -> Result<(), String> {
+    crate::security::ipc_auth::authorize_err("set_scan_target", state.inner())?;
     let new = ScanTarget::parse(&target);
     *state.scan_target.lock().map_err(|e| e.to_string())? = new.as_str().to_string();
     Ok(())
@@ -91,6 +92,7 @@ pub fn set_scan_target(
 pub fn scan_target(
     state: tauri::State<'_, crate::commands::auth::AppState>,
 ) -> Result<String, String> {
+    crate::security::ipc_auth::authorize_err("scan_target", state.inner())?;
     Ok(state
         .scan_target
         .lock()

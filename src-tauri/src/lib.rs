@@ -57,11 +57,11 @@ pub fn run() {
     // On Windows: %APPDATA%/in.paintkiduakan.master/
     let log_dir = dirs::data_local_dir()
         .unwrap_or_default()
-        .join("in.paintkiduakan.master");
+        .join(crate::obs!("in.paintkiduakan.master"));
     let _ = std::fs::create_dir_all(&log_dir);
 
-    let log_file = log_dir.join("session.log");
-    let prev_log = log_dir.join("session.prev.log");
+    let log_file = log_dir.join(crate::obs!("session.log"));
+    let prev_log = log_dir.join(crate::obs!("session.prev.log"));
     let _ = std::fs::rename(&log_file, &prev_log);
 
     tauri::Builder::default()
@@ -70,7 +70,7 @@ pub fn run() {
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Folder {
                         path: log_dir,
-                        file_name: Some("session.log".into()),
+                        file_name: Some(crate::obs!("session.log")),
                     },
                 ))
                 .level(log::LevelFilter::Trace)
@@ -89,12 +89,12 @@ pub fn run() {
 
             if let Ok(app_data) = app.path().app_data_dir() {
                 log::info!("App data dir: {}", app_data.display());
-                if let Ok(db_path) = std::fs::canonicalize(app_data.join("paintkiduakan.db")) {
+                if let Ok(db_path) = std::fs::canonicalize(app_data.join(crate::obs!("paintkiduakan.db"))) {
                     log::info!("DB path: {}", db_path.display());
                 } else {
                     log::info!("DB path: (not yet created)");
                 }
-                log::info!("Keystore exists: {}", app_data.join("paintkiduakan.keystore").exists());
+                log::info!("Keystore exists: {}", app_data.join(crate::obs!("paintkiduakan.keystore")).exists());
             }
 
             // Install panic hook that writes to the log before crashing.
@@ -389,4 +389,28 @@ mod poc_tests {
         let result = super::sanitize_log_input("info", "\x00\x01\x02");
         assert!(result.is_err());
     }
+}
+
+    #[test]
+    fn test_csp_includes_frame_src_none() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let conf_path = std::path::PathBuf::from(manifest_dir).join("tauri.conf.json");
+        let raw = std::fs::read_to_string(&conf_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", conf_path.display()));
+        let json: serde_json::Value = serde_json::from_str(&raw)
+            .unwrap_or_else(|e| panic!("parse {}: {e}", conf_path.display()));
+        let csp = json
+            .get("app")
+            .and_then(|a| a.get("security"))
+            .and_then(|s| s.get("csp"))
+            .and_then(|c| c.as_str())
+            .unwrap_or_else(|| panic!("no CSP at {}", conf_path.display()));
+
+        for directive in &["frame-src 'none'", "object-src 'none'", "base-uri 'none'", "form-action 'none'"] {
+            assert!(
+                csp.contains(directive),
+                "CSP must contain `{}` (got: {csp})",
+                directive
+            );
+        }
 }
