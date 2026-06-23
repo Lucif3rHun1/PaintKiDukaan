@@ -182,15 +182,17 @@ export function VendorList({
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((v) => (
+                  {items.map((v, i) => (
                     <tr
                       key={v.id}
                       onClick={() => onSelect?.(v)}
                       className={[
                         "cursor-pointer border-b border-border last:border-b-0",
                         "transition-colors hover:bg-muted/50",
+                        "animate-in fade-in slide-in-from-bottom-2 duration-200",
                         v.is_active ? "" : "opacity-60",
                       ].join(" ")}
+                      style={{ animationDelay: `${i * 40}ms` }}
                     >
                       <td className="px-3 py-2.5 font-medium text-foreground">
                         {v.name}

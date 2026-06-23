@@ -208,10 +208,11 @@ export function Dashboard() {
               </div>
             ) : (
               <ul className="divide-y divide-border">
-                {recent.map((s) => (
+                {recent.map((s, i) => (
                   <li
                     key={s.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                    className="flex animate-in fade-in slide-in-from-bottom-2 items-center justify-between gap-3 px-4 py-3 text-sm duration-200"
+                    style={{ animationDelay: `${i * 50}ms` }}
                   >
                     <div className="flex min-w-0 flex-col">
                       <span className="truncate font-medium">{s.no}</span>
@@ -308,10 +309,11 @@ export function Dashboard() {
                 </div>
               ) : (
                 <ul className="divide-y divide-border">
-                  {lowStock.slice(0, 6).map((it) => (
+                  {lowStock.slice(0, 6).map((it, i) => (
                     <li
                       key={it.id}
-                      className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"
+                      className="flex animate-in fade-in slide-in-from-bottom-2 items-center justify-between gap-3 px-4 py-2.5 text-sm duration-200"
+                      style={{ animationDelay: `${i * 50}ms` }}
                     >
                       <div className="flex min-w-0 flex-col">
                         <span className="truncate font-medium">{it.name}</span>

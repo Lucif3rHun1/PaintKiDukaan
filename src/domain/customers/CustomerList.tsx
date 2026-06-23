@@ -167,15 +167,17 @@ export function CustomerList({
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((c) => (
+                  {items.map((c, i) => (
                     <tr
                       key={c.id}
                       onClick={() => onSelect?.(c)}
                       className={[
                         "cursor-pointer border-b border-border last:border-b-0",
                         "transition-colors hover:bg-muted/50",
+                        "animate-in fade-in slide-in-from-bottom-2 duration-200",
                         c.is_active ? "" : "opacity-60",
                       ].join(" ")}
+                      style={{ animationDelay: `${i * 40}ms` }}
                     >
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">

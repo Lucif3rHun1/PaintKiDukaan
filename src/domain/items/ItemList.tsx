@@ -486,10 +486,11 @@ export function ItemList({ role }: Props) {
           <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {itemBrand}
           </h3>
-          {[...categories.entries()].map(([itemCategory, rows]) => (
+          {[...categories.entries()].map(([itemCategory, rows], catIdx) => (
             <div
               key={itemCategory}
-              className="overflow-hidden rounded-lg border border-border bg-card"
+              className="animate-in fade-in slide-in-from-bottom-2 overflow-hidden rounded-lg border border-border bg-card duration-200"
+              style={{ animationDelay: `${catIdx * 40}ms` }}
             >
               <div className="border-b border-border bg-muted px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
                 {itemCategory}
