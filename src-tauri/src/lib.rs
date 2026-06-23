@@ -287,8 +287,13 @@ pub fn run() {
             commands::printers::cmd_delete_printer,
             commands::printers::cmd_set_default_printer,
             commands::printers::cmd_get_default_printer,
+            // Receipt printing (Slice D)
+            commands::printing::cmd_print_receipt,
             // Dev receipt PDF fallback (Slice D, macOS/Linux only)
             commands::printing::cmd_print_receipt_dev,
+            // Bulk imports (Slice C)
+            commands::import::cmd_import_items_csv,
+            commands::import::cmd_import_inward_csv,
             // Alerts (Slice E)
             commands::alerts::cmd_list_alerts,
             commands::alerts::cmd_unread_alert_count,

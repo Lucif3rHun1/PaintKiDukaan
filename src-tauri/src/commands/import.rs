@@ -388,7 +388,7 @@ fn auto_sku(tx: &rusqlite::Connection) -> String {
 #[tauri::command(rename_all = "snake_case")]
 pub fn cmd_import_inward_csv(
     state: tauri::State<'_, AppState>,
-    csv_data: String,
+    csv_text: String,
 ) -> AppResult<ImportResult> {
     let guard = state
         .db
@@ -398,7 +398,7 @@ pub fn cmd_import_inward_csv(
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
 
-    let (headers, rows) = parse_csv(&csv_data);
+    let (headers, rows) = parse_csv(&csv_text);
     if headers.is_empty() {
         return Err(AppError::Validation("CSV has no headers".into()));
     }

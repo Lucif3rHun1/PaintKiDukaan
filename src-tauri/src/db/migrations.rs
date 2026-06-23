@@ -1,45 +1,5 @@
-use rusqlite::Connection;
-use rusqlite_migration::{Migrations, M};
-
-/// Canonical schema (single source of truth, all tables + indexes + seed data).
-/// Versioned only via this file — every post-launch change is a new migration in
-/// `migrations/NNN__slug.sql` registered below.
-const SCHEMA: &str = include_str!("schema.sql");
-const MIGRATION_001: &str = include_str!("migrations/001__add_missing_tables.sql");
-const MIGRATION_002: &str = include_str!("migrations/002__add_units_dimension_and_brands.sql");
-const MIGRATION_003: &str = include_str!("migrations/003__add_items_brand_unit_sell_unit.sql");
-const MIGRATION_004: &str = include_str!("migrations/004__drop_location_text.sql");
-const MIGRATION_005: &str = include_str!("migrations/005__daily_counters_and_return_payments.sql");
-const MIGRATION_006: &str = include_str!("migrations/006__update_customer_types.sql");
-const MIGRATION_007: &str = include_str!("migrations/007__add_no_to_sale_returns.sql");
-const MIGRATION_008: &str = include_str!("migrations/008__printers.sql");
-const MIGRATION_009: &str = include_str!("migrations/009__reconcile_schema_to_rust.sql");
-
-/// Migration set — canonical baseline. All future schema changes go in
-/// `migrations/` subdirectory and are appended after `M::up(SCHEMA)`.
-fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![
-        M::up(SCHEMA),
-        M::up(MIGRATION_001),
-        M::up(MIGRATION_002),
-        M::up(MIGRATION_003),
-        M::up(MIGRATION_004),
-        M::up(MIGRATION_005),
-        M::up(MIGRATION_006),
-        M::up(MIGRATION_007),
-        M::up(MIGRATION_008),
-        M::up(MIGRATION_009),
-    ])
-}
-
-/// Run all pending migrations against `conn`.
-pub fn run(conn: &mut Connection) -> Result<(), rusqlite_migration::Error> {
-    migrations().to_latest(conn)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rusqlite::Connection;
 
     #[test]

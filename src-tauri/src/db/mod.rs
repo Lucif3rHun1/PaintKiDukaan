@@ -42,13 +42,13 @@ impl Db {
     ///   1. `key`                — set the encryption key
     ///   2. `cipher_compatibility=4` — SQLCipher 4 compat
     ///   3. `cipher_page_size=4096`  — before any schema work
-    ///   4. Schema bootstrap: fresh DBs get the complete final schema
-    ///      directly (no migrations); existing DBs run the migration chain.
+    ///   4. Schema bootstrap: every DB gets the complete final schema.
+    ///      Fresh DBs apply it directly; existing DBs are wiped first.
     ///   5. `journal_mode=WAL`
     ///   6. `busy_timeout=5000`
     ///   7. `foreign_keys=ON`
     pub fn open(path: &Path, dek: &[u8; 32]) -> Result<Self, rusqlite::Error> {
-        let mut conn = Connection::open(path)?;
+        let conn = Connection::open(path)?;
 
         // -- Key material --------------------------------------------------
         let key_hex = hex::encode(dek);
@@ -61,22 +61,17 @@ impl Db {
         )?;
 
         // -- Schema bootstrap ---------------------------------------------
-        // Fresh DB: apply the complete final schema (absorbs all migrations).
-        // Existing DB: run the migration chain (hash-compatible).
+        // Hard cutover: fresh DBs apply the final schema directly. Existing DBs
+        // that do not yet have the `_schema_final_applied` marker are wiped and
+        // re-bootstrapped from scratch exactly once.
         if Self::is_fresh_database(&conn)? {
             conn.execute_batch(SCHEMA_FINAL)?;
-            // Mark the DB as bootstrapped so that subsequent opens (e.g. after
-            // recovery setup → drop → reopen) recognise the final schema and
-            // skip the migration chain (which uses plain CREATE TABLE and would
-            // fail on existing tables).
-            conn.execute_batch("CREATE TABLE IF NOT EXISTS _schema_final_applied (dummy INTEGER)")?;
         } else if !Self::has_final_schema(&conn)? {
-            migrations::run(&mut conn).map_err(|e| {
-                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
-                    e.to_string(),
-                )))
-            })?;
+            Self::wipe_schema(&conn)?;
+            conn.execute_batch(SCHEMA_FINAL)?;
         }
+        // Marker table so tooling can recognise a schema_final-bootstrapped DB.
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS _schema_final_applied (dummy INTEGER)")?;
 
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
@@ -122,7 +117,7 @@ impl Db {
 
     /// Return `true` when the database was bootstrapped with `schema_final.sql`
     /// (indicated by the `_schema_final_applied` marker table).  Such databases
-    /// already have the final schema and must not run the migration chain.
+    /// already have the final schema and must not be wiped again.
     fn has_final_schema(conn: &Connection) -> Result<bool, rusqlite::Error> {
         conn.query_row(
             "SELECT COUNT(*) > 0 FROM sqlite_master \
@@ -132,10 +127,32 @@ impl Db {
         )
     }
 
+    /// Drop every user-created table so `SCHEMA_FINAL` can be applied cleanly.
+    /// Foreign keys are disabled during the drop to avoid dependency-order
+    /// problems; they are re-enabled before the schema is re-created.
+    fn wipe_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
+        conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+        let tables: Vec<String> = conn
+            .prepare(
+                "SELECT name FROM sqlite_master \
+                 WHERE type='table' \
+                   AND name NOT LIKE 'sqlite_%' \
+                   AND name != '_schema_final_applied' \
+                 ORDER BY name",
+            )?
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for tbl in tables {
+            conn.execute(&format!("DROP TABLE IF EXISTS \"{tbl}\""), [])?;
+        }
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        Ok(())
+    }
+
     /// Open an in-memory SQLCipher database for unit tests.
     #[cfg(any(test, feature = "test-harness"))]
     pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
-        let mut conn = Connection::open_in_memory()?;
+        let conn = Connection::open_in_memory()?;
         let dek = [0x42u8; 32];
         let key_hex = hex::encode(dek);
         conn.execute_batch(&format!("PRAGMA key = \"x'{key_hex}'\";"))?;
@@ -145,18 +162,11 @@ impl Db {
         )?;
         if Self::is_fresh_database(&conn)? {
             conn.execute_batch(SCHEMA_FINAL)?;
-            // Mark the DB as bootstrapped so that subsequent opens (e.g. after
-            // recovery setup → drop → reopen) recognise the final schema and
-            // skip the migration chain (which uses plain CREATE TABLE and would
-            // fail on existing tables).
-            conn.execute_batch("CREATE TABLE IF NOT EXISTS _schema_final_applied (dummy INTEGER)")?;
         } else if !Self::has_final_schema(&conn)? {
-            migrations::run(&mut conn).map_err(|e| {
-                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
-                    e.to_string(),
-                )))
-            })?;
+            Self::wipe_schema(&conn)?;
+            conn.execute_batch(SCHEMA_FINAL)?;
         }
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS _schema_final_applied (dummy INTEGER)")?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\
              PRAGMA busy_timeout = 5000;\
