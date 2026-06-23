@@ -6,7 +6,6 @@ import {
   Banknote,
   CalendarClock,
   PackageOpen,
-  PauseCircle,
   Receipt,
   ShoppingCart,
   TrendingUp,
@@ -21,10 +20,10 @@ import { Alert } from "../../components/ui";
 import { EmptyState } from "../../components/ui";
 import { useSecurity } from "../../lib/security/state";
 import { ipc, type BackupStatus } from "../lib/ipc";
-import { listSales, listHeld, dailySales } from "../../pos/api";
+import { listSales, dailySales } from "../../pos/api";
 import { listItems } from "../../domain/items/api";
 import type { Sale, DailySalesReport } from "../../pos/types";
-import type { Item, HeldBill } from "../../domain/types";
+import type { Item } from "../../domain/types";
 
 type LoadState = "loading" | "ready" | "partial" | "error";
 
@@ -63,7 +62,6 @@ export function Dashboard() {
   const [backup, setBackup] = useState<BackupStatus | null>(null);
   const [today, setToday] = useState<DailySalesReport | null>(null);
   const [recent, setRecent] = useState<Sale[]>([]);
-  const [held, setHeld] = useState<HeldBill[]>([]);
   const [lowStock, setLowStock] = useState<Item[]>([]);
   const [activeItemCount, setActiveItemCount] = useState<number | null>(null);
 
@@ -77,11 +75,10 @@ export function Dashboard() {
         errors.push(msg);
       };
       try {
-        const [b, t, s, h, low, total] = await Promise.allSettled([
+        const [b, t, s, low, total] = await Promise.allSettled([
           ipc.backupStatus(),
           dailySales(todayDate, todayDate),
           listSales(undefined, undefined, 8),
-          listHeld(),
           listItems({ low_stock_only: true, limit: 8 }),
           listItems({ limit: 1 }),
         ]);
@@ -92,8 +89,6 @@ export function Dashboard() {
         else setErr(t.reason);
         if (s.status === "fulfilled") setRecent(s.value);
         else setErr(s.reason);
-        if (h.status === "fulfilled") setHeld(h.value);
-        else setErr(h.reason);
         if (low.status === "fulfilled") setLowStock(low.value);
         else setErr(low.reason);
         if (total.status === "fulfilled") setActiveItemCount(total.value.length);
@@ -113,7 +108,6 @@ export function Dashboard() {
   const todayTotal = today?.grand_total ?? 0;
   const billCount = today?.bill_count ?? 0;
   const totalDiscount = today?.total_discount ?? 0;
-  const heldCount = held.length;
   const lowStockCount = lowStock.length;
   const backupAge = backup?.backup_age_hours ?? null;
   const backupStale = backupAge !== null && backupAge > 24;
@@ -181,16 +175,6 @@ export function Dashboard() {
         >
           <span className="text-2xl font-semibold tabular-nums">
             {state === "loading" ? "—" : lowStockCount}
-          </span>
-        </Kpi>
-        <Kpi
-          icon={PauseCircle}
-          label="Held bills"
-          loading={state === "loading"}
-          tone={heldCount > 0 ? "info" : undefined}
-        >
-          <span className="text-2xl font-semibold tabular-nums">
-            {state === "loading" ? "—" : heldCount}
           </span>
         </Kpi>
       </section>
@@ -350,50 +334,6 @@ export function Dashboard() {
         </div>
       </section>
 
-      {heldCount > 0 && (
-        <Card>
-          <Card.Header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Held bills</h3>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => (window.location.hash = "#/sales")}
-            >
-              Resume
-            </Button>
-          </Card.Header>
-          <Card.Body className="p-0">
-            <ul className="divide-y divide-border">
-              {held.slice(0, 4).map((h) => (
-                <li
-                  key={h.id}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                >
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate font-medium">
-                      Hold #{h.id}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {h.note || "Untitled hold"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>
-                      {new Date(h.created_at).toLocaleString("en-IN", {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                    <Money paise={h.total_paise} compact />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card.Body>
-        </Card>
-      )}
     </div>
   );
 }

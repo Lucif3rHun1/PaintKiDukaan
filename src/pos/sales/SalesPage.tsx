@@ -1,5 +1,5 @@
 // Production sales page — quotation vs final bill, customer picker, item
-// search + cart, split payments, hold bill, recent sales, role-gated pricing.
+// search + cart, split payments, recent sales, role-gated pricing.
 import {
   useCallback,
   useEffect,
@@ -9,11 +9,7 @@ import {
 } from "react";
 import {
   ArrowLeft,
-  ArrowRight,
-  FilePlus2,
-  Pause,
   Save,
-  Trash2,
   UserPlus,
   X,
 } from "lucide-react";
@@ -38,9 +34,6 @@ import { createCustomerInline } from "../../domain/ipc";
 import {
   convertQuotation,
   createSale,
-  deleteHeld,
-  holdBill,
-  listHeld,
   listSales,
 } from "../api";
 import { formatRupeesFromPaise } from "../../lib/money";
@@ -85,12 +78,6 @@ export default function SalesPage({ user, onExit }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
-  const [heldOpen, setHeldOpen] = useState(false);
-  const [held, setHeld] = useState<HeldBill[]>([]);
-  const [loadingHeld, setLoadingHeld] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
-
-  const heldCount = held.length;
 
   // ---- Computed totals ----
   const subtotal = useMemo(
@@ -206,37 +193,6 @@ export default function SalesPage({ user, onExit }: Props) {
       .finally(() => setBusy(false));
   }
 
-  // ---- Hold bill ----
-  function handleHold() {
-    if (lines.length === 0) {
-      toast.warning("Cart is empty");
-      return;
-    }
-    const payload: NewSale = {
-      customer_id: customer?.id ?? null,
-      kind,
-      bill_discount: billDiscount,
-      paid_amount: 0,
-      payment_modes: [],
-      validity_days: kind === "quotation" ? validityDays : null,
-      acknowledge_flag: false,
-      lines,
-    };
-    setBusy(true);
-    holdBill({ payload_json: JSON.stringify(payload), note: customer?.name ?? null })
-      .then((id) => {
-        toast.success(`Bill held (#${id})`);
-        setLines([]);
-        setBillDiscount(0);
-        setSplits([]);
-        setCustomer(null);
-      })
-      .catch((e: unknown) =>
-        toast.error(e instanceof Error ? e.message : String(e)),
-      )
-      .finally(() => setBusy(false));
-  }
-
   // ---- Convert quotation ----
   function handleConvert(sale: Sale) {
     if (sale.status !== "quotation") return;
@@ -271,60 +227,6 @@ export default function SalesPage({ user, onExit }: Props) {
   useEffect(() => {
     refreshRecent();
   }, [refreshRecent]);
-
-  // ---- Held bills ----
-  const refreshHeld = useCallback(() => {
-    setLoadingHeld(true);
-    listHeld()
-      .then(setHeld)
-      .catch((e: unknown) =>
-        toast.error(e instanceof Error ? e.message : String(e)),
-      )
-      .finally(() => setLoadingHeld(false));
-  }, []);
-
-  useEffect(() => {
-    refreshHeld();
-  }, [refreshHeld]);
-
-  function handleLoadHeld(bill: HeldBill) {
-    try {
-      const payload = JSON.parse(bill.cart_json) as NewSale;
-      // Resolve customer if any
-      if (payload.customer_id && (!customer || customer.id !== payload.customer_id)) {
-        // Best-effort: customer is not restored to the picker; leave null and
-        // set the id via a hint. NewSale payload sends customer_id, so it
-        // is preserved on save.
-      }
-      setKind(payload.kind ?? "final");
-      setLines(payload.lines ?? []);
-      setBillDiscount(payload.bill_discount ?? 0);
-      setSplits(payload.kind === "final" ? payload.payment_modes ?? [] : []);
-      if (payload.validity_days) setValidityDays(payload.validity_days);
-      setHeldOpen(false);
-      toast.success(`Loaded held bill #${bill.id}`);
-    } catch (e) {
-      toast.error("Failed to parse held bill");
-    }
-  }
-
-  function handleDeleteHeld(id: number) {
-    setDeleteTarget(id);
-  }
-
-  function confirmDeleteHeld() {
-    if (deleteTarget === null) return;
-    const id = deleteTarget;
-    setDeleteTarget(null);
-    deleteHeld(id)
-      .then(() => {
-        toast.success(`Held bill #${id} deleted`);
-        refreshHeld();
-      })
-      .catch((e: unknown) =>
-        toast.error(e instanceof Error ? e.message : String(e)),
-      );
-  }
 
   // ---- Render ----
   return (
@@ -361,30 +263,6 @@ export default function SalesPage({ user, onExit }: Props) {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={Pause}
-            onClick={handleHold}
-            disabled={lines.length === 0 || busy}
-          >
-            Hold bill
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={FilePlus2}
-            onClick={() => setHeldOpen(true)}
-          >
-            Held bills
-            {heldCount > 0 && (
-              <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary tabular-nums">
-                {heldCount}
-              </span>
-            )}
-          </Button>
         </div>
       </div>
 
@@ -706,96 +584,6 @@ export default function SalesPage({ user, onExit }: Props) {
         onCreate={handleCreateCustomer}
       />
 
-      {/* Held bills dialog */}
-      <InlineDialog
-        open={heldOpen}
-        onClose={() => setHeldOpen(false)}
-        title="Held bills"
-        description="Restore a held bill into the cart."
-        size="md"
-      >
-        {loadingHeld ? (
-          <div className="space-y-2 py-2">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-        ) : held.length === 0 ? (
-          <div className="py-4">
-            <EmptyState
-              title="No held bills"
-              description="Use Hold bill to save the current cart for later."
-            />
-          </div>
-        ) : (
-          <ul className="divide-y divide-border">
-            {held.map((h) => (
-              <li
-                key={h.id}
-                className="flex items-center justify-between gap-3 py-2 text-sm"
-              >
-                <div>
-                  <div className="font-medium text-foreground">
-                    Held bill #{h.id}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {h.note ?? "(no note)"} · {h.created_at}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Money paise={h.total_paise} muted />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    icon={ArrowRight}
-                    onClick={() => handleLoadHeld(h)}
-                  >
-                    Load
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteHeld(h.id)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    title="Delete"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </InlineDialog>
-
-      {/* Delete confirmation dialog */}
-      <InlineDialog
-        open={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
-        title="Delete held bill?"
-        description={`Held bill #${deleteTarget} will be removed permanently.`}
-        size="sm"
-      >
-        <div className="flex justify-end gap-2 pt-2">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => setDeleteTarget(null)}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            size="sm"
-            icon={Trash2}
-            onClick={confirmDeleteHeld}
-          >
-            Delete
-          </Button>
-        </div>
-      </InlineDialog>
     </div>
   );
 }

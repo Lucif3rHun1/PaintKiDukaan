@@ -98,20 +98,6 @@ pub struct ConvertQuotation {
     pub acknowledge_flag: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct HoldBill {
-    pub payload_json: String,
-    pub note: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct HeldBill {
-    pub id: i64,
-    pub note: Option<String>,
-    pub created_at: String,
-    pub payload_json: String,
-}
-
 // -----------------------------------------------------------------------------
 // Errors (typed so the frontend can distinguish business-rule rejections from
 // infrastructure failures).
@@ -673,44 +659,6 @@ fn row_to_sale_header(r: &rusqlite::Row<'_>) -> rusqlite::Result<Sale> {
 }
 
 // -----------------------------------------------------------------------------
-// Held / parked bills (§7.3).
-// -----------------------------------------------------------------------------
-
-pub fn hold_bill(db: &Db, user_id: i64, hb: HoldBill) -> anyhow::Result<i64> {
-    db.with_conn_immediate(|c| -> anyhow::Result<i64> {
-        let id: i64 = c.query_row(
-            "INSERT INTO held_bills(payload_json,note,user_id,created_at)
-             VALUES (?1,?2,?3,?4) RETURNING id",
-            params![hb.payload_json, hb.note, user_id, now()],
-            |r| r.get(0),
-        )?;
-        Ok(id)
-    })
-}
-
-pub fn list_held(db: &Db) -> anyhow::Result<Vec<HeldBill>> {
-    db.with_conn(|c| -> anyhow::Result<Vec<HeldBill>> {
-        let mut stmt =
-            c.prepare("SELECT id,note,created_at,payload_json FROM held_bills ORDER BY id DESC")?;
-        let rows = stmt.query_map([], |r| {
-            Ok(HeldBill {
-                id: r.get(0)?,
-                note: r.get(1)?,
-                created_at: r.get(2)?,
-                payload_json: r.get(3)?,
-            })
-        })?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
-    })
-}
-
-pub fn delete_held(db: &Db, id: i64) -> anyhow::Result<usize> {
-    db.with_conn(|c| -> anyhow::Result<usize> {
-        Ok(c.execute("DELETE FROM held_bills WHERE id = ?1", params![id])?)
-    })
-}
-
-// -----------------------------------------------------------------------------
 // Tauri command surface.
 // -----------------------------------------------------------------------------
 
@@ -797,45 +745,6 @@ pub fn cmd_list_sales(
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     list(db, status.as_deref(), limit.unwrap_or(100)).map_err(|e| AppError::Internal(e.to_string()))
-}
-
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_hold_bill(state: tauri::State<'_, AppState>, hb: HoldBill) -> AppResult<i64> {
-    ipc_auth::authorize_err("cmd_hold_bill", state.inner())?;
-    let guard = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
-    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let session = state
-        .session
-        .lock()
-        .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
-    let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user_id = user.id;
-    hold_bill(db, user_id, hb).map_err(|e| AppError::Internal(e.to_string()))
-}
-
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_list_held(state: tauri::State<'_, AppState>) -> AppResult<Vec<HeldBill>> {
-    ipc_auth::authorize_err("cmd_list_held", state.inner())?;
-    let guard = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
-    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    list_held(db).map_err(|e| AppError::Internal(e.to_string()))
-}
-
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_delete_held(state: tauri::State<'_, AppState>, id: i64) -> AppResult<usize> {
-    ipc_auth::authorize_err("cmd_delete_held", state.inner())?;
-    let guard = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
-    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    delete_held(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 // -----------------------------------------------------------------------------

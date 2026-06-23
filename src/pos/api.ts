@@ -36,13 +36,6 @@ export const listSales = (fromDate?: string, toDate?: string, limit = 100): Prom
   isTauri()
     ? tauriInvoke<Sale[]>("cmd_list_sales", { from_date: fromDate, to_date: toDate, limit })
     : Promise.resolve([]);
-export const holdBill = (hb: { payload_json: string; note?: string | null }): Promise<number> =>
-  isTauri() ? tauriInvoke<number>("cmd_hold_bill", { hb }) : Promise.resolve(0);
-export const listHeld = (): Promise<HeldBill[]> =>
-  isTauri() ? tauriInvoke<HeldBill[]>("cmd_list_held") : Promise.resolve([]);
-export const deleteHeld = (id: number): Promise<boolean> =>
-  isTauri() ? tauriInvoke<boolean>("cmd_delete_held", { id }) : Promise.resolve(false);
-
 // ----- Inward / purchases -----
 export const createInward = (req: NewPurchase): Promise<PurchaseCreated> =>
   isTauri() ? tauriInvoke<PurchaseCreated>("cmd_create_inward", { req }) : Promise.resolve({ id: 0, print_label: false });
