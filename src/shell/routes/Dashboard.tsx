@@ -3,13 +3,22 @@ import {
   Activity,
   AlertTriangle,
   Archive,
+  ArrowDownToLine,
   Banknote,
+  BarChart3,
+  Bell,
+  CalendarCheck,
   CalendarClock,
+  ChevronRight,
   PackageOpen,
+  PlusCircle,
   Receipt,
+  ScanLine,
   ShoppingCart,
   TrendingUp,
+  UserPlus,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 import { Card } from "../../components/ui";
 import { Money } from "../../components/ui";
@@ -21,12 +30,32 @@ import { EmptyState } from "../../components/ui";
 import { useSecurity } from "../../lib/security/state";
 import { formatDateForDisplay } from "../../lib/date";
 import { ipc, type BackupStatus } from "../lib/ipc";
-import { listSales, dailySales } from "../../pos/api";
+import { listSales, dailySales, listDayClose } from "../../pos/api";
 import { listItems } from "../../domain/items/api";
+import { fetchAlertsWithCount, Severity } from "../../domain/alerts";
 import type { Sale, DailySalesReport } from "../../pos/types";
 import type { Item } from "../../domain/types";
 
 type LoadState = "loading" | "ready" | "partial" | "error";
+
+const ALERTS_QUERY_KEY = ["alerts"] as const;
+const SEVERITY_RANK: Record<Severity, number> = {
+  error: 0,
+  warning: 1,
+  info: 2,
+};
+
+function severityToAlertVariant(severity: Severity): "destructive" | "warning" | "info" {
+  switch (severity) {
+    case "error":
+      return "destructive";
+    case "warning":
+      return "warning";
+    case "info":
+    default:
+      return "info";
+  }
+}
 
 function startOfTodayIso(): string {
   const d = new Date();
@@ -53,6 +82,113 @@ function safeText(node: React.ReactNode, fallback = "0"): string {
   return fallback;
 }
 
+const REFETCH_INTERVAL = 30_000;
+
+function startOfYesterdayIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
+
+function startOfWeekIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 6);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
+
+function useDayCloseOverdue() {
+  return useQuery({
+    queryKey: ["dashboard", "dayCloseLatest"],
+    queryFn: async () => {
+      const list = await listDayClose(1);
+      const latest = list[0]?.date ?? null;
+      const today = startOfTodayIso();
+      return { latest, overdue: !latest || latest < today };
+    },
+    refetchInterval: REFETCH_INTERVAL,
+  });
+}
+
+interface QuickActionProps {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  subtitle: string;
+  href: string;
+  badge?: React.ReactNode;
+}
+
+function QuickAction({ icon: Icon, title, subtitle, href, badge }: QuickActionProps) {
+  return (
+    <a
+      href={href}
+      className="group relative flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm shadow-foreground/5 ring-1 ring-border/30 transition-all hover:-translate-y-0.5 hover:bg-accent hover:shadow-md active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold text-card-foreground">{title}</span>
+          {badge}
+        </div>
+        <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+    </a>
+  );
+}
+
+function QuickActions() {
+  const { data: dayClose } = useDayCloseOverdue();
+  return (
+    <section aria-label="Quick actions" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <QuickAction
+        icon={PlusCircle}
+        title="New Sale"
+        subtitle="Create a bill"
+        href="#/sales/new"
+      />
+      <QuickAction
+        icon={ArrowDownToLine}
+        title="New Inward"
+        subtitle="Record purchase"
+        href="#/inward"
+      />
+      <QuickAction
+        icon={CalendarCheck}
+        title="Day Close"
+        subtitle="Close today’s books"
+        href="#/sales-report"
+        badge={
+          dayClose?.overdue ? (
+            <Badge variant="warning" size="sm">Overdue</Badge>
+          ) : null
+        }
+      />
+      <QuickAction
+        icon={UserPlus}
+        title="Add Customer"
+        subtitle="Register new party"
+        href="#/customers"
+      />
+      <QuickAction
+        icon={ScanLine}
+        title="Scan Barcode"
+        subtitle="Open inward scanner"
+        href="#/inward"
+      />
+      <QuickAction
+        icon={BarChart3}
+        title="View Reports"
+        subtitle="Sales & inventory"
+        href="#/sales-report"
+      />
+    </section>
+  );
+}
+
 export function Dashboard() {
   const session = useSecurity((s) => s.session);
   const userName = session.user?.name ?? "Owner";
@@ -65,6 +201,24 @@ export function Dashboard() {
   const [recent, setRecent] = useState<Sale[]>([]);
   const [lowStock, setLowStock] = useState<Item[]>([]);
   const [activeItemCount, setActiveItemCount] = useState<number | null>(null);
+
+  const { data: alertsData, isLoading: alertsLoading } = useQuery({
+    queryKey: ALERTS_QUERY_KEY,
+    queryFn: fetchAlertsWithCount,
+    refetchInterval: REFETCH_INTERVAL,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    staleTime: 15_000,
+  });
+
+  const topAlerts = (alertsData?.alerts ?? [])
+    .filter((a) => a.severity !== "info")
+    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])
+    .slice(0, 3);
+
+  const openAlertBell = () => {
+    window.dispatchEvent(new CustomEvent("open-alert-bell"));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +291,32 @@ export function Dashboard() {
           )}
         </div>
       </header>
+
+      <QuickActions />
+
+      {!alertsLoading && topAlerts.length > 0 && (
+        <section aria-label="High severity alerts" className="space-y-3">
+          {topAlerts.map((alert) => (
+            <Alert
+              key={alert.id}
+              title={alert.title}
+              variant={severityToAlertVariant(alert.severity)}
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span>{alert.message}</span>
+                <button
+                  type="button"
+                  onClick={openAlertBell}
+                  className="inline-flex items-center gap-1 text-xs font-medium underline-offset-2 hover:underline"
+                >
+                  <Bell className="h-3 w-3" />
+                  View all
+                </button>
+              </div>
+            </Alert>
+          ))}
+        </section>
+      )}
 
       {errorMsg && state !== "ready" && (
         <Alert
