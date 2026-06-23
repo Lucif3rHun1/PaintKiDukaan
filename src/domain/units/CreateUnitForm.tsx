@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
+import { Button } from "../../components/ui";
 import { createUnit, type UnitDimension } from "./api";
 import type { Unit } from "../types";
 
@@ -26,7 +27,10 @@ export function CreateUnitForm({ onSaved, onCancel }: Props) {
     <Field label="Label"><input value={label} onChange={(e) => setLabel(e.target.value)} className="input" /></Field>
     <Field label="Dimension" required><select value={dimension} onChange={(e) => setDimension(e.target.value as UnitDimension)} className="input"><option value="volume">volume</option><option value="mass">mass</option><option value="area">area</option><option value="count">count</option></select></Field>
     {error && <p className="text-sm text-destructive">{error}</p>}
-    <div className="flex justify-end gap-2"><button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:bg-muted">Cancel</button><button type="submit" disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{busy ? "Saving…" : "Create"}</button></div>
+    <div className="flex justify-end gap-2 border-t border-border pt-4">
+      <Button type="button" variant="secondary" onClick={onCancel} disabled={busy}>Cancel</Button>
+      <Button type="submit" loading={busy} disabled={busy}>{busy ? "Saving…" : "Create"}</Button>
+    </div>
   </form>;
 }
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) { return <label className="block"><span className="mb-1 block text-sm font-medium text-muted-foreground">{label}{required ? " *" : ""}</span>{children}</label>; }

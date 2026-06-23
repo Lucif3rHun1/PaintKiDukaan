@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Money, MoneyInput } from "../../components/ui";
+import { Button, Money, MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { recordCustomerPayment } from "./api";
 import type { AppError, Customer, CustomerOutstanding, RecordCustomerPaymentArgs } from "../types";
@@ -58,33 +58,25 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
 
   if (outstanding) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+      <div className="space-y-4">
         <h2 className="text-lg font-semibold">Payment recorded</h2>
-        <p className="mt-2 text-sm text-foreground">
+        <p className="text-sm text-foreground">
           New outstanding:{" "}
           <span className="font-semibold">
             <Money paise={outstanding.outstanding} />
           </span>
         </p>
-        <div className="mt-4 flex justify-end">
-          <button
-            onClick={onCancel}
-            className="rounded border border-border px-4 py-2 text-sm hover:bg-card"
-          >
+        <div className="flex justify-end border-t border-border pt-4">
+          <Button onClick={onCancel} variant="secondary">
             Close
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="grid max-w-md gap-4 rounded-lg border border-border bg-card p-6 shadow-sm"
-    >
-      <h2 className="text-lg font-semibold">Pay {customer.name}</h2>
-
+    <form onSubmit={submit} className="grid gap-4">
       <Field label="Amount" required>
         <MoneyInput value={amount} onChange={setAmount} min={0} required />
       </Field>
@@ -128,24 +120,20 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
         </p>
       )}
 
-      <div className="flex justify-end gap-2">
+      <div className="flex justify-end gap-2 border-t border-border pt-4">
         {onCancel && (
-          <button
+          <Button
             type="button"
+            variant="secondary"
             onClick={onCancel}
-            className="rounded border border-border px-4 py-2 text-sm hover:bg-card"
             disabled={busy}
           >
             Cancel
-          </button>
+          </Button>
         )}
-        <button
-          type="submit"
-          className="btn-primary"
-          disabled={busy}
-        >
+        <Button type="submit" loading={busy} disabled={busy}>
           {busy ? "Saving…" : "Record payment"}
-        </button>
+        </Button>
       </div>
     </form>
   );
