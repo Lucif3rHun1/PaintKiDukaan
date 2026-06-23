@@ -93,10 +93,10 @@ CREATE TABLE sale_items_new (
 );
 INSERT INTO sale_items_new (id, sale_id, item_id, qty, price, unit_type, line_discount, shade_note, line_order, created_at)
 SELECT
-  id, sale_id, item_id, qty, unit_price_paise,
+  sale_items.id, sale_items.sale_id, sale_items.item_id, sale_items.qty, sale_items.unit_price_paise,
   CASE WHEN u.code = 'box' THEN 'box' ELSE 'unit' END,
-  line_discount_paise, NULL, 0,
-  COALESCE(strftime('%Y-%m-%d %H:%M:%S', created_at/1000, 'unixepoch'), datetime('now'))
+  sale_items.line_discount_paise, NULL, 0,
+  COALESCE(strftime('%Y-%m-%d %H:%M:%S', sale_items.created_at/1000, 'unixepoch'), datetime('now'))
 FROM sale_items
 LEFT JOIN units u ON u.id = sale_items.unit_id;
 DROP TABLE sale_items;

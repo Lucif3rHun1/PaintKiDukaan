@@ -48,6 +48,14 @@ export const createInward = (req: NewPurchase): Promise<PurchaseCreated> =>
   isTauri() ? tauriInvoke<PurchaseCreated>("cmd_create_inward", { req }) : Promise.resolve({ id: 0, print_label: false });
 export const lastCost = (itemId: number): Promise<number | null> =>
   isTauri() ? tauriInvoke<number | null>("cmd_last_cost", { item_id: itemId }) : Promise.resolve(null);
+export const lastRetail = (itemId: number): Promise<number | null> =>
+  isTauri() ? tauriInvoke<number | null>("cmd_last_retail", { item_id: itemId }) : Promise.resolve(null);
+export const importInwardCsv = (
+  csvText: string,
+): Promise<{ imported: number; skipped: number; errors: string[] }> =>
+  isTauri()
+    ? tauriInvoke<{ imported: number; skipped: number; errors: string[] }>("cmd_import_inward_csv", { csv_text: csvText })
+    : Promise.resolve({ imported: 0, skipped: 0, errors: ["not in Tauri context"] });
 export const listPurchases = (fromDate?: string, toDate?: string, limit = 100): Promise<Purchase[]> =>
   isTauri()
     ? tauriInvoke<Purchase[]>("cmd_list_purchases", { from_date: fromDate, to_date: toDate, limit })

@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Barcode, Loader2, Plus, ScanBarcode, ScanLine, Trash2 } from "lucide-react";
-import { Card, Section, Button, EmptyState, Alert } from "../../components/ui";
+import { Button } from "../../../components/ui/Button";
+import { Card } from "../../../components/ui/Card";
+import { EmptyState } from "../../../components/ui/EmptyState";
+import { Section } from "../../../components/ui/Section";
 import { emit } from "@tauri-apps/api/event";
 import { ipc } from "../../lib/ipc";
 import { extractError } from "../../../lib/extractError";
@@ -62,7 +65,7 @@ function TabButton({
 function PrintersPanel() {
   const [printers, setPrinters] = useState<PrinterRecord[] | null>(null);
   const [editing, setEditing] = useState<NewPrinterInput | null>(null);
-  const [discovered, setDiscovered] = useState<DiscoveredPrinter[] | null>(null);
+  const [discovered, setDiscovered] = useState<DiscoveredPrinter[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,7 +139,11 @@ function PrintersPanel() {
 
   return (
     <div className="space-y-4">
-      {error ? <Alert variant="error">{error}</Alert> : null}
+      {error ? (
+        <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
       <Section
         title="Printers"
         description="Discover connected hardware or add a printer manually. Each printer is bound to a single use case (receipt or label)."
@@ -187,7 +194,7 @@ function PrintersPanel() {
         )}
       </Section>
 
-      {discovered && discovered.length > 0 ? (
+      {discovered.length > 0 ? (
         <Section title="Discovered printers" description="Pick one to add as a receipt or label printer.">
           <div className="grid gap-2 md:grid-cols-2">
             {discovered.map((d) => (
@@ -196,14 +203,14 @@ function PrintersPanel() {
                   <div className="min-w-0">
                     <div className="truncate font-medium">{d.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      {d.driver_name || "—"} · {d.port_name || "—"}
+                      {d.driver_name ?? "—"} · {d.port_name ?? "—"}
                     </div>
                   </div>
                   <Button
                     size="sm"
                     onClick={() => {
                       setEditing({ ...blankPrinter(), name: d.name, driver_name: d.driver_name, port_name: d.port_name });
-                      setDiscovered(null);
+                      setDiscovered([]);
                     }}
                   >
                     Add
@@ -417,8 +424,8 @@ function ScannerPanel() {
     let cancelled = false;
     (async () => {
       try {
-        const min = await ipc.getSetting<number>("scanner_min_length");
-        const avg = await ipc.getSetting<number>("scanner_avg_ms_per_char");
+        const min = await ipc.getSetting("scanner_min_length");
+        const avg = await ipc.getSetting("scanner_avg_ms_per_char");
         if (cancelled) return;
         if (typeof min === "number") setMinLength(min);
         if (typeof avg === "number") setAvgMs(avg);
@@ -459,7 +466,11 @@ function ScannerPanel() {
 
   return (
     <div className="space-y-4">
-      {error ? <Alert variant="error">{error}</Alert> : null}
+      {error ? (
+        <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
       <Section
         title="Scanner behaviour"
         description="Tune how the rdev keyboard-wedge hook converts keystrokes into a barcode event."

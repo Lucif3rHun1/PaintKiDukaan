@@ -1,7 +1,7 @@
 import { formatRupeesFromPaise } from "../../lib/money";
 import { ipc } from "../../shell/lib/ipc";
 import type { Sale } from "../types";
-import { printReceipt as printReceiptPdf } from "../print";
+import { buildReceiptPdfBlob, printReceipt as printReceiptPdf } from "../print";
 import type { DiscoveredPrinter } from "../../shell/routes/settings/printing-types";
 
 export interface ReceiptPrintSettings {
@@ -119,7 +119,15 @@ export async function printSaleReceipt(
   let devPdfPath: string | undefined;
   if (!isWindows()) {
     try {
-      devPdfPath = await ipc.printReceiptDev(sale.id);
+      const blob = await buildReceiptPdfBlob({
+        shop_name: settings.shopName,
+        shop_address: settings.shopAddress,
+        shop_phone: settings.shopPhone,
+        shop_gstin: settings.shopGstin,
+        sale,
+      });
+      const base64 = await blobToBase64(blob);
+      devPdfPath = await ipc.printReceiptDev(sale.id, base64);
     } catch {
       devPdfPath = undefined;
     }
@@ -128,11 +136,22 @@ export async function printSaleReceipt(
   return { destination: "pdf", devPdfPath };
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+  }
+  return btoa(binary);
+}
+
 export function printerMatchesUseCase(
   printer: DiscoveredPrinter,
   use: "receipt" | "label",
 ): boolean {
-  const driver = printer.driver_name.toLowerCase();
+  const driver = (printer.driver_name ?? "").toLowerCase();
   const name = printer.name.toLowerCase();
   if (use === "receipt") {
     if (driver.includes("label") || driver.includes("zebra") || driver.includes("datamax")) return false;
