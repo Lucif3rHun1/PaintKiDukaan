@@ -22,9 +22,11 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   InlineDialog,
   Money,
   MoneyInput,
+  Skeleton,
   cn,
 } from "../../components/ui";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
@@ -86,6 +88,9 @@ export default function SalesPage({ user, onExit }: Props) {
   const [heldOpen, setHeldOpen] = useState(false);
   const [held, setHeld] = useState<HeldBill[]>([]);
   const [loadingHeld, setLoadingHeld] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+
+  const heldCount = held.length;
 
   // ---- Computed totals ----
   const subtotal = useMemo(
@@ -279,8 +284,8 @@ export default function SalesPage({ user, onExit }: Props) {
   }, []);
 
   useEffect(() => {
-    if (heldOpen) refreshHeld();
-  }, [heldOpen, refreshHeld]);
+    refreshHeld();
+  }, [refreshHeld]);
 
   function handleLoadHeld(bill: HeldBill) {
     try {
@@ -304,7 +309,13 @@ export default function SalesPage({ user, onExit }: Props) {
   }
 
   function handleDeleteHeld(id: number) {
-    if (!confirm(`Delete held bill #${id}?`)) return;
+    setDeleteTarget(id);
+  }
+
+  function confirmDeleteHeld() {
+    if (deleteTarget === null) return;
+    const id = deleteTarget;
+    setDeleteTarget(null);
     deleteHeld(id)
       .then(() => {
         toast.success(`Held bill #${id} deleted`);
@@ -368,6 +379,11 @@ export default function SalesPage({ user, onExit }: Props) {
             onClick={() => setHeldOpen(true)}
           >
             Held bills
+            {heldCount > 0 && (
+              <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary tabular-nums">
+                {heldCount}
+              </span>
+            )}
           </Button>
         </div>
       </div>
@@ -625,13 +641,18 @@ export default function SalesPage({ user, onExit }: Props) {
               </Card.Header>
               <Card.Body className="p-0">
                 {loadingRecent ? (
-                  <p className="px-3 py-4 text-sm text-muted-foreground">
-                    Loading…
-                  </p>
+                  <div className="space-y-1 p-3">
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                  </div>
                 ) : recent.length === 0 ? (
-                  <p className="px-3 py-4 text-sm text-muted-foreground">
-                    No recent bills.
-                  </p>
+                  <div className="p-6">
+                    <EmptyState
+                      title="No recent bills"
+                      description="Finalised bills and quotations will show up here."
+                    />
+                  </div>
                 ) : (
                   <ul className="divide-y divide-border">
                     {recent.slice(0, 6).map((s) => (
@@ -694,11 +715,18 @@ export default function SalesPage({ user, onExit }: Props) {
         size="md"
       >
         {loadingHeld ? (
-          <p className="py-4 text-sm text-muted-foreground">Loading…</p>
+          <div className="space-y-2 py-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
         ) : held.length === 0 ? (
-          <p className="py-4 text-sm text-muted-foreground">
-            No held bills.
-          </p>
+          <div className="py-4">
+            <EmptyState
+              title="No held bills"
+              description="Use Hold bill to save the current cart for later."
+            />
+          </div>
         ) : (
           <ul className="divide-y divide-border">
             {held.map((h) => (
@@ -738,6 +766,35 @@ export default function SalesPage({ user, onExit }: Props) {
             ))}
           </ul>
         )}
+      </InlineDialog>
+
+      {/* Delete confirmation dialog */}
+      <InlineDialog
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete held bill?"
+        description={`Held bill #${deleteTarget} will be removed permanently.`}
+        size="sm"
+      >
+        <div className="flex justify-end gap-2 pt-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setDeleteTarget(null)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            size="sm"
+            icon={Trash2}
+            onClick={confirmDeleteHeld}
+          >
+            Delete
+          </Button>
+        </div>
       </InlineDialog>
     </div>
   );
