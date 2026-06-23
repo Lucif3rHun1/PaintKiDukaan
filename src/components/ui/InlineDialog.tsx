@@ -40,7 +40,7 @@ export function InlineDialog({
       )}
     >
       {(title || description) && (
-        <div className="flex items-start justify-between px-6 py-4">
+        <div className="flex items-start justify-between border-b border-border px-6 py-4">
           <div>
             {title && (
               <h2 className="text-lg font-semibold text-foreground">{title}</h2>
@@ -51,13 +51,14 @@ export function InlineDialog({
           </div>
           <button
             onClick={onClose}
-            className="rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            aria-label="Close"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
       )}
-      <div className="px-6 pb-6">{children}</div>
+      <div className="p-6">{children}</div>
     </dialog>
   );
 }
