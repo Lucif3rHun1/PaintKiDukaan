@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Money, MoneyInput } from "../../components/ui";
+import { X } from "lucide-react";
+import {
+  Button,
+  DataTable,
+  InlineDialog,
+  Money,
+  MoneyInput,
+} from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { formatDateForDisplay } from "../../lib/date";
 import { fetchCustomerLedger, createCustomerCreditInvoice } from "./api";
 import { listItems } from "../items/api";
@@ -62,32 +70,7 @@ export function CustomerLedgerView({ customer }: Props) {
               Closing <Money paise={ledger.closing_balance_paise} />
             </span>
           </div>
-          <div className="overflow-x-auto rounded border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-card text-left text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2">Ref</th>
-                  <th className="px-3 py-2">Description</th>
-                  <th className="px-3 py-2 text-right">Debit</th>
-                  <th className="px-3 py-2 text-right">Credit</th>
-                  <th className="px-3 py-2 text-right">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ledger.rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-3 py-3 text-center text-muted-foreground">
-                      No activity yet.
-                    </td>
-                  </tr>
-                ) : (
-                  ledger.rows.map((row, idx) => <LedgerRow key={idx} row={row} />)
-                )}
-              </tbody>
-            </table>
-          </div>
+          <LedgerTable rows={ledger.rows} />
         </>
       )}
 
@@ -105,33 +88,76 @@ export function CustomerLedgerView({ customer }: Props) {
   );
 }
 
-function LedgerRow({ row }: { row: CustomerLedgerTransaction }) {
+const columns: ColumnDef<CustomerLedgerTransaction>[] = [
+  {
+    header: "Date",
+    cell: (row) => (
+      <span className="font-mono text-xs text-muted-foreground">
+        {formatDateForDisplay(row.date)}
+      </span>
+    ),
+  },
+  {
+    header: "Type",
+    cell: (row) => (
+      <span
+        className={`rounded px-1.5 py-0.5 text-xs ${
+          row.kind === "sale"
+            ? "bg-warning/20 text-warning"
+            : "bg-success/20 text-success"
+        }`}
+      >
+        {row.kind === "sale" ? "Sale" : "Payment"}
+      </span>
+    ),
+  },
+  {
+    header: "Ref",
+    cell: (row) => (
+      <span className="text-xs text-muted-foreground">
+        {row.ref_no ?? "—"}
+      </span>
+    ),
+  },
+  {
+    header: "Description",
+    cell: (row) => (
+      <span className="text-xs text-muted-foreground">
+        {row.description ?? "—"}
+      </span>
+    ),
+  },
+  {
+    header: "Debit",
+    align: "right",
+    cell: (row) =>
+      row.debit_paise > 0 ? <Money paise={row.debit_paise} /> : "—",
+  },
+  {
+    header: "Credit",
+    align: "right",
+    cell: (row) =>
+      row.credit_paise > 0 ? <Money paise={row.credit_paise} /> : "—",
+  },
+  {
+    header: "Balance",
+    align: "right",
+    cell: (row) => <Money paise={row.balance_paise} />,
+  },
+];
+
+function LedgerTable({ rows }: { rows: CustomerLedgerTransaction[] }) {
   return (
-    <tr className="border-t border-border">
-      <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">{formatDateForDisplay(row.date)}</td>
-      <td className="px-3 py-1.5">
-        <span
-          className={`rounded px-1.5 py-0.5 text-xs ${
-            row.kind === "sale"
-              ? "bg-warning/20 text-warning"
-              : "bg-success/20 text-success"
-          }`}
-        >
-          {row.kind === "sale" ? "Sale" : "Payment"}
-        </span>
-      </td>
-      <td className="px-3 py-1.5 text-xs text-muted-foreground">{row.ref_no ?? "—"}</td>
-      <td className="px-3 py-1.5 text-xs text-muted-foreground">{row.description ?? "—"}</td>
-      <td className="px-3 py-1.5 text-right">
-        {row.debit_paise > 0 ? <Money paise={row.debit_paise} /> : "—"}
-      </td>
-      <td className="px-3 py-1.5 text-right">
-        {row.credit_paise > 0 ? <Money paise={row.credit_paise} /> : "—"}
-      </td>
-      <td className="px-3 py-1.5 text-right text-foreground">
-        <Money paise={row.balance_paise} />
-      </td>
-    </tr>
+    <DataTable
+      data={rows}
+      columns={columns}
+      keyExtractor={(_, idx) => idx}
+      emptyState={
+        <p className="px-3 py-3 text-center text-muted-foreground">
+          No activity yet.
+        </p>
+      }
+    />
   );
 }
 
@@ -212,124 +238,125 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-4">
-      <form
-        onSubmit={submit}
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-border bg-card p-6 shadow-lg"
-      >
-        <h2 className="mb-4 text-lg font-semibold">Add credit invoice — {customer.name}</h2>
+    <InlineDialog
+      open
+      onClose={onCancel}
+      title="Add credit invoice"
+      description={customer.name}
+      size="lg"
+    >
+      <form onSubmit={submit} className="max-h-[60vh] overflow-y-auto pr-1">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-foreground">Date *</span>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+                className="input"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-foreground">Description</span>
+              <input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g. Shade matching charges"
+                className="input"
+              />
+            </label>
+          </div>
 
-        <div className="mb-4 grid grid-cols-2 gap-4">
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-foreground">Date *</span>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              required
-              className="w-full rounded border border-border px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-foreground">Description</span>
-            <input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Shade matching charges"
-              className="w-full rounded border border-border px-3 py-2 text-sm"
-            />
-          </label>
-        </div>
-
-        <div className="mb-2">
-          <h3 className="text-sm font-medium text-foreground">Items *</h3>
-        </div>
-        <div className="mb-4 space-y-2">
-          {lines.map((line, idx) => (
-            <div key={idx} className="grid grid-cols-12 items-end gap-2">
-              <div className="col-span-5">
-                <select
-                  value={line.item_id}
-                  onChange={(e) => updateLine(idx, { item_id: Number(e.target.value) })}
-                  required
-                  className="w-full rounded border border-border px-2 py-2 text-sm"
-                >
-                  <option value={0}>Select item…</option>
-                  {items.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({item.unit_code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-span-2">
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={line.qty}
-                  onChange={(e) => updateLine(idx, { qty: Number(e.target.value) })}
-                  required
-                  className="w-full rounded border border-border px-2 py-2 text-sm"
-                  placeholder="Qty"
-                />
-              </div>
-              <div className="col-span-4">
-                <MoneyInput
-                  value={line.unit_price_paise}
-                  onChange={(v) => updateLine(idx, { unit_price_paise: v })}
-                  min={0}
-                  required
-                />
-              </div>
-              <div className="col-span-1">
-                {lines.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeLine(idx)}
-                    className="w-full rounded border border-border px-2 py-2 text-sm hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
+          <div>
+            <h3 className="mb-2 text-sm font-medium text-foreground">Items *</h3>
+            <div className="space-y-2">
+              {lines.map((line, idx) => (
+                <div key={idx} className="grid grid-cols-12 items-end gap-2">
+                  <div className="col-span-5">
+                    <select
+                      value={line.item_id}
+                      onChange={(e) => updateLine(idx, { item_id: Number(e.target.value) })}
+                      required
+                      className="input"
+                    >
+                      <option value={0}>Select item…</option>
+                      {items.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} ({item.unit_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={line.qty}
+                      onChange={(e) => updateLine(idx, { qty: Number(e.target.value) })}
+                      required
+                      className="input"
+                      placeholder="Qty"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <MoneyInput
+                      value={line.unit_price_paise}
+                      onChange={(v) => updateLine(idx, { unit_price_paise: v })}
+                      min={0}
+                      required
+                    />
+                  </div>
+                  <div className="col-span-1">
+                    {lines.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeLine(idx)}
+                        className="inline-flex h-10 w-full items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        aria-label={`Remove line ${idx + 1}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
 
-        <button
-          type="button"
-          onClick={addLine}
-          className="mb-4 rounded border border-border px-3 py-1.5 text-sm hover:bg-card"
-        >
-          + Add item
-        </button>
-
-        <div className="mb-4 flex justify-end text-sm font-medium">
-          Total: <Money paise={total} className="ml-1" />
-        </div>
-
-        {error && <p className="mb-4 rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-
-        <div className="flex justify-end gap-2">
-          <button
+          <Button
             type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="rounded border border-border px-4 py-2 text-sm hover:bg-card disabled:opacity-50"
+            variant="secondary"
+            size="sm"
+            onClick={addLine}
           >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={busy}
-            className="btn-primary"
-          >
-            {busy ? "Saving…" : "Create credit invoice"}
-          </button>
+            + Add item
+          </Button>
+
+          <div className="flex justify-end text-sm font-medium text-foreground">
+            Total: <Money paise={total} className="ml-1" />
+          </div>
+
+          {error && <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onCancel}
+              disabled={busy}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" loading={busy} disabled={busy}>
+              {busy ? "Saving…" : "Create credit invoice"}
+            </Button>
+          </div>
         </div>
       </form>
-    </div>
+    </InlineDialog>
   );
 }
 

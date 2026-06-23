@@ -9,6 +9,8 @@ export interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
+import { Button } from "../../components/ui";
+
 export function ConfirmDialog({
   open,
   title,
@@ -21,30 +23,28 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
-      <div className="w-full max-w-sm rounded-lg bg-card p-5 shadow-lg">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        {body && <p className="mt-2 text-sm text-muted-foreground">{body}</p>}
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card"
-          >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4">
+      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-0 shadow-lg">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        </div>
+        {body && (
+          <div className="px-5 py-4">
+            <p className="text-sm text-muted-foreground">{body}</p>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+          <Button type="button" variant="secondary" size="sm" onClick={onCancel}>
             {cancelLabel}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant={destructive ? "danger" : "primary"}
+            size="sm"
             onClick={onConfirm}
-            className={
-              "rounded-md px-3 py-1.5 text-sm font-medium " +
-              (destructive
-                ? "btn-destructive"
-                : "btn-primary")
-            }
           >
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

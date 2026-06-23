@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Download,
   Pencil,
+  X,
 } from "lucide-react";
 
 import { Button, Alert } from "./ui";
@@ -215,9 +216,10 @@ export function SpreadsheetImportDialog({
           </div>
           <button
             onClick={handleClose}
-            className="text-muted-foreground hover:text-foreground"
+            className="rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            aria-label="Close"
           >
-            ×
+            <X className="h-5 w-5" />
           </button>
         </div>
 
