@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useSyncExternalStore, type ComponentType } from "react";
 import {
   BadgeIndianRupee,
-  Barcode,
   Building2,
   ChevronLeft,
   ClipboardList,
@@ -10,8 +9,7 @@ import {
   MapPin,
   Monitor,
   PaintBucket,
-  ReceiptText,
-  ScanBarcode,
+  ScanLine,
   ShieldCheck,
   Tags,
   Users,
@@ -21,11 +19,7 @@ import {
 import { SETTINGS_CATEGORIES, type SettingsCategoryId } from "../AppShell";
 import { Button } from "../../components/ui";
 import { CustomerTypesSettings, LocationsSettings, CatalogSettingsCombined } from "./settings/CatalogSettings";
-import {
-  LabelSettings,
-  ReceiptSettings,
-  ScannerSettings as PrintingScannerSettings,
-} from "./settings/PrintingSettings";
+import { HardwareSettings } from "./settings/HardwareSettings";
 import { SettingsCategory } from "./settings/SettingsCategory";
 import { ShopInfoSettings, CurrencySettings } from "./settings/ShopSettings";
 import { BackupSettings, MasterHealthSettings, SecuritySettings, ThemeSettings } from "./settings/SystemSettings";
@@ -37,9 +31,7 @@ type SettingsItemId =
   | "customer-types"
   | "locations"
   | "catalog"
-  | "label"
-  | "receipt"
-  | "scanner"
+  | "hardware"
   | "devices"
   | "users"
   | "backup"
@@ -65,7 +57,7 @@ interface ParsedSettingsRoute {
 const CATEGORY_DESCRIPTIONS: Record<SettingsCategoryId, string> = {
   shop: "Identity, currency, and tax defaults for this local shop profile.",
   catalog: "Reusable catalog lists that shape inventory, customers, and stock movement.",
-  printing: "Label and receipt printers, templates, and scanner calibration.",
+  printing: "Printers and barcode scanners used for receipts, labels, and stock ops.",
   team: "Users, enrolled devices, and role assignments for sign-in.",
   system: "Backup, security, and operational health controls.",
 };
@@ -76,9 +68,7 @@ const SETTINGS_ITEMS: SettingsItem[] = [
   { id: "customer-types", category: "catalog", title: "Customer types", description: "Maintain customer groups used in billing and reporting.", icon: Tags, Component: CustomerTypesSettings },
   { id: "locations", category: "catalog", title: "Locations", description: "Configure stock locations for inventory movement.", icon: MapPin, Component: LocationsSettings },
   { id: "catalog", category: "catalog", title: "Catalog", description: "Brands, categories, and units used across items and billing.", icon: PaintBucket, Component: CatalogSettingsCombined },
-  { id: "label", category: "printing", title: "Label printer", description: "Label template, printer, and stock size for barcode shelf labels.", icon: Barcode, Component: LabelSettings },
-  { id: "receipt", category: "printing", title: "Receipt printer", description: "Receipt template, printer, and paper size for customer invoices.", icon: ReceiptText, Component: ReceiptSettings },
-  { id: "scanner", category: "printing", title: "Barcode scanner", description: "Tune keyboard-wedge detection thresholds and test scanner input.", icon: ScanBarcode, Component: PrintingScannerSettings },
+  { id: "hardware", category: "printing", title: "Hardware", description: "Discover and manage printers (receipt or label) and tune the barcode scanner.", icon: ScanLine, Component: HardwareSettings },
   { id: "users", category: "team", title: "Users", description: "Create local accounts and assign operational roles.", icon: Users, Component: UsersSettings },
   { id: "devices", category: "team", title: "Enrolled devices", description: "Devices trusted to unlock the app and their assigned roles.", icon: HardDrive, Component: DevicesSettings },
   { id: "backup", category: "system", title: "Backup", description: "Create encrypted backups and manage restore points.", icon: DatabaseBackup, Component: BackupSettings },

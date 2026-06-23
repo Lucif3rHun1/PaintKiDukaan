@@ -58,7 +58,7 @@ SELECT
   END,
   customer_id,
   NULL,
-  COALESCE(date(date(substr(created_at, 1, 4) || '-' || substr(created_at, 5, 2) || '-' || substr(created_at, 7, 2))), ''),
+  COALESCE(strftime('%Y-%m-%d', created_at/1000, 'unixepoch'), ''),
   user_id,
   subtotal_paise,
   discount_paise,
@@ -67,7 +67,7 @@ SELECT
   '[]',
   validity_days,
   converted_from_id,
-  COALESCE(created_at, datetime('now'))
+  COALESCE(strftime('%Y-%m-%d %H:%M:%S', created_at/1000, 'unixepoch'), datetime('now'))
 FROM sales;
 DROP TABLE sales;
 ALTER TABLE sales_new RENAME TO sales;
@@ -95,7 +95,8 @@ INSERT INTO sale_items_new (id, sale_id, item_id, qty, price, unit_type, line_di
 SELECT
   id, sale_id, item_id, qty, unit_price_paise,
   CASE WHEN u.code = 'box' THEN 'box' ELSE 'unit' END,
-  line_discount_paise, NULL, 0, COALESCE(created_at, datetime('now'))
+  line_discount_paise, NULL, 0,
+  COALESCE(strftime('%Y-%m-%d %H:%M:%S', created_at/1000, 'unixepoch'), datetime('now'))
 FROM sale_items
 LEFT JOIN units u ON u.id = sale_items.unit_id;
 DROP TABLE sale_items;
@@ -129,7 +130,8 @@ CREATE TABLE customers_new (
 );
 INSERT INTO customers_new (id, name, phone, customer_type_id, is_flagged, opening_balance_paise, notes, is_active, created_at, updated_at, created_by, updated_by)
 SELECT id, name, phone, customer_type_id, 0, opening_balance_paise, notes, is_active,
-       COALESCE(created_at, datetime('now')), COALESCE(updated_at, datetime('now')),
+       COALESCE(strftime('%Y-%m-%d %H:%M:%S', created_at/1000, 'unixepoch'), datetime('now')),
+       COALESCE(strftime('%Y-%m-%d %H:%M:%S', updated_at/1000, 'unixepoch'), datetime('now')),
        created_by, updated_by
 FROM customers;
 DROP TABLE customers;

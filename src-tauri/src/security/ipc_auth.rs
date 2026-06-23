@@ -349,6 +349,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Cashier,
     },
     CommandAcl {
+        name: "create_customer_credit_invoice",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
         name: "update_customer",
         min_role: Role::Cashier,
     },
@@ -704,11 +708,11 @@ mod tests {
     // -- ACL completeness --------------------------------------------------
 
     #[test]
-    fn acl_covers_all_121_commands() {
+    fn acl_covers_all_122_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            121,
-            "ACL has {} entries, expected 121",
+            122,
+            "ACL has {} entries, expected 122",
             COMMAND_ACL.len()
         );
     }

@@ -3,14 +3,21 @@ dist/
 target/
 node_modules/
 
-# Tauri
+# Tauri / Rust
 src-tauri/target/
 src-tauri/Cargo.lock
 src-tauri/gen/
+Cargo.lock
 
 # OS
 .DS_Store
 Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
 
 # Editor
 .vscode/
@@ -27,3 +34,6 @@ Thumbs.db
 *.tsbuildinfo
 vite.config.d.ts
 vite.config.js
+
+# Tauri signing (platform-specific)
+src-tauri/bundle/**

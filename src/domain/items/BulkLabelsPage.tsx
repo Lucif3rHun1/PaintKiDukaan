@@ -16,6 +16,7 @@ import { Printer } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getSetting, listItems, listLabelPrints, recordLabelPrint } from "./api";
 import type { Item, LabelPrintRecord } from "../types";
+import { ipc } from "../../shell/lib/ipc";
 import { BarcodeThumb } from "./BarcodeThumb";
 import {
   buildLabelPdfBlob,
@@ -84,6 +85,7 @@ export function BulkLabelsPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [shopName, setShopName] = useState("");
+  const [defaultMapping, setDefaultMapping] = useState<{ name: string; width_mm: number; height_mm: number } | null>(null);
 
   // Items query — refetches on every mount + on window focus so the
   // barcode picker always reflects the latest items.barcode values
@@ -103,21 +105,11 @@ export function BulkLabelsPage() {
     getSetting("shop_name")
       .then((v) => !cancelled && setShopName(v || "")).catch((err: unknown) => console.error("Silent catch replaced:", err));
     Promise.all([
-      getSetting("label_size").catch(() => ""),
       getSetting("receipt_template").catch(() => ""),
+      ipc.getDefaultPrinter("label").catch(() => null),
     ])
-      .then(([sizeRaw, templateRaw]) => {
+      .then(([templateRaw, defaultPrinter]) => {
         if (cancelled) return;
-        if (sizeRaw) {
-          if (sizeRaw.startsWith("thermal-")) {
-            const parsed = configFromFormat(sizeRaw);
-            setPrinter(parsed.type);
-            if (parsed.type === "thermal") setSizeChoice(parsed.size);
-          } else if (PRINTER_PRESETS.thermal.includes(sizeRaw)) {
-            setPrinter("thermal");
-            setSizeChoice(sizeRaw);
-          }
-        }
         if (templateRaw) {
           try {
             const tpl = JSON.parse(templateRaw);
@@ -125,6 +117,16 @@ export function BulkLabelsPage() {
             if (tpl.label_line2) setLine2(tpl.label_line2);
           } catch {
             /* ignore corrupt JSON */
+          }
+        }
+        if (defaultPrinter && defaultPrinter.use_case === "label" && defaultPrinter.label_width_mm && defaultPrinter.label_height_mm) {
+          const w = defaultPrinter.label_width_mm;
+          const h = defaultPrinter.label_height_mm;
+          setDefaultMapping({ name: defaultPrinter.name, width_mm: w, height_mm: h });
+          const key = `${w}x${h}`;
+          if (THERMAL_SIZES[key as keyof typeof THERMAL_SIZES]) {
+            setPrinter("thermal");
+            setSizeChoice(key as typeof sizeChoice);
           }
         }
       }).catch((err: unknown) => console.error("Silent catch replaced:", err));
