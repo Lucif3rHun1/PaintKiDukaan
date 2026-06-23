@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell, Check } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
 import {
-  Alert,
   listAlerts,
+  unreadAlertCount,
   markAlertRead,
   markAllAlertsRead,
-  refreshAlerts,
-  Severity,
-  unreadAlertCount,
+  type Severity,
+  type Alert,
 } from "@/domain/alerts";
-import { Badge, cn } from "@/components/ui";
+import { Badge, cn, EmptyState } from "@/components/ui";
+import type { Role } from "@/lib/security/state";
+import { SkeletonRow } from "@/components/ui/SkeletonRow";
 
 const severityClasses: Record<Severity, string> = {
   info: "border-l-4 border-info bg-info/10",
@@ -23,33 +26,44 @@ const severityDot: Record<Severity, string> = {
   error: "bg-destructive",
 };
 
+const ROLE_HIERARCHY: Record<Role, number> = {
+  stocker: 0,
+  cashier: 1,
+  owner: 2,
+};
+
+const ALERTS_QUERY_KEY = ["alerts"] as const;
+
 function alertTitle(alert: Alert): string {
   return alert.title;
 }
 
-export function AlertBell() {
+interface AlertBellProps {
+  currentRole?: Role;
+}
+
+export function AlertBell({ currentRole }: AlertBellProps) {
+  const currentLevel = currentRole ? ROLE_HIERARCHY[currentRole] ?? 0 : 0;
+  if (currentLevel < ROLE_HIERARCHY.cashier) return null;
+
   const [open, setOpen] = useState(false);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [count, setCount] = useState(0);
-  const [loading, setLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
-  const load = async () => {
-    setLoading(true);
-    await refreshAlerts().catch(() => undefined);
-    const [list, unread] = await Promise.all([
-      listAlerts(),
-      unreadAlertCount(),
-    ]);
-    setAlerts(list);
-    setCount(unread);
-    setLoading(false);
-  };
+  const { data, isLoading } = useQuery({
+    queryKey: ALERTS_QUERY_KEY,
+    queryFn: async () => {
+      const [alerts, count] = await Promise.all([listAlerts(), unreadAlertCount()]);
+      return { alerts, count };
+    },
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    staleTime: 15_000,
+  });
 
-  useEffect(() => {
-    if (!open) return;
-    load();
-  }, [open]);
+  const alerts = data?.alerts ?? [];
+  const count = data?.count ?? 0;
 
   useEffect(() => {
     const handle = (e: MouseEvent) => {
@@ -65,14 +79,22 @@ export function AlertBell() {
     }
   }, [open]);
 
+  useEffect(() => {
+    const handler = () => setOpen(true);
+    window.addEventListener("open-alert-bell", handler);
+    return () => window.removeEventListener("open-alert-bell", handler);
+  }, []);
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ALERTS_QUERY_KEY });
+
   const handleMarkRead = async (id: number) => {
     await markAlertRead(id);
-    await load();
+    await refresh();
   };
 
   const handleMarkAll = async () => {
     await markAllAlertsRead();
-    await load();
+    await refresh();
   };
 
   return (
@@ -109,15 +131,19 @@ export function AlertBell() {
           </div>
 
           <div className="max-h-80 overflow-y-auto">
-            {loading && alerts.length === 0 && (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                Loading alerts…
+            {isLoading && alerts.length === 0 && (
+              <div className="px-4 py-6">
+                <SkeletonRow count={3} />
               </div>
             )}
 
-            {!loading && alerts.length === 0 && (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                No alerts
+            {!isLoading && alerts.length === 0 && (
+              <div className="px-4 py-2">
+                <EmptyState
+                  icon={Bell}
+                  title="No alerts"
+                  description="You’re all caught up."
+                />
               </div>
             )}
 
