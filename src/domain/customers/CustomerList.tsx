@@ -1,9 +1,15 @@
 /**
- * CustomerList — searchable list with flag indicator.
+ * CustomerList — searchable list with flag indicator + role-gated actions.
+ * Debounced search, design-system tokens, empty/loading states.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Search, UserPlus, Flag, Phone, Banknote, IndianRupee } from "lucide-react";
+
+import { Alert, Badge, Button, Card, EmptyState, Money, Skeleton } from "../../components/ui";
+import { toast } from "../../lib/feedback/toast";
 import { listCustomers } from "./api";
 import { formatINR, type Customer } from "../types";
+import { extractError } from "../../lib/extractError";
 
 interface Props {
   onSelect?: (c: Customer) => void;
@@ -13,108 +19,242 @@ interface Props {
   role: "owner" | "cashier" | "stocker";
 }
 
-export function CustomerList({ onSelect, onCreate, onRecordPayment, role }: Props) {
+const SEARCH_DEBOUNCE_MS = 250;
+
+export function CustomerList({
+  onSelect,
+  onCreate,
+  onRecordPayment,
+  refreshKey,
+  role,
+}: Props) {
   const [items, setItems] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Debounce query input
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query]);
+
+  // Fetch on debounced query or refreshKey
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    listCustomers(query)
-      .then((rows) => !cancelled && setItems(rows))
-      .catch((e) => !cancelled && setError(e.message ?? "Failed"))
-      .finally(() => !cancelled && setLoading(false));
+    listCustomers(debouncedQuery || undefined)
+      .then((rows) => {
+        if (!cancelled) setItems(rows);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(extractError(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [debouncedQuery, refreshKey]);
+
+  function handlePay(c: Customer) {
+    if (onRecordPayment) {
+      onRecordPayment(c);
+      return;
+    }
+    toast.info(`No payment handler available for ${c.name}`);
+  }
+
+  const canCreate = onCreate && (role === "owner" || role === "cashier");
+  const canPay = (role === "owner" || role === "cashier") && onRecordPayment;
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2">
-        <input
-          type="search"
-          placeholder="Search by name or phone…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm"
-        />
-        {onCreate && (role === "owner" || role === "cashier") && (
-          <button
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-semibold tracking-tight">Customers</h2>
+          <p className="text-sm text-muted-foreground">
+            {items.length} {items.length === 1 ? "customer" : "customers"}
+            {debouncedQuery ? ` matching "${debouncedQuery}"` : ""}
+          </p>
+        </div>
+        {canCreate ? (
+          <Button
+            type="button"
+            variant="primary"
+            size="md"
+            icon={UserPlus}
             onClick={onCreate}
-            className="rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
           >
-            + New
-          </button>
-        )}
-      </div>
+            New customer
+          </Button>
+        ) : null}
+      </header>
 
-      {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      )}
-      {loading && <p className="text-sm text-slate-500">Loading…</p>}
+      <Card>
+        <Card.Body className="space-y-3">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              placeholder="Search by name or phone…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="input h-10 w-full pl-9"
+              aria-label="Search customers"
+            />
+          </div>
 
-      <table className="w-full text-sm">
-        <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-          <tr>
-            <th className="py-1">Name</th>
-            <th>Phone</th>
-            <th>Type</th>
-            <th>Flag</th>
-            <th className="text-right">Credit limit</th>
-            <th className="text-right">Opening</th>
-            {(role === "owner" || role === "cashier") && <th className="text-right">Action</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((c) => (
-            <tr
-              key={c.id}
-              onClick={() => onSelect?.(c)}
-              className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+          {error ? (
+            <Alert
+              title="Could not load customers"
+              variant="destructive"
             >
-              <td className="py-1">{c.name}</td>
-              <td className="font-mono">{c.phone}</td>
-              <td>{c.type_name ?? "—"}</td>
-              <td>
-                {c.is_flagged ? (
-                  <span className="rounded bg-red-100 px-2 text-xs text-red-700">
-                    flagged
-                  </span>
-                ) : (
-                  "—"
-                )}
-              </td>
-              <td className="text-right">
-                {c.credit_limit != null ? formatINR(c.credit_limit) : "—"}
-              </td>
-              <td className="text-right">{formatINR(c.opening_balance_paise)}</td>
-              {(role === "owner" || role === "cashier") && (
-                <td className="text-right">
-                  {onRecordPayment && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onRecordPayment(c); }}
-                      className="rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20"
-                    >
-                      Pay
-                    </button>
-                  )}
-                </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              {error}
+            </Alert>
+          ) : null}
 
-      {!loading && items.length === 0 && (
-        <p className="text-sm text-slate-500">No customers match.</p>
-      )}
+          {loading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full" />
+              ))}
+            </div>
+          ) : items.length === 0 ? (
+            <EmptyState
+              icon={UserPlus}
+              title={debouncedQuery ? "No matches" : "No customers yet"}
+              description={
+                debouncedQuery
+                  ? `Nothing matches "${debouncedQuery}". Try a different search.`
+                  : "Add the first customer to start recording sales and credit."
+              }
+              primary={
+                canCreate ? (
+                  <Button type="button" onClick={onCreate} icon={UserPlus}>
+                    Add customer
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-full text-sm">
+                <thead className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Name</th>
+                    <th className="px-3 py-2 font-medium">Phone</th>
+                    <th className="px-3 py-2 font-medium">Type</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 text-right font-medium">Credit</th>
+                    <th className="px-3 py-2 text-right font-medium">Opening</th>
+                    {canPay ? (
+                      <th className="px-3 py-2 text-right font-medium">Action</th>
+                    ) : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((c) => (
+                    <tr
+                      key={c.id}
+                      onClick={() => onSelect?.(c)}
+                      className={[
+                        "cursor-pointer border-b border-border last:border-b-0",
+                        "transition-colors hover:bg-muted/50",
+                        c.is_active ? "" : "opacity-60",
+                      ].join(" ")}
+                    >
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-foreground">
+                            {c.name}
+                          </span>
+                          {c.is_flagged ? (
+                            <Badge variant="danger" size="sm">
+                              <Flag className="h-3 w-3" />
+                              Flagged
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {c.email ? (
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {c.email}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {c.phone ? (
+                          <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
+                            <Phone className="h-3 w-3" />
+                            {c.phone}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground">
+                        {c.type_name ?? "—"}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {!c.is_active ? (
+                          <Badge variant="muted" size="sm">
+                            Inactive
+                          </Badge>
+                        ) : (
+                          <Badge variant="success" size="sm">
+                            Active
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {c.credit_limit != null ? (
+                          <span className="inline-flex items-center gap-1">
+                            <IndianRupee className="h-3 w-3 text-muted-foreground" />
+                            {formatINR(c.credit_limit)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <Money paise={c.opening_balance_paise} muted />
+                      </td>
+                      {canPay ? (
+                        <td
+                          className="px-3 py-2.5 text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            icon={Banknote}
+                            onClick={() => handlePay(c)}
+                          >
+                            Pay
+                          </Button>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card.Body>
+      </Card>
     </div>
   );
 }
