@@ -3,6 +3,7 @@
 // UI can still be exercised during development.
 
 import { tauriInvoke } from "../lib/security/tauri";
+import type { HeldBill } from "../domain/types";
 import type {
   BackupGate,
   CashSalesSummary,
@@ -10,7 +11,6 @@ import type {
   DailySalesReport,
   DayClose,
   DayLockState,
-  HeldBill,
   NewDayClose,
   NewPurchase,
   NewSale,
