@@ -78,8 +78,8 @@ export default function DayClosePage({ user }: Props) {
 
   const gateColor =
     gate?.needs_prompt === true
-      ? "bg-amber-50 border-amber-300"
-      : "bg-emerald-50 border-emerald-300";
+      ? "bg-warning/10 border-warning"
+      : "bg-success/10 border-success";
 
   return (
     <div className="grid grid-cols-2 gap-4">
@@ -92,15 +92,15 @@ export default function DayClosePage({ user }: Props) {
                 ? `Backup ${gate.reason === "never" ? "has never run" : `is stale (${gate.age_hours?.toFixed(1)}h)`}.`
                 : `Backup is fresh (${gate.age_hours?.toFixed(1)}h).`}
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               last_backup_at: {gate.last_backup_at ? formatDateForDisplay(gate.last_backup_at) : "—"}
             </p>
           </>
         ) : (
-          <p className="text-sm text-slate-400">Checking…</p>
+          <p className="text-sm text-muted-foreground">Checking…</p>
         )}
       </section>
-      <section className="rounded border border-slate-200 bg-white p-4">
+      <section className="rounded border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-semibold">Close form</h2>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <label>Date
@@ -108,7 +108,7 @@ export default function DayClosePage({ user }: Props) {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="ml-2 rounded border border-slate-300 px-1"
+              className="ml-2 rounded border border-input px-1"
             />
           </label>
           <label>Opening cash
@@ -117,7 +117,7 @@ export default function DayClosePage({ user }: Props) {
               min="0"
               value={opening}
               onChange={(e) => setOpening(Number(e.target.value))}
-              className="ml-2 w-24 rounded border border-slate-300 px-1"
+              className="ml-2 w-24 rounded border border-input px-1"
               data-testid="opening-cash"
             />
           </label>
@@ -126,7 +126,7 @@ export default function DayClosePage({ user }: Props) {
               type="number"
               readOnly
               value={(summary?.cash_sales_paise ?? 0) / 100}
-              className="ml-2 w-24 rounded border border-slate-200 bg-slate-50 px-1"
+              className="ml-2 w-24 rounded border border-border bg-muted px-1"
             />
           </label>
           <label>Cash in
@@ -135,7 +135,7 @@ export default function DayClosePage({ user }: Props) {
               min="0"
               value={cashIn}
               onChange={(e) => setCashIn(Number(e.target.value))}
-              className="ml-2 w-24 rounded border border-slate-300 px-1"
+              className="ml-2 w-24 rounded border border-input px-1"
             />
           </label>
           <label>Cash out
@@ -144,7 +144,7 @@ export default function DayClosePage({ user }: Props) {
               min="0"
               value={cashOut}
               onChange={(e) => setCashOut(Number(e.target.value))}
-              className="ml-2 w-24 rounded border border-slate-300 px-1"
+              className="ml-2 w-24 rounded border border-input px-1"
             />
           </label>
           <label>Counted cash
@@ -153,16 +153,16 @@ export default function DayClosePage({ user }: Props) {
               min="0"
               value={counted}
               onChange={(e) => setCounted(Number(e.target.value))}
-              className="ml-2 w-24 rounded border border-slate-300 px-1"
+              className="ml-2 w-24 rounded border border-input px-1"
               data-testid="counted-cash"
             />
           </label>
         </div>
-        <div className="mt-3 rounded bg-slate-50 p-2 text-sm">
+        <div className="mt-3 rounded bg-muted p-2 text-sm">
           <p>Expected: <strong>{formatRupeesFromPaise(expected)}</strong></p>
           <p>
             Variance:{" "}
-            <strong className={variance === 0 ? "text-emerald-600" : "text-rose-600"}>
+            <strong className={variance === 0 ? "text-success" : "text-destructive"}>
               {formatRupeesFromPaise(variance)}
             </strong>
           </p>
@@ -173,28 +173,28 @@ export default function DayClosePage({ user }: Props) {
             type="text"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="ml-2 w-2/3 rounded border border-slate-300 px-1"
+              className="ml-2 w-2/3 rounded border border-input px-1"
           />
         </label>
         {gate?.needs_prompt ? (
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               onClick={() => submit("back_up")}
-              className="rounded bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="rounded bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               data-testid="backup-and-close"
             >
               Back up &amp; close
             </button>
             <button
               onClick={() => submit("skip")}
-              className="rounded border border-amber-300 px-3 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="rounded border border-warning px-3 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               data-testid="skip-once"
             >
               Skip once
             </button>
             <button
               onClick={() => submit("fresh")}
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="rounded border border-border px-3 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               Mark fresh &amp; close
             </button>
@@ -202,18 +202,18 @@ export default function DayClosePage({ user }: Props) {
         ) : (
           <button
             onClick={() => submit("fresh")}
-              className="mt-3 w-full rounded bg-emerald-600 py-2 font-semibold text-white focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="mt-3 w-full rounded bg-primary py-2 font-semibold text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             data-testid="close-day"
           >
             Close day
           </button>
         )}
-        {status && <p className="mt-2 text-xs text-slate-600">{status}</p>}
+        {status && <p className="mt-2 text-xs text-muted-foreground">{status}</p>}
       </section>
-      <section className="col-span-2 rounded border border-slate-200 bg-white p-4">
+      <section className="col-span-2 rounded border border-border bg-card p-4">
         <h2 className="mb-2 text-sm font-semibold">Recent closes</h2>
         <table className="w-full text-sm">
-          <thead className="text-left text-slate-500">
+          <thead className="text-left text-muted-foreground">
             <tr>
               <th>Date</th>
               <th>Cash sales</th>
@@ -225,12 +225,12 @@ export default function DayClosePage({ user }: Props) {
           </thead>
           <tbody>
             {recent.map((d) => (
-              <tr key={d.id} className="border-t border-slate-100">
+              <tr key={d.id} className="border-t border-border">
                 <td>{formatDateForDisplay(d.date)}</td>
                 <td>{formatRupeesFromPaise(d.cash_sales)}</td>
                 <td>{formatRupeesFromPaise(d.expected_cash)}</td>
                 <td>{formatRupeesFromPaise(d.counted_cash)}</td>
-                <td className={d.variance === 0 ? "text-emerald-600" : "text-rose-600"}>
+                <td className={d.variance === 0 ? "text-success" : "text-destructive"}>
                   {formatRupeesFromPaise(d.variance)}
                 </td>
                 <td>{d.backup_check_status}</td>

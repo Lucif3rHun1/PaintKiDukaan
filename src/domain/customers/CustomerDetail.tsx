@@ -26,13 +26,13 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
   }, [customer.id]);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
       <div className="mb-4 flex items-start justify-between">
         <div>
           <h2 className="text-xl font-semibold">{customer.name}</h2>
-          <p className="font-mono text-sm text-slate-500">{customer.phone}</p>
+          <p className="font-mono text-sm text-muted-foreground">{customer.phone}</p>
           {customer.is_flagged && (
-            <span className="mt-1 inline-block rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">
+            <span className="mt-1 inline-block rounded bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
               flagged
             </span>
           )}
@@ -41,7 +41,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
           {onEdit && (
             <button
               onClick={onEdit}
-              className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
+              className="rounded border border-border px-3 py-1 text-sm text-foreground hover:bg-muted"
             >
               Edit
             </button>
@@ -49,7 +49,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
           {onRecordPayment && (
             <button
               onClick={onRecordPayment}
-              className="rounded bg-sky-600 px-3 py-1 text-sm font-medium text-white hover:bg-sky-700"
+              className="rounded bg-primary px-3 py-1 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
               Record payment
             </button>
@@ -58,7 +58,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
       </div>
 
       {error && (
-        <p className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="mb-3 rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -88,17 +88,17 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
         />
       </dl>
 
-      <div className="mb-4 rounded border border-slate-200 bg-slate-50 p-4">
-        <p className="text-xs uppercase text-slate-500">Outstanding</p>
-        <p className="text-2xl font-semibold tabular-nums text-slate-800">
+      <div className="mb-4 rounded border border-border bg-muted p-4">
+        <p className="text-xs uppercase text-muted-foreground">Outstanding</p>
+        <p className="text-2xl font-semibold tabular-nums text-foreground">
           {outstanding ? formatRupeesFromPaise(outstanding.outstanding) : "…"}
         </p>
       </div>
 
       {customer.notes && (
         <div className="mb-4">
-          <p className="text-xs uppercase text-slate-500">Notes</p>
-          <p className="whitespace-pre-wrap text-sm text-slate-700">
+          <p className="text-xs uppercase text-muted-foreground">Notes</p>
+          <p className="whitespace-pre-wrap text-sm text-foreground">
             {customer.notes}
           </p>
         </div>
@@ -112,8 +112,8 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs uppercase text-slate-500">{label}</dt>
-      <dd className="tabular-nums text-slate-800">{value}</dd>
+      <dt className="text-xs uppercase text-muted-foreground">{label}</dt>
+      <dd className="tabular-nums text-foreground">{value}</dd>
     </div>
   );
 }

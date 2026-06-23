@@ -54,14 +54,14 @@ export function KhataRecord({ customerId }: Props) {
 
   return (
     <div>
-      <h3 className="mb-2 text-sm font-semibold text-slate-700">Khata</h3>
+      <h3 className="mb-2 text-sm font-semibold text-foreground">Khata</h3>
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
       <table className="w-full text-sm">
-        <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+        <thead className="border-b border-border text-left text-xs uppercase text-muted-foreground">
           <tr>
             <th className="py-1">Date</th>
             <th>Type</th>
@@ -71,7 +71,7 @@ export function KhataRecord({ customerId }: Props) {
         </thead>
         <tbody>
           {placeholder.map((r, idx) => (
-            <tr key={idx} className="border-b border-slate-100">
+            <tr key={idx} className="border-b border-border">
               <td className="py-1 font-mono text-xs">{r.date === "—" ? r.date : formatDateForDisplay(r.date)}</td>
               <td>{r.kind}</td>
               <td>{r.ref}</td>
@@ -80,7 +80,7 @@ export function KhataRecord({ customerId }: Props) {
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="mt-2 text-xs text-muted-foreground">
         Detailed per-transaction ledger is wired in Slice C.
       </p>
     </div>

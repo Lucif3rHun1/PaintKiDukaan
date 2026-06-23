@@ -45,27 +45,27 @@ export function BackupPanel() {
       <h3 className="text-base font-semibold">Backup</h3>
 
       <div className="space-y-1">
-        <div className="text-slate-600">Targets</div>
-        <ul className="rounded-md border border-slate-200 bg-slate-50 p-2">
-          {targets.length === 0 && <li className="text-slate-500">none</li>}
+        <div className="text-muted-foreground">Targets</div>
+        <ul className="rounded-md border border-border bg-muted p-2">
+          {targets.length === 0 && <li className="text-muted-foreground">none</li>}
           {targets.map((t) => (
             <li key={t.id} className="flex justify-between">
               <span>
-                {t.label} <span className="text-xs text-slate-500">({t.kind})</span>
+                {t.label} <span className="text-xs text-muted-foreground">({t.kind})</span>
               </span>
-              <span className="font-mono text-xs text-slate-500">{t.path}</span>
+              <span className="font-mono text-xs text-muted-foreground">{t.path}</span>
             </li>
           ))}
         </ul>
       </div>
 
       <div className="space-y-1">
-        <div className="text-slate-600">Recovery passphrase</div>
+        <div className="text-muted-foreground">Recovery passphrase</div>
         <input
           type="password"
           value={passphrase}
           onChange={(e) => setPassphrase(e.target.value)}
-          className="w-full rounded-md border border-slate-300 p-2"
+          className="w-full rounded-md border border-input p-2"
           placeholder="Used to encrypt this backup"
         />
       </div>
@@ -75,23 +75,23 @@ export function BackupPanel() {
           type="button"
           disabled={busy}
           onClick={onBackup}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           {busy ? "Working…" : "Back up now"}
         </button>
         <button
           type="button"
           onClick={() => setRestoreOpen(true)}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
         >
           Restore…
         </button>
       </div>
 
       {st && (
-        <dl className="grid grid-cols-2 gap-2 rounded-md border border-slate-200 p-3 text-sm">
+        <dl className="grid grid-cols-2 gap-2 rounded-md border border-border p-3 text-sm">
           <div>
-            <dt className="text-slate-500">Last backup</dt>
+            <dt className="text-muted-foreground">Last backup</dt>
             <dd>
               {st.last_backup_unix_ms
                 ? new Date(st.last_backup_unix_ms).toLocaleString("en-IN")
@@ -99,7 +99,7 @@ export function BackupPanel() {
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Last test restore</dt>
+            <dt className="text-muted-foreground">Last test restore</dt>
             <dd>
               {st.last_test_restore_unix_ms
                 ? new Date(st.last_test_restore_unix_ms).toLocaleString("en-IN")
@@ -107,14 +107,14 @@ export function BackupPanel() {
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Age (h)</dt>
+            <dt className="text-muted-foreground">Age (h)</dt>
             <dd>{st.backup_age_hours.toFixed(1)}</dd>
           </div>
         </dl>
       )}
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+        <div className="rounded-md border border-destructive/20 bg-destructive/10 p-2 text-sm text-destructive">
           {error}
         </div>
       )}
