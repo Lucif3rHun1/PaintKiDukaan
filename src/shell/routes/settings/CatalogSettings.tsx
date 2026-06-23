@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { toast } from "../../../lib/feedback/toast";
 import { Alert, Button, Card, EmptyState, Section } from "../../../components/ui";
+import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import { ipc } from "../../lib/ipc";
 import { tauriInvoke } from "../../../lib/security/tauri";
 import { BrandAdmin } from "../../../domain/items/BrandAdmin";
@@ -436,7 +437,7 @@ export function CatalogUnitsSettings() {
           )}
 
           {loading ? (
-            <div className="py-8 text-center text-muted-foreground">Loading units...</div>
+            <SkeletonRow count={3} />
           ) : units.length === 0 ? (
             <EmptyState
               title="No units configured"

@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { listBrands, createBrand, updateBrandCodePrefix, deactivateBrand } from "./api";
 import type { Brand } from "../types";
 import { extractError } from "../../lib/extractError";
+import { SkeletonRow } from "../../components/ui/SkeletonRow";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
@@ -146,7 +147,7 @@ export function BrandAdmin({ role }: Props) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Brands</h3>
-        {loading && <span className="text-xs text-muted-foreground">Loading…</span>}
+        {loading && <SkeletonRow count={1} />}
       </div>
 
       {error && (
