@@ -19,7 +19,6 @@ import {
   FileUp,
   IndianRupee,
   PackagePlus,
-  Search,
   TriangleAlert,
   TrendingDown,
 } from "lucide-react";
@@ -32,6 +31,7 @@ import {
   EmptyState,
   Money,
   PaginationControls,
+  SearchInput,
   Skeleton,
 } from "../../components/ui";
 import { formatRupeesFromPaise } from "../../lib/money";
@@ -375,20 +375,13 @@ export function ItemList({ role }: Props) {
 
       {/* ── Filter bar ───────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[200px] flex-1">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <input
-            ref={searchRef}
-            type="search"
-            placeholder="Search by name, SKU, brand, category, barcode…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input pl-9"
-          />
-        </div>
+        <SearchInput
+          ref={searchRef}
+          value={search}
+          onChange={(v) => setSearch(v)}
+          placeholder="Search by name, SKU, brand, category, barcode…"
+          ariaLabel="Search inventory"
+        />
         <label className="flex h-9 items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
