@@ -8,7 +8,8 @@
  */
 import { useEffect, useState } from "react";
 import { customerOutstanding } from "./api";
-import { formatINR, type CustomerOutstanding } from "../types";
+import { formatRupeesFromPaise } from "../../lib/money";
+import type { CustomerOutstanding } from "../types";
 
 interface Props {
   customerId: number;
@@ -73,7 +74,7 @@ export function KhataRecord({ customerId }: Props) {
               <td className="py-1 font-mono text-xs">{r.date}</td>
               <td>{r.kind}</td>
               <td>{r.ref}</td>
-              <td className="text-right">{formatINR(r.amount)}</td>
+              <td className="text-right">{formatRupeesFromPaise(r.amount)}</td>
             </tr>
           ))}
         </tbody>

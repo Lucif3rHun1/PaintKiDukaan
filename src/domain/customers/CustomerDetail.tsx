@@ -3,7 +3,8 @@
  */
 import { useEffect, useState } from "react";
 import { customerOutstanding } from "./api";
-import { formatINR, type Customer, type CustomerOutstanding } from "../types";
+import { formatRupeesFromPaise } from "../../lib/money";
+import type { Customer, CustomerOutstanding } from "../types";
 import { KhataRecord } from "./KhataRecord";
 
 interface Props {
@@ -68,29 +69,29 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
           label="Credit limit"
           value={
             customer.credit_limit != null
-              ? formatINR(customer.credit_limit)
-              : "—"
+            ? formatRupeesFromPaise(customer.credit_limit)
+            : "—"
           }
         />
-        <Row label="Opening" value={formatINR(customer.opening_balance_paise)} />
+        <Row label="Opening" value={formatRupeesFromPaise(customer.opening_balance_paise)} />
         <Row
           label="Total sales"
-          value={outstanding ? formatINR(outstanding.total_sales) : "…"}
+          value={outstanding ? formatRupeesFromPaise(outstanding.total_sales) : "…"}
         />
         <Row
           label="Total paid (in sales)"
-          value={outstanding ? formatINR(outstanding.total_paid) : "…"}
+          value={outstanding ? formatRupeesFromPaise(outstanding.total_paid) : "…"}
         />
         <Row
           label="Customer payments"
-          value={outstanding ? formatINR(outstanding.total_payments) : "…"}
+          value={outstanding ? formatRupeesFromPaise(outstanding.total_payments) : "…"}
         />
       </dl>
 
       <div className="mb-4 rounded border border-slate-200 bg-slate-50 p-4">
         <p className="text-xs uppercase text-slate-500">Outstanding</p>
         <p className="text-2xl font-semibold text-slate-800">
-          {outstanding ? formatINR(outstanding.outstanding) : "…"}
+          {outstanding ? formatRupeesFromPaise(outstanding.outstanding) : "…"}
         </p>
       </div>
 

@@ -1,4 +1,3 @@
-import { formatRupeesFromPaise as formatPaiseAsRupees } from "../lib/money";
 export { formatRupeesFromPaise } from "../lib/money";
 import type { PaymentMode } from "../pos/types";
 import type { Sale } from "../pos/types";
@@ -402,14 +401,6 @@ export function isAppError(e: unknown): e is AppError {
     "message" in e &&
     typeof (e as { code: unknown }).code === "string"
   );
-}
-
-/**
- * This function accepts PAISE (the backend wire format), not rupees.
- * Prefer formatRupeesFromPaise for new call sites.
- */
-export function formatINR(paise: number): string {
-  return formatPaiseAsRupees(paise);
 }
 
 export interface CustomerBill {

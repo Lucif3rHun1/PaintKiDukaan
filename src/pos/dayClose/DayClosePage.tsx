@@ -10,6 +10,7 @@ import {
   triggerDayClose,
 } from "../api";
 import type { BackupGate, CashSalesSummary, DayClose } from "../types";
+import { formatRupeesFromPaise } from "../../lib/money";
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
@@ -157,11 +158,11 @@ export default function DayClosePage({ user }: Props) {
           </label>
         </div>
         <div className="mt-3 rounded bg-slate-50 p-2 text-sm">
-          <p>Expected: <strong>₹{expected / 100}</strong></p>
+          <p>Expected: <strong>{formatRupeesFromPaise(expected)}</strong></p>
           <p>
             Variance:{" "}
             <strong className={variance === 0 ? "text-emerald-600" : "text-rose-600"}>
-              ₹{variance / 100}
+              {formatRupeesFromPaise(variance)}
             </strong>
           </p>
         </div>
@@ -225,11 +226,11 @@ export default function DayClosePage({ user }: Props) {
             {recent.map((d) => (
               <tr key={d.id} className="border-t border-slate-100">
                 <td>{d.date}</td>
-                <td>₹{d.cash_sales / 100}</td>
-                <td>₹{d.expected_cash / 100}</td>
-                <td>₹{d.counted_cash / 100}</td>
+                <td>{formatRupeesFromPaise(d.cash_sales)}</td>
+                <td>{formatRupeesFromPaise(d.expected_cash)}</td>
+                <td>{formatRupeesFromPaise(d.counted_cash)}</td>
                 <td className={d.variance === 0 ? "text-emerald-600" : "text-rose-600"}>
-                  ₹{d.variance / 100}
+                  {formatRupeesFromPaise(d.variance)}
                 </td>
                 <td>{d.backup_check_status}</td>
               </tr>

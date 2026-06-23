@@ -8,7 +8,8 @@ import { Search, UserPlus, Flag, Phone, Banknote, IndianRupee } from "lucide-rea
 import { Alert, Badge, Button, Card, EmptyState, Money, Skeleton } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { listCustomers } from "./api";
-import { formatINR, type Customer } from "../types";
+import { formatRupeesFromPaise } from "../../lib/money";
+import type { Customer } from "../types";
 import { extractError } from "../../lib/extractError";
 
 interface Props {
@@ -222,7 +223,7 @@ export function CustomerList({
                         {c.credit_limit != null ? (
                           <span className="inline-flex items-center gap-1">
                             <IndianRupee className="h-3 w-3 text-muted-foreground" />
-                            {formatINR(c.credit_limit)}
+                            {formatRupeesFromPaise(c.credit_limit)}
                           </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>

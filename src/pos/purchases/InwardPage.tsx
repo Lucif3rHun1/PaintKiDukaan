@@ -15,6 +15,7 @@ import { InlineVendorForm } from "../../domain/vendors/InlineVendorForm";
 import { createVendor, listVendors, vendorOutstanding } from "../../domain/vendors/api";
 import type { Item, Location, Vendor } from "../../domain/types";
 import { createInward, lastCost, lastRetail, listPurchases } from "../api";
+import { formatRupeesFromPaise } from "../../lib/money";
 import type { InwardLine, NewPurchase, Purchase } from "../types";
 
 interface Props {
@@ -364,7 +365,7 @@ export default function InwardPage({ user: _user }: Props) {
                 const parts = [v.name];
                 if (v.contact_person) parts.push(v.contact_person);
                 if (v.phone) parts.push(v.phone);
-                if (outstanding > 0) parts.push(`₹${(outstanding / 100).toFixed(0)} due`);
+                if (outstanding > 0) parts.push(`${formatRupeesFromPaise(outstanding)} due`);
                 return (
                   <button
                     key={v.id}
