@@ -652,6 +652,7 @@ export default function InwardPage({ user: _user }: Props) {
             setVendorQuery("");
             setAddVendorOpen(false);
           }}
+          onCancel={() => setAddVendorOpen(false)}
         />
       </InlineDialog>
 

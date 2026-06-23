@@ -6,9 +6,10 @@ import type { AppError, NewVendor, Vendor } from "../types";
 
 interface Props {
   onSaved: (v: Vendor) => void;
+  onCancel?: () => void;
 }
 
-export function InlineVendorForm({ onSaved }: Props) {
+export function InlineVendorForm({ onSaved, onCancel }: Props) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +71,12 @@ export function InlineVendorForm({ onSaved }: Props) {
           {error}
         </p>
       )}
-      <div className="flex justify-end gap-2">
+      <div className="flex justify-end gap-2 border-t border-border pt-4">
+        {onCancel && (
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={busy}>
+            Cancel
+          </Button>
+        )}
         <Button type="submit" loading={busy}>
           Add vendor
         </Button>

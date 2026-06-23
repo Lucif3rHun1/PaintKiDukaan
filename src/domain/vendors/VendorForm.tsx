@@ -2,6 +2,7 @@
  * VendorForm — create / edit.
  */
 import { useState } from "react";
+import { Button } from "../../components/ui";
 import { createVendor, updateVendor } from "./api";
 import type { AppError, NewVendor, Vendor, VendorUpdate } from "../types";
 
@@ -61,14 +62,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="grid max-w-xl gap-4 rounded-lg border border-border bg-card p-6 shadow-sm"
-    >
-      <h2 className="text-lg font-semibold">
-        {mode === "create" ? "New vendor" : `Edit ${initial?.name ?? ""}`}
-      </h2>
-
+    <form onSubmit={submit} className="grid gap-4">
       <Field label="Name" required>
         <input
           value={name}
@@ -112,22 +106,18 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
         </p>
       )}
 
-      <div className="flex justify-end gap-2">
-        <button
+      <div className="flex justify-end gap-2 border-t border-border pt-4">
+        <Button
           type="button"
+          variant="secondary"
           onClick={onCancel}
-          className="rounded border border-border px-4 py-2 text-sm hover:bg-card"
           disabled={busy}
         >
           Cancel
-        </button>
-        <button
-          type="submit"
-          className="btn-primary"
-          disabled={busy}
-        >
+        </Button>
+        <Button type="submit" loading={busy} disabled={busy}>
           {busy ? "Saving…" : "Save"}
-        </button>
+        </Button>
       </div>
     </form>
   );
