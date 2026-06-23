@@ -116,7 +116,7 @@ export function VendorList({
             icon={Truck}
             onClick={onCreate}
           >
-            New vendor
+            New Vendor
           </Button>
         ) : null}
       </header>
@@ -162,7 +162,7 @@ export function VendorList({
               primary={
                 canCreate ? (
                   <Button type="button" onClick={onCreate} icon={Truck}>
-                    Add vendor
+                    Add Vendor
                   </Button>
                 ) : undefined
               }

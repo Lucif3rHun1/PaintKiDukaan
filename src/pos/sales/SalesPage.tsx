@@ -245,7 +245,7 @@ export default function SalesPage({ user, onExit }: Props) {
           Back to sales
         </Button>
         <h1 className="text-lg font-semibold text-foreground">
-          {kind === "final" ? "New bill" : "New quotation"}
+          {kind === "final" ? "New Bill" : "New Quotation"}
         </h1>
         <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
           {(["final", "quotation"] as const).map((k) => (
@@ -260,7 +260,7 @@ export default function SalesPage({ user, onExit }: Props) {
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {k === "final" ? "Final bill" : "Quotation"}
+              {k === "final" ? "Final Bill" : "Quotation"}
             </button>
           ))}
         </div>
@@ -564,9 +564,9 @@ export default function SalesPage({ user, onExit }: Props) {
                             <button
                               type="button"
                               onClick={() => handleConvert(s)}
-                              className="ml-2 text-xs text-primary hover:underline"
+                              className="ml-2 rounded px-2 py-0.5 text-xs text-primary hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             >
-                              Convert →
+                              Convert to invoice
                             </button>
                           ) : null}
                         </div>

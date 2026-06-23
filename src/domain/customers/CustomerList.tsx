@@ -96,7 +96,7 @@ export function CustomerList({
             icon={UserPlus}
             onClick={onCreate}
           >
-            New customer
+            New Customer
           </Button>
         ) : null}
       </header>
@@ -145,7 +145,7 @@ export function CustomerList({
               primary={
                 canCreate ? (
                   <Button type="button" onClick={onCreate} icon={UserPlus}>
-                    Add customer
+                    Add Customer
                   </Button>
                 ) : undefined
               }

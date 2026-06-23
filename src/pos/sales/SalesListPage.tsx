@@ -34,7 +34,7 @@ export function SalesListPage({ onCreate }: Props) {
           onClick={onCreate}
           className="btn-primary text-sm"
         >
-          + New sale
+          + New Sale
         </button>
       </div>
 
@@ -45,7 +45,7 @@ export function SalesListPage({ onCreate }: Props) {
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No sales yet. Click "+ New sale" to create one.</p>
+        <p className="text-sm text-muted-foreground">No sales yet. Click "+ New Sale" to create one.</p>
       ) : (
         <div className="overflow-x-auto rounded border border-border">
           <table className="w-full text-sm">
