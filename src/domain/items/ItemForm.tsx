@@ -4,7 +4,7 @@
  * Keyboard: Enter submits, Esc cancels (except inside <textarea>).
  */
 import { useEffect, useState } from "react";
-import { MoneyInput } from "../../components/ui";
+import { Button, MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { createItem, listBrands, updateItem, previewNextBarcode } from "./api";
 import { listLocations, listSubLocations } from "../locations/api";
@@ -225,9 +225,9 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     <form
       onSubmit={(e) => void submit(e)}
       onKeyDown={onKeyDown}
-      className="card mx-auto w-full max-w-3xl space-y-6"
+      className="mx-auto w-full max-w-3xl space-y-6"
     >
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between border-b border-border pb-4">
         <h2 className="text-lg font-semibold text-foreground">
           {mode === "create" ? "New item" : `Edit ${initial?.sku_code ?? ""}`}
         </h2>
@@ -243,7 +243,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="input-dark"
+            className="input"
           />
         </Field>
         <div className="grid grid-cols-2 gap-4">
@@ -253,7 +253,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               onChange={(e) =>
                 setBrandId(e.target.value === "0" ? null : Number(e.target.value))
               }
-              className="input-dark"
+              className="input"
             >
               <option value={0}>— None —</option>
               {brands.map((b) => (
@@ -267,7 +267,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="input-dark"
+              className="input"
             >
               <option value="">— None —</option>
               {categories.filter((c) => c.is_active).map((c) => (
@@ -292,7 +292,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             <select
               value={unitId ?? 0}
               onChange={(e) => setUnitId(Number(e.target.value) || null)}
-              className="input-dark"
+              className="input"
             >
               <option value={0}>— Select unit —</option>
               {units.filter((u) => u.is_active).map((u) => (
@@ -314,7 +314,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               step="0.01"
               min="0"
               onChange={(e) => setMinQty(e.target.value)}
-              className="input-dark"
+              className="input"
             />
           </Field>
         </div>
@@ -329,7 +329,6 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               min={0}
               onChange={setRetailPricePaise}
               required
-              tone="dark"
             />
           </Field>
           <Field
@@ -341,7 +340,6 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               value={costPaise}
               min={0}
               onChange={setCostPaise}
-              tone="dark"
             />
           </Field>
           <Field label="Promo price (₹)">
@@ -349,7 +347,6 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               value={promoPricePaise ?? 0}
               min={0}
               onChange={(paise) => setPromoPricePaise(paise === 0 ? null : paise)}
-              tone="dark"
             />
           </Field>
         </div>
@@ -367,7 +364,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                 value={displayBarcode}
                 readOnly
                 placeholder={barcodeLoading ? "Loading…" : "Will be auto-generated"}
-                className="input-dark cursor-not-allowed font-mono text-muted-foreground"
+                className="input cursor-not-allowed font-mono text-muted-foreground"
               />
             </Field>
           </div>
@@ -395,7 +392,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           <select
             value={primaryLocationId}
             onChange={(e) => setPrimaryLocationId(Number(e.target.value))}
-            className="input-dark"
+            className="input"
           >
             <option value={0}>Select location…</option>
             {locations.map((loc) => (
@@ -410,7 +407,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             <select
               value={subLocationId ?? 0}
               onChange={(e) => setSubLocationId(Number(e.target.value) || null)}
-              className="input-dark"
+              className="input"
             >
               <option value={0}>— None —</option>
               {subLocations.map((sub) => (
@@ -426,7 +423,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             value={position}
             onChange={(e) => setPosition(e.target.value)}
             placeholder="e.g. Aisle 3, Bay 2"
-            className="input-dark"
+            className="input"
           />
         </Field>
       </Section>
@@ -440,7 +437,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               min="0"
               step="1"
               onChange={(e) => setOpeningStock(e.target.value)}
-              className="input-dark"
+              className="input"
             />
           </Field>
         </Section>
@@ -455,18 +452,18 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         </p>
       )}
 
-      <div className="flex justify-end gap-2">
-        <button
+      <div className="flex justify-end gap-2 border-t border-border pt-6">
+        <Button
           type="button"
+          variant="secondary"
           onClick={onCancel}
-          className="btn-ghost"
           disabled={busy}
         >
           Cancel
-        </button>
-        <button type="submit" className="btn-primary" disabled={busy}>
+        </Button>
+        <Button type="submit" loading={busy} disabled={busy}>
           {busy ? "Saving…" : "Save"}
-        </button>
+        </Button>
       </div>
     </form>
   );
