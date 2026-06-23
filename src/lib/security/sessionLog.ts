@@ -27,9 +27,14 @@ function sendToBackend(level: LogLevel, message: string) {
   const cid = generateCorrelationId();
   // `console.log` is not a valid backend log level; map it to `info`.
   const backendLevel = level === "log" ? "info" : level;
-  tauriInvoke("log_frontend", { level: backendLevel, message, correlation_id: cid }).catch(() => {
-    // Backend not ready yet — ignore silently.
-  });
+  tauriInvoke("log_frontend", { level: backendLevel, message, correlation_id: cid }).catch(
+    (logErr: unknown) => {
+      // Backend may not be ready yet; log the failure locally so it is not
+      // silently swallowed during startup debugging.
+      // eslint-disable-next-line no-console
+      console.error("[sessionLog.ts] failed to forward log", backendLevel, message, logErr);
+    },
+  );
 }
 
 export function initSessionLog() {

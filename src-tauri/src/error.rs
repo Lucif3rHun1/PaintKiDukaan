@@ -71,6 +71,14 @@ pub enum AppError {
 }
 
 impl AppError {
+    /// Return the current observability correlation ID as a UUID, if it can be
+    /// decoded from the 32-char hex string stored in thread-local storage.
+    pub fn correlation_id(&self) -> Option<uuid::Uuid> {
+        let cid = crate::obs::correlation_id();
+        let bytes = hex::decode(cid).ok()?;
+        uuid::Uuid::from_slice(&bytes).ok()
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             AppError::Db(_) => "db",

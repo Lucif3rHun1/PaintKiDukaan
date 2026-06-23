@@ -40,7 +40,10 @@ export async function invoke<T>(
         level: "error",
         message: `[IPC:APP_ERROR] cmd=${cmd} cid=${cid} code=${err.code} msg=${err.message}`,
         correlation_id: cid,
-      }).catch(() => {}); // Intentional: log forwarding should not throw.
+      }).catch((logErr: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[domain/ipc.ts] failed to forward app error", logErr);
+      });
       throw err;
     }
     const wrapped: AppError = {
@@ -51,7 +54,10 @@ export async function invoke<T>(
       level: "error",
       message: `[IPC:WRAPPED] cmd=${cmd} cid=${cid} ${wrapped.message}`,
       correlation_id: cid,
-    }).catch(() => {}); // Intentional: log forwarding should not throw.
+    }).catch((logErr: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error("[domain/ipc.ts] failed to forward wrapped error", logErr);
+    });
     throw wrapped;
   }
 }

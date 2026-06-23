@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback } from "react";
 import { ErrorBoundary as ReactErrorBoundary } from "react-error-boundary";
 import { AlertTriangle, Home, RotateCcw } from "lucide-react";
-import { tauriInvoke } from "../../lib/security/tauri";
+import { tauriInvoke, generateCorrelationId } from "../../lib/security/tauri";
 import { Card } from "./Card";
 import { Button } from "./Button";
 import { cn } from "./cn";
@@ -92,16 +92,20 @@ export function ErrorBoundary({
 }: ErrorBoundaryProps) {
   const handleError = useCallback(
     (error: unknown, info: { componentStack?: string | null }) => {
+      const cid = generateCorrelationId();
       const ctx = context ?? "unknown";
       const errMsg = error instanceof Error ? error.message : String(error);
       const stack = error instanceof Error ? (error.stack ?? "") : "";
       const compStack = info.componentStack ?? "";
-      const msg = `[RENDER:ERROR] context=${ctx} ${errMsg}\n${stack}\ncomponentStack:${compStack}`;
+      const msg = `[RENDER:ERROR] context=${ctx} cid=${cid} ${errMsg}\n${stack}\ncomponentStack:${compStack}`;
       tauriInvoke("log_frontend", {
         level: "error",
         message: msg,
-        correlation_id: null,
-      }).catch(() => {}); // Intentional: log forwarding should not throw.
+        correlation_id: cid,
+      }).catch((logErr: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[ErrorBoundary] failed to forward render error", logErr);
+      });
     },
     [context],
   );

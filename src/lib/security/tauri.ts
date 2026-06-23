@@ -10,8 +10,6 @@
  * is NOT enabled on any command), so this is a non-breaking additive change.
  */
 
-import { extractError } from "../extractError";
-
 let cidCounter = 0;
 
 function generateCorrelationId(): string {
@@ -39,14 +37,23 @@ export async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>
     return await internals.invoke(cmd, argsWithCid, undefined);
   } catch (e) {
     // Forward the error to the backend log with correlation ID.
-    // Tauri rejects with a plain {code,message} object for Rust AppErrors,
-    // so extractError pulls the human-readable message instead of [object Object].
-    const msg = e instanceof Error ? `${e.message}\n${e.stack ?? ""}` : extractError(e);
+    // JSON.stringify with Object.getOwnPropertyNames preserves serialisable
+    // fields on Tauri rejection objects (e.g. {code,message}) instead of
+    // emitting the unhelpful '[object Object]' string.
+    const detail = e instanceof Error
+      ? `${e.message}\n${e.stack ?? ""}`
+      : JSON.stringify(e, Object.getOwnPropertyNames(e));
+    const msg = `[IPC:ERR] cmd=${cmd} cid=${cid} ${detail}`;
     internals.invoke("log_frontend", {
       level: "error",
-      message: `[IPC:ERR] cmd=${cmd} cid=${cid} ${msg}`,
+      message: msg,
       correlation_id: cid,
-    }).catch(() => {}); // Intentional: log forwarding should not throw.
+    }).catch((logErr: unknown) => {
+      // Log forwarding should not throw, but we log the failure to the
+      // browser console so it is not silently swallowed during debugging.
+      // eslint-disable-next-line no-console
+      console.error("[tauri.ts] failed to forward IPC error", logErr);
+    });
     throw e;
   }
 }

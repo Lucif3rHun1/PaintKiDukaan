@@ -178,6 +178,16 @@ impl Db {
         })
     }
 
+    /// Count user-defined tables for transaction logging.
+    fn user_table_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            [],
+            |r| r.get(0),
+        )
+    }
+
     /// Run a closure inside a deferred transaction (`BEGIN … COMMIT`).
     pub fn with_conn<F, R, E>(&self, f: F) -> Result<R, E>
     where
@@ -185,16 +195,21 @@ impl Db {
         E: From<rusqlite::Error>,
     {
         let conn = self.conn.lock().expect("db lock poisoned");
+        let cid = crate::obs::correlation_id();
+        let tables = Self::user_table_count(&conn).unwrap_or(-1);
+        log::info!("[DB] BEGIN cid={cid} tables={tables}");
         conn.execute("BEGIN", []).map_err(E::from)?;
         match f(&conn) {
             Ok(val) => {
                 conn.execute("COMMIT", []).map_err(E::from)?;
+                log::info!("[DB] COMMIT cid={cid} tables={tables}");
                 Ok(val)
             }
             Err(e) => {
                 if let Err(rb_err) = conn.execute("ROLLBACK", []) {
-                    let cid = crate::obs::correlation_id();
                     log::error!("[DB] ROLLBACK failed cid={cid}: {rb_err}");
+                } else {
+                    log::warn!("[DB] ROLLBACK cid={cid} tables={tables}");
                 }
                 Err(e)
             }
@@ -208,16 +223,21 @@ impl Db {
         E: From<rusqlite::Error>,
     {
         let conn = self.conn.lock().expect("db lock poisoned");
+        let cid = crate::obs::correlation_id();
+        let tables = Self::user_table_count(&conn).unwrap_or(-1);
+        log::info!("[DB] BEGIN IMMEDIATE cid={cid} tables={tables}");
         conn.execute("BEGIN IMMEDIATE", []).map_err(E::from)?;
         match f(&conn) {
             Ok(val) => {
                 conn.execute("COMMIT", []).map_err(E::from)?;
+                log::info!("[DB] COMMIT cid={cid} tables={tables}");
                 Ok(val)
             }
             Err(e) => {
                 if let Err(rb_err) = conn.execute("ROLLBACK", []) {
-                    let cid = crate::obs::correlation_id();
                     log::error!("[DB] ROLLBACK (immediate) failed cid={cid}: {rb_err}");
+                } else {
+                    log::warn!("[DB] ROLLBACK (immediate) cid={cid} tables={tables}");
                 }
                 Err(e)
             }
@@ -243,16 +263,21 @@ impl Db {
         E: From<rusqlite::Error>,
     {
         let conn = self.conn.lock().expect("db lock poisoned");
+        let cid = crate::obs::correlation_id();
+        let tables = Self::user_table_count(&conn).unwrap_or(-1);
+        log::info!("[DB] BEGIN IMMEDIATE cid={cid} tables={tables}");
         conn.execute("BEGIN IMMEDIATE", [])?;
         match f(&conn) {
             Ok(val) => {
                 conn.execute("COMMIT", [])?;
+                log::info!("[DB] COMMIT cid={cid} tables={tables}");
                 Ok(val)
             }
             Err(e) => {
                 if let Err(rb_err) = conn.execute("ROLLBACK", []) {
-                    let cid = crate::obs::correlation_id();
                     log::error!("[DB] ROLLBACK (tx) failed cid={cid}: {rb_err}");
+                } else {
+                    log::warn!("[DB] ROLLBACK (tx) cid={cid} tables={tables}");
                 }
                 Err(e)
             }
