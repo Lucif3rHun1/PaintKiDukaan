@@ -234,7 +234,7 @@ export function BrandAdmin({ role }: Props) {
                     <span className="font-mono text-foreground">{b.prefix}</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                <td className="px-3 py-2 text-right font-mono text-muted-foreground tabular-nums">
                   {String(b.next_seq).padStart(3, "0")}
                 </td>
                 <td className="px-3 py-2 text-right">

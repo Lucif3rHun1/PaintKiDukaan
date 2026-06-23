@@ -529,7 +529,7 @@ export default function InwardPage({ user: _user }: Props) {
                       onChange={(e) =>
                         setDraft((p) => p.map((x, j) => (j === i ? { ...x, qty: Number(e.target.value) } : x)))
                       }
-                      className="input h-9 w-16 px-2 text-sm"
+                      className="input h-9 w-16 px-2 text-sm tabular-nums"
                     />
                   </td>
                   <td className="px-3 py-2">

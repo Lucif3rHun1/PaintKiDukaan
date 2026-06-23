@@ -523,7 +523,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                               max={line.original_qty ?? undefined}
                               value={line.qty}
                               onChange={(event) => updateLineQty(index, Number(event.target.value))}
-                              className="input h-9 w-20 px-2 text-sm"
+                              className="input h-9 w-20 px-2 text-sm tabular-nums"
                             />
                             {line.unit_code ? (
                               <span className="text-[11px] text-muted-foreground">{line.unit_code}</span>

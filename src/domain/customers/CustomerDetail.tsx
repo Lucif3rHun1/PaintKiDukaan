@@ -90,7 +90,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
 
       <div className="mb-4 rounded border border-slate-200 bg-slate-50 p-4">
         <p className="text-xs uppercase text-slate-500">Outstanding</p>
-        <p className="text-2xl font-semibold text-slate-800">
+        <p className="text-2xl font-semibold tabular-nums text-slate-800">
           {outstanding ? formatRupeesFromPaise(outstanding.outstanding) : "…"}
         </p>
       </div>
@@ -113,7 +113,7 @@ function Row({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-xs uppercase text-slate-500">{label}</dt>
-      <dd className="text-slate-800">{value}</dd>
+      <dd className="tabular-nums text-slate-800">{value}</dd>
     </div>
   );
 }

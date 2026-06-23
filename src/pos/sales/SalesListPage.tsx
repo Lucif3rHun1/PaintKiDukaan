@@ -62,7 +62,7 @@ export function SalesListPage({ onCreate }: Props) {
             <tbody>
               {rows.map((s) => (
                 <tr key={s.id} className="border-t border-border">
-                  <td className="px-3 py-1.5 font-mono">{s.no}</td>
+                  <td className="px-3 py-1.5 font-mono tabular-nums">{s.no}</td>
                   <td className="px-3 py-1.5">{formatDateForDisplay(s.date)}</td>
                   <td className="px-3 py-1.5">{s.status}</td>
                   <td className="px-3 py-1.5">{s.customer_name ?? "Walk-in"}</td>
