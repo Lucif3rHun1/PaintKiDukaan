@@ -16,6 +16,9 @@ const ipcMocks = vi.hoisted(() => ({
   listCustomerTypes: vi.fn(),
   addCustomerType: vi.fn(),
   removeCustomerType: vi.fn(),
+}));
+
+const unitsApiMocks = vi.hoisted(() => ({
   listUnits: vi.fn(),
   createUnit: vi.fn(),
   updateUnit: vi.fn(),
@@ -45,6 +48,7 @@ const toastMocks = vi.hoisted(() => ({
 
 vi.mock("../../lib/ipc", () => ({ ipc: ipcMocks }));
 vi.mock("../../../domain/locations/api", () => locationsApiMocks);
+vi.mock("../../../domain/units/api", () => unitsApiMocks);
 vi.mock("../../../domain/items/api", () => apiMocks);
 vi.mock("../../../lib/feedback/toast", () => toastMocks);
 
@@ -95,10 +99,10 @@ beforeEach(() => {
   ipcMocks.listCustomerTypes.mockReset().mockResolvedValue([]);
   ipcMocks.addCustomerType.mockReset().mockResolvedValue([]);
   ipcMocks.removeCustomerType.mockReset().mockResolvedValue([]);
-  ipcMocks.listUnits.mockReset().mockResolvedValue([]);
-  ipcMocks.createUnit.mockReset().mockResolvedValue(SAMPLE_UNITS[0]);
-  ipcMocks.updateUnit.mockReset().mockResolvedValue(SAMPLE_UNITS[0]);
-  ipcMocks.deactivateUnit.mockReset().mockResolvedValue(undefined);
+  unitsApiMocks.listUnits.mockReset().mockResolvedValue([]);
+  unitsApiMocks.createUnit.mockReset().mockResolvedValue(SAMPLE_UNITS[0]);
+  unitsApiMocks.updateUnit.mockReset().mockResolvedValue(SAMPLE_UNITS[0]);
+  unitsApiMocks.deactivateUnit.mockReset().mockResolvedValue(undefined);
   apiMocks.listBrands.mockReset().mockResolvedValue([]);
   apiMocks.createBrand.mockReset().mockResolvedValue(SAMPLE_BRANDS[0]);
   apiMocks.deactivateBrand.mockReset().mockResolvedValue(undefined);
@@ -129,7 +133,7 @@ describe("Soft-delete dependency handling", () => {
   });
 
   it("unit deactivation calls deactivateUnit (not delete)", async () => {
-    ipcMocks.listUnits.mockResolvedValue(SAMPLE_UNITS);
+    unitsApiMocks.listUnits.mockResolvedValue(SAMPLE_UNITS);
     const user = userEvent.setup();
     const wrapper = createWrapper();
     render(<CatalogUnitsSettings />, { wrapper });
@@ -141,7 +145,7 @@ describe("Soft-delete dependency handling", () => {
     await user.click(deactivateBtns[0]);
 
     await waitFor(() => {
-      expect(ipcMocks.deactivateUnit).toHaveBeenCalledWith(1);
+      expect(unitsApiMocks.deactivateUnit).toHaveBeenCalledWith(1);
     });
     expect(toastMocks.toast.success).toHaveBeenCalledWith("Unit deactivated");
   });
@@ -163,7 +167,7 @@ describe("Soft-delete dependency handling", () => {
   });
 
   it("deactivate button is disabled for already-inactive units", async () => {
-    ipcMocks.listUnits.mockResolvedValue(SAMPLE_UNITS);
+    unitsApiMocks.listUnits.mockResolvedValue(SAMPLE_UNITS);
     const wrapper = createWrapper();
     render(<CatalogUnitsSettings />, { wrapper });
 
@@ -205,7 +209,7 @@ describe("Validation edge cases", () => {
   });
 
   it("empty unit code shows validation error", async () => {
-    ipcMocks.listUnits.mockResolvedValue([]);
+    unitsApiMocks.listUnits.mockResolvedValue([]);
     const user = userEvent.setup();
     const wrapper = createWrapper();
     render(<CatalogUnitsSettings />, { wrapper });
@@ -217,7 +221,7 @@ describe("Validation edge cases", () => {
       expect(screen.getByText("Unit code is required.")).toBeInTheDocument();
     });
     expect(toastMocks.toast.error).toHaveBeenCalledWith("Unit code is required");
-    expect(ipcMocks.createUnit).not.toHaveBeenCalled();
+    expect(unitsApiMocks.createUnit).not.toHaveBeenCalled();
   });
 
   it("brand prefix rejects special characters", async () => {
@@ -338,7 +342,7 @@ describe("UI state edge cases", () => {
   });
 
   it("Enter key submits unit form via code input", async () => {
-    ipcMocks.listUnits.mockResolvedValue([]);
+    unitsApiMocks.listUnits.mockResolvedValue([]);
     const user = userEvent.setup();
     const wrapper = createWrapper();
     render(<CatalogUnitsSettings />, { wrapper });
@@ -349,7 +353,7 @@ describe("UI state edge cases", () => {
     await user.keyboard("{Enter}");
 
     await waitFor(() => {
-      expect(ipcMocks.createUnit).toHaveBeenCalledWith("KG", "", "count");
+      expect(unitsApiMocks.createUnit).toHaveBeenCalledWith("KG", "", "count");
     });
   });
 
@@ -444,9 +448,9 @@ describe("UI state edge cases", () => {
   });
 
   it("unit add button disables while saving", async () => {
-    ipcMocks.listUnits.mockResolvedValue([]);
+    unitsApiMocks.listUnits.mockResolvedValue([]);
     let resolveCreate: (value: Unit) => void;
-    ipcMocks.createUnit.mockImplementation(
+    unitsApiMocks.createUnit.mockImplementation(
       () => new Promise<Unit>((resolve) => { resolveCreate = resolve; }),
     );
     const user = userEvent.setup();

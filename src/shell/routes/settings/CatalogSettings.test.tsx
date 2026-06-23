@@ -5,6 +5,7 @@ import { vi, type Mock } from "vitest";
 
 import { ipc } from "../../lib/ipc";
 import { usePaginatedQuery } from "../../../lib/query";
+import { listUnits, createUnit, updateUnit, deactivateUnit } from "../../../domain/units/api";
 import { LocationsSettings, CustomerTypesSettings, CatalogUnitsSettings } from "./CatalogSettings";
 
 vi.mock("../../lib/ipc", () => ({
@@ -17,16 +18,19 @@ vi.mock("../../lib/ipc", () => ({
     listCustomerTypes: vi.fn(),
     addCustomerType: vi.fn(),
     removeCustomerType: vi.fn(),
-    listUnits: vi.fn(),
-    createUnit: vi.fn(),
-    updateUnit: vi.fn(),
-    deactivateUnit: vi.fn(),
   },
 }));
 
 vi.mock("../../../domain/locations/api", () => ({
   listLocations: vi.fn(),
   renameLocation: vi.fn(),
+}));
+
+vi.mock("../../../domain/units/api", () => ({
+  listUnits: vi.fn(),
+  createUnit: vi.fn(),
+  updateUnit: vi.fn(),
+  deactivateUnit: vi.fn(),
 }));
 
 vi.mock("../../../lib/query", () => ({
@@ -39,6 +43,10 @@ vi.mock("../../../lib/feedback/toast", () => ({
 
 const mockIpc = vi.mocked(ipc);
 const mockUsePaginatedQuery = usePaginatedQuery as Mock;
+const mockListUnits = vi.mocked(listUnits);
+const mockCreateUnit = vi.mocked(createUnit);
+const mockUpdateUnit = vi.mocked(updateUnit);
+const mockDeactivateUnit = vi.mocked(deactivateUnit);
 
 const locationsApi = await import("../../../domain/locations/api");
 const mockListLocations = vi.mocked(locationsApi.listLocations);
@@ -68,6 +76,10 @@ beforeEach(() => {
   mockUsePaginatedQuery.mockReturnValue(mockPaginatedReturn());
   mockListLocations.mockReset();
   mockRenameLocation.mockReset();
+  mockListUnits.mockReset().mockResolvedValue([]);
+  mockCreateUnit.mockReset();
+  mockUpdateUnit.mockReset();
+  mockDeactivateUnit.mockReset();
   mockIpc.addLocation.mockReset();
   mockIpc.removeLocation.mockReset();
   mockIpc.listSubLocations.mockReset();
@@ -76,10 +88,6 @@ beforeEach(() => {
   mockIpc.listCustomerTypes.mockReset();
   mockIpc.addCustomerType.mockReset();
   mockIpc.removeCustomerType.mockReset();
-  mockIpc.listUnits.mockReset();
-  mockIpc.createUnit.mockReset();
-  mockIpc.updateUnit.mockReset();
-  mockIpc.deactivateUnit.mockReset();
 });
 
 // ─── LocationsSettings ────────────────────────────────────────────────
@@ -338,7 +346,7 @@ describe("CatalogUnitsSettings", () => {
   const inactiveUnit = { id: 3, code: "BOX", label: "Box", dimension: "count" as const, is_active: false };
 
   beforeEach(() => {
-    mockIpc.listUnits.mockResolvedValue([]);
+    mockListUnits.mockResolvedValue([]);
   });
 
   it("renders empty state when no units", async () => {
@@ -347,7 +355,7 @@ describe("CatalogUnitsSettings", () => {
   });
 
   it("renders skeleton while loading", () => {
-    mockUsePaginatedQuery.mockReturnValue(mockPaginatedReturn({ isLoading: true }));
+    mockListUnits.mockReturnValue(new Promise(() => {}));
 
     render(<CatalogUnitsSettings />);
     // Skeleton renders a div with role or class — we check no empty state or table appears
@@ -356,13 +364,7 @@ describe("CatalogUnitsSettings", () => {
   });
 
   it("renders unit rows", async () => {
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({
-        data: [unitA, unitB],
-        allData: [unitA, unitB],
-        totalItems: 2,
-      }),
-    );
+    mockListUnits.mockResolvedValue([unitA, unitB]);
 
     render(<CatalogUnitsSettings />);
 
@@ -374,9 +376,8 @@ describe("CatalogUnitsSettings", () => {
 
   it("creates a new unit", async () => {
     const user = userEvent.setup();
-    const refetch = vi.fn();
-    mockUsePaginatedQuery.mockReturnValue(mockPaginatedReturn({ refetch }));
-    mockIpc.createUnit.mockResolvedValue({ id: 99, code: "ML", label: "Millilitre", dimension: "volume", is_active: true });
+    mockListUnits.mockResolvedValue([]);
+    mockCreateUnit.mockResolvedValue({ id: 99, code: "ML", label: "Millilitre", dimension: "volume", is_active: true });
 
     render(<CatalogUnitsSettings />);
     await screen.findByText("No units configured");
@@ -389,12 +390,12 @@ describe("CatalogUnitsSettings", () => {
     await user.selectOptions(screen.getByDisplayValue("Count"), "volume");
     await user.click(screen.getByRole("button", { name: /add unit/i }));
 
-    expect(mockIpc.createUnit).toHaveBeenCalledWith("ML", "Millilitre", "volume");
+    expect(mockCreateUnit).toHaveBeenCalledWith("ML", "Millilitre", "volume");
     await waitFor(() => {
       expect(codeInput).toHaveValue("");
       expect(labelInput).toHaveValue("");
     });
-    expect(refetch).toHaveBeenCalled();
+    await waitFor(() => expect(mockListUnits).toHaveBeenCalledTimes(2));
   });
 
   it("disables Add button when code is empty", async () => {
@@ -424,16 +425,8 @@ describe("CatalogUnitsSettings", () => {
 
   it("edits a unit inline", async () => {
     const user = userEvent.setup();
-    const refetch = vi.fn();
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({
-        data: [unitA],
-        allData: [unitA],
-        totalItems: 1,
-        refetch,
-      }),
-    );
-    mockIpc.updateUnit.mockResolvedValue({ id: 1, code: "KILOGRAM", label: "Kilogram", dimension: "mass", is_active: true });
+    mockListUnits.mockResolvedValue([unitA]);
+    mockUpdateUnit.mockResolvedValue({ id: 1, code: "KILOGRAM", label: "Kilogram", dimension: "mass", is_active: true });
 
     render(<CatalogUnitsSettings />);
 
@@ -449,15 +442,13 @@ describe("CatalogUnitsSettings", () => {
     const saveBtn = screen.getByRole("button", { name: "Save" });
     await user.click(saveBtn);
 
-    expect(mockIpc.updateUnit).toHaveBeenCalledWith(1, "KILOGRAM", "Kilogram", "mass");
-    expect(refetch).toHaveBeenCalled();
+    expect(mockUpdateUnit).toHaveBeenCalledWith(1, "KILOGRAM", "Kilogram", "mass");
+    await waitFor(() => expect(mockListUnits).toHaveBeenCalledTimes(2));
   });
 
   it("cancel edit reverts changes", async () => {
     const user = userEvent.setup();
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({ data: [unitA], allData: [unitA], totalItems: 1 }),
-    );
+    mockListUnits.mockResolvedValue([unitA]);
 
     render(<CatalogUnitsSettings />);
 
@@ -466,39 +457,25 @@ describe("CatalogUnitsSettings", () => {
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
-    expect(mockIpc.updateUnit).not.toHaveBeenCalled();
+    expect(mockUpdateUnit).not.toHaveBeenCalled();
   });
 
   it("deactivates a unit", async () => {
     const user = userEvent.setup();
-    const refetch = vi.fn();
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({
-        data: [unitA],
-        allData: [unitA],
-        totalItems: 1,
-        refetch,
-      }),
-    );
-    mockIpc.deactivateUnit.mockResolvedValue(undefined);
+    mockListUnits.mockResolvedValue([unitA]);
+    mockDeactivateUnit.mockResolvedValue(undefined);
 
     render(<CatalogUnitsSettings />);
 
     const deactivateBtn = await screen.findByRole("button", { name: "Deactivate" });
     await user.click(deactivateBtn);
 
-    expect(mockIpc.deactivateUnit).toHaveBeenCalledWith(1);
-    expect(refetch).toHaveBeenCalled();
+    expect(mockDeactivateUnit).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(mockListUnits).toHaveBeenCalledTimes(2));
   });
 
   it("disables Deactivate button for already-inactive units", async () => {
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({
-        data: [inactiveUnit],
-        allData: [inactiveUnit],
-        totalItems: 1,
-      }),
-    );
+    mockListUnits.mockResolvedValue([inactiveUnit]);
 
     render(<CatalogUnitsSettings />);
 
@@ -541,8 +518,8 @@ describe("CatalogUnitsSettings", () => {
 
   it("shows error on failed create", async () => {
     const user = userEvent.setup();
-    mockUsePaginatedQuery.mockReturnValue(mockPaginatedReturn());
-    mockIpc.createUnit.mockRejectedValue(new Error("duplicate code"));
+    mockListUnits.mockResolvedValue([]);
+    mockCreateUnit.mockRejectedValue(new Error("duplicate code"));
 
     render(<CatalogUnitsSettings />);
     await screen.findByText("No units configured");
@@ -555,14 +532,8 @@ describe("CatalogUnitsSettings", () => {
 
   it("shows error on failed update", async () => {
     const user = userEvent.setup();
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({
-        data: [unitA],
-        allData: [unitA],
-        totalItems: 1,
-      }),
-    );
-    mockIpc.updateUnit.mockRejectedValue(new Error("conflict"));
+    mockListUnits.mockResolvedValue([unitA]);
+    mockUpdateUnit.mockRejectedValue(new Error("conflict"));
 
     render(<CatalogUnitsSettings />);
 
@@ -574,14 +545,8 @@ describe("CatalogUnitsSettings", () => {
 
   it("shows error on failed deactivate", async () => {
     const user = userEvent.setup();
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({
-        data: [unitA],
-        allData: [unitA],
-        totalItems: 1,
-      }),
-    );
-    mockIpc.deactivateUnit.mockRejectedValue(new Error("cannot deactivate"));
+    mockListUnits.mockResolvedValue([unitA]);
+    mockDeactivateUnit.mockRejectedValue(new Error("cannot deactivate"));
 
     render(<CatalogUnitsSettings />);
 
