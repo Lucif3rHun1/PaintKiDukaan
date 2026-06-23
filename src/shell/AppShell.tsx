@@ -174,13 +174,13 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
   });
 
   return (
-    <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      <aside
-        className={cn(
-          "hidden shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 p-2 transition-[width] duration-200 md:flex",
-          collapsed ? "w-14" : "w-60",
-        )}
-      >
+      <div className="flex h-screen overflow-hidden bg-sidebar text-sidebar-foreground">
+        <aside
+          className={cn(
+            "hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-2 transition-[width] duration-200 md:flex",
+            collapsed ? "w-14" : "w-60",
+          )}
+        >
         <div className={cn("flex items-center gap-2 px-1 py-1.5", collapsed && "justify-center")}>
           <img
             src={collapsed ? logo32 : LOGO_64}
@@ -190,7 +190,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
             className={cn("shrink-0 rounded-md object-contain", collapsed ? "h-8 w-8" : "h-10 w-10")}
           />
           {!collapsed ? (
-            <span className="flex-1 truncate text-sm font-semibold tracking-tight text-white">PaintKiDukaan</span>
+            <span className="flex-1 truncate text-sm font-semibold tracking-tight text-sidebar-foreground">PaintKiDukaan</span>
           ) : null}
         </div>
 
@@ -232,7 +232,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
                   type="button"
                   onClick={() => setExpanded((current) => ({ ...current, [group.id]: !current[group.id] }))}
                   className={cn(
-                    "flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100",
+                    "flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                     collapsed && "justify-center px-0",
                   )}
                 >
@@ -263,25 +263,25 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex items-center justify-between border-b border-white/10 bg-zinc-900/80 px-4 py-3 md:hidden">
+        <header className="flex items-center justify-between border-b border-border bg-card px-4 py-3 md:hidden">
           <div className="flex items-center gap-2">
             <img src={LOGO_64} alt="PaintKiDukaan" width={28} height={28} className="h-7 w-7 rounded-md object-contain" />
-            <span className="text-sm font-semibold text-white">PaintKiDukaan</span>
+            <span className="text-sm font-semibold text-sidebar-foreground">PaintKiDukaan</span>
           </div>
-          <button type="button" onClick={onLock} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/5">
+          <button type="button" onClick={onLock} className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
             <Lock className="h-4 w-4" aria-hidden="true" />
           </button>
         </header>
 
-        <nav className="flex overflow-x-auto border-b border-white/10 bg-zinc-900/60 px-2 py-1 md:hidden">
+        <nav className="flex overflow-x-auto border-b border-border bg-muted px-2 py-1 md:hidden">
           {mobileLinks.map((item) => (
             <SidebarLinkButton key={item.id} link={item} active={isLinkActive(item, activeTab)} collapsed={false} onNavigate={onNavigate} mobile />
           ))}
         </nav>
 
-        <main className="flex-1 overflow-y-auto bg-slate-50 p-4 text-slate-900 sm:p-6">
+        <main className="flex-1 overflow-y-auto bg-background p-4 text-foreground sm:p-6">
           {bootstrapError ? (
-            <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+            <p className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
               {bootstrapError}
             </p>
           ) : null}
@@ -295,7 +295,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
 
 function SidebarSectionLabel({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (collapsed) return <div className="mt-2" />;
-  return <div className="mb-1 mt-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{children}</div>;
+  return <div className="mb-1 mt-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/60">{children}</div>;
 }
 
 function isLinkActive(
@@ -351,7 +351,7 @@ function SidebarLinkButton({
         mobile ? "shrink-0 px-3 py-1.5 text-xs" : "h-9 w-full px-2",
         nested && "pl-9",
         collapsed && !mobile && "justify-center px-0",
-        active ? "bg-indigo-500/10 text-indigo-300" : mobile ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100",
+        active ? "bg-sidebar-primary text-sidebar-primary-foreground" : mobile ? "text-sidebar-foreground/60 hover:text-sidebar-foreground" : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
       )}
       title={collapsed ? link.label : undefined}
     >
@@ -383,26 +383,26 @@ function AccountMenu({ user, collapsed, onLock, onLogout }: { user: AppShellUser
   }
 
   return (
-    <div className="border-t border-zinc-800 pt-3">
+      <div className="border-t border-sidebar-border pt-3">
       <button
         ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          "flex w-full items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-2 text-left transition-colors hover:bg-zinc-800",
+          "flex w-full items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent px-2 py-2 text-left transition-colors hover:bg-sidebar-accent/80",
           collapsed && "justify-center px-0",
         )}
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-zinc-800 text-xs font-semibold text-zinc-200">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground">
           {(user?.name ?? "Owner").slice(0, 1).toUpperCase()}
         </div>
         {!collapsed ? (
           <>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-zinc-100">{user?.name ?? "Owner"}</div>
-              <div className="truncate text-xs text-zinc-500">{user?.role ?? "owner"}</div>
+              <div className="truncate text-sm font-medium text-sidebar-foreground">{user?.name ?? "Owner"}</div>
+              <div className="truncate text-xs text-sidebar-foreground/60">{user?.role ?? "owner"}</div>
             </div>
-            <ChevronDown className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+            <ChevronDown className="h-4 w-4 text-sidebar-foreground/60" aria-hidden="true" />
           </>
         ) : null}
       </button>
@@ -417,13 +417,13 @@ function AccountMenu({ user, collapsed, onLock, onLogout }: { user: AppShellUser
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) close();
           }}
-          className="fixed bottom-16 left-3 m-0 w-52 rounded-lg border border-zinc-800 bg-zinc-950 p-1 text-sm text-zinc-200"
+          className="fixed bottom-16 left-3 m-0 w-52 rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground"
         >
-          <button ref={firstItemRef} type="button" onClick={() => { onLock(); close(); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-zinc-800">
+          <button ref={firstItemRef} type="button" onClick={() => { onLock(); close(); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted">
             <Lock className="h-4 w-4" aria-hidden="true" />
             Lock
           </button>
-          <button type="button" onClick={() => { onLogout(); close(); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-red-300 hover:bg-red-500/10">
+          <button type="button" onClick={() => { onLogout(); close(); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-destructive hover:bg-destructive/10">
             <LogOut className="h-4 w-4" aria-hidden="true" />
             Logout
           </button>
