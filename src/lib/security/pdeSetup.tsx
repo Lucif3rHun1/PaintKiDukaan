@@ -67,7 +67,7 @@ function PinStrengthMeter({ pin }: { pin: string }) {
   return (
     <div className="mt-1.5 flex items-center gap-2">
       <div className="h-1.5 flex-1 rounded-full bg-muted">
-        <div className={`h-full rounded-full transition-all duration-300 ${s.color} ${s.width}`} />
+        <div className={`h-full rounded-full transition-[color,background-color,border-color,opacity] duration-300 ${s.color} ${s.width}`} />
       </div>
       <span className={`text-xs font-medium ${s.color.replace("bg-", "text-")}`}>{s.label}</span>
     </div>

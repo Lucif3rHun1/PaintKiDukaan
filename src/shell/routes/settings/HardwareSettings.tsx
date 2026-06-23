@@ -548,7 +548,7 @@ function SkeletonRows() {
   return (
     <div className="grid gap-3 md:grid-cols-2">
       {[0, 1].map((i) => (
-        <div key={i} className="h-24 animate-pulse rounded-lg border border-border bg-card/40" />
+        <div key={i} className="h-24 animate-pulse motion-reduce:animate-none rounded-lg border border-border bg-card/40" />
       ))}
     </div>
   );
