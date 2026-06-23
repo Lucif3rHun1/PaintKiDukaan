@@ -120,8 +120,9 @@ Full QA loop (Windows production target):
 - Sales flow: scan item → auto-pick → submit → Print receipt → verify ESC/POS on thermal hardware (check Windows print spooler).
 - Backup before applying migration 008; verify it backfills any `printers` JSON from settings.
 
-Manual smoke-test script:
+Manual smoke-test sequence (no committed script — run commands directly):
 ```bash
-./scripts/pkb-smoke.sh
+pnpm exec tsc -b
+( cd src-tauri && cargo check )
 ```
-This runs: `pnpm exec tsc -b`, `cd src-tauri && cargo check`, and prints the dev PDF path on macOS.
+On macOS dev, the receipt PDF path is printed in the toast after `cmd_print_receipt_dev`.

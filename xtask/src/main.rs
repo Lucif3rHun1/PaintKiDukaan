@@ -21,10 +21,16 @@ use std::process::ExitCode;
 
 use walkdir::WalkDir;
 
-const PROJECT_ROOT: &str = "/Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan";
 const RUST_SRC: &str = "src-tauri/src/commands";
 const FRONTEND_SRC: &str = "src";
 const SCHEMA_PATH: &str = "src-tauri/src/db/schema.sql";
+
+fn project_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask must be a workspace member")
+        .to_path_buf()
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -380,8 +386,9 @@ fn is_false_positive(cmd: &str, missing: &BTreeSet<String>, extra: &BTreeSet<Str
 }
 
 fn check_arg_shape_drift() -> u32 {
-    let rust_dir = Path::new(PROJECT_ROOT).join(RUST_SRC);
-    let frontend_dir = Path::new(PROJECT_ROOT).join(FRONTEND_SRC);
+    let project_root = project_root();
+    let rust_dir = project_root.join(RUST_SRC);
+    let frontend_dir = project_root.join(FRONTEND_SRC);
 
     let rust_cmds: BTreeMap<String, Vec<String>> = match collect_rust_commands(&rust_dir) {
         Ok(cmds) => cmds
@@ -423,7 +430,7 @@ fn check_arg_shape_drift() -> u32 {
         failures += 1;
         let rel_path = inv
             .file
-            .strip_prefix(PROJECT_ROOT)
+            .strip_prefix(&project_root)
             .unwrap_or(&inv.file)
             .display()
             .to_string();
@@ -655,7 +662,8 @@ fn split_on_and_or(s: &str) -> Vec<String> {
 }
 
 fn check_sql_drift() -> u32 {
-    let schema_path = Path::new(PROJECT_ROOT).join(SCHEMA_PATH);
+    let project_root = project_root();
+    let schema_path = project_root.join(SCHEMA_PATH);
     let tables = match parse_schema_columns(&schema_path) {
         Ok(t) => t,
         Err(e) => {
@@ -664,7 +672,7 @@ fn check_sql_drift() -> u32 {
         }
     };
 
-    let rust_dir = Path::new(PROJECT_ROOT).join(RUST_SRC);
+    let rust_dir = project_root.join(RUST_SRC);
     let mut failures = 0u32;
     let mut seen = BTreeSet::new();
 
@@ -753,7 +761,7 @@ fn check_sql_drift() -> u32 {
                     let key = (path.to_path_buf(), col.clone());
                     if seen.insert(key) {
                         let rel_path = path
-                            .strip_prefix(PROJECT_ROOT)
+                            .strip_prefix(&project_root)
                             .unwrap_or(path)
                             .display()
                             .to_string();

@@ -1,7 +1,7 @@
 import { createPortal } from "react-dom";
 import {
   useToasts,
-  useToastActions,
+  toast,
   type Toast,
   type ToastVariant,
 } from "../../lib/feedback/toast";
@@ -28,19 +28,18 @@ const bg: Record<ToastVariant, string> = {
   warning: "border-warning/30 bg-warning/10",
 };
 
-function ToastItem({ toast }: { toast: Toast }) {
-  const { dismiss } = useToastActions();
+function ToastItem({ toast: t }: { toast: Toast }) {
   return (
     <div
       className={cn(
         "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg",
-        bg[toast.variant],
+        bg[t.variant],
       )}
     >
-      {icons[toast.variant]}
-      <span className="text-foreground">{toast.message}</span>
+      {icons[t.variant]}
+      <span className="text-foreground">{t.message}</span>
       <button
-        onClick={() => dismiss(toast.id)}
+        onClick={() => toast.dismiss(t.id)}
         className="ml-1 text-muted-foreground hover:text-foreground"
       >
         <X className="h-3 w-3" />

@@ -61,7 +61,7 @@ pub type AppResult<T> = std::result::Result<T, AppError>;
 - SQLCipher (encrypted SQLite) via `rusqlite` with `sqlcipher` feature
 - Migrations via `rusqlite_migration`
 - Connection managed by Tauri `AppState`
-- All queries in `src/db/queries/` (one file per domain)
+- All queries live in `src-tauri/src/commands/<domain>.rs` (no separate `queries/` module)
 
 ### Crypto
 

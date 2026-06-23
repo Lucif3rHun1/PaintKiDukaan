@@ -73,7 +73,3 @@ export const toast = {
 export function useToasts(): Toast[] {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
-
-export function useToastActions(): typeof toast {
-  return toast;
-}

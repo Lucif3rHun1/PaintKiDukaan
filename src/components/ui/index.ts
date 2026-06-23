@@ -4,7 +4,6 @@ export { MoneyInput } from "./MoneyInput";
 export { Alert } from "./Alert";
 export { Badge } from "./Badge";
 export { Button } from "./Button";
-export { BoneSkeleton } from "./BoneSkeleton";
 export { Card } from "./Card";
 export { EmptyState } from "./EmptyState";
 export { ErrorBoundary } from "./ErrorBoundary";

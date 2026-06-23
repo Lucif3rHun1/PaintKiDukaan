@@ -1,3 +1,10 @@
+const compactFormatter = new Intl.NumberFormat("en-IN", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+  style: "currency",
+  currency: "INR",
+});
+
 export function formatRupeesFromPaise(paise: number): string {
   const rupees = paise / 100;
   return `₹${rupees.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -9,8 +16,5 @@ export function parseRupeesToPaise(rupees: string): number {
 }
 
 export function formatRupeesCompact(paise: number): string {
-  const rupees = paise / 100;
-  if (rupees >= 100000) return `₹${(rupees / 100000).toFixed(1)}L`;
-  if (rupees >= 1000) return `₹${(rupees / 1000).toFixed(1)}K`;
-  return `₹${rupees.toFixed(2)}`;
+  return compactFormatter.format(paise / 100);
 }
