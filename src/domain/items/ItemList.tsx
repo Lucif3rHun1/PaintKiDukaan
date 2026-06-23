@@ -363,7 +363,7 @@ export function ItemList({ role }: Props) {
         <MetricCard
           label="Total Value"
           value={formatRupeesFromPaise(metrics.totalRetail)}
-          icon={<IndianRupee className="h-4 w-4 text-muted-foreground" />}
+          icon={<IndianRupee className="h-4 w-4 translate-y-[0.1em] text-muted-foreground" />}
         />
       </div>
 
@@ -732,7 +732,7 @@ function MetricCard({
           : "border-border";
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border ${border} bg-card px-3 py-2.5`}
+      className={`flex items-baseline gap-3 rounded-lg border ${border} bg-card px-3 py-2.5`}
     >
       {icon}
       <div>

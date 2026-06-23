@@ -221,8 +221,8 @@ export function CustomerList({
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {c.credit_limit != null ? (
-                          <span className="inline-flex items-center gap-1">
-                            <IndianRupee className="h-3 w-3 text-muted-foreground" />
+                          <span className="inline-flex items-baseline gap-1">
+                            <IndianRupee className="h-3 w-3 translate-y-[0.1em] text-muted-foreground" />
                             {formatRupeesFromPaise(c.credit_limit)}
                           </span>
                         ) : (
