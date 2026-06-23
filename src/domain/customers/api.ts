@@ -3,10 +3,13 @@
  */
 import { invoke } from "../ipc";
 import type {
+  CreateCustomerCreditInvoiceArgs,
   Customer,
+  CustomerLedger,
   CustomerOutstanding,
   CustomerUpdate,
   NewCustomer,
+  RecordCustomerPaymentArgs,
 } from "../types";
 
 export async function createCustomer(
@@ -42,4 +45,26 @@ export async function customerOutstanding(
   id: number,
 ): Promise<CustomerOutstanding> {
   return invoke<CustomerOutstanding>("customer_outstanding", { id });
+}
+
+export async function fetchCustomerLedger(
+  customerId: number,
+  limit = 100,
+): Promise<CustomerLedger> {
+  return invoke<CustomerLedger>("customer_ledger", {
+    customer_id: customerId,
+    limit,
+  });
+}
+
+export async function createCustomerCreditInvoice(
+  args: CreateCustomerCreditInvoiceArgs,
+): Promise<void> {
+  await invoke<void>("create_customer_credit_invoice", { args });
+}
+
+export async function recordCustomerPayment(
+  args: RecordCustomerPaymentArgs,
+): Promise<CustomerOutstanding> {
+  return invoke<CustomerOutstanding>("record_customer_payment", { args });
 }

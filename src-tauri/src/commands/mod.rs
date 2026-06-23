@@ -28,6 +28,7 @@ pub mod import;
 // Slice D — shell commands
 pub mod backup;
 pub mod discover_printers;
+pub mod printers;
 pub mod printing;
 pub mod settings;
 

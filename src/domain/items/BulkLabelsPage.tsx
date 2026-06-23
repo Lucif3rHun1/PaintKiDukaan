@@ -23,15 +23,16 @@ import {
   printLabelBatch,
   type BatchLabel,
   type PrintConfig,
+  type ThermalSize,
+  THERMAL_SIZES,
 } from "../../pos/print";
 import { extractError } from "../../lib/extractError";
 
 type PrinterType = "thermal" | "laser-a4";
-type ThermalSize = "50x25" | "50x50" | "38x25";
 type LaserPerSheet = 21 | 65;
 
 const PRINTER_PRESETS: Record<PrinterType, string[]> = {
-  thermal: ["50x25", "50x50", "38x25"],
+  thermal: Object.keys(THERMAL_SIZES),
   "laser-a4": ["21", "65"],
 };
 
@@ -438,8 +439,9 @@ export function BulkLabelsPage() {
             >
               {PRINTER_PRESETS[printer].map((p) => (
                 <option key={p} value={p}>
-                  {p}
-                  {printer === "laser-a4" ? " per sheet" : " mm"}
+                  {printer === "thermal" && THERMAL_SIZES[p as ThermalSize]
+                    ? THERMAL_SIZES[p as ThermalSize].label
+                    : `${p}${printer === "laser-a4" ? " per sheet" : " mm"}`}
                 </option>
               ))}
             </select>

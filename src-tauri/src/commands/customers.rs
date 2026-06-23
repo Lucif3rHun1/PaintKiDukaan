@@ -1,8 +1,8 @@
 //! Customers CRUD + outstanding balance.
 //!
 //! - Phone is `^[6-9]\d{9}$` (10 digits, starts 6-9) and unique.
-//! - `is_flagged` and `opening_balance` updates are owner-only; cashier can set
-//!   `opening_balance` on create.
+//! - `is_flagged` and `opening_balance_paise` updates are owner-only; cashier can set
+//!   `opening_balance_paise` on create.
 //! - `customer_outstanding` = opening + Σ(sales.total - paid) - Σ(payments).
 
 use crate::commands::auth::AppState;
@@ -19,10 +19,10 @@ pub struct Customer {
     pub id: i64,
     pub name: String,
     pub phone: String,
-    pub type_id: Option<i64>,
+    pub customer_type_id: Option<i64>,
     pub type_name: Option<String>,
     pub is_flagged: bool,
-    pub opening_balance: i64,
+    pub opening_balance_paise: i64,
     pub notes: Option<String>,
     pub is_active: bool,
     pub created_at: String,
@@ -32,11 +32,10 @@ pub struct Customer {
 #[derive(Debug, Serialize, Clone)]
 pub struct CustomerOutstanding {
     pub customer_id: i64,
-    pub opening_balance: i64,
+    pub opening_balance_paise: i64,
     pub total_sales: i64,
     pub total_paid: i64,
     pub total_payments: i64,
-    /// opening + (total_sales - total_paid) - total_payments
     pub outstanding: i64,
 }
 
@@ -44,19 +43,31 @@ pub struct CustomerOutstanding {
 pub struct NewCustomer {
     pub name: String,
     pub phone: String,
-    pub type_id: Option<i64>,
+    pub customer_type_id: Option<i64>,
     pub is_flagged: Option<bool>,
-    pub opening_balance: Option<i64>,
+    pub opening_balance_paise: Option<i64>,
     pub notes: Option<String>,
+}
+
+/// POS-friendly inline customer creation. Used when the cashier needs to
+/// attach a brand-new walk-in to a sale. Only accepts the minimum fields
+/// (name, phone, optional type); owner-only fields (`is_flagged`,
+/// `opening_balance_paise`, `notes`) are ignored and forced to their safe
+/// defaults so a cashier cannot grant credit or flag a customer by accident.
+#[derive(Debug, Deserialize)]
+pub struct CreateCustomerInline {
+    pub name: String,
+    pub phone: String,
+    pub customer_type_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CustomerUpdate {
     pub name: Option<String>,
     pub phone: Option<String>,
-    pub type_id: Option<Option<i64>>,
+    pub customer_type_id: Option<Option<i64>>,
     pub is_flagged: Option<bool>,
-    pub opening_balance: Option<i64>,
+    pub opening_balance_paise: Option<i64>,
     pub notes: Option<Option<String>>,
     pub is_active: Option<bool>,
 }
@@ -77,7 +88,7 @@ fn validate_phone(phone: &str) -> AppResult<()> {
     Ok(())
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_customer(state: State<'_, AppState>, payload: NewCustomer) -> AppResult<Customer> {
     let guard = state
         .db
@@ -86,6 +97,25 @@ pub fn create_customer(state: State<'_, AppState>, payload: NewCustomer) -> AppR
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     create_customer_impl(db, &user, payload)
+}
+
+/// Inline customer creation used by the POS when the cashier types a brand-new
+/// name/phone into the customer picker. Only the cashier-safe fields are
+/// accepted; owner-only fields are forced to safe defaults before delegating
+/// to the shared `create_customer_impl`.
+#[tauri::command(rename_all = "snake_case")]
+pub fn create_customer_inline(
+    state: State<'_, AppState>,
+    payload: CreateCustomerInline,
+) -> AppResult<Customer> {
+    ipc_auth::authorize_err("create_customer_inline", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let user = current_user()?;
+    create_customer_inline_impl(db, &user, payload)
 }
 
 fn create_customer_impl(
@@ -120,14 +150,14 @@ fn create_customer_impl(
             )));
         }
         tx.execute(
-            "INSERT INTO customers (name, phone, type_id, is_flagged, opening_balance, notes, is_active) \
+            "INSERT INTO customers (name, phone, customer_type_id, is_flagged, opening_balance_paise, notes, is_active) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
             params![
                 payload.name,
                 payload.phone,
-                payload.type_id,
+                payload.customer_type_id,
                 if is_flagged { 1_i64 } else { 0_i64 },
-                payload.opening_balance.unwrap_or(0),
+                payload.opening_balance_paise.unwrap_or(0),
                 payload.notes,
             ],
         )?;
@@ -136,7 +166,30 @@ fn create_customer_impl(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+/// POS-safe wrapper around `create_customer_impl`. Forces the owner-only
+/// fields (`is_flagged`, `opening_balance_paise`, `notes`) to safe defaults
+/// before delegating so the resulting row is identical to one created via
+/// `NewCustomer` with those fields unset.
+fn create_customer_inline_impl(
+    db: &Db,
+    user: &crate::session::User,
+    payload: CreateCustomerInline,
+) -> AppResult<Customer> {
+    create_customer_impl(
+        db,
+        user,
+        NewCustomer {
+            name: payload.name,
+            phone: payload.phone,
+            customer_type_id: payload.customer_type_id,
+            is_flagged: None,
+            opening_balance_paise: Some(0),
+            notes: None,
+        },
+    )
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub fn update_customer(
     state: State<'_, AppState>,
     id: i64,
@@ -163,7 +216,7 @@ fn update_customer_impl(
     }
     // Owner-only update fields. Cashier attempting to send any of these is
     // rejected before we touch the DB.
-    if patch.is_flagged.is_some() || patch.opening_balance.is_some() {
+    if patch.is_flagged.is_some() || patch.opening_balance_paise.is_some() {
         require_role(user, &[Role::Owner])?;
     }
     db.with_tx(|tx| {
@@ -192,11 +245,11 @@ fn update_customer_impl(
             }
             add!("phone =", v.clone());
         }
-        if let Some(v) = &patch.type_id {
-            add!("type_id =", v)
+        if let Some(v) = &patch.customer_type_id {
+            add!("customer_type_id =", v)
         }
-        if let Some(v) = patch.opening_balance {
-            add!("opening_balance =", v)
+        if let Some(v) = patch.opening_balance_paise {
+            add!("opening_balance_paise =", v)
         }
         if let Some(v) = &patch.notes {
             add!("notes =", v)
@@ -225,7 +278,7 @@ fn update_customer_impl(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_customers(
     state: State<'_, AppState>,
     query: Option<String>,
@@ -239,8 +292,8 @@ pub fn list_customers(
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut sql = String::from(
-            "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
-             FROM customers c LEFT JOIN customer_types t ON t.id = c.type_id WHERE 1=1",
+            "SELECT c.id, c.name, c.phone, c.customer_type_id, t.name, c.is_flagged, c.opening_balance_paise, c.notes, c.is_active, c.created_at, c.updated_at \
+             FROM customers c LEFT JOIN customer_types t ON t.id = c.customer_type_id WHERE 1=1",
         );
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if !include_inactive { sql.push_str(" AND c.is_active = 1"); }
@@ -256,10 +309,10 @@ pub fn list_customers(
                 id: r.get(0)?,
                 name: r.get(1)?,
                 phone: r.get(2)?,
-                type_id: r.get(3)?,
+                customer_type_id: r.get(3)?,
                 type_name: r.get(4)?,
                 is_flagged: r.get::<_, i64>(5)? != 0,
-                opening_balance: r.get(6)?,
+                opening_balance_paise: r.get(6)?,
                 notes: r.get(7)?,
                 is_active: r.get::<_, i64>(8)? != 0,
                 created_at: r.get(9)?,
@@ -270,7 +323,7 @@ pub fn list_customers(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn lookup_customer(state: State<'_, AppState>, phone: String) -> AppResult<Option<Customer>> {
     let guard = state
         .db
@@ -288,8 +341,8 @@ pub fn lookup_customer(state: State<'_, AppState>, phone: String) -> AppResult<O
     let like_pattern = format!("%{q}%");
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
-             FROM customers c LEFT JOIN customer_types t ON t.id = c.type_id \
+            "SELECT c.id, c.name, c.phone, c.customer_type_id, t.name, c.is_flagged, c.opening_balance_paise, c.notes, c.is_active, c.created_at, c.updated_at \
+             FROM customers c LEFT JOIN customer_types t ON t.id = c.customer_type_id \
              WHERE c.phone LIKE ?1 \
              ORDER BY c.id ASC LIMIT 1",
         )?;
@@ -298,10 +351,10 @@ pub fn lookup_customer(state: State<'_, AppState>, phone: String) -> AppResult<O
                 id: r.get(0)?,
                 name: r.get(1)?,
                 phone: r.get(2)?,
-                type_id: r.get(3)?,
+                customer_type_id: r.get(3)?,
                 type_name: r.get(4)?,
                 is_flagged: r.get::<_, i64>(5)? != 0,
-                opening_balance: r.get(6)?,
+                opening_balance_paise: r.get(6)?,
                 notes: r.get(7)?,
                 is_active: r.get::<_, i64>(8)? != 0,
                 created_at: r.get(9)?,
@@ -316,10 +369,10 @@ pub fn lookup_customer(state: State<'_, AppState>, phone: String) -> AppResult<O
     })
 }
 
-fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<CustomerOutstanding> {
+pub fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<CustomerOutstanding> {
     db.with_raw(|c| {
         let opening: i64 = c.query_row(
-            "SELECT opening_balance FROM customers WHERE id = ?1",
+            "SELECT opening_balance_paise FROM customers WHERE id = ?1",
             params![id],
             |r| r.get(0),
         )?;
@@ -341,7 +394,7 @@ fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<CustomerOutstanding>
         let outstanding = opening + total_sales - total_payments;
         Ok(CustomerOutstanding {
             customer_id: id,
-            opening_balance: opening,
+            opening_balance_paise: opening,
             total_sales,
             total_paid,
             total_payments,
@@ -350,7 +403,7 @@ fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<CustomerOutstanding>
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn customer_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<CustomerOutstanding> {
     let guard = state
         .db
@@ -393,7 +446,7 @@ fn list_customer_bills_impl(db: &Db, customer_id: i64) -> AppResult<Vec<Customer
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_customer_bills(
     state: State<'_, AppState>,
     customer_id: i64,
@@ -409,18 +462,18 @@ pub fn list_customer_bills(
 
 fn fetch_customer_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Customer> {
     let mut stmt = tx.prepare(
-        "SELECT c.id, c.name, c.phone, c.type_id, t.name, c.is_flagged, c.opening_balance, c.notes, c.is_active, c.created_at, c.updated_at \
-         FROM customers c LEFT JOIN customer_types t ON t.id = c.type_id WHERE c.id = ?1",
+        "SELECT c.id, c.name, c.phone, c.customer_type_id, t.name, c.is_flagged, c.opening_balance_paise, c.notes, c.is_active, c.created_at, c.updated_at \
+         FROM customers c LEFT JOIN customer_types t ON t.id = c.customer_type_id WHERE c.id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], |r| {
         Ok(Customer {
             id: r.get(0)?,
             name: r.get(1)?,
             phone: r.get(2)?,
-            type_id: r.get(3)?,
+            customer_type_id: r.get(3)?,
             type_name: r.get(4)?,
             is_flagged: r.get::<_, i64>(5)? != 0,
-            opening_balance: r.get(6)?,
+            opening_balance_paise: r.get(6)?,
             notes: r.get(7)?,
             is_active: r.get::<_, i64>(8)? != 0,
             created_at: r.get(9)?,
@@ -524,9 +577,9 @@ mod tests {
             CustomerUpdate {
                 name: None,
                 phone: None,
-                type_id: None,
+                customer_type_id: None,
                 is_flagged: Some(true),
-                opening_balance: None,
+                opening_balance_paise: None,
                 notes: None,
                 is_active: None,
             },
@@ -542,9 +595,9 @@ mod tests {
             CustomerUpdate {
                 name: None,
                 phone: None,
-                type_id: None,
+                customer_type_id: None,
                 is_flagged: Some(true),
-                opening_balance: None,
+                opening_balance_paise: None,
                 notes: None,
                 is_active: None,
             },
@@ -577,16 +630,16 @@ mod tests {
             CustomerUpdate {
                 name: None,
                 phone: None,
-                type_id: None,
+                customer_type_id: None,
                 is_flagged: None,
-                opening_balance: Some(1000),
+                opening_balance_paise: Some(1000),
                 notes: None,
                 is_active: None,
             },
         );
         assert!(
             matches!(res, Err(AppError::Forbidden(_))),
-            "cashier updating opening_balance must be Forbidden"
+            "cashier updating opening_balance_paise must be Forbidden"
         );
 
         set_current_user(Some(owner()));
@@ -597,9 +650,9 @@ mod tests {
             CustomerUpdate {
                 name: None,
                 phone: None,
-                type_id: None,
+                customer_type_id: None,
                 is_flagged: None,
-                opening_balance: Some(1000),
+                opening_balance_paise: Some(1000),
                 notes: None,
                 is_active: None,
             },
@@ -609,7 +662,7 @@ mod tests {
             "owner should be allowed, got: {:?}",
             ok.as_ref().err()
         );
-        assert_eq!(ok.unwrap().opening_balance, 1000);
+        assert_eq!(ok.unwrap().opening_balance_paise, 1000);
     }
 
     #[test]
@@ -622,14 +675,81 @@ mod tests {
             NewCustomer {
                 name: "Test".into(),
                 phone: "9876543210".into(),
-                type_id: None,
+                customer_type_id: None,
                 is_flagged: None,
-                opening_balance: Some(2500),
+                opening_balance_paise: Some(2500),
                 notes: None,
             },
         )
         .unwrap();
-        assert_eq!(c.opening_balance, 2500);
+        assert_eq!(c.opening_balance_paise, 2500);
+    }
+
+    #[test]
+    fn create_customer_inline_strips_owner_only_fields() {
+        // The inline command only accepts (name, phone, customer_type_id).
+        // Even if the caller somehow tried to set is_flagged or notes, those
+        // fields don't exist on `CreateCustomerInline` so they cannot leak
+        // through. We verify the safe defaults are applied.
+        set_current_user(Some(cashier()));
+        let db = Db::open_in_memory().unwrap();
+        let c = create_customer_inline_impl(
+            &db,
+            &cashier(),
+            CreateCustomerInline {
+                name: "Walk-in".into(),
+                phone: "9876543210".into(),
+                customer_type_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(c.name, "Walk-in");
+        assert_eq!(c.opening_balance_paise, 0);
+        assert!(!c.is_flagged);
+        assert!(c.notes.is_none());
+        assert!(c.is_active);
+    }
+
+    #[test]
+    fn create_customer_inline_rejects_invalid_phone() {
+        set_current_user(Some(cashier()));
+        let db = Db::open_in_memory().unwrap();
+        let res = create_customer_inline_impl(
+            &db,
+            &cashier(),
+            CreateCustomerInline {
+                name: "X".into(),
+                phone: "12345".into(), // too short, doesn't start with 6-9
+                customer_type_id: None,
+            },
+        );
+        assert!(matches!(res, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn create_customer_inline_rejects_duplicate_phone() {
+        set_current_user(Some(cashier()));
+        let db = Db::open_in_memory().unwrap();
+        let _first = create_customer_inline_impl(
+            &db,
+            &cashier(),
+            CreateCustomerInline {
+                name: "First".into(),
+                phone: "9876543210".into(),
+                customer_type_id: None,
+            },
+        )
+        .unwrap();
+        let dup = create_customer_inline_impl(
+            &db,
+            &cashier(),
+            CreateCustomerInline {
+                name: "Second".into(),
+                phone: "9876543210".into(),
+                customer_type_id: None,
+            },
+        );
+        assert!(matches!(dup, Err(AppError::Conflict(_))));
     }
 
     #[test]
@@ -642,9 +762,9 @@ mod tests {
             NewCustomer {
                 name: "Old".into(),
                 phone: "9876543210".into(),
-                type_id: None,
+                customer_type_id: None,
                 is_flagged: None,
-                opening_balance: Some(100),
+                opening_balance_paise: Some(100),
                 notes: None,
             },
         )
@@ -658,9 +778,9 @@ mod tests {
             CustomerUpdate {
                 name: Some("New".into()),
                 phone: Some("8765432109".into()),
-                type_id: None,
+                customer_type_id: None,
                 is_flagged: None,
-                opening_balance: None,
+                opening_balance_paise: None,
                 notes: Some(Some("updated".into())),
                 is_active: None,
             },
@@ -670,7 +790,7 @@ mod tests {
         assert_eq!(c.name, "New");
         assert_eq!(c.phone, "8765432109");
         assert_eq!(c.notes.as_deref(), Some("updated"));
-        assert_eq!(c.opening_balance, 100);
+        assert_eq!(c.opening_balance_paise, 100);
     }
 
     #[test]
@@ -724,9 +844,9 @@ mod tests {
             NewCustomer {
                 name: "Bill".into(),
                 phone: "9876543210".into(),
-                type_id: None,
+                customer_type_id: None,
                 is_flagged: None,
-                opening_balance: Some(0),
+                opening_balance_paise: Some(0),
                 notes: None,
             },
         )
@@ -767,7 +887,7 @@ mod tests {
         });
         let cust_id = db.with_raw(|c| {
             c.execute(
-                "INSERT INTO customers (name, phone, opening_balance) VALUES ('X', '9876543210', 500)",
+                "INSERT INTO customers (name, phone, opening_balance_paise) VALUES ('X', '9876543210', 500)",
                 [],
             ).unwrap();
             c.last_insert_rowid()
@@ -784,7 +904,7 @@ mod tests {
         });
         let out = customer_outstanding_impl(&db, cust_id).unwrap();
         assert_eq!(out.customer_id, cust_id);
-        assert_eq!(out.opening_balance, 500);
+        assert_eq!(out.opening_balance_paise, 500);
         assert_eq!(out.total_sales, 600);
         assert_eq!(out.total_paid, 400);
         assert_eq!(out.total_payments, 200);
@@ -792,16 +912,38 @@ mod tests {
     }
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn customer_ledger(
     state: State<'_, AppState>,
-    _customer_id: i64,
-) -> AppResult<serde_json::Value> {
+    customer_id: i64,
+    limit: Option<i64>,
+) -> AppResult<crate::commands::customer_ledger::CustomerLedger> {
     ipc_auth::authorize_err("customer_ledger", state.inner())?;
-    Ok(serde_json::Value::Null)
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    crate::commands::customer_ledger::customer_ledger_impl(db, customer_id, limit.unwrap_or(100))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
+pub fn create_customer_credit_invoice(
+    state: State<'_, AppState>,
+    args: crate::commands::customer_ledger::CreateCustomerCreditInvoice,
+) -> AppResult<()> {
+    ipc_auth::authorize_err("create_customer_credit_invoice", state.inner())?;
+    let user = current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    crate::commands::customer_ledger::create_customer_credit_invoice_impl(db, &user, args)?;
+    Ok(())
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub fn customer_credit_sales(
     state: State<'_, AppState>,
     _customer_id: i64,
@@ -810,11 +952,17 @@ pub fn customer_credit_sales(
     Ok(Vec::new())
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn record_customer_payment(
     state: State<'_, AppState>,
-    _payload: serde_json::Value,
-) -> AppResult<serde_json::Value> {
+    args: crate::commands::customer_ledger::RecordCustomerPayment,
+) -> AppResult<CustomerOutstanding> {
     ipc_auth::authorize_err("record_customer_payment", state.inner())?;
-    Ok(serde_json::Value::Null)
+    let user = current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    crate::commands::customer_ledger::record_customer_payment_impl(db, &user, args)
 }

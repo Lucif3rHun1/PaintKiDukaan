@@ -102,3 +102,26 @@ src/                 React frontend
 - **Add new domain entity**: Create `src/domain/{name}/`, add types, add Rust commands in `src-tauri/src/commands/{name}.rs`
 - **Add new POS feature**: Create sub-tab in `src/pos/{name}/`, add to `PosLayout.tsx` tab list
 - **Add security phase**: Update `AppPhase` type in `state.ts`, add phase check in `App.tsx`, create component in `lib/security/`
+
+## Testing Strategy — Print, Label, Scanner
+
+Fast inner loop (Mac dev, no printer/scanner hardware required):
+- `pnpm exec tsc -b` — TypeScript type errors.
+- `cd src-tauri && cargo check` — Rust type errors (full rebuild ~30s; offline faster).
+- `pnpm tauri:dev` — full Tauri window opens on :1420.
+  - Receipt print falls back to `cmd_print_receipt_dev` → writes PDF to `os.temp_dir()/paintkiduakan/pkb-receipt-{saleId}.pdf` and the path is shown in the toast.
+  - Scanner hardware hook is disabled on macOS (rdev + TSM exception). Use the **Scanner tab → Fire scan** button in `/settings/hardware` to test the full ItemSearchInput → lookupItem → handlePick flow.
+
+Full QA loop (Windows production target):
+- `pnpm tauri:dev` on Windows.
+- Hardware page → Printers tab → "Discover printers" pulls printers via PowerShell Get-Printer.
+- Add a default receipt printer (e.g. Xprinter XP-80 thermal-80mm) and a default label printer (e.g. TSC TE210 50×25mm).
+- Barcode Label page → print a batch → confirm stock size matches configured mapping.
+- Sales flow: scan item → auto-pick → submit → Print receipt → verify ESC/POS on thermal hardware (check Windows print spooler).
+- Backup before applying migration 008; verify it backfills any `printers` JSON from settings.
+
+Manual smoke-test script:
+```bash
+./scripts/pkb-smoke.sh
+```
+This runs: `pnpm exec tsc -b`, `cd src-tauri && cargo check`, and prints the dev PDF path on macOS.

@@ -7,6 +7,7 @@
  */
 import { tauriInvoke } from "../../lib/security/tauri";
 import type { SecurityPolicy } from "../../domain/types";
+import type { NewPrinterInput, PrinterRecord } from "../routes/settings/printing-types";
 
 export type Role = "owner" | "admin" | "cashier" | "stocker";
 
@@ -197,6 +198,18 @@ export const ipc = {
   discoverSystemPrinters: () => invoke<DiscoveredPrinter[]>("discover_system_printers"),
   printEscPosReceipt: (printerName: string, receiptData: Record<string, unknown>) =>
     invoke<void>("cmd_print_receipt", { printer_name: printerName, receipt_data: receiptData }),
+  printReceiptDev: (saleId: number, pdfBase64: string) =>
+    invoke<string>("cmd_print_receipt_dev", { sale_id: saleId, pdf_base64: pdfBase64 }),
+  listPrinters: (useCase?: "receipt" | "label") =>
+    invoke<PrinterRecord[]>("cmd_list_printers", { use_case: useCase ?? null }),
+  createPrinter: (input: NewPrinterInput) =>
+    invoke<PrinterRecord>("cmd_create_printer", { input }),
+  updatePrinter: (id: number, input: NewPrinterInput) =>
+    invoke<PrinterRecord>("cmd_update_printer", { id, input }),
+  deletePrinter: (id: number) => invoke<void>("cmd_delete_printer", { id }),
+  setDefaultPrinter: (id: number) => invoke<void>("cmd_set_default_printer", { id }),
+  getDefaultPrinter: (useCase: "receipt" | "label") =>
+    invoke<PrinterRecord | null>("cmd_get_default_printer", { use_case: useCase }),
 
   masterHealth: () => invoke<MasterHealth>("master_health"),
   autostartEnable: () => invoke<boolean>("autostart_enable"),

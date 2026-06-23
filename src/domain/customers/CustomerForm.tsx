@@ -1,6 +1,3 @@
-/**
- * CustomerForm — create or edit. Phone validation matches Rust regex.
- */
 import { useEffect, useState } from "react";
 import { createCustomer, updateCustomer } from "./api";
 import type {
@@ -18,8 +15,6 @@ interface Props {
   mode: Mode;
   initial?: Customer;
   types: CustomerType[];
-  /** Only owners can set is_flagged. */
-  canFlag: boolean;
   onSaved: (c: Customer) => void;
   onCancel: () => void;
 }
@@ -28,27 +23,20 @@ export function CustomerForm({
   mode,
   initial,
   types,
-  canFlag,
   onSaved,
   onCancel,
 }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [phone, setPhone] = useState(initial?.phone ?? "");
   const [typeId, setTypeId] = useState<string>(
-    initial?.type_id?.toString() ?? "",
-  );
-  const [creditLimit, setCreditLimit] = useState(
-    initial?.credit_limit?.toString() ?? "",
+    initial?.customer_type_id?.toString() ?? "",
   );
   const [openingBalance, setOpeningBalance] = useState(
-    initial?.opening_balance?.toString() ?? "0",
+    initial ? String(initial.opening_balance_paise / 100) : "0",
   );
-  const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [isFlagged, setIsFlagged] = useState(initial?.is_flagged ?? false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Default new customers to the "Retailer" type once types load.
   useEffect(() => {
     if (mode === "create" && !initial && types.length > 0 && typeId === "") {
       const retailer = types.find((t) => t.name === "Retailer");
@@ -65,15 +53,13 @@ export function CustomerForm({
     }
     setBusy(true);
     try {
+      const paise = Math.round(Number(openingBalance || "0") * 100);
       if (mode === "create") {
         const payload: NewCustomer = {
           name: name.trim(),
           phone,
-          type_id: typeId ? Number(typeId) : null,
-          is_flagged: isFlagged,
-          credit_limit: creditLimit ? Number(creditLimit) : null,
-          opening_balance: Number(openingBalance),
-          notes: notes || null,
+          customer_type_id: typeId ? Number(typeId) : null,
+          opening_balance_paise: paise,
         };
         const c = await createCustomer(payload);
         onSaved(c);
@@ -81,10 +67,8 @@ export function CustomerForm({
         const c = await updateCustomer(initial.id, {
           name,
           phone,
-          type_id: typeId ? Number(typeId) : null,
-          credit_limit: creditLimit ? Number(creditLimit) : null,
-          opening_balance: Number(openingBalance),
-          notes: notes || null,
+          customer_type_id: typeId ? Number(typeId) : null,
+          opening_balance_paise: paise,
         });
         onSaved(c);
       }
@@ -141,47 +125,15 @@ export function CustomerForm({
         </select>
       </Field>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Credit limit (₹)">
-          <input
-            value={creditLimit}
-            onChange={(e) => setCreditLimit(e.target.value)}
-            type="number"
-            step="0.01"
-            min="0"
-            className="input"
-          />
-        </Field>
-        <Field label="Opening balance (₹)">
-          <input
-            value={openingBalance}
-            onChange={(e) => setOpeningBalance(e.target.value)}
-            type="number"
-            step="0.01"
-            className="input"
-          />
-        </Field>
-      </div>
-
-      <Field label="Notes">
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={2}
+      <Field label="Opening balance (₹)">
+        <input
+          value={openingBalance}
+          onChange={(e) => setOpeningBalance(e.target.value)}
+          type="number"
+          step="0.01"
           className="input"
         />
       </Field>
-
-      {canFlag && (
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={isFlagged}
-            onChange={(e) => setIsFlagged(e.target.checked)}
-          />
-          Flag this customer (show warning on every bill)
-        </label>
-      )}
 
       {error && (
         <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">

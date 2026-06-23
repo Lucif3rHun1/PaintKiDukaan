@@ -343,6 +343,33 @@ pub fn cmd_print_receipt(printer_name: String, receipt_data: ReceiptData) -> App
     print_raw(&printer_name, &bytes)
 }
 
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_print_receipt_dev(sale_id: i64, pdf_base64: String) -> AppResult<String> {
+    use base64::{engine::general_purpose, Engine as _};
+    use std::io::Write;
+
+    #[cfg(target_os = "windows")]
+    {
+        return Err(AppError::Internal(
+            "cmd_print_receipt_dev is a macOS/Linux dev fallback; on Windows use cmd_print_receipt"
+                .into(),
+        ));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let bytes = general_purpose::STANDARD
+            .decode(pdf_base64.as_bytes())
+            .map_err(|e| AppError::Validation(format!("invalid base64: {e}")))?;
+        let dir = std::env::temp_dir().join("paintkiduakan");
+        std::fs::create_dir_all(&dir).map_err(AppError::Io)?;
+        let path = dir.join(format!("pkb-receipt-{sale_id}.pdf"));
+        let mut f = std::fs::File::create(&path).map_err(AppError::Io)?;
+        f.write_all(&bytes).map_err(AppError::Io)?;
+        Ok(path.to_string_lossy().into_owned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,5 +435,18 @@ mod tests {
         };
         let err = validate_input("", &data).unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn cmd_print_receipt_dev_writes_pdf_and_returns_path() {
+        use base64::{engine::general_purpose, Engine as _};
+        let fake_pdf = b"%PDF-1.4\n%fake pdf body\n%%EOF";
+        let b64 = general_purpose::STANDARD.encode(fake_pdf);
+        let path = cmd_print_receipt_dev(99, b64).expect("dev fallback should succeed");
+        assert!(path.contains("pkb-receipt-99.pdf"));
+        let bytes = std::fs::read(&path).expect("file should be readable");
+        assert_eq!(bytes, fake_pdf);
+        let _ = std::fs::remove_file(&path);
     }
 }

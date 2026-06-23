@@ -30,10 +30,9 @@ export interface NewSalePayment {
 export interface SaleItem {
   item_id: number;
   item_name: string;
-  qty: number;             // base units (INTEGER)
-  price: number;
-  unit_id: number;
-  unit_code: string;
+  qty: number;             // BASE units
+  price: number;           // paise
+  unit_type: string;       // "unit" | "box"
   line_discount: number;
   shade_note?: string | null;
   line_order: number;
@@ -59,14 +58,12 @@ export interface Sale {
 
 export interface CartLine {
   item_id: number;
-  item_name: string;
-  in_stock_at_add: boolean;
-  current_qty_at_add: number;
-  qty: number;             // base units
-  price: number;
-  unit_id: number;
-  unit_code: string;
-  unit_label?: string | null;
+  item_name?: string;      // UI convenience
+  in_stock_at_add?: boolean;
+  current_qty_at_add?: number;
+  qty: number;             // base units (f64 in NewSale)
+  price: number;           // paise
+  unit_type: string;       // "unit" | "box" — matches backend (from item.sell_unit)
   line_discount: number;
   shade_note?: string | null;
 }
@@ -271,6 +268,8 @@ export interface ItemSearchHit {
   unit_code: string;
   unit_label: string;
   current_qty: number;
+  /** Reorder threshold (0 = no threshold). Used to render "low stock" UI. */
+  min_qty?: number;
 }
 
 export interface CustomerLedgerPayment {

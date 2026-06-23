@@ -37,15 +37,26 @@ export interface LabelSpec {
   line2: string;
 }
 
-export async function printLabel(spec: LabelSpec): Promise<void> {
+export async function printLabel(spec: LabelSpec, size: ThermalSize = "50x25"): Promise<void> {
   try {
-    const doc = new jsPDF({ unit: "mm", format: [50, 25], orientation: "landscape" });
+    const { w, h } = THERMAL_SIZES[size];
+    const doc = new jsPDF({ unit: "mm", format: [w, h], orientation: w >= h ? "landscape" : "portrait" });
     const dataUrl = await makeBarcodePng(spec.barcode);
-    // Stacked layout: Line 1 (top, centered) → Line 2 (below) → Barcode (bottom, full width).
-    doc.setFontSize(8);
-    doc.text(spec.line1.slice(0, 32), 25, 5, { align: "center" });
-    doc.text(spec.line2.slice(0, 32), 25, 9, { align: "center" });
-    doc.addImage(dataUrl, "PNG", 5, 11, 40, 12);
+    const isLarge = w >= 100;
+    const padding = isLarge ? 5 : 3;
+
+    if (isLarge) {
+      doc.setFontSize(10);
+      doc.text(spec.line1.slice(0, 48), w / 2, 8, { align: "center" });
+      doc.setFontSize(8);
+      doc.text(spec.line2.slice(0, 48), w / 2, 16, { align: "center" });
+      doc.addImage(dataUrl, "PNG", padding, 20, w - padding * 2, h - 32);
+    } else {
+      doc.setFontSize(8);
+      doc.text(spec.line1.slice(0, 32), w / 2, 5, { align: "center" });
+      doc.text(spec.line2.slice(0, 32), w / 2, 9, { align: "center" });
+      doc.addImage(dataUrl, "PNG", 5, 11, w - 10, h - 13);
+    }
     doc.save(`label-${spec.barcode}.pdf`);
   } catch (err) {
     console.warn("printLabel failed", err);
@@ -61,7 +72,7 @@ export interface ReceiptSpec {
   sale: Sale;
 }
 
-export async function printReceipt(spec: ReceiptSpec): Promise<void> {
+export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const margin = 12;
   let y = margin;
@@ -91,7 +102,6 @@ export async function printReceipt(spec: ReceiptSpec): Promise<void> {
     doc.text(`Customer: ${spec.sale.customer_name}`, margin, y);
     y += 5;
   }
-  // Items header.
   doc.setFontSize(9);
   doc.text("Item", margin, y);
   doc.text("Qty", 120, y, { align: "right" });
@@ -149,18 +159,39 @@ export async function printReceipt(spec: ReceiptSpec): Promise<void> {
   }
   doc.setFontSize(8);
   doc.text("Thank you for your purchase.", margin, 285);
-  doc.save(`receipt-${spec.sale.no}.pdf`);
+  return doc;
+}
+
+export async function buildReceiptPdfBlob(spec: ReceiptSpec): Promise<Blob> {
+  return buildReceiptPdf(spec).output("blob");
+}
+
+export async function printReceipt(spec: ReceiptSpec): Promise<void> {
+  buildReceiptPdf(spec).save(`receipt-${spec.sale.no}.pdf`);
 }
 
 export interface BatchLabel {
   barcode: string;
   line1?: string;
   line2?: string;
+  sku?: string;
 }
 
 export type PrintConfig =
-  | { type: "thermal"; size: "50x25" | "50x50" | "38x25"; labelsPerRow?: number }
+  | { type: "thermal"; size: ThermalSize; labelsPerRow?: number }
   | { type: "laser-a4"; perSheet: 21 | 65 };
+
+export type ThermalSize = "100x50" | "100x70" | "50x50" | "50x25" | "40x30" | "38x25" | "25x25";
+
+export const THERMAL_SIZES: Record<ThermalSize, { w: number; h: number; label: string }> = {
+  "100x50": { w: 100, h: 50, label: "100 × 50 mm" },
+  "100x70": { w: 100, h: 70, label: "100 × 70 mm" },
+  "50x50":  { w: 50,  h: 50, label: "50 × 50 mm" },
+  "50x25":  { w: 50,  h: 25, label: "50 × 25 mm" },
+  "40x30":  { w: 40,  h: 30, label: "40 × 30 mm" },
+  "38x25":  { w: 38,  h: 25, label: "38 × 25 mm" },
+  "25x25":  { w: 25,  h: 25, label: "25 × 25 mm" },
+};
 
 /**
  * Render a single barcode to a PNG data URL. Tries EAN-13 first; on failure
@@ -239,30 +270,80 @@ async function buildLabelPdfBlobInner(
   let doc: jsPDF;
 
   if (config.type === "thermal") {
-    const SIZE: Record<string, [number, number]> = {
-      "50x25": [50, 25],
-      "50x50": [50, 50],
-      "38x25": [38, 25],
-    };
-    const [w, h] = SIZE[config.size];
+    const { w, h } = THERMAL_SIZES[config.size];
     const labelsPerRow = Math.min(4, Math.max(1, Math.floor(config.labelsPerRow ?? 1)));
     const pageW = w * labelsPerRow;
     const orientation = pageW >= h ? "landscape" : "portrait";
     doc = new jsPDF({ orientation, unit: "mm", format: [pageW, h] });
-    const fontSize = h <= 25 ? 6 : 7;
+
+    const isLarge = w >= 100;
+    const isMedium = w >= 40 && w < 100;
+    const isSmall = w < 40;
+
+    const nameFontSize = isLarge ? 10 : isMedium ? 7 : 5;
+    const skuFontSize = isLarge ? 7 : isMedium ? 5 : 4;
+    const padding = isLarge ? 5 : isMedium ? 3 : 2;
+
     for (let i = 0; i < batch.length; i++) {
       const col = i % labelsPerRow;
       if (i > 0 && col === 0) doc.addPage([pageW, h], orientation);
       const label = batch[i];
       const x = col * w;
-      // Stacked layout: Line 1 (top, centered) → Line 2 (below) → Barcode (bottom, full width).
-      doc.setFontSize(fontSize + 1);
-      if (label.line1) doc.text(label.line1.slice(0, 32), x + w / 2, 5, { align: "center" });
-      if (label.line2) doc.text(label.line2.slice(0, 32), x + w / 2, 9, { align: "center" });
-      const bcW = w - 10;
-      const bcH = h - 13;
-      const png = await makeBarcodePng(label.barcode);
-      doc.addImage(png, "PNG", x + 5, 11, bcW, bcH);
+
+      if (isLarge) {
+        // 100x50 / 100x70: 4-row stacked layout with generous spacing
+        const line1Y = 8;
+        const line2Y = 16;
+        const barcodeY = 20;
+        const barcodeH = h - 32;
+        const skuY = h - 6;
+
+        doc.setFontSize(nameFontSize);
+        if (label.line1) doc.text(label.line1.slice(0, 48), x + w / 2, line1Y, { align: "center" });
+        doc.setFontSize(nameFontSize - 2);
+        if (label.line2) doc.text(label.line2.slice(0, 48), x + w / 2, line2Y, { align: "center" });
+
+        const bcW = w - padding * 2;
+        const png = await makeBarcodePng(label.barcode);
+        doc.addImage(png, "PNG", x + padding, barcodeY, bcW, barcodeH);
+
+        if (label.sku) {
+          doc.setFontSize(skuFontSize);
+          doc.text(label.sku, x + w / 2, skuY, { align: "center" });
+        }
+      } else if (isMedium) {
+        // 40x30 / 50x50: 3-row layout
+        const line1Y = 5;
+        const barcodeY = 9;
+        const barcodeH = h - 16;
+        const skuY = h - 3;
+
+        doc.setFontSize(nameFontSize);
+        if (label.line1) doc.text(label.line1.slice(0, 36), x + w / 2, line1Y, { align: "center" });
+
+        const bcW = w - padding * 2;
+        const png = await makeBarcodePng(label.barcode);
+        doc.addImage(png, "PNG", x + padding, barcodeY, bcW, barcodeH);
+
+        if (label.sku) {
+          doc.setFontSize(skuFontSize);
+          doc.text(label.sku, x + w / 2, skuY, { align: "center" });
+        }
+      } else {
+        // 25x25 / 38x25 / 50x25: compact 2-row layout (barcode + SKU only)
+        const barcodeY = 2;
+        const barcodeH = h - 8;
+        const skuY = h - 2;
+
+        const bcW = w - padding * 2;
+        const png = await makeBarcodePng(label.barcode);
+        doc.addImage(png, "PNG", x + padding, barcodeY, bcW, barcodeH);
+
+        if (label.sku) {
+          doc.setFontSize(skuFontSize);
+          doc.text(label.sku, x + w / 2, skuY, { align: "center" });
+        }
+      }
     }
   } else {
     doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });

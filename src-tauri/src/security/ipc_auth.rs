@@ -61,12 +61,12 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (117 total).
+/// Complete ACL table for every command registered in `invoke_handler` (121 total).
 ///
 /// Classification:
 /// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.
 /// - **Stocker+** (12): read-only reference data — items, brands, units, locations, types.
-/// - **Cashier+** (75): operational — sales, purchases, day-close, CRUD, reports, alerts.
+/// - **Cashier+** (79): operational — sales, purchases, day-close, CRUD, reports, alerts.
 /// - **Owner-only** (23): admin — unlock, user mgmt, settings writes, backup, hardening, void.
 pub const COMMAND_ACL: &[CommandAcl] = &[
     // ── Public (7) ─────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "list_sub_locations",
         min_role: Role::Stocker,
     },
-    // ── Cashier+ (75) — operational commands ───────────────────────────
+    // ── Cashier+ (79) — operational commands ───────────────────────────
     // Session
     CommandAcl {
         name: "lock",
@@ -345,6 +345,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Cashier,
     },
     CommandAcl {
+        name: "create_customer_inline",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
         name: "update_customer",
         min_role: Role::Cashier,
     },
@@ -424,6 +428,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_get_sale",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_get_sale_by_invoice_number",
         min_role: Role::Cashier,
     },
     CommandAcl {
@@ -696,11 +704,11 @@ mod tests {
     // -- ACL completeness --------------------------------------------------
 
     #[test]
-    fn acl_covers_all_117_commands() {
+    fn acl_covers_all_121_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            117,
-            "ACL has {} entries, expected 117",
+            121,
+            "ACL has {} entries, expected 121",
             COMMAND_ACL.len()
         );
     }

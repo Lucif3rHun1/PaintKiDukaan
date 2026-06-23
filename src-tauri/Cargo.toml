@@ -38,9 +38,9 @@ aes-gcm = "0.10"
 zeroize = { version = "1.8", features = ["derive"] }
 password-hash = "0.5"
 rand_core = "0.6"
+base64 = "0.22"
 sha2 = "0.10"
 hex = "0.4"
-base64 = "0.22"
 # Constant-time comparison (CWE-208 fix)
 subtle = "2"
 

@@ -8,10 +8,12 @@ import { formatINR, type Customer } from "../types";
 interface Props {
   onSelect?: (c: Customer) => void;
   onCreate?: () => void;
+  onRecordPayment?: (c: Customer) => void;
+  refreshKey?: number;
   role: "owner" | "cashier" | "stocker";
 }
 
-export function CustomerList({ onSelect, onCreate, role }: Props) {
+export function CustomerList({ onSelect, onCreate, onRecordPayment, role }: Props) {
   const [items, setItems] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -66,6 +68,7 @@ export function CustomerList({ onSelect, onCreate, role }: Props) {
             <th>Flag</th>
             <th className="text-right">Credit limit</th>
             <th className="text-right">Opening</th>
+            {(role === "owner" || role === "cashier") && <th className="text-right">Action</th>}
           </tr>
         </thead>
         <tbody>
@@ -90,7 +93,20 @@ export function CustomerList({ onSelect, onCreate, role }: Props) {
               <td className="text-right">
                 {c.credit_limit != null ? formatINR(c.credit_limit) : "—"}
               </td>
-              <td className="text-right">{formatINR(c.opening_balance)}</td>
+              <td className="text-right">{formatINR(c.opening_balance_paise)}</td>
+              {(role === "owner" || role === "cashier") && (
+                <td className="text-right">
+                  {onRecordPayment && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onRecordPayment(c); }}
+                      className="rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20"
+                    >
+                      Pay
+                    </button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

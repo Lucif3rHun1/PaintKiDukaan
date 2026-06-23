@@ -1,0 +1,1 @@
+ALTER TABLE sale_returns ADD COLUMN no TEXT;

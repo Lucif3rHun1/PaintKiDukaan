@@ -211,12 +211,14 @@ pub fn run() {
             commands::units::deactivate_unit,
             // Customers (Slice B)
             commands::customers::create_customer,
+            commands::customers::create_customer_inline,
             commands::customers::update_customer,
             commands::customers::list_customers,
             commands::customers::lookup_customer,
             commands::customers::customer_outstanding,
             commands::customers::list_customer_bills,
             commands::customers::customer_ledger,
+            commands::customers::create_customer_credit_invoice,
             commands::customers::customer_credit_sales,
             commands::customers::record_customer_payment,
             // Vendors (Slice B)
@@ -233,6 +235,7 @@ pub fn run() {
             commands::sales::cmd_convert_quotation,
             commands::sales::cmd_edit_sale,
             commands::sales::cmd_get_sale,
+            commands::sales::cmd_get_sale_by_invoice_number,
             commands::sales::cmd_get_sale_return,
             commands::sales::cmd_list_sales,
             commands::sales::cmd_list_sale_returns,
@@ -277,6 +280,15 @@ pub fn run() {
             commands::backup::backup_status,
             // Printer discovery (Slice D)
             commands::discover_printers::discover_system_printers,
+            // Printer CRUD (Slice D)
+            commands::printers::cmd_list_printers,
+            commands::printers::cmd_create_printer,
+            commands::printers::cmd_update_printer,
+            commands::printers::cmd_delete_printer,
+            commands::printers::cmd_set_default_printer,
+            commands::printers::cmd_get_default_printer,
+            // Dev receipt PDF fallback (Slice D, macOS/Linux only)
+            commands::printing::cmd_print_receipt_dev,
             // Alerts (Slice E)
             commands::alerts::cmd_list_alerts,
             commands::alerts::cmd_unread_alert_count,

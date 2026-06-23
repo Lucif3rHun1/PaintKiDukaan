@@ -1,6 +1,7 @@
 import { formatRupeesFromPaise as formatPaiseAsRupees } from "../lib/money";
 export { formatRupeesFromPaise } from "../lib/money";
 import type { PaymentMode } from "../pos/types";
+import type { Sale } from "../pos/types";
 
 /**
  * Shared types for the Tauri command surface.
@@ -478,48 +479,51 @@ export interface ImportResult {
 }
 
 /**
- * Inline customer creation payload (used when customer doesn't exist yet during sale/return)
+ * POS Sales Return
+ * Exact mirror of backend Rust shapes (src-tauri/src/commands/sales.rs)
  */
+
 export interface CreateCustomerInlinePayload {
   name: string;
   phone: string;
-  type?: string;
+  type_id: number | null;
 }
 
-/**
- * Payload for creating a sales return (credit note)
- */
-export interface CreateSalesReturnPayload {
-  invoice_number: string;
-  items: Array<{
-    item_id: number;
-    quantity: number;
-    unit?: string;
-  }>;
-  payment_modes: Array<{
-    mode: PaymentMode;
-    amount_paise: number;
-  }>;
+export interface CreateSaleReturnPayload {
+  sale_id: number;
+  date?: string;                // YYYY-MM-DD
   reason?: string;
-  owner_pin?: string;
-  date?: string; // ISO YYYY-MM-DD
+  payment_modes: Array<{ mode: string; amount: number }>;
+  owner_pin: string;
+  lines: Array<{
+    sale_item_id: number;
+    qty: number;
+    refund_paise: number;
+    shade_note?: string;
+  }>;
 }
 
-/**
- * Sales return (credit note) record returned by backend
- * Mirrors Rust struct from commands/sales.rs or similar
- */
-export interface SalesReturn {
+export interface SaleReturn {
   id: number;
-  invoice_number: string;
-  return_number?: string;
-  total_refund_paise: number;
-  payment_modes: Array<{
-    mode: PaymentMode;
-    amount_paise: number;
-  }>;
-  reason?: string;
-  customer_id?: number;
+  no: string;                   // "RET/DD-MM-YYYY/NNN"
+  sale_id: number;
+  date: string;                 // YYYY-MM-DD
+  reason: string | null;
+  refund_total: number;         // paise
+  payment_modes: Array<{ mode: string; amount: number }>;
+  lines: SaleReturnLine[];
   created_at: string;
-  updated_at?: string;
+  created_by: number;
+}
+
+export interface SaleReturnLine {
+  sale_item_id: number;
+  item_name: string;
+  qty: number;
+  refund_paise: number;
+  shade_note: string | null;
+}
+
+export interface GetSaleByInvoiceNumberRequest {
+  no: string;
 }

@@ -538,6 +538,38 @@ pub fn get(db: &Db, id: i64) -> anyhow::Result<Option<Sale>> {
     })
 }
 
+/// Look up a sale by its human-readable number (`INV/...`, `QTN/...`).
+/// Returns `None` when no row matches; same shape as `get`.
+pub fn get_by_no(db: &Db, no: &str) -> anyhow::Result<Option<Sale>> {
+    db.with_conn(|c| {
+        let sale = c
+            .query_row(
+                "SELECT id,no,customer_id,date,status,subtotal,bill_discount,
+                        total,paid_amount,payment_modes_json,validity_days,
+                        converted_from_id,user_id,created_at
+                 FROM sales WHERE no = ?1",
+                params![no],
+                row_to_sale_header,
+            )
+            .optional()?;
+        let sale = match sale {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+        let items = load_items(c, sale.id)?;
+        let customer_name = if let Some(cid) = sale.customer_id {
+            customers::get_by_id(c, cid)?.map(|c| c.name)
+        } else {
+            None
+        };
+        Ok(Some(Sale {
+            customer_name,
+            items,
+            ..sale
+        }))
+    })
+}
+
 pub fn list(db: &Db, status: Option<&str>, limit: i64) -> anyhow::Result<Vec<Sale>> {
     db.with_conn(|c| {
         let mut sql = String::from(
@@ -721,6 +753,20 @@ pub fn cmd_get_sale(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Opt
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_get_sale_by_invoice_number(
+    state: tauri::State<'_, AppState>,
+    no: String,
+) -> AppResult<Option<Sale>> {
+    ipc_auth::authorize_err("cmd_get_sale_by_invoice_number", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    get_by_no(db, &no).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_list_sales(
     state: tauri::State<'_, AppState>,
     status: Option<String>,
@@ -787,8 +833,477 @@ fn now() -> String {
 }
 
 // -----------------------------------------------------------------------------
-// Tests for cart math + credit rules.
+// Sale returns (RET/...) — owner-PIN-gated, atomic.
 // -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateSaleReturnPayload {
+    pub sale_id: i64,
+    pub date: Option<String>,
+    pub reason: Option<String>,
+    pub payment_modes: Vec<PaymentSplit>,
+    pub owner_pin: String,
+    pub lines: Vec<CreateSaleReturnLine>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateSaleReturnLine {
+    pub sale_item_id: i64,
+    pub qty: i64,
+    pub refund_paise: i64,
+    pub shade_note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SaleReturn {
+    pub id: i64,
+    pub no: String,
+    pub sale_id: i64,
+    pub date: String,
+    pub reason: Option<String>,
+    pub refund_total: i64,
+    pub payment_modes: Vec<PaymentSplit>,
+    pub lines: Vec<SaleReturnLine>,
+    pub created_at: String,
+    pub created_by: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SaleReturnLine {
+    pub sale_item_id: i64,
+    pub item_name: String,
+    pub qty: i64,
+    pub refund_paise: i64,
+    pub shade_note: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ReturnError {
+    #[error("return must contain at least one line")]
+    EmptyLines,
+    #[error("line {0}: qty must be > 0")]
+    BadLineQty(usize),
+    #[error("line {0}: refund_paise must be >= 0")]
+    BadRefund(usize),
+    #[error("sale_item {1} does not belong to sale {2}")]
+    SaleItemMismatch(usize, i64, i64),
+    #[error(
+        "line {line}: return qty {requested} + already-returned {already} exceeds sold {sold}"
+    )]
+    QtyExceedsSold {
+        line: usize,
+        requested: i64,
+        already: i64,
+        sold: i64,
+    },
+    #[error("payment_modes sum ({got}) must equal refund total ({want})")]
+    ModesSumMismatch { got: i64, want: i64 },
+    #[error("sale {0} not found")]
+    SaleNotFound(i64),
+    #[error("sale {0} is not a final bill (status: {1})")]
+    NotAFinalSale(i64, String),
+    #[error("db error: {0}")]
+    Db(#[from] rusqlite::Error),
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
+}
+
+pub fn create_sale_return(
+    db: &Db,
+    user_id: i64,
+    payload: CreateSaleReturnPayload,
+) -> Result<i64, ReturnError> {
+    if payload.lines.is_empty() {
+        return Err(ReturnError::EmptyLines);
+    }
+    for (i, l) in payload.lines.iter().enumerate() {
+        if l.qty <= 0 {
+            return Err(ReturnError::BadLineQty(i));
+        }
+        if l.refund_paise < 0 {
+            return Err(ReturnError::BadRefund(i));
+        }
+    }
+
+    let new_id = db.with_conn_immediate(|c| -> Result<i64, ReturnError> {
+        let row = c
+            .query_row(
+                "SELECT status FROM sales WHERE id = ?1",
+                params![payload.sale_id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?;
+        let status = match row {
+            Some(s) => s,
+            None => return Err(ReturnError::SaleNotFound(payload.sale_id)),
+        };
+        if status != "final" {
+            return Err(ReturnError::NotAFinalSale(payload.sale_id, status));
+        }
+
+        // Per-line validation: each sale_item_id must belong to the original
+        // sale AND requested qty must not exceed (sold - already_returned).
+        for (i, l) in payload.lines.iter().enumerate() {
+            let (sale_id_of_item, sold_qty): (i64, i64) = c
+                .query_row(
+                    "SELECT sale_id, qty FROM sale_items WHERE id = ?1",
+                    params![l.sale_item_id],
+                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+                )
+                .optional()?
+                .ok_or(ReturnError::SaleItemMismatch(
+                    i,
+                    l.sale_item_id,
+                    payload.sale_id,
+                ))?;
+            if sale_id_of_item != payload.sale_id {
+                return Err(ReturnError::SaleItemMismatch(
+                    i,
+                    l.sale_item_id,
+                    payload.sale_id,
+                ));
+            }
+            let already: i64 = c.query_row(
+                "SELECT COALESCE(SUM(qty), 0) FROM sale_return_lines
+                     WHERE sale_item_id = ?1",
+                params![l.sale_item_id],
+                |r| r.get(0),
+            )?;
+            if l.qty + already > sold_qty {
+                return Err(ReturnError::QtyExceedsSold {
+                    line: i,
+                    requested: l.qty,
+                    already,
+                    sold: sold_qty,
+                });
+            }
+        }
+
+        let refund_total: i64 = payload
+            .lines
+            .iter()
+            .map(|l| l.qty.saturating_mul(l.refund_paise))
+            .sum();
+        let modes_sum: i64 = payload.payment_modes.iter().map(|m| m.amount).sum();
+        if modes_sum != refund_total {
+            return Err(ReturnError::ModesSumMismatch {
+                got: modes_sum,
+                want: refund_total,
+            });
+        }
+
+        // Default location: lowest active location id (mirrors create_final_bill).
+        let default_location: i64 = c.query_row(
+            "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
+            [],
+            |r| r.get(0),
+        )?;
+
+        let no = sequences::mint_next_sale_no(db, sequences::Kind::SaleRet)
+            .map_err(ReturnError::Other)?;
+        let logical_date = payload.date.unwrap_or_else(today);
+        let created_at = now();
+        let reason = payload.reason.clone();
+
+        let return_id: i64 = c.query_row(
+            "INSERT INTO sale_returns
+                (no, sale_id, refund_total_paise, reason, created_at, created_by)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             RETURNING id",
+            params![
+                no,
+                payload.sale_id,
+                refund_total,
+                reason,
+                logical_date,
+                user_id
+            ],
+            |r| r.get(0),
+        )?;
+
+        for l in &payload.lines {
+            c.execute(
+                "INSERT INTO sale_return_lines
+                    (sale_return_id, sale_item_id, qty, refund_paise, shade_note,
+                     created_at, created_by)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    return_id,
+                    l.sale_item_id,
+                    l.qty,
+                    l.refund_paise,
+                    l.shade_note,
+                    created_at,
+                    user_id,
+                ],
+            )?;
+            // Positive stock movement (return restores stock).
+            c.execute(
+                "INSERT INTO stock_movements
+                    (item_id,location_id,qty,type,ref_type,ref_id,user_id,created_at)
+                 VALUES (?1,?2,?3,'return','sale_return',?4,?5,?6)",
+                params![
+                    sale_item_id_to_item_id(c, l.sale_item_id)?,
+                    default_location,
+                    l.qty,
+                    return_id,
+                    user_id,
+                    created_at,
+                ],
+            )?;
+        }
+
+        for m in &payload.payment_modes {
+            c.execute(
+                "INSERT INTO sale_return_payments
+                    (sale_return_id, mode, amount_paise, reference, created_at, created_by)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    return_id,
+                    m.mode,
+                    m.amount,
+                    Option::<String>::None,
+                    created_at,
+                    user_id,
+                ],
+            )?;
+        }
+
+        // Refund reduces the customer's paid amount on the original sale so
+        // the outstanding ledger stays correct. Floors at 0 — a return can
+        // never make paid_amount negative.
+        c.execute(
+            "UPDATE sales
+             SET paid_amount = MAX(0, paid_amount - ?1)
+             WHERE id = ?2",
+            params![refund_total, payload.sale_id],
+        )?;
+
+        Ok(return_id)
+    })?;
+    Ok(new_id)
+}
+
+fn sale_item_id_to_item_id(
+    c: &rusqlite::Connection,
+    sale_item_id: i64,
+) -> Result<i64, ReturnError> {
+    Ok(c.query_row(
+        "SELECT item_id FROM sale_items WHERE id = ?1",
+        params![sale_item_id],
+        |r| r.get(0),
+    )?)
+}
+
+fn row_to_sale_return(
+    c: &rusqlite::Connection,
+    header: &SaleReturnHeader,
+) -> AppResult<SaleReturn> {
+    let mut stmt = c.prepare(
+        "SELECT sil.sale_item_id, COALESCE(i.name, ''), sil.qty, sil.refund_paise, sil.shade_note
+         FROM sale_return_lines sil
+         LEFT JOIN items i ON i.id = (
+             SELECT si.item_id FROM sale_items si WHERE si.id = sil.sale_item_id
+         )
+         WHERE sil.sale_return_id = ?1
+         ORDER BY sil.id",
+    )?;
+    let lines: Vec<SaleReturnLine> = stmt
+        .query_map(params![header.id], |r| {
+            Ok(SaleReturnLine {
+                sale_item_id: r.get(0)?,
+                item_name: r.get(1)?,
+                qty: r.get(2)?,
+                refund_paise: r.get(3)?,
+                shade_note: r.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut stmt = c.prepare(
+        "SELECT mode, amount_paise, COALESCE(reference, '') FROM sale_return_payments
+         WHERE sale_return_id = ?1 ORDER BY id",
+    )?;
+    let payment_modes: Vec<PaymentSplit> = stmt
+        .query_map(params![header.id], |r| {
+            Ok(PaymentSplit {
+                mode: r.get(0)?,
+                amount: r.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(SaleReturn {
+        id: header.id,
+        no: header.no.clone(),
+        sale_id: header.sale_id,
+        date: header.date.clone(),
+        reason: header.reason.clone(),
+        refund_total: header.refund_total,
+        payment_modes,
+        lines,
+        created_at: header.created_at.clone(),
+        created_by: header.created_by,
+    })
+}
+
+struct SaleReturnHeader {
+    id: i64,
+    no: String,
+    sale_id: i64,
+    date: String,
+    reason: Option<String>,
+    refund_total: i64,
+    created_at: String,
+    created_by: i64,
+}
+
+fn fetch_return_header(c: &rusqlite::Connection, id: i64) -> AppResult<Option<SaleReturnHeader>> {
+    let row = c
+        .query_row(
+            "SELECT id, COALESCE(no, ''), sale_id, created_at, reason, refund_total_paise, created_by
+             FROM sale_returns WHERE id = ?1",
+            params![id],
+            |r| {
+                Ok(SaleReturnHeader {
+                    id: r.get(0)?,
+                    no: r.get(1)?,
+                    sale_id: r.get(2)?,
+                    date: r.get(3)?,
+                    reason: r.get(4)?,
+                    refund_total: r.get(5)?,
+                    created_at: r.get(3)?,
+                    created_by: r.get(6)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(row)
+}
+
+pub fn get_return(db: &Db, id: i64) -> AppResult<Option<SaleReturn>> {
+    db.with_raw(|c| {
+        let header = match fetch_return_header(c, id)? {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+        Ok(Some(row_to_sale_return(c, &header)?))
+    })
+}
+
+pub fn list_returns(
+    db: &Db,
+    customer_id: Option<i64>,
+    from_date: Option<&str>,
+    to_date: Option<&str>,
+    limit: i64,
+) -> AppResult<Vec<SaleReturn>> {
+    db.with_raw(|c| {
+        let mut sql = String::from(
+            "SELECT sr.id, COALESCE(sr.no, ''), sr.sale_id, sr.created_at, sr.reason,
+                    sr.refund_total_paise, sr.created_at, sr.created_by
+             FROM sale_returns sr
+             JOIN sales s ON s.id = sr.sale_id
+             WHERE 1=1",
+        );
+        let mut bound: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(cid) = customer_id {
+            sql.push_str(&format!(" AND s.customer_id = ?{}", bound.len() + 1));
+            bound.push(Box::new(cid));
+        }
+        if let Some(d) = from_date {
+            sql.push_str(&format!(" AND sr.created_at >= ?{}", bound.len() + 1));
+            bound.push(Box::new(d.to_string()));
+        }
+        if let Some(d) = to_date {
+            sql.push_str(&format!(" AND sr.created_at <= ?{}", bound.len() + 1));
+            bound.push(Box::new(d.to_string()));
+        }
+        sql.push_str(&format!(" ORDER BY sr.id DESC LIMIT ?{}", bound.len() + 1));
+        bound.push(Box::new(limit));
+        let dyn_args: Vec<&dyn rusqlite::ToSql> =
+            bound.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
+        let mut stmt = c.prepare(&sql)?;
+        let rows = stmt.query_map(dyn_args.as_slice(), |r| {
+            Ok(SaleReturnHeader {
+                id: r.get(0)?,
+                no: r.get(1)?,
+                sale_id: r.get(2)?,
+                date: r.get(3)?,
+                reason: r.get(4)?,
+                refund_total: r.get(5)?,
+                created_at: r.get(6)?,
+                created_by: r.get(7)?,
+            })
+        })?;
+        let headers: Vec<SaleReturnHeader> = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(AppError::from)?;
+        let mut out = Vec::with_capacity(headers.len());
+        for h in headers {
+            out.push(row_to_sale_return(c, &h)?);
+        }
+        Ok(out)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_create_sale_return(
+    state: tauri::State<'_, AppState>,
+    payload: CreateSaleReturnPayload,
+) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_create_sale_return", state.inner())?;
+    crate::commands::auth::verify_owner_pin(state.inner(), &payload.owner_pin)?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
+    let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
+    let user_id = user.id;
+    create_sale_return(db, user_id, payload).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_get_sale_return(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+) -> AppResult<Option<SaleReturn>> {
+    ipc_auth::authorize_err("cmd_get_sale_return", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    get_return(db, id)
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_list_sale_returns(
+    state: tauri::State<'_, AppState>,
+    customer_id: Option<i64>,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    limit: Option<i64>,
+) -> AppResult<Vec<SaleReturn>> {
+    ipc_auth::authorize_err("cmd_list_sale_returns", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    list_returns(
+        db,
+        customer_id,
+        from_date.as_deref(),
+        to_date.as_deref(),
+        limit.unwrap_or(100),
+    )
+}
 
 #[cfg(test)]
 mod tests {
@@ -839,10 +1354,10 @@ mod tests {
             id: 1,
             name: "C".into(),
             phone: "9999000001".into(),
-            type_id: None,
+            customer_type_id: None,
             type_name: None,
             is_flagged: false,
-            opening_balance: 0,
+            opening_balance_paise: 0,
             notes: None,
             is_active: true,
             created_at: "2026-01-01 00:00:00".into(),
@@ -873,15 +1388,145 @@ mod tests {
         ];
         assert_eq!(modes_sum(&modes), 1000);
     }
-}
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_create_sale_return(
-    state: tauri::State<'_, AppState>,
-    _payload: serde_json::Value,
-) -> AppResult<i64> {
-    ipc_auth::authorize_err("cmd_create_sale_return", state.inner())?;
-    Err(AppError::Internal("not implemented".into()))
+    fn ret_line(sale_item_id: i64, qty: i64, refund_paise: i64) -> CreateSaleReturnLine {
+        CreateSaleReturnLine {
+            sale_item_id,
+            qty,
+            refund_paise,
+            shade_note: None,
+        }
+    }
+
+    #[test]
+    fn sale_return_rejects_empty_lines() {
+        let db = Db::open_in_memory().unwrap();
+        let payload = CreateSaleReturnPayload {
+            sale_id: 1,
+            date: None,
+            reason: None,
+            payment_modes: vec![PaymentSplit {
+                mode: "cash".into(),
+                amount: 0,
+            }],
+            owner_pin: String::new(),
+            lines: vec![],
+        };
+        let err = create_sale_return(&db, 1, payload).unwrap_err();
+        assert!(matches!(err, ReturnError::EmptyLines));
+    }
+
+    #[test]
+    fn sale_return_rejects_zero_or_negative_qty() {
+        let db = Db::open_in_memory().unwrap();
+        let payload = CreateSaleReturnPayload {
+            sale_id: 1,
+            date: None,
+            reason: None,
+            payment_modes: vec![],
+            owner_pin: String::new(),
+            lines: vec![ret_line(10, 0, 100)],
+        };
+        let err = create_sale_return(&db, 1, payload).unwrap_err();
+        assert!(matches!(err, ReturnError::BadLineQty(0)));
+    }
+
+    #[test]
+    fn sale_return_rejects_negative_refund() {
+        let db = Db::open_in_memory().unwrap();
+        let payload = CreateSaleReturnPayload {
+            sale_id: 1,
+            date: None,
+            reason: None,
+            payment_modes: vec![],
+            owner_pin: String::new(),
+            lines: vec![ret_line(10, 1, -10)],
+        };
+        let err = create_sale_return(&db, 1, payload).unwrap_err();
+        assert!(matches!(err, ReturnError::BadRefund(0)));
+    }
+
+    #[test]
+    fn sale_return_rejects_missing_sale() {
+        let db = Db::open_in_memory().unwrap();
+        let payload = CreateSaleReturnPayload {
+            sale_id: 999, // not present
+            date: None,
+            reason: None,
+            payment_modes: vec![PaymentSplit {
+                mode: "cash".into(),
+                amount: 100,
+            }],
+            owner_pin: String::new(),
+            lines: vec![ret_line(1, 1, 100)],
+        };
+        let err = create_sale_return(&db, 1, payload).unwrap_err();
+        assert!(matches!(err, ReturnError::SaleNotFound(999)));
+    }
+
+    #[test]
+    fn sale_return_rejects_non_final_sale() {
+        let db = Db::open_in_memory().unwrap();
+        // Seed a quotation (not a final sale) at id=1.
+        db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO sales (no, status, date, subtotal, bill_discount, total, paid_amount, user_id) \
+                 VALUES ('QTN-X', 'quotation', '2025-01-01', 100, 0, 100, 0, 1)",
+                [],
+            )
+            .unwrap();
+        });
+        let payload = CreateSaleReturnPayload {
+            sale_id: 1,
+            date: None,
+            reason: None,
+            payment_modes: vec![],
+            owner_pin: String::new(),
+            lines: vec![],
+        };
+        let err = create_sale_return(&db, 1, payload).unwrap_err();
+        assert!(matches!(err, ReturnError::NotAFinalSale(1, s) if s == "quotation"));
+    }
+
+    #[test]
+    fn sale_return_rejects_modes_sum_mismatch() {
+        let db = Db::open_in_memory().unwrap();
+        // Seed a final sale with one item.
+        db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO sales (no, status, date, subtotal, bill_discount, total, paid_amount, user_id) \
+                 VALUES ('INV-X', 'final', '2025-01-01', 100, 0, 100, 100, 1)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO sale_items (sale_id, item_id, qty, price, unit_type, line_discount, line_order) \
+                 VALUES (1, 1, 10, 10, 'unit', 0, 0)",
+                [],
+            )
+            .unwrap();
+        });
+        // 2 items * 10 paise refund = 20, but we provide only 10 in payment_modes.
+        let payload = CreateSaleReturnPayload {
+            sale_id: 1,
+            date: None,
+            reason: None,
+            payment_modes: vec![PaymentSplit {
+                mode: "cash".into(),
+                amount: 10,
+            }],
+            owner_pin: String::new(),
+            lines: vec![ret_line(1, 2, 10)],
+        };
+        let err = create_sale_return(&db, 1, payload).unwrap_err();
+        match err {
+            ReturnError::ModesSumMismatch { got, want } => {
+                assert_eq!(got, 10);
+                assert_eq!(want, 20);
+            }
+            other => panic!("expected ModesSumMismatch, got {other:?}"),
+        }
+    }
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
@@ -892,27 +1537,6 @@ pub fn cmd_edit_sale(
 ) -> AppResult<i64> {
     ipc_auth::authorize_err("cmd_edit_sale", state.inner())?;
     Err(AppError::Internal("not implemented".into()))
-}
-
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_get_sale_return(
-    state: tauri::State<'_, AppState>,
-    _id: i64,
-) -> AppResult<serde_json::Value> {
-    ipc_auth::authorize_err("cmd_get_sale_return", state.inner())?;
-    Ok(serde_json::Value::Null)
-}
-
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_list_sale_returns(
-    state: tauri::State<'_, AppState>,
-    _customer_id: Option<i64>,
-    _from_date: Option<String>,
-    _to_date: Option<String>,
-    _limit: Option<i64>,
-) -> AppResult<Vec<serde_json::Value>> {
-    ipc_auth::authorize_err("cmd_list_sale_returns", state.inner())?;
-    Ok(Vec::new())
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]

@@ -233,7 +233,7 @@ export default function InwardPage({ user: _user }: Props) {
       const res = await toast.promise(createInward(req), {
         loading: "Saving inward…",
         success: (r) => `Inward #${r.id} saved${r.print_label ? " — label will print" : ""}`,
-        error: (e) => (e as Error)?.message ?? "Save failed",
+        error: (e) => extractError(e),
       });
       // Persist user-overridden retail prices back to items.retail_price_paise
       // so future inwards (and POS sales) reflect the new price.

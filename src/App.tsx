@@ -440,7 +440,6 @@ export default function App() {
         <CustomerForm
           mode="create"
           types={customerTypes}
-          canFlag={role === "owner"}
           onSaved={(c) => { setCustomerCreateOpen(false); setRefreshKey((k) => k + 1); setCustomerEditTarget(c); }}
           onCancel={() => setCustomerCreateOpen(false)}
         />
@@ -456,7 +455,6 @@ export default function App() {
             mode="edit"
             initial={customerEditTarget}
             types={customerTypes}
-            canFlag={role === "owner"}
             onSaved={(c) => { setCustomerEditTarget(null); setRefreshKey((k) => k + 1); }}
             onCancel={() => setCustomerEditTarget(null)}
           />

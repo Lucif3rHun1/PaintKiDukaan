@@ -11,6 +11,9 @@ const MIGRATION_003: &str = include_str!("migrations/003__add_items_brand_unit_s
 const MIGRATION_004: &str = include_str!("migrations/004__drop_location_text.sql");
 const MIGRATION_005: &str = include_str!("migrations/005__daily_counters_and_return_payments.sql");
 const MIGRATION_006: &str = include_str!("migrations/006__update_customer_types.sql");
+const MIGRATION_007: &str = include_str!("migrations/007__add_no_to_sale_returns.sql");
+const MIGRATION_008: &str = include_str!("migrations/008__reconcile_schema_to_rust.sql");
+const MIGRATION_008: &str = include_str!("migrations/008__printers.sql");
 
 /// Migration set — canonical baseline. All future schema changes go in
 /// `migrations/` subdirectory and are appended after `M::up(SCHEMA)`.
@@ -23,6 +26,8 @@ fn migrations() -> Migrations<'static> {
         M::up(MIGRATION_004),
         M::up(MIGRATION_005),
         M::up(MIGRATION_006),
+        M::up(MIGRATION_007),
+        M::up(MIGRATION_008),
     ])
 }
 
@@ -116,6 +121,8 @@ mod tests {
             "alert_reads",
             // Label print log
             "label_print_log",
+            "printers",
+            "printer_mappings",
         ];
 
         let mut stmt = conn

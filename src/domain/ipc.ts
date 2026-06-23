@@ -18,9 +18,10 @@ import {
   type ChangePinArgs,
   type SetRecoveryPassphraseArgs,
   type CreateCustomerInlinePayload,
-  type CreateSalesReturnPayload,
+  type CreateSaleReturnPayload,
   type Customer,
-  type SalesReturn,
+  type SaleReturn,
+  type GetSaleByInvoiceNumberRequest,
 } from "./types";
 import type { Sale } from "../pos/types";
 
@@ -112,20 +113,32 @@ export async function createCustomerInline(
 }
 
 export async function createSalesReturn(
-  payload: CreateSalesReturnPayload,
-): Promise<SalesReturn> {
-  return invoke<SalesReturn>(
-    "create_sales_return",
-    payload as unknown as Record<string, unknown>,
-  );
+  payload: CreateSaleReturnPayload,
+): Promise<number> {
+  return invoke<number>("create_sale_return", payload as unknown as Record<string, unknown>);
 }
 
-// TODO: Backend command `get_sale_by_invoice_number` is not implemented yet.
-// This wrapper assumes it returns the original sale (with items) or null.
 export async function getSaleByInvoiceNumber(
-  invoiceNumber: string,
+  no: string,
 ): Promise<Sale | null> {
-  return invoke<Sale | null>("get_sale_by_invoice_number", {
-    invoice_number: invoiceNumber,
-  });
+  return invoke<Sale | null>("get_sale_by_invoice_number", { no });
+}
+
+export async function getSaleReturn(id: number): Promise<SaleReturn | null> {
+  return invoke<SaleReturn | null>("get_sale_return", { id });
+}
+
+export async function listSaleReturns(
+  opts: {
+    customer_id?: number;
+    from_date?: string;
+    to_date?: string;
+    limit?: number;
+  } = {},
+): Promise<SaleReturn[]> {
+  return invoke<SaleReturn[]>("list_sale_returns", opts);
+}
+
+export async function getNextReturnNumber(): Promise<string> {
+  return invoke<string>("get_next_return_number");
 }
