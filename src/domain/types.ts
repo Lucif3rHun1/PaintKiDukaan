@@ -1,5 +1,6 @@
 import { formatRupeesFromPaise as formatPaiseAsRupees } from "../lib/money";
 export { formatRupeesFromPaise } from "../lib/money";
+import type { PaymentMode } from "../pos/types";
 
 /**
  * Shared types for the Tauri command surface.
@@ -44,6 +45,16 @@ export interface ChangeDuressPinArgs {
   new_duress_pin: string;
 }
 
+export interface ChangePinArgs {
+  old_pin: string;
+  new_pin: string;
+}
+
+export interface SetRecoveryPassphraseArgs {
+  current_pin: string;
+  new_passphrase: string;
+}
+
 export interface User {
   id: number;
   name: string;
@@ -59,18 +70,20 @@ export interface Item {
   category: string | null;
   unit_id: number;
   unit_code: string;
-  unit_label: string | null;
+  unit_label: string;
+  unit: string;
+  units_per_pack: number;
+  sell_unit: string;
   retail_price_paise: number;
   cost_paise: number;
   promo_price_paise: number | null;
   label_line1: string | null;
   label_line2: string | null;
-  location_text: string | null;
-  primary_location_id: number;
+  primary_location_id: number | null;
   sub_location_id: number | null;
-  position: number;
+  position: string | null;
   min_qty: number;
-  barcode_format: string;
+  barcode_format: string | null;
   is_active: boolean;
   current_qty: number;
   created_at: string;
@@ -93,9 +106,9 @@ export type ItemLookup =
       retail_price_paise: number;
       unit_id: number;
       unit_code: string;
-      unit_label: string;
+      unit_label: string | null;
+      units_per_pack: number;
       in_stock: number;
-      location_text: string | null;
     }
   | {
       scope: "stocker";
@@ -103,7 +116,6 @@ export type ItemLookup =
       sku_code: string;
       name: string;
       min_qty: number;
-      location_text: string | null;
       qty_per_loc: QtyPerLoc[];
     };
 
@@ -122,16 +134,18 @@ export interface NewItem {
   brand?: string | null;
   brand_id?: number | null;
   category?: string | null;
-  unit_id?: number;
+  unit_id: number;
+  unit_code?: string | null;
+  unit_label?: string | null;
+  units_per_pack?: number | null;
   retail_price_paise: number;
   cost_paise: number;
   promo_price_paise?: number | null;
   label_line1?: string | null;
   label_line2?: string | null;
-  location_text?: string | null;
   primary_location_id: number;
   sub_location_id?: number | null;
-  position?: number | null;
+  position?: string | null;
   min_qty: number;
   barcode_format?: string;
   barcode?: string | null;
@@ -143,15 +157,15 @@ export interface ItemUpdate {
   brand_id?: number | null;
   category?: string | null;
   unit_id?: number | null;
+  units_per_pack?: number | null;
   retail_price_paise?: number | null;
   cost_paise?: number | null;
   promo_price_paise?: number | null;
   label_line1?: string | null;
   label_line2?: string | null;
-  location_text?: string | null;
   primary_location_id?: number | null;
   sub_location_id?: number | null;
-  position?: number | null;
+  position?: string | null;
   min_qty?: number | null;
   barcode_format?: string | null;
   barcode?: string | null;
@@ -174,21 +188,23 @@ export interface LabelPrintRecord {
 export interface Customer {
   id: number;
   name: string;
-  phone: string;
-  type_id: number | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  customer_type_id: number | null;
   type_name: string | null;
-  credit_limit: number | null;
-  is_flagged: boolean;
-  opening_balance: number;
-  notes: string | null;
+  opening_balance_paise: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  is_flagged?: boolean;
+  credit_limit?: number | null;
+  notes?: string | null;
 }
 
 export interface CustomerOutstanding {
   customer_id: number;
-  opening_balance: number;
+  opening_balance_paise: number;
   total_sales: number;
   total_paid: number;
   total_payments: number;
@@ -197,22 +213,20 @@ export interface CustomerOutstanding {
 
 export interface NewCustomer {
   name: string;
-  phone: string;
-  type_id?: number | null;
-  credit_limit?: number | null;
-  is_flagged?: boolean;
-  opening_balance?: number;
-  notes?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  customer_type_id?: number | null;
+  opening_balance_paise?: number;
 }
 
 export interface CustomerUpdate {
   name?: string;
-  phone?: string;
-  type_id?: number | null;
-  credit_limit?: number | null;
-  is_flagged?: boolean;
-  opening_balance?: number;
-  notes?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  customer_type_id?: number | null;
+  opening_balance_paise?: number;
   is_active?: boolean;
 }
 
@@ -288,7 +302,7 @@ export interface SubLocation {
   id: number;
   location_id: number;
   name: string;
-  sort_order: number;
+  position: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -313,8 +327,20 @@ export interface NewCustomerType {
 export interface Brand {
   id: number;
   name: string;
-  code_prefix: string;
+  prefix: string;
   next_seq: number;
+}
+
+export interface Category {
+  id: number;
+  name: string;
+  is_active: boolean;
+}
+
+export interface ConversionResult {
+  unit_code: string;
+  units_per_pack: number;
+  qty_in_base_units: number;
 }
 
 export interface HeldBill {
@@ -333,6 +359,8 @@ export interface Unit {
   is_active: boolean;
 }
 
+export type UnitDimension = "volume" | "mass" | "area" | "count";
+
 export interface UnitConversion {
   id: number;
   from_unit_id: number;
@@ -347,8 +375,21 @@ export interface AppError {
     | "validation"
     | "conflict"
     | "unauthorized"
+    | "wrong_pin"
+    | "wrong_recovery_passphrase"
+    | "too_many_attempts"
     | "forbidden"
-    | "internal";
+    | "internal"
+    | "crypto"
+    | "no_keywrap"
+    | "no_db"
+    | "not_unlocked"
+    | "invalid_pin_format"
+    | "locked_out"
+    | "wiped"
+    | "path_traversal"
+    | "log_injection"
+    | "io";
   message: string;
 }
 
@@ -368,4 +409,117 @@ export function isAppError(e: unknown): e is AppError {
  */
 export function formatINR(paise: number): string {
   return formatPaiseAsRupees(paise);
+}
+
+export interface CustomerBill {
+  sale_id: number;
+  sale_number: string;
+  created_at: string;
+  total_paise: number;
+  paid_paise: number;
+  status: string;
+}
+
+export interface CustomerLedgerTransaction {
+  id: number;
+  date: string; // ISO YYYY-MM-DD
+  kind: "sale" | "payment";
+  ref_no: string | null;
+  description: string | null;
+  debit_paise: number;
+  credit_paise: number;
+  balance_paise: number;
+}
+
+export interface CustomerLedger {
+  customer_id: number;
+  opening_balance_paise: number;
+  closing_balance_paise: number;
+  rows: CustomerLedgerTransaction[];
+}
+
+export interface CreditInvoiceLine {
+  item_id: number;
+  qty: number;
+  unit_price_paise: number;
+}
+
+export interface CreateCustomerCreditInvoiceArgs {
+  customer_id: number;
+  date: string; // ISO YYYY-MM-DD
+  description: string | null;
+  lines: CreditInvoiceLine[];
+}
+
+export interface RecordCustomerPaymentArgs {
+  customer_id: number;
+  amount: number; // paise
+  mode: string;
+  date: string; // ISO YYYY-MM-DD
+  note: string | null;
+}
+
+export interface SecurityPolicy {
+  wipe_on_duress: boolean;
+  wipe_timeout_minutes: number;
+  hostile_response: "warn" | "lock" | "wipe";
+}
+
+export interface ImportRowError {
+  row: number;
+  message: string;
+}
+
+export interface ImportResult {
+  total_rows: number;
+  created: number;
+  skipped: number;
+  errors: ImportRowError[];
+}
+
+/**
+ * Inline customer creation payload (used when customer doesn't exist yet during sale/return)
+ */
+export interface CreateCustomerInlinePayload {
+  name: string;
+  phone: string;
+  type?: string;
+}
+
+/**
+ * Payload for creating a sales return (credit note)
+ */
+export interface CreateSalesReturnPayload {
+  invoice_number: string;
+  items: Array<{
+    item_id: number;
+    quantity: number;
+    unit?: string;
+  }>;
+  payment_modes: Array<{
+    mode: PaymentMode;
+    amount_paise: number;
+  }>;
+  reason?: string;
+  owner_pin?: string;
+  date?: string; // ISO YYYY-MM-DD
+}
+
+/**
+ * Sales return (credit note) record returned by backend
+ * Mirrors Rust struct from commands/sales.rs or similar
+ */
+export interface SalesReturn {
+  id: number;
+  invoice_number: string;
+  return_number?: string;
+  total_refund_paise: number;
+  payment_modes: Array<{
+    mode: PaymentMode;
+    amount_paise: number;
+  }>;
+  reason?: string;
+  customer_id?: number;
+  created_at: string;
+  updated_at?: string;
 }

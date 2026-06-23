@@ -1,0 +1,5 @@
+-- Migration 004: no longer needed as a schema change.
+-- The `location_text` column is not present in the canonical baseline in
+-- `schema.sql`. Existing databases that already applied the previous version
+-- of this migration have had the column removed; fresh databases never create
+-- it.

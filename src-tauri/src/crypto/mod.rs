@@ -11,5 +11,5 @@
 pub mod kdf;
 pub mod wrap;
 
-pub use kdf::{derive_pin_kek, derive_recovery_k, derive_backup_key, KdfParams, KEK_LEN};
-pub use wrap::{wrap_dek, unwrap_dek, WrapError};
+pub use kdf::{derive_backup_key, derive_pin_kek, derive_recovery_k, KdfParams, KEK_LEN};
+pub use wrap::{unwrap_dek, wrap_dek, WrapError};

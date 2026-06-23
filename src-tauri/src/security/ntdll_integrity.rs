@@ -53,7 +53,8 @@ fn parse_text_section(image: &[u8]) -> Option<(SectionHeader, &[u8])> {
     if image.len() < 0x40 {
         return None;
     }
-    let e_lfanew = u32::from_le_bytes([image[0x3C], image[0x3D], image[0x3E], image[0x3F]]) as usize;
+    let e_lfanew =
+        u32::from_le_bytes([image[0x3C], image[0x3D], image[0x3E], image[0x3F]]) as usize;
     if e_lfanew + 4 > image.len() {
         return None;
     }
@@ -78,16 +79,28 @@ fn parse_text_section(image: &[u8]) -> Option<(SectionHeader, &[u8])> {
         name.copy_from_slice(&image[off..off + 8]);
 
         let virtual_size = u32::from_le_bytes([
-            image[off + 8], image[off + 9], image[off + 10], image[off + 11],
+            image[off + 8],
+            image[off + 9],
+            image[off + 10],
+            image[off + 11],
         ]);
         let virtual_address = u32::from_le_bytes([
-            image[off + 12], image[off + 13], image[off + 14], image[off + 15],
+            image[off + 12],
+            image[off + 13],
+            image[off + 14],
+            image[off + 15],
         ]);
         let size_of_raw_data = u32::from_le_bytes([
-            image[off + 16], image[off + 17], image[off + 18], image[off + 19],
+            image[off + 16],
+            image[off + 17],
+            image[off + 18],
+            image[off + 19],
         ]);
         let pointer_to_raw_data = u32::from_le_bytes([
-            image[off + 20], image[off + 21], image[off + 22], image[off + 23],
+            image[off + 20],
+            image[off + 21],
+            image[off + 22],
+            image[off + 23],
         ]);
 
         let header = SectionHeader {
@@ -194,10 +207,7 @@ pub fn check_ntdll_integrity() -> NtdllReport {
 
 /// Inject a custom image for testing.  Compares `memory_image` against
 /// `disk_image` directly.
-pub fn check_ntdll_integrity_from_buffers(
-    memory_image: &[u8],
-    disk_image: &[u8],
-) -> NtdllReport {
+pub fn check_ntdll_integrity_from_buffers(memory_image: &[u8], disk_image: &[u8]) -> NtdllReport {
     let mem_text = parse_text_section(memory_image);
     let disk_text = parse_text_section(disk_image);
 
@@ -258,8 +268,7 @@ fn check_ntdll_integrity_inner() -> NtdllReport {
     // The SizeOfImage is in the optional header at offset 0x50 (PE32+).
     let e_lfanew = unsafe { ptr::read_unaligned(mem_base.add(0x3C) as *const i32) as usize };
     let nt = unsafe { mem_base.add(e_lfanew) };
-    let size_of_image =
-        unsafe { ptr::read_unaligned(nt.add(0x50) as *const u32) as usize };
+    let size_of_image = unsafe { ptr::read_unaligned(nt.add(0x50) as *const u32) as usize };
     let mem_image = unsafe { std::slice::from_raw_parts(mem_base, size_of_image) };
 
     // 3. Read on-disk ntdll.dll.
@@ -311,8 +320,7 @@ mod tests {
             + optional_header_size
             + section_header_size;
         let raw_size = ((headers_size as u32 + file_align - 1) / file_align) * file_align;
-        let text_raw_size =
-            ((text_data.len() as u32 + file_align - 1) / file_align) * file_align;
+        let text_raw_size = ((text_data.len() as u32 + file_align - 1) / file_align) * file_align;
         let total_size = (raw_size + text_raw_size) as usize;
 
         let mut pe = vec![0u8; total_size];
@@ -489,7 +497,10 @@ mod tests {
         let (header, data) = result.unwrap();
         assert_eq!(header.name_str(), ".text");
         // Data length is padded to file alignment (0x200), not exact text size.
-        assert!(data.len() >= text.len(), "data should be at least text size");
+        assert!(
+            data.len() >= text.len(),
+            "data should be at least text size"
+        );
         // First 32 bytes should be the actual text content.
         assert_eq!(&data[..text.len()], text.as_slice());
     }

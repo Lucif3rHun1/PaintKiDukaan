@@ -68,10 +68,7 @@ pub fn secure_delete_hdd(path: &Path) -> Result<(), AppError> {
     }
     let len = meta.len();
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .open(path)
-        .map_err(io_err)?;
+    let mut file = OpenOptions::new().write(true).open(path).map_err(io_err)?;
 
     for pass in 0..HDD_PASSES {
         file.seek(std::io::SeekFrom::Start(0)).map_err(io_err)?;
@@ -113,10 +110,7 @@ pub fn secure_delete_ssd(path: &Path) -> Result<(), AppError> {
     let len = meta.len();
 
     // Single overwrite.
-    let mut file = OpenOptions::new()
-        .write(true)
-        .open(path)
-        .map_err(io_err)?;
+    let mut file = OpenOptions::new().write(true).open(path).map_err(io_err)?;
     let mut written: u64 = 0;
     while written < len {
         let chunk = std::cmp::min(4096, (len - written) as usize);
@@ -259,11 +253,17 @@ fn windows_is_ssd(path: &Path) -> Result<bool, AppError> {
 
     // Get the drive root (e.g., "C:\").
     let drive_root = get_drive_root(path);
-    let wide_root: Vec<u16> = drive_root.encode_utf16().chain(std::iter::once(0)).collect();
+    let wide_root: Vec<u16> = drive_root
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
 
     // Open the volume.
     let volume_path = format!("\\\\.\\{}:", drive_root.chars().next().unwrap_or('C'));
-    let wide_vol: Vec<u16> = volume_path.encode_utf16().chain(std::iter::once(0)).collect();
+    let wide_vol: Vec<u16> = volume_path
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
 
     let handle = unsafe {
         win::CreateFileW(
@@ -336,7 +336,8 @@ fn windows_issue_trim(file: &fs::File) -> Result<(), AppError> {
 
     // Build the input buffer: FILE_LEVEL_TRIM + one range.
     let mut input_buf = Vec::with_capacity(
-        std::mem::size_of::<win::FILE_LEVEL_TRIM>() + std::mem::size_of::<win::FILE_LEVEL_TRIM_RANGE>(),
+        std::mem::size_of::<win::FILE_LEVEL_TRIM>()
+            + std::mem::size_of::<win::FILE_LEVEL_TRIM_RANGE>(),
     );
     unsafe {
         let trim_bytes = std::slice::from_raw_parts(
@@ -397,7 +398,10 @@ mod tests {
         fs::write(&path, b"original data here").unwrap();
 
         secure_delete_hdd(&path).unwrap();
-        assert!(!path.exists(), "file should be deleted after HDD secure delete");
+        assert!(
+            !path.exists(),
+            "file should be deleted after HDD secure delete"
+        );
     }
 
     #[test]

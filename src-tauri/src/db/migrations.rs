@@ -1,25 +1,28 @@
 use rusqlite::Connection;
-use rusqlite_migration::{M, Migrations};
+use rusqlite_migration::{Migrations, M};
 
-/// Full schema v1 embedded as a string literal.
-const SCHEMA_V1: &str = include_str!("schema_v1.sql");
+/// Canonical schema (single source of truth, all tables + indexes + seed data).
+/// Versioned only via this file — every post-launch change is a new migration in
+/// `migrations/NNN__slug.sql` registered below.
+const SCHEMA: &str = include_str!("schema.sql");
+const MIGRATION_001: &str = include_str!("migrations/001__add_missing_tables.sql");
+const MIGRATION_002: &str = include_str!("migrations/002__add_units_dimension_and_brands.sql");
+const MIGRATION_003: &str = include_str!("migrations/003__add_items_brand_unit_sell_unit.sql");
+const MIGRATION_004: &str = include_str!("migrations/004__drop_location_text.sql");
+const MIGRATION_005: &str = include_str!("migrations/005__daily_counters_and_return_payments.sql");
+const MIGRATION_006: &str = include_str!("migrations/006__update_customer_types.sql");
 
-/// V2 migration: locked grill decisions for inventory (Q1-Q17 + Q18).
-const SCHEMA_V2: &str = include_str!("schema_v2.sql");
-
-/// V3 migration: add missing vendors columns (updated_at, contact_person, credit_limit).
-const SCHEMA_V3: &str = include_str!("schema_v3.sql");
-
-/// V4 migration: brands table + per-brand barcode sequence (APACE001-style generator).
-const SCHEMA_V4: &str = include_str!("schema_v4.sql");
-
-/// Migration set — v1 baseline followed by v2, v3, v4 ALTER TABLE migrations.
+/// Migration set — canonical baseline. All future schema changes go in
+/// `migrations/` subdirectory and are appended after `M::up(SCHEMA)`.
 fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
-        M::up(SCHEMA_V1),
-        M::up(SCHEMA_V2),
-        M::up(SCHEMA_V3),
-        M::up(SCHEMA_V4),
+        M::up(SCHEMA),
+        M::up(MIGRATION_001),
+        M::up(MIGRATION_002),
+        M::up(MIGRATION_003),
+        M::up(MIGRATION_004),
+        M::up(MIGRATION_005),
+        M::up(MIGRATION_006),
     ])
 }
 
@@ -55,6 +58,80 @@ mod tests {
                     "unexpected migration error: {e}"
                 );
             }
+        }
+    }
+
+    /// Every table documented in `schema.sql`'s section comments must be present
+    /// after migration runs. Catches drift between the canonical schema file and
+    /// the actual DB shape (typos, accidental drops, etc.).
+    #[test]
+    fn schema_loads_all_expected_tables() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA key = 'test';").unwrap();
+        run(&mut conn).expect("migrations should apply");
+
+        let expected = [
+            // Section A
+            "users",
+            "lockouts",
+            "devices",
+            "settings",
+            // Section B
+            "locations",
+            "sub_locations",
+            "units",
+            "unit_conversions",
+            // Section C
+            "customer_types",
+            "customers",
+            "vendors",
+            // Section D
+            "brands",
+            "brand_sequences",
+            "sequences",
+            "daily_counters",
+            "items",
+            // Section E
+            "stock_movement_kinds",
+            "stock_movements",
+            "stock_balances",
+            // Section F
+            "purchases",
+            "purchase_items",
+            "vendor_payments",
+            // Section G
+            "sales",
+            "sale_items",
+            "sale_payments",
+            "customer_payments",
+            // Section H
+            "sale_returns",
+            "sale_return_lines",
+            "sale_return_payments",
+            // Section I
+            "day_close",
+            // Section J
+            "alerts",
+            "alert_roles",
+            "alert_reads",
+            // Label print log
+            "label_print_log",
+        ];
+
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            .unwrap();
+        let actual: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for tbl in expected {
+            assert!(
+                actual.iter().any(|t| t == tbl),
+                "expected table `{tbl}` missing after migration; actual tables: {actual:?}"
+            );
         }
     }
 }

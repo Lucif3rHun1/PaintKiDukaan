@@ -103,14 +103,26 @@ impl Pkb1Header {
         off += 2;
 
         let created_at_unix_ms = i64::from_be_bytes([
-            buf[off], buf[off + 1], buf[off + 2], buf[off + 3],
-            buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7],
+            buf[off],
+            buf[off + 1],
+            buf[off + 2],
+            buf[off + 3],
+            buf[off + 4],
+            buf[off + 5],
+            buf[off + 6],
+            buf[off + 7],
         ]);
         off += 8;
 
         let plaintext_db_len = u64::from_be_bytes([
-            buf[off], buf[off + 1], buf[off + 2], buf[off + 3],
-            buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7],
+            buf[off],
+            buf[off + 1],
+            buf[off + 2],
+            buf[off + 3],
+            buf[off + 4],
+            buf[off + 5],
+            buf[off + 6],
+            buf[off + 7],
         ]);
         off += 8;
 
@@ -122,11 +134,14 @@ impl Pkb1Header {
         nonce_prefix.copy_from_slice(&buf[off..off + 4]);
         off += 4;
 
-        let argon2_m_cost_kib = u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
+        let argon2_m_cost_kib =
+            u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
         off += 4;
-        let argon2_t_cost = u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
+        let argon2_t_cost =
+            u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
         off += 4;
-        let argon2_p_cost = u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
+        let argon2_p_cost =
+            u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
         off += 4;
         let chunk_size = u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
         off += 4;

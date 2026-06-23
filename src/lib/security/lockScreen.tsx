@@ -20,9 +20,9 @@ interface UnlockResponse {
 }
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 text-center text-lg font-medium tracking-[0.35em] text-zinc-100 outline-none transition-colors duration-150 placeholder:text-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50";
+  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-center text-lg font-medium tracking-[0.35em] text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 const buttonClass =
-  "inline-flex h-11 w-full items-center justify-center rounded-lg bg-indigo-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: UnlockResponse): Session {
   const role: Role = result.user?.role ?? result.role ?? "owner";
@@ -131,17 +131,17 @@ export function LockScreen() {
   // Wiped state — must use recovery
   if (isWiped) {
     return (
-      <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6">
+      <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
         <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
-          <div className="w-full rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8">
+          <div className="w-full rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8">
             <div className="mb-6 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-red-300">Data wiped</p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+                <p className="text-sm font-medium text-destructive">Data wiped</p>
+                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                   Recovery required
                 </h1>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-500/10">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-destructive/10">
                 <img
                   src={logo}
                   alt=""
@@ -150,9 +150,9 @@ export function LockScreen() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm leading-6 text-red-200">
+            <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm leading-6 text-destructive">
               <p className="font-medium">Too many failed attempts — data has been wiped.</p>
-              <p className="mt-1 text-red-300/80">
+              <p className="mt-1 text-destructive/80">
                 You must use your recovery passphrase to restore your data and set a new PIN.
               </p>
             </div>
@@ -171,19 +171,19 @@ export function LockScreen() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6">
+    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
       <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
         <form
-          className="w-full rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8"
+          className="w-full rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8"
           onSubmit={handleSubmit(onSubmit)}
         >
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-indigo-300">PaintKiDukaan</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+              <p className="text-sm font-medium text-primary">PaintKiDukaan</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 Enter your PIN
               </h1>
-              <p className="mt-1 text-sm text-zinc-400">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Enter the 6-digit PIN to unlock the shop database.
               </p>
             </div>
@@ -197,7 +197,7 @@ export function LockScreen() {
           {/* Error display */}
           {backendError ? (
             <div
-              className="mb-5 flex gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
+              className="mb-5 flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
               role="alert"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -208,19 +208,19 @@ export function LockScreen() {
           {/* Lockout timer */}
           {lockedUntil ? (
             <div
-              className="mb-5 flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4"
+              className="mb-5 flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4"
               role="alert"
             >
-              <Timer className="h-5 w-5 shrink-0 text-amber-300" aria-hidden="true" />
+              <Timer className="h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
               <div>
-                <p className="text-sm font-medium text-amber-200">Too many failed attempts</p>
-                <p className="mt-0.5 text-xs text-amber-300/80">{timeDisplay}</p>
+                <p className="text-sm font-medium text-warning">Too many failed attempts</p>
+                <p className="mt-0.5 text-xs text-warning/80">{timeDisplay}</p>
               </div>
             </div>
           ) : null}
 
           {/* PIN input */}
-          <label className="text-sm font-medium text-zinc-200" htmlFor="pin">
+          <label className="text-sm font-medium text-foreground" htmlFor="pin">
             Owner PIN
           </label>
           <div className="relative mt-2">
@@ -237,22 +237,22 @@ export function LockScreen() {
               disabled={!!lockedUntil}
               {...register("pin")}
             />
-            <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" aria-hidden="true" />
+            <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           </div>
           {errors.pin?.message ? (
-            <p className="mt-1.5 flex items-center gap-1.5 text-sm text-red-400" role="alert">
+            <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
               <AlertCircle className="h-4 w-4" aria-hidden="true" />
               {errors.pin.message}
             </p>
           ) : null}
 
           {/* Attempt counter */}
-          <div className="mt-4 min-h-12 text-sm text-zinc-400">
+          <div className="mt-4 min-h-12 text-sm text-muted-foreground">
             {failedAttempts > 0 && !lockedUntil ? (
               <p role="alert">
-                Failed attempts: <span className="font-medium text-zinc-200">{failedAttempts}</span>/5
+                Failed attempts: <span className="font-medium text-foreground">{failedAttempts}</span>/5
                 {failedAttempts >= 3 && (
-                  <span className="ml-2 text-amber-300">
+                  <span className="ml-2 text-warning">
                     — more failures will lock you out
                   </span>
                 )}
@@ -274,7 +274,7 @@ export function LockScreen() {
           </button>
 
           <button
-            className="mt-5 w-full text-center text-sm font-medium text-indigo-300 transition-colors duration-150 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+            className="mt-5 w-full text-center text-sm font-medium text-primary transition-colors duration-150 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             type="button"
             onClick={() => setPhase("restore-recovery")}
           >

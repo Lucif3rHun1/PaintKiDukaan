@@ -42,8 +42,20 @@ fn apply_policy(enabled: bool) -> bool {
             &["/change", "standby-timeout-dc", "15"],
             &["/change", "hibernate-timeout-ac", "0"],
             &["/change", "hibernate-timeout-dc", "30"],
-            &["/setacvalueindex", "SCHEME_CURRENT", "SUB_BUTTONS", "LIDACTION", "0"],
-            &["/setdcvalueindex", "SCHEME_CURRENT", "SUB_BUTTONS", "LIDACTION", "0"],
+            &[
+                "/setacvalueindex",
+                "SCHEME_CURRENT",
+                "SUB_BUTTONS",
+                "LIDACTION",
+                "0",
+            ],
+            &[
+                "/setdcvalueindex",
+                "SCHEME_CURRENT",
+                "SUB_BUTTONS",
+                "LIDACTION",
+                "0",
+            ],
             &["/setactive", "SCHEME_CURRENT"],
         ]
     } else {
@@ -52,8 +64,20 @@ fn apply_policy(enabled: bool) -> bool {
             &["/change", "standby-timeout-dc", "15"],
             &["/change", "hibernate-timeout-ac", "30"],
             &["/change", "hibernate-timeout-dc", "30"],
-            &["/setacvalueindex", "SCHEME_CURRENT", "SUB_BUTTONS", "LIDACTION", "1"],
-            &["/setdcvalueindex", "SCHEME_CURRENT", "SUB_BUTTONS", "LIDACTION", "1"],
+            &[
+                "/setacvalueindex",
+                "SCHEME_CURRENT",
+                "SUB_BUTTONS",
+                "LIDACTION",
+                "1",
+            ],
+            &[
+                "/setdcvalueindex",
+                "SCHEME_CURRENT",
+                "SUB_BUTTONS",
+                "LIDACTION",
+                "1",
+            ],
             &["/setactive", "SCHEME_CURRENT"],
         ]
     };

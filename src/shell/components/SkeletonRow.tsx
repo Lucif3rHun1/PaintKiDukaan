@@ -9,7 +9,7 @@ export function SkeletonRow({ count = 3, className }: SkeletonRowProps) {
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="h-10 animate-pulse rounded-md bg-slate-200/70"
+          className="h-10 animate-pulse rounded-md bg-muted/70"
         />
       ))}
     </div>

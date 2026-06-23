@@ -1,0 +1,307 @@
+//! Customer ledger reads + credit-invoice writes.
+//!
+//! Provides a per-transaction khata view (sales increase balance, payments
+//! decrease it) and a dedicated command to post a credit invoice for a
+//! customer on an older date.
+
+use chrono::NaiveDate;
+use rusqlite::params;
+use serde::{Deserialize, Serialize};
+
+use crate::commands::{customers, sales};
+use crate::db::Db;
+use crate::error::{AppError, AppResult};
+use crate::session::{require_role, Role};
+
+// -----------------------------------------------------------------------------
+// Public types (Tauri command arguments / return values).
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CustomerLedgerTransaction {
+    pub id: i64,
+    pub date: String,
+    pub kind: String, // "sale" | "payment"
+    pub ref_no: Option<String>,
+    pub description: Option<String>,
+    pub debit_paise: i64,
+    pub credit_paise: i64,
+    pub balance_paise: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CustomerLedger {
+    pub customer_id: i64,
+    pub opening_balance_paise: i64,
+    pub closing_balance_paise: i64,
+    pub rows: Vec<CustomerLedgerTransaction>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreditInvoiceLine {
+    pub item_id: i64,
+    pub qty: f64,
+    pub unit_price_paise: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateCustomerCreditInvoice {
+    pub customer_id: i64,
+    pub date: String, // ISO YYYY-MM-DD
+    pub description: Option<String>,
+    pub lines: Vec<CreditInvoiceLine>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RecordCustomerPayment {
+    pub customer_id: i64,
+    pub amount: i64, // paise, must be > 0
+    pub mode: String,
+    pub date: String, // ISO YYYY-MM-DD
+    pub note: Option<String>,
+}
+
+// -----------------------------------------------------------------------------
+// Reads.
+// -----------------------------------------------------------------------------
+
+pub fn customer_ledger_impl(db: &Db, customer_id: i64, limit: i64) -> AppResult<CustomerLedger> {
+    db.with_raw(|c| {
+        let opening_balance_paise: i64 = c.query_row(
+            "SELECT opening_balance_paise FROM customers WHERE id = ?1",
+            params![customer_id],
+            |r| r.get(0),
+        )?;
+
+        // Sales: finalized invoices for this customer.
+        let mut stmt = c.prepare(
+            "SELECT id, sale_number, created_at, total_paise, COALESCE(balance_paise, total_paise - paid_paise)
+             FROM sales
+             WHERE customer_id = ?1 AND status = 'finalized'
+             ORDER BY created_at ASC, id ASC
+             LIMIT ?2",
+        )?;
+        let sale_rows = stmt.query_map(params![customer_id, limit], |r| {
+            Ok(CustomerLedgerTransaction {
+                id: r.get::<_, i64>(0)?,
+                date: ms_to_date(r.get::<_, i64>(2)?),
+                kind: "sale".to_string(),
+                ref_no: r.get::<_, String>(1).ok(),
+                description: None,
+                debit_paise: r.get::<_, i64>(3)?,
+                credit_paise: 0,
+                balance_paise: 0,
+            })
+        })?;
+        let mut rows: Vec<CustomerLedgerTransaction> = sale_rows.collect::<Result<Vec<_>, _>>()?;
+
+        // Customer payments: khata settlements.
+        let mut stmt = c.prepare(
+            "SELECT id, created_at, amount_paise, mode, note
+             FROM customer_payments
+             WHERE customer_id = ?1
+             ORDER BY created_at ASC, id ASC
+             LIMIT ?2",
+        )?;
+        let payment_rows = stmt.query_map(params![customer_id, limit], |r| {
+            Ok(CustomerLedgerTransaction {
+                id: r.get::<_, i64>(0)?,
+                date: ms_to_date(r.get::<_, i64>(1)?),
+                kind: "payment".to_string(),
+                ref_no: None,
+                description: r.get::<_, String>(4).ok(),
+                debit_paise: 0,
+                credit_paise: r.get::<_, i64>(2)?,
+                balance_paise: 0,
+            })
+        })?;
+        rows.extend(payment_rows.collect::<Result<Vec<_>, _>>()?);
+
+        // Sort ascending by date then id for running-balance calculation.
+        rows.sort_by(|a, b| a.date.cmp(&b.date).then_with(|| a.id.cmp(&b.id)));
+
+        let mut balance = opening_balance_paise;
+        for row in &mut rows {
+            balance += row.debit_paise - row.credit_paise;
+            row.balance_paise = balance;
+        }
+
+        // Return newest-first for display.
+        rows.reverse();
+
+        Ok(CustomerLedger {
+            customer_id,
+            opening_balance_paise,
+            closing_balance_paise: balance,
+            rows,
+        })
+    })
+}
+
+// -----------------------------------------------------------------------------
+// Writes.
+// -----------------------------------------------------------------------------
+
+pub fn create_customer_credit_invoice_impl(
+    db: &Db,
+    user: &crate::session::User,
+    req: CreateCustomerCreditInvoice,
+) -> AppResult<i64> {
+    require_role(user, &[Role::Owner, Role::Cashier])?;
+
+    // Verify the customer exists.
+    let customer_id = req.customer_id;
+    let customer = db
+        .with_raw(|c| customers::get_by_id(c, customer_id))?
+        .ok_or_else(|| AppError::NotFound(format!("customer {}", customer_id)))?;
+
+    if req.lines.is_empty() {
+        return Err(AppError::Validation(
+            "credit invoice must have at least one line".into(),
+        ));
+    }
+
+    let lines: Vec<sales::CartLine> = req
+        .lines
+        .into_iter()
+        .map(|l| sales::CartLine {
+            item_id: l.item_id,
+            qty: l.qty,
+            price: l.unit_price_paise,
+            unit_type: "unit".into(),
+            line_discount: 0,
+            shade_note: req.description.clone(),
+        })
+        .collect();
+
+    let sale = sales::NewSale {
+        customer_id: Some(customer.id),
+        kind: "final".into(),
+        date: Some(req.date),
+        bill_discount: 0,
+        paid_amount: 0,
+        payment_modes: Vec::new(),
+        validity_days: None,
+        acknowledge_flag: false,
+        lines,
+    };
+
+    sales::create_final_bill(db, user.id, sale).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+pub fn record_customer_payment_impl(
+    db: &Db,
+    user: &crate::session::User,
+    req: RecordCustomerPayment,
+) -> AppResult<customers::CustomerOutstanding> {
+    require_role(user, &[Role::Owner, Role::Cashier])?;
+
+    if req.amount <= 0 {
+        return Err(AppError::Validation("payment amount must be > 0".into()));
+    }
+    if req.mode.trim().is_empty() {
+        return Err(AppError::Validation("payment mode is required".into()));
+    }
+
+    let created_at = date_to_ms(&req.date);
+    let customer_id = req.customer_id;
+
+    db.with_conn_immediate(|c| -> AppResult<()> {
+        // Ensure customer exists before recording payment.
+        let exists: bool = c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM customers WHERE id = ?1)",
+            params![customer_id],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            return Err(AppError::NotFound(format!("customer {}", customer_id)));
+        }
+        c.execute(
+            "INSERT INTO customer_payments (customer_id, sale_id, mode, amount_paise, reference, note, created_at, created_by)
+             VALUES (?1, NULL, ?2, ?3, NULL, ?4, ?5, ?6)",
+            params![
+                customer_id,
+                req.mode,
+                req.amount,
+                req.note,
+                created_at,
+                user.id,
+            ],
+        )?;
+        Ok(())
+    })?;
+
+    customers::customer_outstanding_impl(db, customer_id)
+}
+
+// -----------------------------------------------------------------------------
+// Tauri command wrappers live in `commands::customers` so the existing
+// invoke_handler in `lib.rs` does not need to change.
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+// Helpers.
+// -----------------------------------------------------------------------------
+
+fn date_to_ms(date: &str) -> i64 {
+    NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis())
+        .unwrap_or_else(|_| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0)
+        })
+}
+
+fn ms_to_date(ms: i64) -> String {
+    use chrono::TimeZone;
+    chrono::Utc
+        .timestamp_millis_opt(ms)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| String::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Db;
+    use crate::session::{set_current_user, User};
+
+    fn owner() -> User {
+        User {
+            id: 1,
+            name: "O".into(),
+            role: Role::Owner,
+        }
+    }
+
+    #[test]
+    fn ledger_running_balance_computed_oldest_first() {
+        set_current_user(Some(owner()));
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 0, 0)", []).unwrap();
+            c.execute("INSERT INTO locations (name, is_active, created_at, updated_at) VALUES ('Shop', 1, 0, 0)", []).unwrap();
+            c.execute("INSERT INTO customers (name, phone, opening_balance_paise, created_at, updated_at) VALUES ('X', '9876543210', 100, 0, 0)", []).unwrap();
+            c.execute("INSERT INTO sales (sale_number, kind, status, customer_id, location_id, user_id, subtotal_paise, discount_paise, tax_paise, total_paise, paid_paise, balance_paise, is_active, created_at, updated_at) \
+                 VALUES ('INV-1', 'invoice', 'finalized', 1, 1, 1, 500, 0, 0, 500, 0, 500, 1, 1000, 1000)", []).unwrap();
+            c.execute("INSERT INTO customer_payments (customer_id, sale_id, mode, amount_paise, created_at, created_by) VALUES (1, NULL, 'cash', 200, 2000, 1)", []).unwrap();
+            c.execute("INSERT INTO sales (sale_number, kind, status, customer_id, location_id, user_id, subtotal_paise, discount_paise, tax_paise, total_paise, paid_paise, balance_paise, is_active, created_at, updated_at) \
+                 VALUES ('INV-2', 'invoice', 'finalized', 1, 1, 1, 300, 0, 0, 300, 0, 300, 1, 3000, 3000)", []).unwrap();
+        });
+
+        let ledger = customer_ledger_impl(&db, 1, 200).unwrap();
+        assert_eq!(ledger.opening_balance_paise, 100);
+        // Rows are returned newest-first for display.
+        assert_eq!(ledger.rows.len(), 3);
+        assert_eq!(ledger.rows[0].ref_no.as_deref(), Some("INV-2"));
+        assert_eq!(ledger.rows[0].balance_paise, 700); // 100 + 500 - 200 + 300
+        assert_eq!(ledger.rows[1].credit_paise, 200);
+        assert_eq!(ledger.rows[1].balance_paise, 400); // 100 + 500 - 200
+        assert_eq!(ledger.rows[2].ref_no.as_deref(), Some("INV-1"));
+        assert_eq!(ledger.rows[2].balance_paise, 600); // 100 + 500
+        assert_eq!(ledger.closing_balance_paise, 700);
+    }
+}

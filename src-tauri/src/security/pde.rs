@@ -1,11 +1,15 @@
 use std::path::Path;
 
 use rusqlite::params;
-use crate::commands::auth::AppError;
+use serde::Serialize;
+use tauri::State;
+
+use crate::commands::auth::AppState;
 use crate::crypto::kdf::{self, random_dek, random_salt, KdfParams};
 use crate::crypto::wrap::wrap_dek;
 use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
+use crate::error::AppError;
 use crate::obs;
 
 /// Provision a decoy DB with plausible fake data and set up decoy + duress
@@ -13,7 +17,7 @@ use crate::obs;
 /// decoy DB serves both unlock paths.
 ///
 /// Called from frontend wizard (Track F handles UI).
-pub fn provision_decoy_db(
+pub fn provision_decoy_db_impl(
     db_path: &Path,
     decoy_pin: &str,
     duress_pin: &str,
@@ -38,7 +42,7 @@ pub fn provision_decoy_db(
             conn.execute("INSERT INTO settings (id, shop_name, address, phone, created_at, updated_at) VALUES (1, ?1, '', '', ?2, ?2)",
                 params![fake_shop_name, now],
             )?;
-            conn.execute("INSERT INTO locations (name, created_at, updated_at) VALUES ('Main Shop', ?1, ?1)",
+            conn.execute("INSERT INTO locations (name, is_active, created_at, updated_at) VALUES ('Main Shop', 1, ?1, ?1)",
                 params![now],
             )?;
             conn.execute(
@@ -73,15 +77,15 @@ pub fn provision_decoy_db(
 
         let mut pin_kek = kdf::derive_pin_kek(pin, &pin_salt, &KdfParams::PIN)
             .map_err(|e| AppError::Crypto(e.to_string()))?;
-        let pin_wrapped_dek = wrap_dek(&dek_decoy, &pin_kek)
-            .map_err(|e| AppError::Crypto(e.to_string()))?;
+        let pin_wrapped_dek =
+            wrap_dek(&dek_decoy, &pin_kek).map_err(|e| AppError::Crypto(e.to_string()))?;
         let verifier = keywrap::pin_verifier_for_kek(&pin_kek).to_vec();
         kdf::zeroize_key(&mut pin_kek);
 
         let mut rec_kek = kdf::derive_pin_kek("", &rec_salt, &KdfParams::RECOVERY)
             .map_err(|e| AppError::Crypto(e.to_string()))?;
-        let rec_wrapped_dek = wrap_dek(&dek_decoy, &rec_kek)
-            .map_err(|e| AppError::Crypto(e.to_string()))?;
+        let rec_wrapped_dek =
+            wrap_dek(&dek_decoy, &rec_kek).map_err(|e| AppError::Crypto(e.to_string()))?;
         kdf::zeroize_key(&mut rec_kek);
 
         let row = KeywrapRow {
@@ -114,7 +118,10 @@ pub fn migrate_single_to_pde(db_path: &Path) -> Result<(), AppError> {
     let conn = crate::commands::auth::open_keystore(&keystore_path)?;
 
     let existing = keywrap::read_all(&conn)?;
-    if existing.iter().any(|r| r.role == PinRole::Decoy || r.role == PinRole::Duress) {
+    if existing
+        .iter()
+        .any(|r| r.role == PinRole::Decoy || r.role == PinRole::Duress)
+    {
         return Ok(());
     }
 
@@ -133,15 +140,15 @@ pub fn migrate_single_to_pde(db_path: &Path) -> Result<(), AppError> {
 
         let mut pin_kek = kdf::derive_pin_kek(&random_pin, &pin_salt, &KdfParams::PIN)
             .map_err(|e| AppError::Crypto(e.to_string()))?;
-        let pin_wrapped_dek = wrap_dek(&dek_decoy, &pin_kek)
-            .map_err(|e| AppError::Crypto(e.to_string()))?;
+        let pin_wrapped_dek =
+            wrap_dek(&dek_decoy, &pin_kek).map_err(|e| AppError::Crypto(e.to_string()))?;
         let verifier = keywrap::pin_verifier_for_kek(&pin_kek).to_vec();
         kdf::zeroize_key(&mut pin_kek);
 
         let mut rec_kek = kdf::derive_pin_kek("", &rec_salt, &KdfParams::RECOVERY)
             .map_err(|e| AppError::Crypto(e.to_string()))?;
-        let rec_wrapped_dek = wrap_dek(&dek_decoy, &rec_kek)
-            .map_err(|e| AppError::Crypto(e.to_string()))?;
+        let rec_wrapped_dek =
+            wrap_dek(&dek_decoy, &rec_kek).map_err(|e| AppError::Crypto(e.to_string()))?;
         kdf::zeroize_key(&mut rec_kek);
 
         let row = KeywrapRow {
@@ -174,6 +181,121 @@ pub fn decoy_db_path(real_db_path: &Path) -> std::path::PathBuf {
         .join(obs!("paintkiduakan.decoy.db"))
 }
 
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
+
+/// PDE status returned to the frontend.
+#[derive(Serialize)]
+pub struct PdeStatus {
+    pub enabled: bool,
+    pub has_decoy: bool,
+    pub has_duress: bool,
+}
+
+/// Get the current PDE status by checking if decoy/duress keywrap rows exist
+/// in the keystore sidecar.
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_pde_status(state: State<'_, AppState>) -> Result<PdeStatus, AppError> {
+    let db_path = state
+        .db_path
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(AppError::NoDb)?;
+    let keystore_path = db_path.with_extension("keystore");
+    let conn = crate::commands::auth::open_keystore(&keystore_path)?;
+    let rows = keywrap::read_all(&conn)?;
+
+    let has_decoy = rows.iter().any(|r| r.role == PinRole::Decoy);
+    let has_duress = rows.iter().any(|r| r.role == PinRole::Duress);
+
+    Ok(PdeStatus {
+        enabled: has_decoy && has_duress,
+        has_decoy,
+        has_duress,
+    })
+}
+
+/// Provision a decoy database with plausible fake data (Tauri command wrapper).
+#[tauri::command(rename_all = "snake_case")]
+pub fn provision_decoy_db(
+    state: State<'_, AppState>,
+    decoy_pin: String,
+    duress_pin: String,
+    fake_shop_name: String,
+) -> Result<(), AppError> {
+    let db_path = state
+        .db_path
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(AppError::NoDb)?;
+    provision_decoy_db_impl(&db_path, &decoy_pin, &duress_pin, &fake_shop_name)
+}
+
+/// Change the decoy PIN. The owner must authenticate with their real PIN.
+/// The decoy DEK is recovered via the recovery path (empty passphrase) and
+/// re-wrapped with the new decoy PIN.
+#[tauri::command(rename_all = "snake_case")]
+pub fn change_decoy_pin(
+    state: State<'_, AppState>,
+    current_real_pin: String,
+    new_decoy_pin: String,
+) -> Result<(), AppError> {
+    let db_path = state
+        .db_path
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(AppError::NoDb)?;
+    let keystore_path = db_path.with_extension("keystore");
+    let conn = crate::commands::auth::open_keystore(&keystore_path)?;
+
+    let real_row = keywrap::read_by_role(&conn, PinRole::Real)?;
+    let _ = keywrap::unwrap_with_pin(&real_row, &current_real_pin)?;
+
+    let mut decoy_row = keywrap::read_by_role(&conn, PinRole::Decoy)?;
+    let dek_decoy = keywrap::unwrap_with_recovery(&decoy_row, "")?;
+
+    keywrap::rewrap_pin(&mut decoy_row, &dek_decoy, &new_decoy_pin)?;
+    keywrap::upsert(&conn, &decoy_row)?;
+    conn.close().map_err(|(_, e)| AppError::Db(e))?;
+
+    Ok(())
+}
+
+/// Change the duress PIN. The owner must authenticate with their real PIN.
+/// The duress DEK is recovered via the recovery path (empty passphrase) and
+/// re-wrapped with the new duress PIN.
+#[tauri::command(rename_all = "snake_case")]
+pub fn change_duress_pin(
+    state: State<'_, AppState>,
+    current_real_pin: String,
+    new_duress_pin: String,
+) -> Result<(), AppError> {
+    let db_path = state
+        .db_path
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(AppError::NoDb)?;
+    let keystore_path = db_path.with_extension("keystore");
+    let conn = crate::commands::auth::open_keystore(&keystore_path)?;
+
+    let real_row = keywrap::read_by_role(&conn, PinRole::Real)?;
+    let _ = keywrap::unwrap_with_pin(&real_row, &current_real_pin)?;
+
+    let mut duress_row = keywrap::read_by_role(&conn, PinRole::Duress)?;
+    let dek_duress = keywrap::unwrap_with_recovery(&duress_row, "")?;
+
+    keywrap::rewrap_pin(&mut duress_row, &dek_duress, &new_duress_pin)?;
+    keywrap::upsert(&conn, &duress_row)?;
+    conn.close().map_err(|(_, e)| AppError::Db(e))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,7 +305,10 @@ mod tests {
     fn decoy_db_path_is_sibling() {
         let real = std::path::PathBuf::from("/data/paintkiduakan.db");
         let decoy = decoy_db_path(&real);
-        assert_eq!(decoy, std::path::PathBuf::from("/data/paintkiduakan.decoy.db"));
+        assert_eq!(
+            decoy,
+            std::path::PathBuf::from("/data/paintkiduakan.decoy.db")
+        );
     }
 
     #[test]
@@ -225,7 +350,7 @@ mod tests {
         keywrap::upsert(&conn, &row).unwrap();
         drop(conn);
 
-        provision_decoy_db(&real_db, "222222", "333333", "Fake Shop").unwrap();
+        provision_decoy_db_impl(&real_db, "222222", "333333", "Fake Shop").unwrap();
 
         let conn = crate::commands::auth::open_keystore(&keystore).unwrap();
         let all = keywrap::read_all(&conn).unwrap();

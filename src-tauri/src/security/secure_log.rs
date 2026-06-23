@@ -302,8 +302,8 @@ impl SecureLog {
             if line.trim().is_empty() {
                 continue;
             }
-            let entry: PersistedEntry =
-                serde_json::from_str(&line).map_err(|e| AppError::Internal(format!("json: {e}")))?;
+            let entry: PersistedEntry = serde_json::from_str(&line)
+                .map_err(|e| AppError::Internal(format!("json: {e}")))?;
             last_hash = hex_decode(&entry.h)?;
         }
 
@@ -349,7 +349,9 @@ fn sanitize_field(s: &str) -> String {
 fn rotation_path(base: &std::path::Path, n: usize) -> PathBuf {
     let mut name = base.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".{n}"));
-    base.parent().unwrap_or_else(|| std::path::Path::new(".")).join(name)
+    base.parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join(name)
 }
 
 fn base64_encode(data: &[u8]) -> String {

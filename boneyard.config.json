@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/boneyard-js@latest/config.schema.json",
+  "out": "./src/bones",
+  "framework": "react",
+  "color": "#e2e8f0",
+  "darkColor": "#27272a",
+  "breakpoints": {
+    "sm": 640,
+    "md": 768,
+    "lg": 1024,
+    "xl": 1280
+  },
+  "radius": 8,
+  "wait": 500
+}

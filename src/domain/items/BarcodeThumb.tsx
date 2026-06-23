@@ -60,7 +60,7 @@ export function BarcodeThumb({
     return (
       <span
         style={{ width: containerWidth, height: containerHeight }}
-        className={`inline-flex items-center justify-center rounded border border-dashed border-white/10 bg-zinc-900 text-[10px] text-zinc-500 ${className}`}
+        className={`inline-flex items-center justify-center rounded border border-dashed border-border bg-muted text-[10px] text-muted-foreground ${className}`}
         aria-label="No barcode"
       >
         —
@@ -70,7 +70,7 @@ export function BarcodeThumb({
   return (
     <span
       style={{ width: containerWidth, height: containerHeight }}
-      className={`inline-block rounded bg-white p-0.5 ${className}`}
+      className={`inline-block rounded bg-white p-0.5 ${className}`} // keep literal white: barcode needs maximum contrast for scanning
     >
       <svg
         ref={ref}

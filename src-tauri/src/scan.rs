@@ -93,11 +93,7 @@ pub fn scan_target(
     state: tauri::State<'_, crate::commands::auth::AppState>,
 ) -> Result<String, String> {
     crate::security::ipc_auth::authorize_err("scan_target", state.inner())?;
-    Ok(state
-        .scan_target
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone())
+    Ok(state.scan_target.lock().map_err(|e| e.to_string())?.clone())
 }
 
 /// Zero the keyboard hook buffer. Called on lock events to prevent
@@ -109,22 +105,6 @@ pub fn clear_hook_buffer<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         b.started = None;
         b.shift = false;
     }
-}
-
-/// Tauri command proxy for emitting a synthetic scan event (used by the
-/// frontend to validate the round-trip end-to-end during E67).
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn emit_test_scan<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-    barcode: String,
-) -> Result<(), String> {
-    let evt = ScanEvent {
-        barcode,
-        ts: now_unix_ms(),
-        terminator: "test".into(),
-    };
-    app.emit("barcode:scan", evt)
-        .map_err(|e| e.to_string())
 }
 
 /// Start the global keyboard hook on a background thread. Best-effort: a
@@ -198,7 +178,6 @@ fn run_hook<R: tauri::Runtime>(
                     .and_then(|v| v.as_u64())
                     .unwrap_or(DEFAULT_SCANNER_AVG_MS_PER_CHAR);
                 drop(settings);
-
 
                 // Start of a new buffer if we see a non-terminator key after
                 // a long enough gap (treat the gap as "inter-scan pause").
@@ -314,12 +293,7 @@ fn now_unix_ms() -> i64 {
 /// Returns `true` when the sequence length and timing are within the scanner
 /// wedge budget. `total_ms` is the elapsed time from the first buffered
 /// keypress to the terminator.
-pub fn evaluate_scan(
-    len: usize,
-    total_ms: u64,
-    min_length: usize,
-    avg_ms_per_char: u64,
-) -> bool {
+pub fn evaluate_scan(len: usize, total_ms: u64, min_length: usize, avg_ms_per_char: u64) -> bool {
     len >= min_length && total_ms <= (len as u64 * avg_ms_per_char).max(150)
 }
 

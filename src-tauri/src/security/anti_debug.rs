@@ -37,13 +37,13 @@ const DEBUGGER_PROCESS_NAMES: &[&str] = &[
 
 #[allow(dead_code)]
 const HYPERVISOR_BRANDS: &[&str] = &[
-    "Microsoft Hv",   // Hyper-V
-    "KVMKVMKVM\0\0\0", // KVM
+    "Microsoft Hv",     // Hyper-V
+    "KVMKVMKVM\0\0\0",  // KVM
     "XenVMMXenVMM\0\0", // Xen
-    "VMwareVMware",   // VMware
-    "prl hyperv",     // Parallels
-    "VBoxVBoxVBox",   // VirtualBox
-    "TCGTCGTCGTCG",   // QEMU TCG
+    "VMwareVMware",     // VMware
+    "prl hyperv",       // Parallels
+    "VBoxVBoxVBox",     // VirtualBox
+    "TCGTCGTCGTCG",     // QEMU TCG
 ];
 
 // ─── Comprehensive report ─────────────────────────────────────────────────
@@ -101,7 +101,9 @@ pub fn detect() -> DebugReport {
     // 1. OS-level debugger check
     if check_debugger_present() {
         report.debugger_present = true;
-        report.evidence.push("IsDebuggerPresent/ptrace/sysctl indicated debugger".into());
+        report
+            .evidence
+            .push("IsDebuggerPresent/ptrace/sysctl indicated debugger".into());
     }
 
     // 2. Remote debugger
@@ -113,19 +115,25 @@ pub fn detect() -> DebugReport {
     // 3. Hardware breakpoints (Windows only)
     if check_hardware_breakpoints() {
         report.hardware_breakpoints = true;
-        report.evidence.push("Hardware breakpoints detected in DR0-DR7".into());
+        report
+            .evidence
+            .push("Hardware breakpoints detected in DR0-DR7".into());
     }
 
     // 4. Timing anomaly
     if check_timing_anomaly(std::time::Instant::now, 5) {
         report.timing_anomaly = true;
-        report.evidence.push("Timing anomaly: code execution abnormally slow".into());
+        report
+            .evidence
+            .push("Timing anomaly: code execution abnormally slow".into());
     }
 
     // 5. Ptrace / sysctl attachment
     if check_ptrace_attached() {
         report.ptrace_attached = true;
-        report.evidence.push("Process is being traced (ptrace/sysctl)".into());
+        report
+            .evidence
+            .push("Process is being traced (ptrace/sysctl)".into());
     }
 
     // 6. SOTA comprehensive checks
@@ -179,10 +187,7 @@ fn check_hardware_breakpoints() -> bool {
 /// Timing-based detection: run a tight loop and check if it took
 /// abnormally long (> `threshold_ms` ms per iteration).
 /// The `now_fn` parameter enables testing with a fake clock.
-pub fn check_timing_anomaly(
-    now_fn: fn() -> std::time::Instant,
-    threshold_ms: u128,
-) -> bool {
+pub fn check_timing_anomaly(now_fn: fn() -> std::time::Instant, threshold_ms: u128) -> bool {
     let start = now_fn();
     let iterations = 100_000u64;
     let mut sum = 0u64;
@@ -229,10 +234,7 @@ mod win {
             pbDebuggerPresent: *mut i32,
         ) -> i32;
         pub fn GetCurrentProcess() -> *mut c_void;
-        pub fn GetThreadContext(
-            hThread: *mut c_void,
-            lpContext: *mut CONTEXT,
-        ) -> i32;
+        pub fn GetThreadContext(hThread: *mut c_void, lpContext: *mut CONTEXT) -> i32;
         pub fn GetCurrentThread() -> *mut c_void;
     }
 
@@ -557,7 +559,8 @@ fn sota_ntqip_checks(cr: &mut ComprehensiveReport) {
     };
     if status == 0 && port != 0 {
         cr.debug_port = true;
-        cr.evidence.push("NtQIP(ProcessDebugPort): non-zero debug port".into());
+        cr.evidence
+            .push("NtQIP(ProcessDebugPort): non-zero debug port".into());
     }
 
     // ProcessDebugObjectHandle (class 30/0x1E)
@@ -574,7 +577,8 @@ fn sota_ntqip_checks(cr: &mut ComprehensiveReport) {
     // STATUS_SUCCESS (0) means a debug object exists.
     if status == 0 {
         cr.debug_object_handle = true;
-        cr.evidence.push("NtQIP(ProcessDebugObjectHandle): debug object exists".into());
+        cr.evidence
+            .push("NtQIP(ProcessDebugObjectHandle): debug object exists".into());
     }
 
     // ProcessDebugFlags (class 31/0x1F)
@@ -591,7 +595,8 @@ fn sota_ntqip_checks(cr: &mut ComprehensiveReport) {
     // flags == 0 means NoDebugInherit is NOT set → inherited from debugged parent.
     if status == 0 && flags == 0 {
         cr.debug_flags = true;
-        cr.evidence.push("NtQIP(ProcessDebugFlags): NoDebugInherit not set".into());
+        cr.evidence
+            .push("NtQIP(ProcessDebugFlags): NoDebugInherit not set".into());
     }
 
     // ProcessBasicInformation (class 0) — check parent PID.
@@ -650,7 +655,8 @@ fn sota_ntqip_checks(cr: &mut ComprehensiveReport) {
     };
     if status == 0 && callback != 0 {
         cr.instrumentation_callback = true;
-        cr.evidence.push("NtQIP(ProcessInstrumentationCallback): non-NULL callback".into());
+        cr.evidence
+            .push("NtQIP(ProcessInstrumentationCallback): non-NULL callback".into());
     }
 }
 
@@ -663,20 +669,15 @@ fn sota_ntqsi_kernel_debugger(cr: &mut ComprehensiveReport) {
     // Returns: [u8; 2] = [DebuggerEnabled, DebuggerNotPresent]
     let mut info = [0u8; 2];
     let mut ret_len: u32 = 0;
-    let status = unsafe {
-        syscall::nt_query_system_information(
-            0x23,
-            info.as_mut_ptr(),
-            2,
-            &mut ret_len,
-        )
-    };
+    let status =
+        unsafe { syscall::nt_query_system_information(0x23, info.as_mut_ptr(), 2, &mut ret_len) };
     if status == 0 {
         // info[0] = DebuggerEnabled, info[1] = DebuggerNotPresent
         if info[0] != 0 && info[1] == 0 {
             // Kernel debugger enabled AND present.
             cr.kernel_debugger = true;
-            cr.evidence.push("NtQSI(SystemKernelDebuggerInformation): kernel debugger active".into());
+            cr.evidence
+                .push("NtQSI(SystemKernelDebuggerInformation): kernel debugger active".into());
         }
     }
 }
@@ -704,7 +705,9 @@ fn sota_parent_walk(cr: &mut ComprehensiveReport) {
                         cr.parent_debugger = true;
                         cr.evidence.push(format!(
                             "Ancestor level {} PID {} is debugger: {}",
-                            level + 1, parent_pid, name
+                            level + 1,
+                            parent_pid,
+                            name
                         ));
                         return;
                     }
@@ -805,7 +808,8 @@ fn sota_hypervisor_feature_flag(cr: &mut ComprehensiveReport) {
     let result = cpuid(0x40000001, 0);
     if result[0] & 1 != 0 {
         cr.hypervisor_feature_flag = true;
-        cr.evidence.push("CPUID 0x40000001 bit 0: CreatePartition (hypervisor)".into());
+        cr.evidence
+            .push("CPUID 0x40000001 bit 0: CreatePartition (hypervisor)".into());
     }
 }
 
@@ -907,10 +911,7 @@ fn sota_self_patch_check(_cr: &mut ComprehensiveReport) {}
 fn sota_kuser_hypervisor(_cr: &mut ComprehensiveReport) {}
 
 /// Public injectable version of self-patch check for testing.
-pub fn check_self_patch_hash(
-    fn_ptrs: &[(&str, *const u8)],
-    expected: &[[u8; 32]],
-) -> Vec<String> {
+pub fn check_self_patch_hash(fn_ptrs: &[(&str, *const u8)], expected: &[[u8; 32]]) -> Vec<String> {
     use sha2::{Digest, Sha256};
 
     let mut violations = Vec::new();

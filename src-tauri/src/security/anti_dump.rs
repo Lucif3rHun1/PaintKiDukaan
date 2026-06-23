@@ -147,11 +147,7 @@ mod win {
             fl_allocation_type: u32,
             fl_protect: u32,
         ) -> *mut c_void;
-        pub fn VirtualFree(
-            lp_address: *mut c_void,
-            dw_size: usize,
-            dw_free_type: u32,
-        ) -> i32;
+        pub fn VirtualFree(lp_address: *mut c_void, dw_size: usize, dw_free_type: u32) -> i32;
         pub fn SetErrorMode(u_mode: u32) -> u32;
     }
 
@@ -450,7 +446,11 @@ mod tests {
     #[test]
     fn wer_exclusion_succeeds() {
         let result = exclude_from_windows_error_reporting();
-        assert!(result.is_ok(), "WER exclusion should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "WER exclusion should succeed: {:?}",
+            result.err()
+        );
     }
 
     #[cfg(not(target_os = "windows"))]

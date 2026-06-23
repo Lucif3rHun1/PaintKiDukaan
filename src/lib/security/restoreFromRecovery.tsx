@@ -22,12 +22,12 @@ interface RestoreResponse {
 }
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 text-sm text-zinc-100 outline-none transition-colors duration-150 placeholder:text-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50";
-const labelClass = "text-sm font-medium text-zinc-200";
+  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+const labelClass = "text-sm font-medium text-foreground";
 const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-indigo-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-white/10 px-4 text-sm font-medium text-zinc-200 transition-colors duration-150 hover:border-white/20 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: RestoreResponse): Session {
   const role: Role = result.user?.role ?? result.role ?? "owner";
@@ -40,7 +40,7 @@ function normalizeSession(result: RestoreResponse): Session {
 function fieldError(message?: string) {
   if (!message) return null;
   return (
-    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-red-400" role="alert">
+    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
       <AlertCircle className="h-4 w-4" aria-hidden="true" />
       {message}
     </p>
@@ -86,6 +86,7 @@ export function RestoreFromRecovery() {
     try {
       const session = normalizeSession(
         await invoke<RestoreResponse>("restore_from_recovery", {
+          app: "master",
           passphrase: input.passphrase,
           new_pin: input.newPin,
         }),
@@ -99,16 +100,16 @@ export function RestoreFromRecovery() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6">
+    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
       <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
         <form
-          className="w-full rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8"
+          className="w-full rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8"
           onSubmit={handleSubmit(onSubmit)}
         >
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-indigo-300">Recovery access</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+              <p className="text-sm font-medium text-primary">Recovery access</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 Restore with passphrase
               </h1>
             </div>
@@ -120,13 +121,13 @@ export function RestoreFromRecovery() {
           </div>
 
           <div className="mb-6 flex items-center gap-2" aria-label="Recovery progress">
-            <span className={step === 0 ? "h-2.5 flex-1 rounded-full bg-indigo-500" : "h-2.5 flex-1 rounded-full bg-emerald-500"} />
-            <span className={step === 1 ? "h-2.5 flex-1 rounded-full bg-indigo-500" : "h-2.5 flex-1 rounded-full bg-zinc-800"} />
+            <span className={step === 0 ? "h-2.5 flex-1 rounded-full bg-primary" : "h-2.5 flex-1 rounded-full bg-success"} />
+            <span className={step === 1 ? "h-2.5 flex-1 rounded-full bg-primary" : "h-2.5 flex-1 rounded-full bg-muted"} />
           </div>
 
           {backendError ? (
             <div
-              className="mb-5 flex gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
+              className="mb-5 flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
               role="alert"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -151,7 +152,7 @@ export function RestoreFromRecovery() {
                   {...register("passphrase")}
                 />
                 <button
-                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-400 transition-colors duration-150 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   type="button"
                   onClick={() => setShowPassphrase((visible) => !visible)}
                   aria-label={showPassphrase ? "Hide recovery passphrase" : "Show recovery passphrase"}
@@ -223,7 +224,7 @@ export function RestoreFromRecovery() {
           </div>
 
           <button
-            className="mt-5 w-full text-center text-sm font-medium text-indigo-300 transition-colors duration-150 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+            className="mt-5 w-full text-center text-sm font-medium text-primary transition-colors duration-150 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             type="button"
             onClick={() => setPhase("locked")}
           >

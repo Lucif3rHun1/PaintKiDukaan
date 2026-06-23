@@ -44,11 +44,11 @@ export function BarcodeInput({
 
   return (
     <div className={className}>
-      <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+      <div className="rounded-md border border-dashed border-border bg-card p-3 text-sm text-muted-foreground">
         {placeholder}
       </div>
       {last !== null && (
-        <div className="mt-1 text-xs text-slate-500">last: {last}</div>
+        <div className="mt-1 text-xs text-muted-foreground">last: {last}</div>
       )}
     </div>
   );

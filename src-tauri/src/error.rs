@@ -1,3 +1,10 @@
+//! Canonical error type for all Tauri commands.
+//!
+//! This is the SINGLE source of truth for `AppError` / `AppResult`.
+//! Every command, security module, and crypto helper imports from here.
+//! The serialized form is `{code: string, message: string}` — the frontend
+//! `isAppError()` type guard in `src/domain/types.ts` depends on this.
+
 use serde::{Serialize, Serializer};
 
 #[derive(Debug, thiserror::Error)]
@@ -20,14 +27,38 @@ pub enum AppError {
     #[error("incorrect PIN or passphrase")]
     WrongPin,
 
+    #[error("incorrect recovery passphrase")]
+    WrongRecoveryPassphrase,
+
+    #[error("too many failed attempts")]
+    TooManyAttempts,
+
     #[error("forbidden: {0}")]
     Forbidden(String),
 
     #[error("internal: {0}")]
     Internal(String),
 
+    #[error("crypto error: {0}")]
+    Crypto(String),
+
+    #[error("no keywrap row found")]
+    NoKeywrap,
+
+    #[error("no database configured")]
+    NoDb,
+
     #[error("database is locked — please unlock first")]
     NotUnlocked,
+
+    #[error("PIN must be exactly 6 digits")]
+    InvalidPinFormat,
+
+    #[error("locked out until unix {until}")]
+    LockedOut { until: u64 },
+
+    #[error("data wiped — recovery passphrase required")]
+    Wiped,
 
     #[error("path traversal rejected: {0}")]
     PathTraversal(String),
@@ -48,9 +79,17 @@ impl AppError {
             AppError::Conflict(_) => "conflict",
             AppError::Unauthorized(_) => "unauthorized",
             AppError::WrongPin => "wrong_pin",
+            AppError::WrongRecoveryPassphrase => "wrong_recovery_passphrase",
+            AppError::TooManyAttempts => "too_many_attempts",
             AppError::Forbidden(_) => "forbidden",
             AppError::Internal(_) => "internal",
+            AppError::Crypto(_) => "crypto",
+            AppError::NoKeywrap => "no_keywrap",
+            AppError::NoDb => "no_db",
             AppError::NotUnlocked => "not_unlocked",
+            AppError::InvalidPinFormat => "invalid_pin_format",
+            AppError::LockedOut { .. } => "locked_out",
+            AppError::Wiped => "wiped",
             AppError::PathTraversal(_) => "path_traversal",
             AppError::LogInjection(_) => "log_injection",
             AppError::Io(_) => "io",
@@ -79,6 +118,24 @@ impl From<rusqlite::Error> for AppError {
             }
             other => AppError::Db(other),
         }
+    }
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(e: std::io::Error) -> Self {
+        AppError::Io(e)
+    }
+}
+
+impl From<crate::crypto::kdf::KdfError> for AppError {
+    fn from(e: crate::crypto::kdf::KdfError) -> Self {
+        AppError::Crypto(e.to_string())
+    }
+}
+
+impl From<crate::crypto::wrap::WrapError> for AppError {
+    fn from(e: crate::crypto::wrap::WrapError) -> Self {
+        AppError::Crypto(e.to_string())
     }
 }
 

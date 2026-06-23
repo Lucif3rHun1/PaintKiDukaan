@@ -78,25 +78,25 @@ export function ManageTypes() {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           placeholder="New type name"
-          className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm"
+          className="flex-1 rounded border border-border px-3 py-2 text-sm"
         />
         <button
           type="submit"
-          className="rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
+          className="btn-primary"
         >
           Add
         </button>
       </form>
 
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading…</p>}
+      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
       <table className="w-full text-sm">
-        <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+        <thead className="border-b border-border text-left text-xs uppercase text-muted-foreground">
           <tr>
             <th className="py-1">Name</th>
             <th>Status</th>
@@ -105,13 +105,13 @@ export function ManageTypes() {
         </thead>
         <tbody>
           {types.map((t) => (
-            <tr key={t.id} className="border-b border-slate-100">
+            <tr key={t.id} className="border-b border-border">
               <td className="py-1">
                 {editing === t.id ? (
                   <input
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    className="rounded border border-slate-300 px-2 py-1 text-sm"
+                    className="rounded border border-border px-2 py-1 text-sm"
                   />
                 ) : (
                   t.name
@@ -119,11 +119,11 @@ export function ManageTypes() {
               </td>
               <td>
                 {t.is_active ? (
-                  <span className="rounded bg-emerald-100 px-2 text-xs text-emerald-700">
+                  <span className="rounded bg-success/20 px-2 text-xs text-success">
                     active
                   </span>
                 ) : (
-                  <span className="rounded bg-slate-200 px-2 text-xs text-slate-600">
+                  <span className="rounded bg-muted px-2 text-xs text-muted-foreground">
                     inactive
                   </span>
                 )}
@@ -133,13 +133,13 @@ export function ManageTypes() {
                   <>
                     <button
                       onClick={() => saveEdit(t.id)}
-                      className="mr-2 rounded bg-sky-600 px-2 py-1 text-xs text-white"
+                      className="mr-2 rounded bg-primary px-2 py-1 text-xs text-primary-foreground"
                     >
                       Save
                     </button>
                     <button
                       onClick={() => setEditing(null)}
-                      className="rounded border border-slate-300 px-2 py-1 text-xs"
+                      className="rounded border border-border px-2 py-1 text-xs"
                     >
                       Cancel
                     </button>
@@ -151,14 +151,14 @@ export function ManageTypes() {
                         setEditing(t.id);
                         setEditName(t.name);
                       }}
-                      className="mr-2 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
+                      className="mr-2 rounded border border-border px-2 py-1 text-xs hover:bg-card"
                     >
                       Rename
                     </button>
                     {t.is_active && (
                       <button
                         onClick={() => deactivate(t.id)}
-                        className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                      className="rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-card"
                       >
                         Deactivate
                       </button>

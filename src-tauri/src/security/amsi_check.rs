@@ -153,19 +153,10 @@ mod win {
     // amsi.dll exports
     #[link(name = "amsi")]
     extern "system" {
-        pub fn AmsiInitialize(
-            appName: *const u16,
-            amsiContext: *mut *mut c_void,
-        ) -> i32;
+        pub fn AmsiInitialize(appName: *const u16, amsiContext: *mut *mut c_void) -> i32;
         pub fn AmsiUninitialize(amsiContext: *mut c_void);
-        pub fn AmsiOpenSession(
-            amsiContext: *mut c_void,
-            amsiSession: *mut *mut c_void,
-        ) -> i32;
-        pub fn AmsiCloseSession(
-            amsiContext: *mut c_void,
-            amsiSession: *mut c_void,
-        );
+        pub fn AmsiOpenSession(amsiContext: *mut c_void, amsiSession: *mut *mut c_void) -> i32;
+        pub fn AmsiCloseSession(amsiContext: *mut c_void, amsiSession: *mut c_void);
         pub fn AmsiScanBuffer(
             amsiContext: *mut c_void,
             buffer: *const c_void,
@@ -277,7 +268,11 @@ mod tests {
         {
             // If AMSI is initialized, EICAR should be detected.
             if ctx.initialized {
-                assert!(verdict.detected, "EICAR should be detected: {}", verdict.explanation);
+                assert!(
+                    verdict.detected,
+                    "EICAR should be detected: {}",
+                    verdict.explanation
+                );
             }
         }
         #[cfg(not(target_os = "windows"))]

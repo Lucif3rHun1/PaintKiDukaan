@@ -285,8 +285,8 @@ mod tests {
         #[cfg(not(target_os = "windows"))]
         {
             // Set last check to 10 seconds in the future.
-            clock.last_check_wall = std::time::SystemTime::now()
-                + std::time::Duration::from_secs(10);
+            clock.last_check_wall =
+                std::time::SystemTime::now() + std::time::Duration::from_secs(10);
 
             let verdict = clock.check_for_rollback().unwrap();
             assert!(

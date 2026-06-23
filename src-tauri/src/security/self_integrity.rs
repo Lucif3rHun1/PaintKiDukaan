@@ -70,9 +70,8 @@ pub fn self_integrity_check() -> Result<IntegrityReport, AppError> {
 pub fn hash_file_at_path(path: &std::path::Path) -> Result<[u8; 32], AppError> {
     use sha2::{Digest, Sha256};
 
-    let data = std::fs::read(path).map_err(|e| {
-        AppError::Internal(format!("failed to read exe for hashing: {e}"))
-    })?;
+    let data = std::fs::read(path)
+        .map_err(|e| AppError::Internal(format!("failed to read exe for hashing: {e}")))?;
 
     let mut hasher = Sha256::new();
     hasher.update(&data);
@@ -102,9 +101,7 @@ fn get_own_exe_path_inner() -> Result<PathBuf, AppError> {
     let mut buf = [0u16; 1024];
     let len = unsafe { GetModuleFileNameW(std::ptr::null_mut(), buf.as_mut_ptr(), 1024) };
     if len == 0 {
-        return Err(AppError::Internal(
-            "GetModuleFileNameW returned 0".into(),
-        ));
+        return Err(AppError::Internal("GetModuleFileNameW returned 0".into()));
     }
     let os_str = OsString::from_wide(&buf[..len as usize]);
     Ok(PathBuf::from(os_str))
@@ -210,22 +207,13 @@ fn verify_authenticode_inner(path: &std::path::Path) -> Result<AuthenticodeRepor
 
     // ── Call WinVerifyTrust ──────────────────────────────────────────
 
-    let status = unsafe {
-        WinVerifyTrust(
-            std::ptr::null_mut(),
-            &ACTION_GENERIC_VERIFY_V2,
-            &wt_data,
-        )
-    };
+    let status =
+        unsafe { WinVerifyTrust(std::ptr::null_mut(), &ACTION_GENERIC_VERIFY_V2, &wt_data) };
 
     // Close the state handle.
     wt_data.dw_state_action = WTD_STATEACTION_CLOSE;
     unsafe {
-        WinVerifyTrust(
-            std::ptr::null_mut(),
-            &ACTION_GENERIC_VERIFY_V2,
-            &wt_data,
-        );
+        WinVerifyTrust(std::ptr::null_mut(), &ACTION_GENERIC_VERIFY_V2, &wt_data);
     }
 
     // STATUS_SUCCESS = 0

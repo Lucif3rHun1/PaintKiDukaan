@@ -1,0 +1,113 @@
+use rusqlite::params;
+use serde::{Deserialize, Serialize};
+use tauri::State;
+
+use crate::commands::auth::AppState;
+use crate::error::{AppError, AppResult};
+use crate::session::{current_user, require_role, Role};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Category {
+    pub id: i64,
+    pub name: String,
+    pub is_active: bool,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_categories(state: State<'_, AppState>) -> AppResult<Vec<Category>> {
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let _ = current_user()?;
+    db.with_raw(|c| {
+        let mut stmt = c.prepare(
+            "SELECT id, name, is_active FROM categories WHERE is_active = 1 ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Category {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                is_active: r.get::<_, i64>(2)? != 0,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn create_category(state: State<'_, AppState>, name: String) -> AppResult<Category> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::Validation("category name is required".into()));
+    }
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let user = current_user()?;
+    require_role(&user, &[Role::Owner])?;
+    db.with_tx(|tx| {
+        let collision: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM categories WHERE name = ?1",
+            params![name],
+            |r| r.get(0),
+        )?;
+        if collision > 0 {
+            return Err(AppError::Conflict(format!(
+                "category '{name}' already exists"
+            )));
+        }
+        tx.execute(
+            "INSERT INTO categories (name, is_active, created_at, updated_at) VALUES (?1, 1, unixepoch('now'), unixepoch('now'))",
+            params![name],
+        )?;
+        let id = tx.last_insert_rowid() as i64;
+        Ok(Category {
+            id,
+            name,
+            is_active: true,
+        })
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn deactivate_category(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let user = current_user()?;
+    require_role(&user, &[Role::Owner])?;
+    db.with_tx(|tx| {
+        let cat_name: String = tx
+            .query_row(
+                "SELECT name FROM categories WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .map_err(|_| AppError::NotFound(format!("category {id} not found")))?;
+        let in_use: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM items WHERE category = ?1",
+            params![cat_name],
+            |r| r.get(0),
+        )?;
+        if in_use > 0 {
+            return Err(AppError::Conflict(format!(
+                "category is referenced by {in_use} item(s); reassign the items first"
+            )));
+        }
+        tx.execute(
+            "UPDATE categories SET is_active = 0, updated_at = unixepoch('now') WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    })
+}

@@ -6,6 +6,7 @@
  * not cascade through the frontend.
  */
 import { tauriInvoke } from "../../lib/security/tauri";
+import type { SecurityPolicy } from "../../domain/types";
 
 export type Role = "owner" | "admin" | "cashier" | "stocker";
 
@@ -104,6 +105,13 @@ export interface BackupStatus {
   targets: BackupTarget[];
 }
 
+export interface DiscoveredPrinter {
+  name: string;
+  driver_name: string | null;
+  port_name: string | null;
+  connection_type: string;
+}
+
 export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return tauriInvoke<T>(cmd, args);
 }
@@ -117,7 +125,7 @@ export const ipc = {
 
   listUsers: () => invoke<User[]>("list_users"),
   createUser: (name: string, role: string, pin: string) =>
-    invoke<User>("create_user", { name, role, pin }),
+    invoke<User>("create_user", { name, pin, role }),
   listDevices: () => invoke<Device[]>("list_devices"),
   enrollDevice: (name: string, role: string) =>
     invoke<Device>("enroll_device", { name, role }),
@@ -129,7 +137,7 @@ export const ipc = {
       (locs) => locs.map((l) => l.name),
     ),
   addLocation: (location: string) =>
-    tauriInvoke("add_location", { payload: { name: location } }).then(() =>
+    tauriInvoke("create_location", { payload: { name: location } }).then(() =>
       tauriInvoke<Array<{ id: number; name: string }>>("list_locations").then((locs) =>
         locs.map((l) => l.name),
       ),
@@ -137,11 +145,25 @@ export const ipc = {
   removeLocation: (location: string) =>
     tauriInvoke<Array<{ id: number; name: string }>>("list_locations").then(async (locs) => {
       const match = locs.find((l) => l.name === location);
-      if (match) await tauriInvoke("remove_location", { id: match.id });
+      if (match) await tauriInvoke("deactivate_location", { id: match.id });
       return tauriInvoke<Array<{ id: number; name: string }>>("list_locations").then((l2) =>
         l2.map((l) => l.name),
       );
     }),
+
+  // Sub-locations
+  listSubLocations: (locationId?: number) =>
+    tauriInvoke<Array<{ id: number; location_id: number; name: string; position: string | null; is_active: boolean }>>(
+      "list_sub_locations",
+      { location_id: locationId ?? null, include_inactive: false },
+    ),
+  createSubLocation: (locationId: number, name: string, position?: string) =>
+    tauriInvoke<{ id: number; location_id: number; name: string }>(
+      "create_sub_location",
+      { location_id: locationId, name, position: position ?? null },
+    ),
+  deactivateSubLocation: (id: number) =>
+    tauriInvoke<void>("deactivate_sub_location", { id }),
 
   listCustomerTypes: () =>
     tauriInvoke<Array<{ id: number; name: string; is_active: boolean }>>("list_customer_types").then(
@@ -156,7 +178,7 @@ export const ipc = {
   removeCustomerType: (customerType: string) =>
     tauriInvoke<Array<{ id: number; name: string }>>("list_customer_types").then(async (types) => {
       const match = types.find((t) => t.name === customerType);
-      if (match) await tauriInvoke("remove_customer_type", { id: match.id });
+      if (match) await tauriInvoke("deactivate_customer_type", { id: match.id });
       return tauriInvoke<Array<{ id: number; name: string }>>("list_customer_types").then((t2) =>
         t2.map((t) => t.name),
       );
@@ -170,6 +192,11 @@ export const ipc = {
   testRestore: (path: string, passphrase: string) =>
     invoke<TestRestoreResult>("test_restore", { path, passphrase }),
   backupStatus: () => invoke<BackupStatus>("backup_status"),
+  restoreIntoFirstLaunch: (envelopePath: string, passphrase: string) =>
+    invoke<void>("restore_into_first_launch", { envelopePath, passphrase }),
+  discoverSystemPrinters: () => invoke<DiscoveredPrinter[]>("discover_system_printers"),
+  printEscPosReceipt: (printerName: string, receiptData: Record<string, unknown>) =>
+    invoke<void>("cmd_print_receipt", { printer_name: printerName, receipt_data: receiptData }),
 
   masterHealth: () => invoke<MasterHealth>("master_health"),
   autostartEnable: () => invoke<boolean>("autostart_enable"),
@@ -182,4 +209,26 @@ export const ipc = {
   setScanTarget: (target: ScanTarget | string) =>
     invoke<void>("set_scan_target", { target }),
   scanTarget: () => invoke<string>("scan_target"),
+
+  // Security policy (persisted via get_setting/set_setting)
+  getSecurityPolicy: async (): Promise<SecurityPolicy> => {
+    const [wipeOnDuressRaw, wipeTimeoutRaw, hostileRaw] = await Promise.all([
+      ipc.getSetting("security.wipe_on_duress"),
+      ipc.getSetting("security.wipe_timeout_minutes"),
+      ipc.getSetting("security.hostile_response"),
+    ]);
+    return {
+      wipe_on_duress: Boolean(wipeOnDuressRaw ?? true),
+      wipe_timeout_minutes: Number(wipeTimeoutRaw ?? 5),
+      hostile_response: (hostileRaw as any) === "warn" || (hostileRaw as any) === "wipe"
+        ? (hostileRaw as "warn" | "wipe")
+        : "lock",
+    };
+  },
+  updateSecurityPolicy: (policy: SecurityPolicy) =>
+    Promise.all([
+      ipc.setSetting("security.wipe_on_duress", policy.wipe_on_duress),
+      ipc.setSetting("security.wipe_timeout_minutes", policy.wipe_timeout_minutes),
+      ipc.setSetting("security.hostile_response", policy.hostile_response),
+    ]).then(() => {}),
 };

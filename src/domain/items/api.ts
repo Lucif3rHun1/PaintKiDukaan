@@ -6,6 +6,7 @@ import { invoke } from "../ipc";
 import type {
   Brand,
   ConversionResult,
+  ImportResult,
   Item,
   ItemFilter,
   ItemLookup,
@@ -56,7 +57,7 @@ export async function getBrand(id: number): Promise<Brand> {
 }
 
 export async function createBrand(name: string, codePrefix: string): Promise<Brand> {
-  return invoke<Brand>("create_brand", { name, codePrefix });
+  return invoke<Brand>("create_brand", { prefix: codePrefix, name });
 }
 
 export async function deactivateBrand(id: number): Promise<void> {
@@ -67,14 +68,14 @@ export async function updateBrandCodePrefix(
   id: number,
   codePrefix: string,
 ): Promise<Brand> {
-  return invoke<Brand>("update_brand_code_prefix", { id, codePrefix });
+  return invoke<Brand>("update_brand_code_prefix", { code_prefix: codePrefix, id });
 }
 
 export async function previewNextBarcode(
-  brandId: number,
+  brandId: number | null,
   itemName: string,
 ): Promise<string> {
-  return invoke<string>("preview_next_barcode", { brandId, itemName });
+  return invoke<string>("preview_next_barcode", { brand_id: brandId, item_name: itemName });
 }
 
 export async function recordLabelPrint(payload: {
@@ -85,9 +86,6 @@ export async function recordLabelPrint(payload: {
   line1?: string | null;
   line2?: string | null;
 }): Promise<number> {
-  // Tauri 2 expects snake_case keys when the Rust command uses
-  // `#[tauri::command(rename_all = "snake_case")]` and there is no global
-  // core.api rename config. record_label_print takes 7 positional kwargs.
   return invoke<number>("record_label_print", {
     item_id: payload.itemId,
     barcode: payload.barcode,
@@ -102,9 +100,16 @@ export async function listLabelPrints(args: {
   itemId?: number | null;
   limit?: number | null;
 } = {}): Promise<LabelPrintRecord[]> {
-  return invoke<LabelPrintRecord[]>("list_label_prints", args);
+  const snake: Record<string, unknown> = {};
+  if (args.itemId !== undefined && args.itemId !== null) snake.item_id = args.itemId;
+  if (args.limit !== undefined && args.limit !== null) snake.limit = args.limit;
+  return invoke<LabelPrintRecord[]>("list_label_prints", snake);
 }
 
 export async function getSetting(key: string): Promise<string> {
   return invoke<string>("get_setting", { key });
+}
+
+export async function importItemsCsv(csvData: string): Promise<ImportResult> {
+  return invoke<ImportResult>("cmd_import_items_csv", { csv_data: csvData });
 }

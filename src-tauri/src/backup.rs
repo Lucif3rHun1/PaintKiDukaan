@@ -263,8 +263,13 @@ pub fn encrypt_snapshot(
     };
     let header_bytes = header.to_bytes();
 
-    let body_ciphertext =
-        chunked::encrypt_chunks(&key, &nonce_prefix, &body_plaintext, PKB1_CHUNK_SIZE, &header_bytes)?;
+    let body_ciphertext = chunked::encrypt_chunks(
+        &key,
+        &nonce_prefix,
+        &body_plaintext,
+        PKB1_CHUNK_SIZE,
+        &header_bytes,
+    )?;
     let ciphertext_sha256 = sha2::Sha256::digest(&body_ciphertext);
     let ciphertext_sha256_hex = hex::encode(ciphertext_sha256);
 
@@ -358,7 +363,8 @@ pub fn decrypt_and_verify(
     )?;
 
     let mut full_plaintext = Vec::with_capacity(total_plaintext_len);
-    full_plaintext.extend_from_slice(&chunk0_plaintext[..chunk0_plaintext_size.min(total_plaintext_len)]);
+    full_plaintext
+        .extend_from_slice(&chunk0_plaintext[..chunk0_plaintext_size.min(total_plaintext_len)]);
     full_plaintext.extend_from_slice(&remaining_plaintext);
 
     if full_plaintext.len() != total_plaintext_len {
@@ -398,10 +404,7 @@ pub fn atomic_swap(live_db: &Path, new_db: &Path) -> BackupResult<std::path::Pat
 
 /// Test-restore an envelope: decrypt, verify integrity and run SQLite
 /// `PRAGMA quick_check`. The live database is **not** modified.
-pub fn test_restore(
-    envelope: &Path,
-    recovery_passphrase: &str,
-) -> BackupResult<TestRestoreResult> {
+pub fn test_restore(envelope: &Path, recovery_passphrase: &str) -> BackupResult<TestRestoreResult> {
     let tmp = tempfile::NamedTempFile::new()?;
     let tmp_path = tmp.path().to_path_buf();
     // Keep the tempfile alive until the check completes.
@@ -525,9 +528,15 @@ mod tests {
         let nonce_prefix = [0xABu8; 4];
         let aad = b"header bytes";
 
-        for size in [PKB1_CHUNK_SIZE as usize - 1, PKB1_CHUNK_SIZE as usize, PKB1_CHUNK_SIZE as usize + 1, PKB1_CHUNK_SIZE as usize * 2 + 17] {
+        for size in [
+            PKB1_CHUNK_SIZE as usize - 1,
+            PKB1_CHUNK_SIZE as usize,
+            PKB1_CHUNK_SIZE as usize + 1,
+            PKB1_CHUNK_SIZE as usize * 2 + 17,
+        ] {
             let plaintext: Vec<u8> = (0..size).map(|i| (i % 256) as u8).collect();
-            let ciphertext = chunked::encrypt_chunks(&key, &nonce_prefix, &plaintext, PKB1_CHUNK_SIZE, aad)?;
+            let ciphertext =
+                chunked::encrypt_chunks(&key, &nonce_prefix, &plaintext, PKB1_CHUNK_SIZE, aad)?;
             let decrypted = chunked::decrypt_chunks(
                 &key,
                 &nonce_prefix,
@@ -548,10 +557,22 @@ mod tests {
         let nonce_prefix = [0xABu8; 4];
         let aad = b"header bytes";
         let plaintext = b"hello world".to_vec();
-        let mut ciphertext = chunked::encrypt_chunks(&key, &nonce_prefix, &plaintext, PKB1_CHUNK_SIZE, aad)?;
+        let mut ciphertext =
+            chunked::encrypt_chunks(&key, &nonce_prefix, &plaintext, PKB1_CHUNK_SIZE, aad)?;
         ciphertext[5] ^= 0xFF;
-        let result = chunked::decrypt_chunks(&key, &nonce_prefix, &ciphertext, PKB1_CHUNK_SIZE, plaintext.len(), aad, 0);
-        assert!(matches!(result, Err(BackupError::AesGcm(_) | BackupError::Decryption)));
+        let result = chunked::decrypt_chunks(
+            &key,
+            &nonce_prefix,
+            &ciphertext,
+            PKB1_CHUNK_SIZE,
+            plaintext.len(),
+            aad,
+            0,
+        );
+        assert!(matches!(
+            result,
+            Err(BackupError::AesGcm(_) | BackupError::Decryption)
+        ));
         Ok(())
     }
 
@@ -562,7 +583,9 @@ mod tests {
         let envelope = dir.path().join("backup.pkb1");
         let restored = dir.path().join("restored.db");
 
-        let payload: Vec<u8> = (0..(PKB1_CHUNK_SIZE as usize + 1024)).map(|i| (i % 256) as u8).collect();
+        let payload: Vec<u8> = (0..(PKB1_CHUNK_SIZE as usize + 1024))
+            .map(|i| (i % 256) as u8)
+            .collect();
         fs::write(&plaintext, &payload)?;
 
         let meta = encrypt_snapshot(&plaintext, &envelope, "secret passphrase")?;

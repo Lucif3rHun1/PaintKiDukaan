@@ -59,12 +59,12 @@ const PREVIOUS_STEP: Record<FreshStep, Step> = {
 };
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 text-sm text-zinc-100 outline-none transition-colors duration-150 placeholder:text-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50";
-const labelClass = "text-sm font-medium text-zinc-200";
+  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+const labelClass = "text-sm font-medium text-foreground";
 const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-indigo-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-white/10 px-4 text-sm font-medium text-zinc-200 transition-colors duration-150 hover:border-white/20 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: SetupResponse): Session {
   const role: Role = result.user?.role ?? result.role ?? "owner";
@@ -77,7 +77,7 @@ function normalizeSession(result: SetupResponse): Session {
 function fieldError(message?: string) {
   if (!message) return null;
   return (
-    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-red-400" role="alert">
+    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
       <AlertCircle className="h-4 w-4" aria-hidden="true" />
       {message}
     </p>
@@ -173,20 +173,20 @@ export function FirstLaunch() {
   const stepNumber = step === "path" ? 0 : currentFreshIndex + 1;
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6">
+    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
       <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
         <form
-          className="w-full rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8"
+          className="w-full rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8"
           onSubmit={handleSubmit(onSubmit)}
         >
           {/* Header */}
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-indigo-300">PaintKiDukaan</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+              <p className="text-sm font-medium text-primary">PaintKiDukaan</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 Set up your shop
               </h1>
-              <p className="mt-1 text-sm text-zinc-400">
+              <p className="mt-1 text-sm text-muted-foreground">
                 A few quick steps to get your shop management system running.
               </p>
             </div>
@@ -208,17 +208,17 @@ export function FirstLaunch() {
                   <div
                     className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-200 ${
                       i < stepNumber
-                        ? "bg-emerald-500 text-white"
+                        ? "bg-success text-success-foreground"
                         : i === stepNumber
-                          ? "bg-indigo-500 text-white"
-                          : "bg-zinc-800 text-zinc-500"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
                     }`}
                   >
                     {i < stepNumber ? "✓" : i + 1}
                   </div>
                   <span
                     className={`text-xs font-medium hidden sm:inline ${
-                      i === stepNumber ? "text-zinc-100" : "text-zinc-500"
+                      i === stepNumber ? "text-foreground" : "text-muted-foreground"
                     }`}
                   >
                     {STEPS[i].label}
@@ -232,10 +232,10 @@ export function FirstLaunch() {
                   key={i}
                   className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${
                     i < stepNumber
-                      ? "bg-emerald-500"
+                      ? "bg-success"
                       : i === stepNumber
-                        ? "bg-indigo-500"
-                        : "bg-zinc-800"
+                        ? "bg-primary"
+                        : "bg-muted"
                   }`}
                 />
               ))}
@@ -243,18 +243,18 @@ export function FirstLaunch() {
           </div>
 
           {/* Step description */}
-          <div className="mb-5 flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-3">
-            <CurrentStepIcon className="h-5 w-5 shrink-0 text-indigo-300" aria-hidden="true" />
+          <div className="mb-5 flex items-center gap-3 rounded-xl border border-border bg-background/60 p-3">
+            <CurrentStepIcon className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
             <div>
-              <p className="text-sm font-medium text-zinc-100">{currentStepMeta.label}</p>
-              <p className="text-xs text-zinc-400">{currentStepMeta.description}</p>
+              <p className="text-sm font-medium text-foreground">{currentStepMeta.label}</p>
+              <p className="text-xs text-muted-foreground">{currentStepMeta.description}</p>
             </div>
           </div>
 
           {/* Backend error */}
           {backendError ? (
             <div
-              className="mb-5 flex gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
+              className="mb-5 flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
               role="alert"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -265,31 +265,31 @@ export function FirstLaunch() {
           {step === "path" ? (
             <div className="space-y-3">
               <button
-                className="group flex w-full items-start gap-4 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left transition-colors duration-150 hover:border-indigo-500/60 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+                className="group flex w-full items-start gap-4 rounded-xl border border-border bg-background/60 p-4 text-left transition-colors duration-150 hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 type="button"
                 onClick={() => setStep("shop")}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-300 transition-colors duration-150 group-hover:bg-indigo-500 group-hover:text-white">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
                   <ShoppingBag className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <span>
-                  <span className="block text-sm font-semibold text-zinc-100">Set up a new shop</span>
-                  <span className="mt-1 block text-sm leading-5 text-zinc-400">
+                  <span className="block text-sm font-semibold text-foreground">Set up a new shop</span>
+                  <span className="mt-1 block text-sm leading-5 text-muted-foreground">
                     Start fresh with a new shop. You'll set your shop details, owner PIN, and recovery passphrase.
                   </span>
                 </span>
               </button>
               <button
-                className="group flex w-full items-start gap-4 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left transition-colors duration-150 hover:border-indigo-500/60 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+                className="group flex w-full items-start gap-4 rounded-xl border border-border bg-background/60 p-4 text-left transition-colors duration-150 hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 type="button"
                 onClick={() => setShowRestore(true)}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-300 transition-colors duration-150 group-hover:bg-indigo-500 group-hover:text-white">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
                   <HardDrive className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <span>
-                  <span className="block text-sm font-semibold text-zinc-100">Restore from a backup</span>
-                  <span className="mt-1 block text-sm leading-5 text-zinc-400">
+                  <span className="block text-sm font-semibold text-foreground">Restore from a backup</span>
+                  <span className="mt-1 block text-sm leading-5 text-muted-foreground">
                     Restore from a .pkb1 backup file. Use this if you previously backed up and want to continue.
                   </span>
                 </span>
@@ -312,7 +312,7 @@ export function FirstLaunch() {
                   placeholder="e.g. Paint World"
                   {...register("shopName")}
                 />
-                <p className="mt-1 text-xs text-zinc-500">The name of your paint shop or business.</p>
+                <p className="mt-1 text-xs text-muted-foreground">The name of your paint shop or business.</p>
                 {fieldError(errors.shopName?.message)}
               </div>
               <div>
@@ -344,7 +344,7 @@ export function FirstLaunch() {
                   placeholder="9876543210"
                   {...register("phone")}
                 />
-                <p className="mt-1 text-xs text-zinc-500">10-digit Indian mobile number.</p>
+                <p className="mt-1 text-xs text-muted-foreground">10-digit Indian mobile number.</p>
                 {fieldError(errors.phone?.message)}
               </div>
             </div>
@@ -368,7 +368,7 @@ export function FirstLaunch() {
                   type="password"
                   {...register("pin")}
                 />
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   This PIN will be used every time you open the app. Only you (the owner) know this.
                 </p>
                 {fieldError(errors.pin?.message)}
@@ -396,9 +396,9 @@ export function FirstLaunch() {
 
           {step === "passphrase" ? (
             <div className="space-y-4">
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-                <p className="text-sm font-medium text-amber-200">Important — read this first</p>
-                <p className="mt-1 text-xs leading-5 text-amber-200/80">
+              <div className="rounded-xl border border-warning/30 bg-warning/10 p-3">
+                <p className="text-sm font-medium text-warning">Important — read this first</p>
+                <p className="mt-1 text-xs leading-5 text-warning/80">
                   Your recovery passphrase is the <strong>only way</strong> to regain access if you
                   forget your PIN. Write it down and store it somewhere safe (not on this device).
                   We cannot recover it for you.
@@ -420,7 +420,7 @@ export function FirstLaunch() {
                     {...register("passphrase")}
                   />
                   <button
-                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-400 transition-colors duration-150 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     type="button"
                     onClick={() => setShowPassphrase((visible) => !visible)}
                     aria-label={showPassphrase ? "Hide passphrase" : "Show passphrase"}
@@ -428,7 +428,7 @@ export function FirstLaunch() {
                     {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Use a memorable sentence, e.g. "my shop opened in 2024 summer"
                 </p>
                 {fieldError(errors.passphrase?.message)}

@@ -43,15 +43,24 @@ pub enum KdfError {
 }
 
 fn argon2_with(params: &KdfParams) -> Result<Argon2<'_>, KdfError> {
-    let p = Params::new(params.m_cost_kib, params.t_cost, params.p_cost, Some(KEK_LEN))
-        .map_err(|e| KdfError::Argon2(e.to_string()))?;
+    let p = Params::new(
+        params.m_cost_kib,
+        params.t_cost,
+        params.p_cost,
+        Some(KEK_LEN),
+    )
+    .map_err(|e| KdfError::Argon2(e.to_string()))?;
     Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, p))
 }
 
 /// Derive a 32-byte KEK from an owner PIN (4 or 6 digits) and salt.
 /// Uses PIN params (256 MiB / t=2 / p=1).
 /// Accepts salt lengths from 16 to 64 bytes (Argon2id minimum is 8, we enforce 16+).
-pub fn derive_pin_kek(pin: &str, salt: &[u8], params: &KdfParams) -> Result<[u8; KEK_LEN], KdfError> {
+pub fn derive_pin_kek(
+    pin: &str,
+    salt: &[u8],
+    params: &KdfParams,
+) -> Result<[u8; KEK_LEN], KdfError> {
     if salt.len() < 16 {
         return Err(KdfError::InvalidSalt(salt.len()));
     }
@@ -130,7 +139,10 @@ mod tests {
     fn pin_kek_accepts_legacy_16_byte_salt() {
         let salt = [1u8; 16];
         let k = derive_pin_kek("123456", &salt, &KdfParams::PIN);
-        assert!(k.is_ok(), "16-byte salts from existing keywrap rows must still work");
+        assert!(
+            k.is_ok(),
+            "16-byte salts from existing keywrap rows must still work"
+        );
     }
 
     #[test]

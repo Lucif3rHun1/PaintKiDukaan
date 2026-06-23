@@ -3,15 +3,18 @@
  */
 import { useEffect, useState } from "react";
 import { listVendors, vendorOutstanding } from "./api";
-import { formatINR, type Vendor, type VendorOutstanding } from "../types";
+import { Money } from "../../components/ui";
+import { type Vendor, type VendorOutstanding } from "../types";
 
 interface Props {
   onSelect?: (v: Vendor) => void;
   onCreate?: () => void;
+  onRecordPayment?: (v: Vendor) => void;
+  refreshKey?: number;
   role: "owner" | "cashier" | "stocker";
 }
 
-export function VendorList({ onSelect, onCreate, role }: Props) {
+export function VendorList({ onSelect, onCreate, onRecordPayment, refreshKey, role }: Props) {
   const [items, setItems] = useState<Vendor[]>([]);
   const [outstandings, setOutstandings] = useState<Record<number, number>>({});
   const [query, setQuery] = useState("");
@@ -56,12 +59,12 @@ export function VendorList({ onSelect, onCreate, role }: Props) {
           placeholder="Search by name or phone…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm"
+          className="flex-1 rounded border border-border px-3 py-2 text-sm"
         />
         {onCreate && (role === "owner" || role === "stocker") && (
           <button
             onClick={onCreate}
-            className="rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
+            className="btn-primary"
           >
             + New
           </button>
@@ -69,14 +72,14 @@ export function VendorList({ onSelect, onCreate, role }: Props) {
       </div>
 
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading…</p>}
+      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
       <table className="w-full text-sm">
-        <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+        <thead className="border-b border-border text-left text-xs uppercase text-muted-foreground">
           <tr>
             <th className="py-1">Name</th>
             <th>Phone</th>
@@ -89,14 +92,14 @@ export function VendorList({ onSelect, onCreate, role }: Props) {
             <tr
               key={v.id}
               onClick={() => onSelect?.(v)}
-              className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+              className="cursor-pointer border-b border-border hover:bg-card"
             >
               <td className="py-1">{v.name}</td>
               <td className="font-mono">{v.phone ?? "—"}</td>
-              <td className="text-right">{formatINR(v.opening_balance)}</td>
+              <td className="text-right"><Money paise={v.opening_balance} /></td>
               <td className="text-right">
                 {outstandings[v.id] != null
-                  ? formatINR(outstandings[v.id])
+                  ? <Money paise={outstandings[v.id]} />
                   : "…"}
               </td>
             </tr>
@@ -105,7 +108,7 @@ export function VendorList({ onSelect, onCreate, role }: Props) {
       </table>
 
       {!loading && items.length === 0 && (
-        <p className="text-sm text-slate-500">No vendors match.</p>
+        <p className="text-sm text-muted-foreground">No vendors match.</p>
       )}
     </div>
   );

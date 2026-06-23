@@ -63,27 +63,35 @@ pub fn detect() -> SniffReport {
     #[cfg(target_os = "windows")]
     if check_pcap_driver() {
         report.pcap_driver = true;
-        report.evidence.push("PCAP driver (WinPcap/Npcap) service running".into());
+        report
+            .evidence
+            .push("PCAP driver (WinPcap/Npcap) service running".into());
     }
 
     // 2. Analyzer processes.
     let procs = get_process_names();
     if check_analyzer_processes(&procs) {
         report.analyzer_process = true;
-        report.evidence.push("Network analyzer process detected".into());
+        report
+            .evidence
+            .push("Network analyzer process detected".into());
     }
 
     // 3. Proxy environment variables.
     if check_proxy_env() {
         report.proxy_env = true;
-        report.evidence.push("Proxy environment variable set".into());
+        report
+            .evidence
+            .push("Proxy environment variable set".into());
     }
 
     // 4. Loopback listeners.
     let listeners = get_loopback_listeners();
     if check_loopback_listeners(&listeners) {
         report.loopback_listener = true;
-        report.evidence.push("Suspicious loopback listener detected".into());
+        report
+            .evidence
+            .push("Suspicious loopback listener detected".into());
     }
 
     report
@@ -101,15 +109,22 @@ pub fn check_analyzer_processes(process_names: &[String]) -> bool {
 
 /// Check if any suspicious proxy environment variable is set.
 pub fn check_proxy_env() -> bool {
-    let vars = &["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"];
-    vars.iter().any(|var| std::env::var(var).ok().filter(|v| !v.is_empty()).is_some())
+    let vars = &[
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+    ];
+    vars.iter()
+        .any(|var| std::env::var(var).ok().filter(|v| !v.is_empty()).is_some())
 }
 
 /// Check if loopback listeners exist on non-allowed ports.
 pub fn check_loopback_listeners(listeners: &[LoopbackListener]) -> bool {
-    listeners.iter().any(|l| {
-        l.state == "LISTENING" && !ALLOWED_LOOPBACK_PORTS.contains(&l.port)
-    })
+    listeners
+        .iter()
+        .any(|l| l.state == "LISTENING" && !ALLOWED_LOOPBACK_PORTS.contains(&l.port))
 }
 
 /// A loopback listener entry parsed from netstat output.
@@ -128,11 +143,7 @@ mod win {
     // psapi.dll — EnumProcesses
     #[link(name = "psapi")]
     extern "system" {
-        pub fn EnumProcesses(
-            lpidProcess: *mut u32,
-            cb: u32,
-            lpcbNeeded: *mut u32,
-        ) -> i32;
+        pub fn EnumProcesses(lpidProcess: *mut u32, cb: u32, lpcbNeeded: *mut u32) -> i32;
     }
 
     // kernel32 — process info
@@ -349,9 +360,7 @@ fn get_loopback_listeners() -> Vec<LoopbackListener> {
         Ok(out) => parse_netstat_output(&String::from_utf8_lossy(&out.stdout)),
         Err(_) => {
             // Try ss on Linux.
-            let output = std::process::Command::new("ss")
-                .args(["-tlnp"])
-                .output();
+            let output = std::process::Command::new("ss").args(["-tlnp"]).output();
             match output {
                 Ok(out) => parse_ss_output(&String::from_utf8_lossy(&out.stdout)),
                 Err(_) => Vec::new(),

@@ -1,12 +1,12 @@
 //! Vendors CRUD + payments + outstanding balance.
 
+use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use crate::commands::auth::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Vendor {
@@ -58,21 +58,25 @@ pub struct VendorPayment {
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResult<Vendor> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     if payload.name.trim().is_empty() {
         return Err(AppError::Validation("name is required".into()));
     }
+    let now = chrono::Utc::now().timestamp_millis();
     db.with_tx(|tx| {
         tx.execute(
-            "INSERT INTO vendors (name, phone, opening_balance, notes, is_active) VALUES (?1, ?2, ?3, ?4, 1)",
+            "INSERT INTO vendors (name, phone, credit_limit_paise, is_active, created_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?4)",
             params![
                 payload.name,
                 payload.phone,
                 payload.opening_balance.unwrap_or(0),
-                payload.notes,
+                now,
             ],
         )?;
         let id = tx.last_insert_rowid();
@@ -85,11 +89,11 @@ pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResul
             is_active: true,
             created_at: tx.query_row(
                 "SELECT created_at FROM vendors WHERE id = ?1",
-                params![id], |r| r.get(0),
+                params![id], |r| r.get::<_, i64>(0).map(|v| v.to_string()),
             )?,
             updated_at: tx.query_row(
                 "SELECT updated_at FROM vendors WHERE id = ?1",
-                params![id], |r| r.get(0),
+                params![id], |r| r.get::<_, i64>(0).map(|v| v.to_string()),
             )?,
         })
     })
@@ -101,11 +105,14 @@ pub fn list_vendors(
     query: Option<String>,
     include_inactive: bool,
 ) -> AppResult<Vec<Vendor>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
-        let mut sql = String::from("SELECT id, name, phone, opening_balance, notes, is_active, created_at, updated_at FROM vendors WHERE 1=1");
+        let mut sql = String::from("SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at FROM vendors WHERE 1=1");
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if !include_inactive { sql.push_str(" AND is_active = 1"); }
         if let Some(q) = &query {
@@ -120,11 +127,11 @@ pub fn list_vendors(
                 id: r.get(0)?,
                 name: r.get(1)?,
                 phone: r.get(2)?,
-                opening_balance: r.get(3)?,
-                notes: r.get(4)?,
-                is_active: r.get::<_, i64>(5)? != 0,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
+                opening_balance: 0,
+                notes: None,
+                is_active: r.get::<_, i64>(3)? != 0,
+                created_at: r.get::<_, i64>(4)?.to_string(),
+                updated_at: r.get::<_, i64>(5)?.to_string(),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -133,23 +140,26 @@ pub fn list_vendors(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT id, name, phone, opening_balance, notes, is_active, created_at, updated_at FROM vendors WHERE id = ?1",
+            "SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at FROM vendors WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], |r| {
             Ok(Vendor {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 phone: r.get(2)?,
-                opening_balance: r.get(3)?,
-                notes: r.get(4)?,
-                is_active: r.get::<_, i64>(5)? != 0,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
+                opening_balance: 0,
+                notes: None,
+                is_active: r.get::<_, i64>(3)? != 0,
+                created_at: r.get::<_, i64>(4)?.to_string(),
+                updated_at: r.get::<_, i64>(5)?.to_string(),
             })
         })?;
         rows.next()
@@ -164,10 +174,14 @@ pub fn update_vendor(
     id: i64,
     patch: VendorUpdate,
 ) -> AppResult<Vendor> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
+    let now = chrono::Utc::now().timestamp_millis();
     db.with_tx(|tx| {
         let mut sets: Vec<&'static str> = Vec::new();
         let mut values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -179,13 +193,12 @@ pub fn update_vendor(
         }
         if let Some(v) = &patch.name { add!("name =", v.clone()) }
         if let Some(v) = &patch.phone { add!("phone =", v.clone()) }
-        if let Some(v) = patch.opening_balance { add!("opening_balance =", v) }
-        if let Some(v) = &patch.notes { add!("notes =", v.clone()) }
         if let Some(v) = patch.is_active { add!("is_active =", if v { 1_i64 } else { 0_i64 }) }
         if sets.is_empty() {
             return Err(AppError::Validation("no fields to update".into()));
         }
-        sets.push("updated_at = datetime('now')");
+        sets.push("updated_at = ?");
+        values.push(Box::new(now));
         let sql = format!("UPDATE vendors SET {} WHERE id = ?", sets.join(", "));
         let mut pvec: Vec<&dyn rusqlite::ToSql> = values.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
         pvec.push(&id);
@@ -193,20 +206,19 @@ pub fn update_vendor(
         if n == 0 {
             return Err(AppError::NotFound(format!("vendor {id}")));
         }
-        // Return updated row.
         let mut stmt = tx.prepare(
-            "SELECT id, name, phone, opening_balance, notes, is_active, created_at, updated_at FROM vendors WHERE id = ?1",
+            "SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at FROM vendors WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], |r| {
             Ok(Vendor {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 phone: r.get(2)?,
-                opening_balance: r.get(3)?,
-                notes: r.get(4)?,
-                is_active: r.get::<_, i64>(5)? != 0,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
+                opening_balance: 0,
+                notes: None,
+                is_active: r.get::<_, i64>(3)? != 0,
+                created_at: r.get::<_, i64>(4)?.to_string(),
+                updated_at: r.get::<_, i64>(5)?.to_string(),
             })
         })?;
         rows.next()
@@ -220,7 +232,10 @@ pub fn record_vendor_payment(
     state: State<'_, AppState>,
     payload: VendorPayment,
 ) -> AppResult<VendorOutstanding> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner])?;
@@ -230,6 +245,7 @@ pub fn record_vendor_payment(
     if payload.mode.trim().is_empty() {
         return Err(AppError::Validation("mode is required".into()));
     }
+    let now = chrono::Utc::now().timestamp_millis();
     db.with_tx(|tx| {
         // Ensure vendor exists.
         let exists: bool = tx.query_row(
@@ -240,13 +256,13 @@ pub fn record_vendor_payment(
             return Err(AppError::NotFound(format!("vendor {}", payload.vendor_id)));
         }
         tx.execute(
-            "INSERT INTO vendor_payments (vendor_id, amount, mode, date, notes, user_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO vendor_payments (vendor_id, purchase_id, mode, amount_paise, reference, note, created_at, created_by) VALUES (?1, NULL, ?2, ?3, NULL, ?4, ?5, ?6)",
             params![
                 payload.vendor_id,
-                payload.amount,
                 payload.mode,
-                payload.date,
+                payload.amount,
                 payload.notes,
+                now,
                 user.id,
             ],
         )?;
@@ -257,26 +273,27 @@ pub fn record_vendor_payment(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<VendorOutstanding> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
         let total_purchases: i64 = c.query_row(
-            "SELECT COALESCE(SUM(total), 0) FROM purchases WHERE vendor_id = ?1",
-            params![id], |r| r.get(0),
+            "SELECT COALESCE(SUM(total_paise), 0) FROM purchases WHERE vendor_id = ?1",
+            params![id],
+            |r| r.get(0),
         )?;
         let total_payments: i64 = c.query_row(
-            "SELECT COALESCE(SUM(amount), 0) FROM vendor_payments WHERE vendor_id = ?1",
-            params![id], |r| r.get(0),
+            "SELECT COALESCE(SUM(amount_paise), 0) FROM vendor_payments WHERE vendor_id = ?1",
+            params![id],
+            |r| r.get(0),
         )?;
-        let opening: i64 = c.query_row(
-            "SELECT opening_balance FROM vendors WHERE id = ?1",
-            params![id], |r| r.get(0),
-        )?;
-        let outstanding = opening + total_purchases - total_payments;
+        let outstanding = total_purchases - total_payments;
         Ok(VendorOutstanding {
             vendor_id: id,
-            opening_balance: opening,
+            opening_balance: 0,
             total_purchases,
             total_payments,
             outstanding,
@@ -284,26 +301,21 @@ pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<Vend
     })
 }
 
-fn compute_outstanding_tx(
-    tx: &rusqlite::Connection,
-    id: i64,
-) -> AppResult<VendorOutstanding> {
+fn compute_outstanding_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<VendorOutstanding> {
     let total_purchases: i64 = tx.query_row(
-        "SELECT COALESCE(SUM(total), 0) FROM purchases WHERE vendor_id = ?1",
-        params![id], |r| r.get(0),
+        "SELECT COALESCE(SUM(total_paise), 0) FROM purchases WHERE vendor_id = ?1",
+        params![id],
+        |r| r.get(0),
     )?;
     let total_payments: i64 = tx.query_row(
-        "SELECT COALESCE(SUM(amount), 0) FROM vendor_payments WHERE vendor_id = ?1",
-        params![id], |r| r.get(0),
+        "SELECT COALESCE(SUM(amount_paise), 0) FROM vendor_payments WHERE vendor_id = ?1",
+        params![id],
+        |r| r.get(0),
     )?;
-    let opening: i64 = tx.query_row(
-        "SELECT opening_balance FROM vendors WHERE id = ?1",
-        params![id], |r| r.get(0),
-    )?;
-    let outstanding = opening + total_purchases - total_payments;
+    let outstanding = total_purchases - total_payments;
     Ok(VendorOutstanding {
         vendor_id: id,
-        opening_balance: opening,
+        opening_balance: 0,
         total_purchases,
         total_payments,
         outstanding,
@@ -316,47 +328,61 @@ mod tests {
     use crate::db::Db;
     use crate::session::{set_current_user, User};
 
-    fn owner() -> User { User { id: 1, name: "O".into(), role: Role::Owner } }
-    fn stocker() -> User { User { id: 2, name: "S".into(), role: Role::Stocker } }
+    fn owner() -> User {
+        User {
+            id: 1,
+            name: "O".into(),
+            role: Role::Owner,
+        }
+    }
+    fn stocker() -> User {
+        User {
+            id: 2,
+            name: "S".into(),
+            role: Role::Stocker,
+        }
+    }
 
     #[test]
     fn create_and_outstanding() {
         set_current_user(Some(stocker()));
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
-            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) VALUES ('S', 'stocker', X'00', X'00', 6)", []).unwrap();
+            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('S', 'stocker', X'00', X'00', 6, 1, 0, 0)", []).unwrap();
+        });
+        db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO locations (name, zone, is_default, is_active, created_at, updated_at) VALUES ('Main',NULL,1,1,0,0)",
+                [],
+            ).unwrap();
         });
         let id = db.with_raw(|c| {
             c.execute(
-                "INSERT INTO vendors (name, opening_balance) VALUES ('Acme Paints', 1000.0)",
+                "INSERT INTO vendors (name, credit_limit_paise, is_active, created_at, updated_at) VALUES ('Acme Paints', 0, 1, 0, 0)",
                 [],
             ).unwrap();
             c.last_insert_rowid()
         });
         db.with_raw(|c| {
             c.execute(
-                "INSERT INTO purchases (vendor_id, total, date, user_id) VALUES (?1, 5000.0, '2024-01-01', 1)",
+                "INSERT INTO purchases (purchase_number, vendor_id, location_id, total_paise, created_by, created_at, updated_at) VALUES ('PINV-0001', ?1, 1, 5000, 1, 0, 0)",
                 [id],
             ).unwrap();
             c.execute(
-                "INSERT INTO vendor_payments (vendor_id, amount, mode, date, user_id) VALUES (?1, 2000.0, 'upi', '2024-01-02', 1)",
+                "INSERT INTO vendor_payments (vendor_id, purchase_id, mode, amount_paise, reference, note, created_at, created_by) VALUES (?1, NULL, 'upi', 2000, NULL, NULL, 0, 1)",
                 [id],
             ).unwrap();
         });
         let out = db.with_raw(|c| {
-            let tp: f64 = c.query_row(
-                "SELECT COALESCE(SUM(total), 0) FROM purchases WHERE vendor_id = ?1", [id], |r| r.get(0),
+            let tp: i64 = c.query_row(
+                "SELECT COALESCE(SUM(total_paise), 0) FROM purchases WHERE vendor_id = ?1", [id], |r| r.get(0),
             ).unwrap();
-            let tpay: f64 = c.query_row(
-                "SELECT COALESCE(SUM(amount), 0) FROM vendor_payments WHERE vendor_id = ?1", [id], |r| r.get(0),
+            let tpay: i64 = c.query_row(
+                "SELECT COALESCE(SUM(amount_paise), 0) FROM vendor_payments WHERE vendor_id = ?1", [id], |r| r.get(0),
             ).unwrap();
-            let op: f64 = c.query_row(
-                "SELECT opening_balance FROM vendors WHERE id = ?1", [id], |r| r.get(0),
-            ).unwrap();
-            op + tp - tpay
+            tp - tpay
         });
-        // 1000 + 5000 - 2000 = 4000
-        assert!((out - 4000.0).abs() < 1e-6, "got {out}");
+        assert_eq!(out, 3000, "got {out}");
     }
 
     #[test]
@@ -364,20 +390,19 @@ mod tests {
         set_current_user(Some(owner()));
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
-            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) VALUES ('O', 'owner', X'00', X'00', 6)", []).unwrap();
+            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 1, 0, 0)", []).unwrap();
         });
         let id = db.with_raw(|c| {
-            c.execute("INSERT INTO vendors (name) VALUES ('V')", []).unwrap();
+            c.execute("INSERT INTO vendors (name, credit_limit_paise, is_active, created_at, updated_at) VALUES ('V', 0, 1, 0, 0)", []).unwrap();
             c.last_insert_rowid()
         });
         let out = db.with_tx(|tx| {
             tx.execute(
-                "INSERT INTO vendor_payments (vendor_id, amount, mode, date, user_id) VALUES (?1, 100, 'cash', '2024-01-01', 1)",
+                "INSERT INTO vendor_payments (vendor_id, purchase_id, mode, amount_paise, reference, note, created_at, created_by) VALUES (?1, NULL, 'cash', 100, NULL, NULL, 0, 1)",
                 [id],
             ).unwrap();
             compute_outstanding_tx(tx, id)
         }).unwrap();
-        // opening=0, purchases=0, payments=100 → -100 (overpaid)
         assert_eq!(out.outstanding, -100, "got {}", out.outstanding);
     }
 }

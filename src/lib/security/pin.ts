@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invoke } from "../../shell/lib/ipc";
 
 export const pinSchema = z.string().regex(/^\d{6}$/, "PIN must be exactly 6 digits");
 export const recoveryPassphraseSchema = z
@@ -125,6 +126,39 @@ export const changeDuressPinSchema = z
     message: "Duress PIN must differ from real PIN",
   });
 
+export const changeRecoveryPassphraseSchema = z
+  .object({
+    currentPin: pinSchema,
+    newPassphrase: recoveryPassphraseSchema,
+    newPassphraseConfirm: recoveryPassphraseSchema,
+  })
+  .refine((d) => d.newPassphrase === d.newPassphraseConfirm, {
+    path: ["newPassphraseConfirm"],
+    message: "Passphrases do not match",
+  });
+
 export type PdeSetupInput = z.infer<typeof pdeSetupSchema>;
+
+// IPC wrappers for owner-only PIN + passphrase management
+export async function changePin(payload: { oldPin: string; newPin: string }): Promise<void> {
+  return invoke<void>("change_pin", {
+    old_pin: payload.oldPin,
+    new_pin: payload.newPin,
+  });
+}
+
+export async function setRecoveryPassphrase(payload: {
+  currentPin: string;
+  newPassphrase: string;
+}): Promise<void> {
+  return invoke<void>("set_recovery_passphrase", {
+    current_pin: payload.currentPin,
+    new_passphrase: payload.newPassphrase,
+  });
+}
 export type ChangeDecoyPinInput = z.infer<typeof changeDecoyPinSchema>;
 export type ChangeDuressPinInput = z.infer<typeof changeDuressPinSchema>;
+export type ChangePinInput = z.infer<typeof changePinSchema>;
+export type ChangeRecoveryPassphraseInput = z.infer<
+  typeof changeRecoveryPassphraseSchema
+>;

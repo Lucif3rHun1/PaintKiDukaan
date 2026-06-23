@@ -1,18 +1,18 @@
-//! Locations CRUD. Soft delete only — no hard delete so item.location_text
-//! FK references stay valid. Only owners can mutate; anyone authenticated can read.
+//! Locations CRUD. Soft delete only — no hard delete so FK references stay valid.
+//! Only owners can mutate; anyone authenticated can read.
 
+use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use crate::commands::auth::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Location {
     pub id: i64,
     pub name: String,
-    pub rack: Option<String>,
+    pub zone: Option<String>,
     pub is_active: bool,
     pub created_at: String,
 }
@@ -20,18 +20,25 @@ pub struct Location {
 #[derive(Debug, Deserialize)]
 pub struct NewLocation {
     pub name: String,
-    pub rack: Option<String>,
+    pub zone: Option<String>,
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn list_locations(state: State<'_, AppState>, include_inactive: bool) -> AppResult<Vec<Location>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+pub fn list_locations(
+    state: State<'_, AppState>,
+    include_inactive: Option<bool>,
+) -> AppResult<Vec<Location>> {
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
-    let sql = if include_inactive {
-        "SELECT id, name, rack, is_active, created_at FROM locations ORDER BY name"
+    let show_all = include_inactive.unwrap_or(false);
+    let sql = if show_all {
+        "SELECT id, name, zone, is_active, created_at FROM locations ORDER BY name"
     } else {
-        "SELECT id, name, rack, is_active, created_at FROM locations WHERE is_active = 1 ORDER BY name"
+        "SELECT id, name, zone, is_active, created_at FROM locations WHERE is_active = 1 ORDER BY name"
     };
     db.with_raw(|c| {
         let mut stmt = c.prepare(sql)?;
@@ -39,9 +46,9 @@ pub fn list_locations(state: State<'_, AppState>, include_inactive: bool) -> App
             Ok(Location {
                 id: r.get(0)?,
                 name: r.get(1)?,
-                rack: r.get(2)?,
+                zone: r.get(2)?,
                 is_active: r.get::<_, i64>(3)? != 0,
-                created_at: r.get(4)?,
+                created_at: r.get::<_, i64>(4)?.to_string(),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -50,7 +57,10 @@ pub fn list_locations(state: State<'_, AppState>, include_inactive: bool) -> App
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppResult<Location> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
@@ -60,19 +70,19 @@ pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppR
     }
     db.with_tx(|tx| {
         tx.execute(
-            "INSERT INTO locations (name, rack, is_active) VALUES (?1, ?2, 1)",
-            params![name, payload.rack],
+            "INSERT INTO locations (name, zone, is_active, created_at, updated_at) VALUES (?1, ?2, 1, unixepoch('now'), unixepoch('now'))",
+            params![name, payload.zone],
         )?;
         let id = tx.last_insert_rowid();
         Ok(Location {
             id,
             name,
-            rack: payload.rack,
+            zone: payload.zone,
             is_active: true,
             created_at: tx.query_row(
                 "SELECT created_at FROM locations WHERE id = ?1",
                 params![id],
-                |r| r.get(0),
+                |r| r.get::<_, i64>(0).map(|v| v.to_string()),
             )?,
         })
     })
@@ -83,9 +93,12 @@ pub fn rename_location(
     state: State<'_, AppState>,
     id: i64,
     new_name: String,
-    new_rack: Option<String>,
+    new_zone: Option<String>,
 ) -> AppResult<Location> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
@@ -95,8 +108,8 @@ pub fn rename_location(
     }
     db.with_tx(|tx| {
         let n = tx.execute(
-            "UPDATE locations SET name = ?1, rack = ?2 WHERE id = ?3",
-            params![name, new_rack, id],
+            "UPDATE locations SET name = ?1, zone = ?2 WHERE id = ?3",
+            params![name, new_zone, id],
         )?;
         if n == 0 {
             return Err(AppError::NotFound(format!("location {id}")));
@@ -104,7 +117,7 @@ pub fn rename_location(
         Ok(Location {
             id,
             name,
-            rack: new_rack,
+            zone: new_zone,
             is_active: tx.query_row(
                 "SELECT is_active FROM locations WHERE id = ?1",
                 params![id],
@@ -113,7 +126,7 @@ pub fn rename_location(
             created_at: tx.query_row(
                 "SELECT created_at FROM locations WHERE id = ?1",
                 params![id],
-                |r| r.get(0),
+                |r| r.get::<_, i64>(0).map(|v| v.to_string()),
             )?,
         })
     })
@@ -121,7 +134,10 @@ pub fn rename_location(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn deactivate_location(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner])?;
@@ -146,7 +162,11 @@ mod tests {
     use crate::session::{set_current_user, User};
 
     fn owner() -> User {
-        User { id: 1, name: "O".into(), role: Role::Owner }
+        User {
+            id: 1,
+            name: "O".into(),
+            role: Role::Owner,
+        }
     }
 
     #[test]
@@ -155,11 +175,11 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let loc = {
             let mut name = String::from("Rack A");
-            let rack: Option<String> = Some("Row 1".into());
+            let zone: Option<String> = Some("Row 1".into());
             db.with_raw(|c| {
                 c.execute(
-                    "INSERT INTO locations (name, rack, is_active) VALUES (?1, ?2, 1)",
-                    rusqlite::params![&name, &rack],
+                    "INSERT INTO locations (name, zone, is_active, created_at, updated_at) VALUES (?1, ?2, 1, 0, 0)",
+                    rusqlite::params![&name, &zone],
                 )
                 .unwrap();
                 let id = c.last_insert_rowid();
@@ -174,8 +194,12 @@ mod tests {
             })
         };
         let active: i64 = db.with_raw(|c| {
-            c.query_row("SELECT is_active FROM locations WHERE id = ?1", [loc], |r| r.get(0))
-                .unwrap()
+            c.query_row(
+                "SELECT is_active FROM locations WHERE id = ?1",
+                [loc],
+                |r| r.get(0),
+            )
+            .unwrap()
         });
         assert_eq!(active, 0);
     }

@@ -1,0 +1,124 @@
+# PaintKiDukaan UI Refactoring Plan
+
+## Context
+
+The app has a well-designed component library (Card, Button, Badge, etc.) that uses semantic tokens (`bg-accent`, `text-on-accent`, `border-border`, `bg-surface-raised`, `text-ink`), but the Tailwind config doesn't define these tokens. Additionally, the Dashboard is empty (only shows backup status), and the SalesPage is a prototype with demo items.
+
+## Critical Finding: Missing Design Tokens
+
+`tailwind.config.js` only has `fontFamily: { sans: ["Inter", ...] }`. All semantic tokens used by the component library are undefined:
+- `ink`, `ink-muted`, `ink-subtle` (text colors)
+- `surface`, `surface-raised`, `surface-sunken` (background colors)
+- `accent`, `accent-hover`, `on-accent` (brand colors)
+- `border` (border color)
+
+**This breaks the entire component library.**
+
+## Phase 1: Design System Foundation (MUST DO FIRST)
+
+### 1.1 Add Semantic Tokens to Tailwind Config
+**File**: `tailwind.config.js`
+
+Add color palette:
+```js
+colors: {
+  ink: {
+    DEFAULT: '#1e293b',      // slate-800
+    muted: '#64748b',        // slate-500
+    subtle: '#94a3b8',       // slate-400
+  },
+  surface: {
+    DEFAULT: '#ffffff',
+    raised: '#f8fafc',       // slate-50
+    sunken: '#f1f5f9',       // slate-100
+  },
+  accent: {
+    DEFAULT: '#0f766e',      // teal-700
+    hover: '#0d9488',        // teal-600
+  },
+  'on-accent': '#ffffff',
+  border: '#e2e8f0',        // slate-200
+}
+```
+
+### 1.2 Clean Up Conflicting CSS Utilities
+**File**: `src/index.css`
+
+The `.btn-primary`, `.btn-secondary`, `.card` classes use hardcoded colors that conflict with the design system. Either:
+- Remove them (preferred - use Button/Card components instead)
+- Or align them with the semantic tokens
+
+## Phase 2: Dashboard (HIGH PRIORITY)
+
+### 2.1 Build Real Dashboard
+**File**: `src/shell/routes/Dashboard.tsx`
+
+Currently only shows backup status. Should show:
+- **Today's summary card**: Total sales, bill count, cash vs non-cash
+- **Quick actions**: New Sale, New Inward, View Reports
+- **Low stock alerts**: Items below threshold
+- **Recent activity**: Last 5 sales
+- **Outstanding summary**: Customer/vendor totals
+
+Use existing APIs:
+- `dailySales(today, today)` for today's sales
+- `stockReport()` for low stock
+- `outstandingReport()` for outstanding
+- `listSales()` for recent activity
+
+### 2.2 Use UI Components
+Replace the custom `Card` component with the shared `Card` from `src/components/ui`.
+Use `Button`, `Badge`, `Money`, `Skeleton` for consistency.
+
+## Phase 3: Sales Page (MEDIUM PRIORITY)
+
+### 3.1 Replace Prototype with Real Implementation
+**File**: `src/pos/sales/SalesPage.tsx`
+
+Current issues:
+- Uses `DEMO_ITEM_IDS = [1, 2]` with hardcoded prices
+- No item search/selection
+- Uses raw `text-slate-*` classes instead of semantic tokens
+- No customer selection
+
+Required changes:
+- Add item search with autocomplete (use `datalist` pattern from InwardPage)
+- Fetch items from API (need to check if item search API exists)
+- Use semantic tokens throughout
+- Integrate with existing CartLine types properly
+
+### 3.2 Add Customer Selection
+- Customer typeahead (similar to vendor typeahead in InwardPage)
+- Show outstanding balance for selected customer
+
+## Phase 4: Consistency Pass (LOW PRIORITY)
+
+### 4.1 Audit All Pages for Token Usage
+Ensure all pages use semantic tokens instead of hardcoded colors:
+- `text-slate-*` → `text-ink`, `text-ink-muted`, `text-ink-subtle`
+- `bg-white` → `bg-surface`, `bg-surface-raised`
+- `border-slate-*` → `border-border`
+- `bg-sky-600` → `bg-accent`
+
+### 4.2 Fix SalesPage Styling
+Replace all `text-slate-*`, `border-slate-*`, `bg-white` classes with semantic tokens.
+
+## Execution Order
+
+1. **Phase 1** (Design tokens) - BLOCKS everything else
+2. **Phase 2** (Dashboard) - High value, uses existing APIs
+3. **Phase 3** (Sales page) - Needs item search API investigation
+4. **Phase 4** (Consistency) - Can be done incrementally
+
+## Risk Assessment
+
+- **Phase 1**: Low risk - additive change to config
+- **Phase 2**: Medium risk - new UI, but uses existing APIs
+- **Phase 3**: High risk - needs item search API (may not exist)
+- **Phase 4**: Low risk - find/replace across files
+
+## Questions for User
+
+1. Should I proceed with all phases, or just Phase 1 + 2 first?
+2. For the Sales page item search - should I check if a search API exists, or create a mock?
+3. Any specific color preferences for the accent/brand color?

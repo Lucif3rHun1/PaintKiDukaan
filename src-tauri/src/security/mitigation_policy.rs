@@ -375,7 +375,10 @@ mod tests {
     #[test]
     fn all_critical_pass_on_non_windows() {
         let report = apply_full_hardening().unwrap();
-        assert!(report.all_critical_applied, "stubs return Ok, so all critical should pass");
+        assert!(
+            report.all_critical_applied,
+            "stubs return Ok, so all critical should pass"
+        );
         assert_eq!(report.applied.len(), 9);
         assert!(report.skipped.is_empty());
     }

@@ -12,13 +12,9 @@
 /// XOR a single byte with a position- and length-dependent key.
 #[inline(always)]
 pub const fn xor_byte(b: u8, pos: usize, len: usize) -> u8 {
-    let key = (pos as u8)
-        .wrapping_add(len as u8)
-        .wrapping_add(0x5A);
+    let key = (pos as u8).wrapping_add(len as u8).wrapping_add(0x5A);
     b ^ key
 }
-
-
 
 // ─── Macros ───────────────────────────────────────────────────────────────
 
@@ -26,6 +22,7 @@ pub const fn xor_byte(b: u8, pos: usize, len: usize) -> u8 {
 ///
 /// Usage:
 /// ```
+/// use paintkiduakan_lib::obfstr;
 /// let decoded: [u8; 4] = obfstr!("test");
 /// assert_eq!(&decoded, b"test");
 /// ```
@@ -65,6 +62,7 @@ macro_rules! obfstr {
 ///
 /// Usage:
 /// ```
+/// use paintkiduakan_lib::obfstr_encoded;
 /// let enc: [u8; 4] = obfstr_encoded!("test");
 /// assert_ne!(&enc, b"test");  // encoded ≠ plaintext
 /// ```
@@ -123,7 +121,10 @@ mod tests {
     #[test]
     fn encoded_str_differs_from_plain() {
         let encoded = obfstr_encoded!("test");
-        assert_ne!(&encoded, b"test", "encoded bytes must differ from plaintext");
+        assert_ne!(
+            &encoded, b"test",
+            "encoded bytes must differ from plaintext"
+        );
     }
 
     #[test]

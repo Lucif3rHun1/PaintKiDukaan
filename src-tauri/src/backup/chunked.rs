@@ -50,13 +50,7 @@ pub fn encrypt_chunks(
         let nonce_bytes = build_nonce(nonce_prefix, idx);
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ct = cipher
-            .encrypt(
-                nonce,
-                Payload {
-                    msg: chunk,
-                    aad,
-                },
-            )
+            .encrypt(nonce, Payload { msg: chunk, aad })
             .map_err(|e| BackupError::AesGcm(e.to_string()))?;
         out.extend_from_slice(&ct);
     }
@@ -125,13 +119,7 @@ pub fn decrypt_chunks(
         let nonce_bytes = build_nonce(nonce_prefix, idx);
         let nonce = Nonce::from_slice(&nonce_bytes);
         let pt = cipher
-            .decrypt(
-                nonce,
-                Payload {
-                    msg: ct,
-                    aad,
-                },
-            )
+            .decrypt(nonce, Payload { msg: ct, aad })
             .map_err(|_| BackupError::Decryption)?;
         out.extend_from_slice(&pt);
         pos += cipher_len;

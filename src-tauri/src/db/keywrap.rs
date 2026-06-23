@@ -89,9 +89,7 @@ CREATE TABLE IF NOT EXISTS lockouts (
 /// Migrate an existing single-row keywrap table (pre-PDE) to the new schema
 /// with `role` and `pin_verifier` columns. Idempotent: no-op if already migrated.
 pub fn migrate_keystore_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
-    let has_role = conn
-        .prepare("SELECT role FROM keywrap LIMIT 0")
-        .is_ok();
+    let has_role = conn.prepare("SELECT role FROM keywrap LIMIT 0").is_ok();
 
     if has_role {
         return Ok(());
@@ -211,12 +209,10 @@ pub fn read(conn: &Connection) -> Result<KeywrapRow, crate::AppError> {
          FROM keywrap WHERE id = 1",
     )?;
 
-    let row = stmt
-        .query_row([], row_from_stmt)
-        .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => crate::AppError::NoKeywrap,
-            other => crate::AppError::Db(other),
-        })?;
+    let row = stmt.query_row([], row_from_stmt).map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => crate::AppError::NoKeywrap,
+        other => crate::AppError::Db(other),
+    })?;
 
     Ok(row)
 }
@@ -412,15 +408,17 @@ pub fn clear_lockout(conn: &Connection, user_id: i64) -> Result<(), rusqlite::Er
 // ---------------------------------------------------------------------------
 
 /// Derive the PIN KEK from the stored salt + params, then unwrap the DEK.
-pub fn unwrap_with_pin(row: &KeywrapRow, pin: &str) -> Result<Zeroizing<[u8; 32]>, crate::AppError> {
+pub fn unwrap_with_pin(
+    row: &KeywrapRow,
+    pin: &str,
+) -> Result<Zeroizing<[u8; 32]>, crate::AppError> {
     let params: KdfParams = serde_json::from_slice(&row.pin_params)
         .map_err(|e| crate::AppError::Crypto(format!("bad pin_params: {e}")))?;
 
     let mut kek = derive_pin_kek(pin, &row.pin_salt, &params)
         .map_err(|e| crate::AppError::Crypto(e.to_string()))?;
 
-    let dek = unwrap_dek(&row.pin_wrapped_dek, &kek)
-        .map_err(|_| crate::AppError::WrongPin)?;
+    let dek = unwrap_dek(&row.pin_wrapped_dek, &kek).map_err(|_| crate::AppError::WrongPin)?;
 
     kdf::zeroize_key(&mut kek);
     Ok(Zeroizing::new(dek))
@@ -472,8 +470,8 @@ pub fn rewrap_pin(
     let mut new_kek = derive_pin_kek(new_pin, &row.pin_salt, &params)
         .map_err(|e| crate::AppError::Crypto(e.to_string()))?;
 
-    let new_wrapped = wrap_dek(dek, &new_kek)
-        .map_err(|e| crate::AppError::Crypto(e.to_string()))?;
+    let new_wrapped =
+        wrap_dek(dek, &new_kek).map_err(|e| crate::AppError::Crypto(e.to_string()))?;
 
     row.pin_verifier = pin_verifier_for_kek(&new_kek).to_vec();
     kdf::zeroize_key(&mut new_kek);
@@ -495,8 +493,8 @@ pub fn rewrap_recovery(
     let mut new_kek = derive_pin_kek(new_passphrase, &row.rec_salt, &params)
         .map_err(|e| crate::AppError::Crypto(e.to_string()))?;
 
-    let new_wrapped = wrap_dek(dek, &new_kek)
-        .map_err(|e| crate::AppError::Crypto(e.to_string()))?;
+    let new_wrapped =
+        wrap_dek(dek, &new_kek).map_err(|e| crate::AppError::Crypto(e.to_string()))?;
 
     kdf::zeroize_key(&mut new_kek);
 
@@ -531,11 +529,7 @@ mod tests {
         conn
     }
 
-    fn make_row(
-        pin: &str,
-        passphrase: &str,
-        dek: &[u8; KEK_LEN],
-    ) -> KeywrapRow {
+    fn make_row(pin: &str, passphrase: &str, dek: &[u8; KEK_LEN]) -> KeywrapRow {
         let pin_salt = random_salt().to_vec();
         let rec_salt = random_salt().to_vec();
         let backup_salt = random_salt().to_vec();
@@ -708,7 +702,8 @@ mod tests {
         let rec_params = serde_json::to_vec(&KdfParams::RECOVERY).unwrap();
 
         let mut pin_kek = derive_pin_kek("111111", &pin_salt, &KdfParams::PIN).unwrap();
-        let rec_kek_real = derive_pin_kek("recovery-real", &rec_salt, &KdfParams::RECOVERY).unwrap();
+        let rec_kek_real =
+            derive_pin_kek("recovery-real", &rec_salt, &KdfParams::RECOVERY).unwrap();
         let real_row = KeywrapRow {
             id: 1,
             role: PinRole::Real,
@@ -727,7 +722,8 @@ mod tests {
         kdf::zeroize_key(&mut pin_kek);
 
         let mut pin_kek_d = derive_pin_kek("222222", &pin_salt, &KdfParams::PIN).unwrap();
-        let rec_kek_decoy = derive_pin_kek("recovery-decoy", &rec_salt, &KdfParams::RECOVERY).unwrap();
+        let rec_kek_decoy =
+            derive_pin_kek("recovery-decoy", &rec_salt, &KdfParams::RECOVERY).unwrap();
         let decoy_row = KeywrapRow {
             id: 2,
             role: PinRole::Decoy,
@@ -827,12 +823,22 @@ mod tests {
             "INSERT INTO keywrap (id, pin_salt, pin_params, pin_wrapped_dek,
              rec_salt, rec_params, rec_wrapped_dek, backup_salt, version, created_at, updated_at)
              VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, 1000, 1000)",
-            rusqlite::params![pin_salt, pin_params, pin_wrapped, rec_salt, rec_params, rec_wrapped, backup_salt],
+            rusqlite::params![
+                pin_salt,
+                pin_params,
+                pin_wrapped,
+                rec_salt,
+                rec_params,
+                rec_wrapped,
+                backup_salt
+            ],
         )
         .unwrap();
 
         // Verify old schema can't have role column.
-        assert!(conn.execute("SELECT role FROM keywrap LIMIT 0", []).is_err());
+        assert!(conn
+            .execute("SELECT role FROM keywrap LIMIT 0", [])
+            .is_err());
 
         // Run migration.
         migrate_keystore_schema(&conn).unwrap();
@@ -841,7 +847,10 @@ mod tests {
         let row = read(&conn).unwrap();
         assert_eq!(row.id, 1);
         assert_eq!(row.role, PinRole::Real);
-        assert!(row.pin_verifier.is_empty(), "legacy migration leaves pin_verifier empty");
+        assert!(
+            row.pin_verifier.is_empty(),
+            "legacy migration leaves pin_verifier empty"
+        );
         assert_eq!(row.pin_salt, pin_salt);
 
         // Idempotent: running again is a no-op.

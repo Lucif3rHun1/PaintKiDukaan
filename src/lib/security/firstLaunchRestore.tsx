@@ -32,19 +32,19 @@ const STEPS = [
 ] as const;
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 text-sm text-zinc-100 outline-none transition-colors duration-150 placeholder:text-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50";
-const labelClass = "text-sm font-medium text-zinc-200";
+  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+const labelClass = "text-sm font-medium text-foreground";
 const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-indigo-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-white/10 px-4 text-sm font-medium text-zinc-200 transition-colors duration-150 hover:border-white/20 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 const dangerButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg bg-destructive px-4 text-sm font-medium text-destructive-foreground transition-colors duration-150 hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function fieldError(message?: string) {
   if (!message) return null;
   return (
-    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-red-400" role="alert">
+    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
       <FileWarning className="h-4 w-4" aria-hidden="true" />
       {message}
     </p>
@@ -102,7 +102,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
     setBackendError(null);
     setLoading(true);
     try {
-      await ipc.restoreIntoFirstLaunch(input.envelopePath.trim());
+      await ipc.restoreIntoFirstLaunch(input.envelopePath.trim(), input.passphrase);
       const boot = await ipc.appBootstrap();
       const security = useSecurity.getState();
 
@@ -136,19 +136,19 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6">
+    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
       <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
         <form
-          className="w-full rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8"
+          className="w-full rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8"
           onSubmit={handleSubmit(onSubmit)}
         >
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-indigo-300">PaintKiDukaan</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+              <p className="text-sm font-medium text-primary">PaintKiDukaan</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 Restore from backup
               </h1>
-              <p className="mt-1 text-sm text-zinc-400">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Bring back a shop database from an encrypted backup file.
               </p>
             </div>
@@ -166,17 +166,17 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                   <div
                     className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-200 ${
                       i < step
-                        ? "bg-emerald-500 text-white"
+                        ? "bg-success text-success-foreground"
                         : i === step
-                          ? "bg-indigo-500 text-white"
-                          : "bg-zinc-800 text-zinc-500"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
                     }`}
                   >
                     {i < step ? "✓" : i + 1}
                   </div>
                   <span
                     className={`hidden text-xs font-medium sm:inline ${
-                      i === step ? "text-zinc-100" : "text-zinc-500"
+                      i === step ? "text-foreground" : "text-muted-foreground"
                     }`}
                   >
                     {STEPS[i].label}
@@ -189,24 +189,24 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                 <span
                   key={i}
                   className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${
-                    i < step ? "bg-emerald-500" : i === step ? "bg-indigo-500" : "bg-zinc-800"
+                    i < step ? "bg-success" : i === step ? "bg-primary" : "bg-muted"
                   }`}
                 />
               ))}
             </div>
           </div>
 
-          <div className="mb-5 flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-3">
-            <CurrentStepIcon className="h-5 w-5 shrink-0 text-indigo-300" aria-hidden="true" />
+          <div className="mb-5 flex items-center gap-3 rounded-xl border border-border bg-background/60 p-3">
+            <CurrentStepIcon className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
             <div>
-              <p className="text-sm font-medium text-zinc-100">{STEPS[step].label}</p>
-              <p className="text-xs text-zinc-400">{STEPS[step].description}</p>
+              <p className="text-sm font-medium text-foreground">{STEPS[step].label}</p>
+              <p className="text-xs text-muted-foreground">{STEPS[step].description}</p>
             </div>
           </div>
 
           {backendError ? (
             <div
-              className="mb-5 flex gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
+              className="mb-5 flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
               role="alert"
             >
               <FileWarning className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -229,7 +229,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                 type="text"
                 {...register("envelopePath")}
               />
-              <p className="mt-1 text-xs leading-5 text-zinc-500">
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 Absolute path to a .pkb1 backup file. E.g. /Users/me/backups/shop-2025-01-15.pkb1
               </p>
               {fieldError(errors.envelopePath?.message)}
@@ -253,7 +253,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                   {...register("passphrase")}
                 />
                 <button
-                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-400 transition-colors duration-150 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   type="button"
                   onClick={() => setShowPassphrase((visible) => !visible)}
                   aria-label={showPassphrase ? "Hide recovery passphrase" : "Show recovery passphrase"}
@@ -267,17 +267,17 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
 
           {step === 2 ? (
             <div className="space-y-4">
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-                <p className="text-sm font-medium text-red-200">This will replace the first-launch database.</p>
-                <p className="mt-1 text-xs leading-5 text-red-200/80">
+              <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3">
+                <p className="text-sm font-medium text-destructive">This will replace the first-launch database.</p>
+                <p className="mt-1 text-xs leading-5 text-destructive/80">
                   PaintKiDukaan will restore the backup, then lock the app so you can unlock with the original PIN.
                 </p>
               </div>
-              <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-3 text-sm">
-                <p className="text-xs font-medium text-zinc-500">Backup file</p>
-                <p className="mt-1 break-all font-mono text-xs text-zinc-100">{truncateMiddle(envelopePath.trim())}</p>
+              <div className="rounded-xl border border-border bg-background/60 p-3 text-sm">
+                <p className="text-xs font-medium text-muted-foreground">Backup file</p>
+                <p className="mt-1 break-all font-mono text-xs text-foreground">{truncateMiddle(envelopePath.trim())}</p>
               </div>
-              <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-3 text-sm text-zinc-100">
+              <div className="rounded-xl border border-border bg-background/60 p-3 text-sm text-foreground">
                 Passphrase: {passphrase.length} characters
               </div>
             </div>
@@ -328,7 +328,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
           </div>
 
           <button
-            className="mt-5 flex w-full items-center justify-center gap-2 text-center text-sm font-medium text-indigo-300 transition-colors duration-150 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50"
+            className="mt-5 flex w-full items-center justify-center gap-2 text-center text-sm font-medium text-primary transition-colors duration-150 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50"
             type="button"
             onClick={onCancel}
             disabled={loading}

@@ -19,10 +19,10 @@ use rusqlite::params;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
+use crate::commands::auth::AppState;
 use crate::commands::{customers, sequences};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::commands::auth::AppState;
 use crate::security::ipc_auth;
 
 // -----------------------------------------------------------------------------
@@ -53,9 +53,9 @@ pub struct Sale {
 pub struct SaleItem {
     pub item_id: i64,
     pub item_name: String,
-    pub qty: i64,                 // base units (INTEGER)
+    pub qty: i64, // base units (INTEGER)
     pub price: i64,
-    pub unit_type: String,        // "unit" | "box"
+    pub unit_type: String, // "unit" | "box"
     pub line_discount: i64,
     pub shade_note: Option<String>,
     pub line_order: i64,
@@ -80,13 +80,13 @@ pub struct CartLine {
 #[derive(Debug, Clone, Deserialize)]
 pub struct NewSale {
     pub customer_id: Option<i64>,
-    pub kind: String,            // "quotation" | "final"
-    pub date: Option<String>,    // ISO YYYY-MM-DD; default = today
+    pub kind: String,         // "quotation" | "final"
+    pub date: Option<String>, // ISO YYYY-MM-DD; default = today
     pub bill_discount: i64,
     pub paid_amount: i64,
     pub payment_modes: Vec<PaymentSplit>,
     pub validity_days: Option<i64>,
-    pub acknowledge_flag: bool,  // audit: cashier tapped "Proceed" past the banner
+    pub acknowledge_flag: bool, // audit: cashier tapped "Proceed" past the banner
     pub lines: Vec<CartLine>,
 }
 
@@ -129,7 +129,9 @@ pub enum SaleError {
     NegativePaid,
     #[error("paid_amount ({paid}) exceeds total ({total})")]
     PaidExceedsTotal { paid: i64, total: i64 },
-    #[error("paid_amount ({paid}) does not match total ({total}) for walk-in or non-credit customer")]
+    #[error(
+        "paid_amount ({paid}) does not match total ({total}) for walk-in or non-credit customer"
+    )]
     WalkinMustPayFull { paid: i64, total: i64 },
     #[error("payment_modes sum ({got}) must equal paid_amount ({want})")]
     ModesSumMismatch { got: i64, want: i64 },
@@ -180,17 +182,11 @@ pub fn validate_paid(
         return Err(SaleError::NegativePaid);
     }
     if paid > total {
-        return Err(SaleError::PaidExceedsTotal {
-            paid,
-            total,
-        });
+        return Err(SaleError::PaidExceedsTotal { paid, total });
     }
     let has_customer = customer.is_some();
     if !has_customer && paid != total {
-        return Err(SaleError::WalkinMustPayFull {
-            paid,
-            total,
-        });
+        return Err(SaleError::WalkinMustPayFull { paid, total });
     }
     Ok(())
 }
@@ -224,8 +220,8 @@ pub fn create_quotation(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sal
     }
     let total = cart_total(&sale.lines, sale.bill_discount);
     let validity_days = sale.validity_days.unwrap_or(7).max(1);
-    let no = sequences::mint_next_sale_no(db, sequences::Kind::SaleQtn)
-        .map_err(SaleError::Other)?;
+    let no =
+        sequences::mint_next_sale_no(db, sequences::Kind::SaleQtn).map_err(SaleError::Other)?;
     let date = sale.date.unwrap_or_else(today);
 
     let id = db.with_conn_immediate(|c| -> Result<i64, SaleError> {
@@ -243,7 +239,7 @@ pub fn create_quotation(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sal
                 sale.bill_discount,
                 total,
                 validity_days,
-                 user_id,
+                user_id,
             ],
             |r| r.get(0),
         )?;
@@ -308,21 +304,19 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
             want: sale.paid_amount,
         });
     }
-    let payment_json =
-        serde_json::to_string(&sale.payment_modes).unwrap_or_else(|_| "[]".into());
-    let no = sequences::mint_next_sale_no(db, sequences::Kind::SaleInv)
-        .map_err(SaleError::Other)?;
+    let payment_json = serde_json::to_string(&sale.payment_modes).unwrap_or_else(|_| "[]".into());
+    let no =
+        sequences::mint_next_sale_no(db, sequences::Kind::SaleInv).map_err(SaleError::Other)?;
     let date = sale.date.unwrap_or_else(today);
     // Default location: the row flagged is_default=1.
-    let default_location: i64 = db
-        .with_conn(|c| -> Result<i64, SaleError> {
-            // Canonical §5.1 has no `is_default` on locations; pick the lowest id.
-            Ok(c.query_row(
-                "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
-                [],
-                |r| r.get(0),
-            )?)
-        })?;
+    let default_location: i64 = db.with_conn(|c| -> Result<i64, SaleError> {
+        // Canonical §5.1 has no `is_default` on locations; pick the lowest id.
+        Ok(c.query_row(
+            "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
+            [],
+            |r| r.get(0),
+        )?)
+    })?;
 
     let id = db.with_conn_immediate(|c| -> Result<i64, SaleError> {
         let id: i64 = c.query_row(
@@ -349,13 +343,29 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                 "INSERT INTO sale_items
                     (sale_id,item_id,qty,price,unit_type,line_discount,shade_note,line_order)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                params![id, l.item_id, (l.qty.round() as i64), l.price, l.unit_type, l.line_discount, l.shade_note, i as i64],
+                params![
+                    id,
+                    l.item_id,
+                    (l.qty.round() as i64),
+                    l.price,
+                    l.unit_type,
+                    l.line_discount,
+                    l.shade_note,
+                    i as i64
+                ],
             )?;
             c.execute(
                 "INSERT INTO stock_movements
                     (item_id,location_id,qty,type,ref_type,ref_id,user_id,created_at)
                  VALUES (?1,?2,?3,'sale','sale',?4,?5,?6)",
-                params![l.item_id, default_location, -(l.qty.round() as i64), id, user_id, now()],
+                params![
+                    l.item_id,
+                    default_location,
+                    -(l.qty.round() as i64),
+                    id,
+                    user_id,
+                    now()
+                ],
             )?;
         }
         Ok(id)
@@ -366,122 +376,131 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
 /// Convert a quotation to a final bill. Creates new INV-no, inserts stock
 /// movements, links back via converted_from_id.
 pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result<i64, SaleError> {
-    let no = sequences::mint_next_sale_no(db, sequences::Kind::SaleInv)
-        .map_err(SaleError::Other)?;
+    let no =
+        sequences::mint_next_sale_no(db, sequences::Kind::SaleInv).map_err(SaleError::Other)?;
     let date = today();
-    let default_location: i64 = db
-        .with_conn(|c| -> Result<i64, SaleError> {
-            Ok(c.query_row(
-                "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
-                [],
-                |r| r.get(0),
-            )?)
-        })?;
+    let default_location: i64 = db.with_conn(|c| -> Result<i64, SaleError> {
+        Ok(c.query_row(
+            "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
+            [],
+            |r| r.get(0),
+        )?)
+    })?;
 
-    let (new_id, _customer_id) = db.with_conn_immediate(|c| -> Result<(i64, Option<i64>), SaleError> {
-        let row = c
-            .query_row(
-                "SELECT id,customer_id,subtotal,bill_discount,total,status
+    let (new_id, _customer_id) =
+        db.with_conn_immediate(|c| -> Result<(i64, Option<i64>), SaleError> {
+            let row = c
+                .query_row(
+                    "SELECT id,customer_id,subtotal,bill_discount,total,status
                  FROM sales WHERE id = ?1",
-                params![req.quotation_id],
-                |r| {
-                    Ok((
-                        r.get::<_, i64>(0)?,
-                        r.get::<_, Option<i64>>(1)?,
-                        r.get::<_, i64>(2)?,
-                        r.get::<_, i64>(3)?,
-                        r.get::<_, i64>(4)?,
-                        r.get::<_, String>(5)?,
-                    ))
-                },
-            )
-            .optional()
-            .map_err(SaleError::Db)?;
-        let (qid, cust, subtotal, bill_disc, total, status) = match row {
-            Some(v) => v,
-            None => return Err(SaleError::QuotationNotFound(req.quotation_id)),
-        };
-        if status != "quotation" {
-            return Err(SaleError::NotAQuotation(qid, status));
-        }
-        // Apply credit rules to the converted bill.
-        let customer = match cust {
-            Some(id) => Some(
-                customers::get_by_id(c, id)
-                    .map_err(|e| SaleError::Other(anyhow::anyhow!("{e}")))?
-                    .ok_or_else(|| {
-                        SaleError::Other(anyhow::anyhow!("customer {} not found", id))
-                    })?,
-            ),
-            None => None,
-        };
-        if let Some(c) = customer.as_ref() {
-            if c.is_flagged && !req.acknowledge_flag {
-                return Err(SaleError::MustAcknowledgeFlag);
+                    params![req.quotation_id],
+                    |r| {
+                        Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, Option<i64>>(1)?,
+                            r.get::<_, i64>(2)?,
+                            r.get::<_, i64>(3)?,
+                            r.get::<_, i64>(4)?,
+                            r.get::<_, String>(5)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(SaleError::Db)?;
+            let (qid, cust, subtotal, bill_disc, total, status) = match row {
+                Some(v) => v,
+                None => return Err(SaleError::QuotationNotFound(req.quotation_id)),
+            };
+            if status != "quotation" {
+                return Err(SaleError::NotAQuotation(qid, status));
             }
-        }
-        validate_paid(req.paid_amount, total, customer.as_ref())?;
-        let paid_sum = modes_sum(&req.payment_modes);
-        if paid_sum != req.paid_amount {
-            return Err(SaleError::ModesSumMismatch {
-                got: paid_sum,
-                want: req.paid_amount,
-            });
-        }
-        let payment_json =
-            serde_json::to_string(&req.payment_modes).unwrap_or_else(|_| "[]".into());
-        // Insert the new final sale, pointing back at the quotation.
-        let new_id: i64 = c.query_row(
-            "INSERT INTO sales
+            // Apply credit rules to the converted bill.
+            let customer = match cust {
+                Some(id) => Some(
+                    customers::get_by_id(c, id)
+                        .map_err(|e| SaleError::Other(anyhow::anyhow!("{e}")))?
+                        .ok_or_else(|| {
+                            SaleError::Other(anyhow::anyhow!("customer {} not found", id))
+                        })?,
+                ),
+                None => None,
+            };
+            if let Some(c) = customer.as_ref() {
+                if c.is_flagged && !req.acknowledge_flag {
+                    return Err(SaleError::MustAcknowledgeFlag);
+                }
+            }
+            validate_paid(req.paid_amount, total, customer.as_ref())?;
+            let paid_sum = modes_sum(&req.payment_modes);
+            if paid_sum != req.paid_amount {
+                return Err(SaleError::ModesSumMismatch {
+                    got: paid_sum,
+                    want: req.paid_amount,
+                });
+            }
+            let payment_json =
+                serde_json::to_string(&req.payment_modes).unwrap_or_else(|_| "[]".into());
+            // Insert the new final sale, pointing back at the quotation.
+            let new_id: i64 = c.query_row(
+                "INSERT INTO sales
                 (no,customer_id,date,status,subtotal,bill_discount,total,
                  paid_amount,payment_modes_json,converted_from_id,user_id)
              VALUES (?1,?2,?3,'final',?4,?5,?6,?7,?8,?9,?10)
              RETURNING id",
-            params![
-                no,
-                cust,
-                date,
-                subtotal,
-                bill_disc,
-                total,
-                req.paid_amount,
-                payment_json,
-                qid,
-                user_id,
-            ],
-            |r| r.get(0),
-        )?;
-        // Copy sale_items; insert stock_movements for each line.
-        let mut stmt = c.prepare(
-            "SELECT item_id,qty,price,unit_type,line_discount,shade_note,line_order
+                params![
+                    no,
+                    cust,
+                    date,
+                    subtotal,
+                    bill_disc,
+                    total,
+                    req.paid_amount,
+                    payment_json,
+                    qid,
+                    user_id,
+                ],
+                |r| r.get(0),
+            )?;
+            // Copy sale_items; insert stock_movements for each line.
+            let mut stmt = c.prepare(
+                "SELECT item_id,qty,price,unit_type,line_discount,shade_note,line_order
              FROM sale_items WHERE sale_id = ?1 ORDER BY line_order",
-        )?;
-        let mut rows = stmt.query(params![qid])?;
-        while let Some(r) = rows.next()? {
-            let item_id: i64 = r.get(0)?;
-            let qty: i64 = r.get(1)?;
-            let price: i64 = r.get(2)?;
-            let unit_type: String = r.get(3)?;
-            let line_discount: i64 = r.get(4)?;
-            let shade_note: Option<String> = r.get(5)?;
-            let line_order: i64 = r.get(6)?;
-            c.execute(
-                "INSERT INTO sale_items
+            )?;
+            let mut rows = stmt.query(params![qid])?;
+            while let Some(r) = rows.next()? {
+                let item_id: i64 = r.get(0)?;
+                let qty: i64 = r.get(1)?;
+                let price: i64 = r.get(2)?;
+                let unit_type: String = r.get(3)?;
+                let line_discount: i64 = r.get(4)?;
+                let shade_note: Option<String> = r.get(5)?;
+                let line_order: i64 = r.get(6)?;
+                c.execute(
+                    "INSERT INTO sale_items
                     (sale_id,item_id,qty,price,unit_type,line_discount,shade_note,line_order)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                params![new_id, item_id, qty, price, unit_type, line_discount, shade_note, line_order],
-            )?;
-            c.execute(
-                "INSERT INTO stock_movements
+                    params![
+                        new_id,
+                        item_id,
+                        qty,
+                        price,
+                        unit_type,
+                        line_discount,
+                        shade_note,
+                        line_order
+                    ],
+                )?;
+                c.execute(
+                    "INSERT INTO stock_movements
                     (item_id,location_id,qty,type,ref_type,ref_id,user_id,created_at)
                  VALUES (?1,?2,?3,'sale','sale',?4,?5,?6)",
-                params![item_id, default_location, -qty, new_id, user_id, now()],
-            )?;
-        }
-        drop(rows);
-        drop(stmt);
-        Ok((new_id, cust))
-    })?;
+                    params![item_id, default_location, -qty, new_id, user_id, now()],
+                )?;
+            }
+            drop(rows);
+            drop(stmt);
+            Ok((new_id, cust))
+        })?;
     Ok(new_id)
 }
 
@@ -519,11 +538,7 @@ pub fn get(db: &Db, id: i64) -> anyhow::Result<Option<Sale>> {
     })
 }
 
-pub fn list(
-    db: &Db,
-    status: Option<&str>,
-    limit: i64,
-) -> anyhow::Result<Vec<Sale>> {
+pub fn list(db: &Db, status: Option<&str>, limit: i64) -> anyhow::Result<Vec<Sale>> {
     db.with_conn(|c| {
         let mut sql = String::from(
             "SELECT id,no,customer_id,date,status,subtotal,bill_discount,
@@ -625,9 +640,8 @@ pub fn hold_bill(db: &Db, user_id: i64, hb: HoldBill) -> anyhow::Result<i64> {
 
 pub fn list_held(db: &Db) -> anyhow::Result<Vec<HeldBill>> {
     db.with_conn(|c| -> anyhow::Result<Vec<HeldBill>> {
-        let mut stmt = c.prepare(
-            "SELECT id,note,created_at,payload_json FROM held_bills ORDER BY id DESC",
-        )?;
+        let mut stmt =
+            c.prepare("SELECT id,note,created_at,payload_json FROM held_bills ORDER BY id DESC")?;
         let rows = stmt.query_map([], |r| {
             Ok(HeldBill {
                 id: r.get(0)?,
@@ -651,19 +665,26 @@ pub fn delete_held(db: &Db, id: i64) -> anyhow::Result<usize> {
 // -----------------------------------------------------------------------------
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_create_sale(
-    state: tauri::State<'_, AppState>,
-    sale: NewSale,
-) -> AppResult<i64> {
+pub fn cmd_create_sale(state: tauri::State<'_, AppState>, sale: NewSale) -> AppResult<i64> {
     ipc_auth::authorize_err("cmd_create_sale", state.inner())?;
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
     let user_id = user.id;
     match sale.kind.as_str() {
-        "quotation" => create_quotation(db, user_id, sale).map_err(|e| AppError::Internal(e.to_string())),
-        "final" => create_final_bill(db, user_id, sale).map_err(|e| AppError::Internal(e.to_string())),
+        "quotation" => {
+            create_quotation(db, user_id, sale).map_err(|e| AppError::Internal(e.to_string()))
+        }
+        "final" => {
+            create_final_bill(db, user_id, sale).map_err(|e| AppError::Internal(e.to_string()))
+        }
         k => Err(AppError::Internal(format!("invalid kind: {}", k))),
     }
 }
@@ -674,9 +695,15 @@ pub fn cmd_convert_quotation(
     req: ConvertQuotation,
 ) -> AppResult<i64> {
     ipc_auth::authorize_err("cmd_convert_quotation", state.inner())?;
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
     let user_id = user.id;
     convert_quotation(db, user_id, req).map_err(|e| AppError::Internal(e.to_string()))
@@ -685,7 +712,10 @@ pub fn cmd_convert_quotation(
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_get_sale(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Sale>> {
     ipc_auth::authorize_err("cmd_get_sale", state.inner())?;
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
@@ -697,20 +727,26 @@ pub fn cmd_list_sales(
     limit: Option<i64>,
 ) -> AppResult<Vec<Sale>> {
     ipc_auth::authorize_err("cmd_list_sales", state.inner())?;
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     list(db, status.as_deref(), limit.unwrap_or(100)).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_hold_bill(
-    state: tauri::State<'_, AppState>,
-    hb: HoldBill,
-) -> AppResult<i64> {
+pub fn cmd_hold_bill(state: tauri::State<'_, AppState>, hb: HoldBill) -> AppResult<i64> {
     ipc_auth::authorize_err("cmd_hold_bill", state.inner())?;
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
     let user_id = user.id;
     hold_bill(db, user_id, hb).map_err(|e| AppError::Internal(e.to_string()))
@@ -719,7 +755,10 @@ pub fn cmd_hold_bill(
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_list_held(state: tauri::State<'_, AppState>) -> AppResult<Vec<HeldBill>> {
     ipc_auth::authorize_err("cmd_list_held", state.inner())?;
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     list_held(db).map_err(|e| AppError::Internal(e.to_string()))
 }
@@ -727,7 +766,10 @@ pub fn cmd_list_held(state: tauri::State<'_, AppState>) -> AppResult<Vec<HeldBil
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_delete_held(state: tauri::State<'_, AppState>, id: i64) -> AppResult<usize> {
     ipc_auth::authorize_err("cmd_delete_held", state.inner())?;
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     delete_held(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
@@ -820,8 +862,14 @@ mod tests {
     #[test]
     fn payment_modes_sum_must_match_paid() {
         let modes = vec![
-            PaymentSplit { mode: "cash".into(), amount: 500 },
-            PaymentSplit { mode: "upi".into(), amount: 500 },
+            PaymentSplit {
+                mode: "cash".into(),
+                amount: 500,
+            },
+            PaymentSplit {
+                mode: "upi".into(),
+                amount: 500,
+            },
         ];
         assert_eq!(modes_sum(&modes), 1000);
     }

@@ -81,7 +81,7 @@ export function Numpad({
 
   return (
     <div className={className}>
-      <div className="rounded-md border border-slate-300 bg-white p-3 text-right text-2xl tabular-nums">
+      <div className="rounded-md border border-border bg-card p-3 text-right text-2xl tabular-nums">
         {internal || "0"}
       </div>
       <div className="mt-2 grid grid-cols-3 gap-2">
@@ -93,7 +93,7 @@ export function Numpad({
               key={i}
               type="button"
               onClick={action}
-              className="h-14 rounded-md bg-slate-100 text-lg font-medium hover:bg-slate-200 active:bg-slate-300"
+              className="h-14 rounded-md bg-muted text-lg font-medium hover:bg-muted active:bg-muted"
             >
               {label}
             </button>

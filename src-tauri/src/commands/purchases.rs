@@ -24,13 +24,14 @@
 //! true in the request the Rust side returns `print_label=true` in the result
 //! so the frontend can fire the JsBarcode label print.
 
+use anyhow::anyhow;
 use rusqlite::params;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
+use crate::commands::auth::AppState;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::commands::auth::AppState;
 use crate::security::ipc_auth;
 
 // -----------------------------------------------------------------------------
@@ -53,9 +54,8 @@ pub struct Purchase {
 pub struct PurchaseItem {
     pub item_id: i64,
     pub item_name: String,
-    pub qty: i64,                 // base units (after box conversion)
-    pub cost_price: i64,
-    pub retail_price: i64,
+    pub qty: i64, // base units (after box conversion)
+    pub unit_price_paise: i64,
     pub location_id: i64,
 }
 
@@ -64,8 +64,7 @@ pub struct InwardLine {
     pub item_id: i64,
     pub qty: f64,
     pub unit_type: String, // "unit" | "box"
-    pub cost_price: i64,
-    pub retail_price: i64,
+    pub unit_price_paise: i64,
     pub location_id: i64,
 }
 
@@ -74,8 +73,6 @@ pub struct NewPurchase {
     pub vendor_id: Option<i64>,
     pub date: Option<String>, // ISO YYYY-MM-DD; default today
     pub notes: Option<String>,
-    /// When true, the response carries `print_label=true` so the frontend
-    /// fires the JsBarcode label print (E-IA1).
     pub auto_print_label: bool,
     pub lines: Vec<InwardLine>,
 }
@@ -110,10 +107,8 @@ pub enum PurchaseError {
     EmptyLines,
     #[error("line {0}: qty must be > 0")]
     BadQty(usize),
-    #[error("line {0}: cost_price must be >= 0")]
+    #[error("line {0}: unit_price_paise must be >= 0")]
     BadCost(usize),
-    #[error("line {0}: retail_price must be >= 0")]
-    BadRetail(usize),
     #[error("line {0}: unit_type must be 'unit' or 'box'")]
     BadUnitType(usize),
     #[error("line {0}: item {1} not found")]
@@ -150,7 +145,7 @@ pub fn purchase_total(lines: &[InwardLine], units_per_box: &[i64]) -> i64 {
     lines
         .iter()
         .zip(units_per_box.iter())
-        .map(|(l, upb)| base_qty(l.qty, &l.unit_type, *upb) * l.cost_price)
+        .map(|(l, upb)| base_qty(l.qty, &l.unit_type, *upb) * l.unit_price_paise)
         .sum()
 }
 
@@ -163,7 +158,7 @@ pub fn purchase_total(lines: &[InwardLine], units_per_box: &[i64]) -> i64 {
 pub fn last_cost_for_item(db: &Db, item_id: i64) -> Result<Option<i64>, PurchaseError> {
     db.with_conn(|c| -> Result<Option<i64>, PurchaseError> {
         let r = c.query_row(
-            "SELECT cost_price FROM purchase_items
+            "SELECT unit_price_paise FROM purchase_items
              WHERE item_id = ?1
              ORDER BY purchase_id DESC LIMIT 1",
             params![item_id],
@@ -188,20 +183,20 @@ pub fn list(
     db.with_conn(|c| -> Result<Vec<Purchase>, PurchaseError> {
         let limit = limit.clamp(1, 500);
         let mut sql = String::from(
-            "SELECT p.id, p.vendor_id, v.name, p.date, p.total, p.user_id, p.notes
+            "SELECT p.id, p.vendor_id, v.name, p.bill_date, p.total_paise, p.created_by, p.notes
              FROM purchases p LEFT JOIN vendors v ON v.id = p.vendor_id
              WHERE 1=1",
         );
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if let Some(f) = from_date {
-            sql.push_str(" AND p.date >= ?");
-            args.push(Box::new(f.to_string()));
+            sql.push_str(" AND p.bill_date >= ?");
+            args.push(Box::new(date_to_ms(f)));
         }
         if let Some(t) = to_date {
-            sql.push_str(" AND p.date <= ?");
-            args.push(Box::new(t.to_string()));
+            sql.push_str(" AND p.bill_date <= ?");
+            args.push(Box::new(date_to_ms(t)));
         }
-        sql.push_str(" ORDER BY p.date DESC, p.id DESC LIMIT ?");
+        sql.push_str(" ORDER BY p.bill_date DESC, p.id DESC LIMIT ?");
         args.push(Box::new(limit));
         let arg_refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
 
@@ -212,7 +207,8 @@ pub fn list(
             let id: i64 = r.get(0)?;
             let vendor_id: Option<i64> = r.get(1)?;
             let vendor_name: Option<String> = r.get(2)?;
-            let date: String = r.get(3)?;
+            let date: i64 = r.get(3)?;
+            let date = date.to_string();
             let total: i64 = r.get(4)?;
             let user_id: i64 = r.get(5)?;
             let notes: Option<String> = r.get(6)?;
@@ -235,7 +231,7 @@ pub fn list(
 pub fn get(db: &Db, id: i64) -> Result<Option<Purchase>, PurchaseError> {
     db.with_conn(|c| -> Result<Option<Purchase>, PurchaseError> {
         let r = c.query_row(
-            "SELECT p.id, p.vendor_id, v.name, p.date, p.total, p.user_id, p.notes
+            "SELECT p.id, p.vendor_id, v.name, p.bill_date, p.total_paise, p.created_by, p.notes
              FROM purchases p LEFT JOIN vendors v ON v.id = p.vendor_id
              WHERE p.id = ?1",
             params![id],
@@ -244,7 +240,7 @@ pub fn get(db: &Db, id: i64) -> Result<Option<Purchase>, PurchaseError> {
                     row.get::<_, i64>(0)?,
                     row.get::<_, Option<i64>>(1)?,
                     row.get::<_, Option<String>>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(3)?,
                     row.get::<_, i64>(4)?,
                     row.get::<_, i64>(5)?,
                     row.get::<_, Option<String>>(6)?,
@@ -258,7 +254,7 @@ pub fn get(db: &Db, id: i64) -> Result<Option<Purchase>, PurchaseError> {
                     id,
                     vendor_id,
                     vendor_name,
-                    date,
+                    date: date.to_string(),
                     total,
                     user_id,
                     notes,
@@ -281,9 +277,11 @@ pub fn movements_for_item(
     db.with_conn(|c| -> Result<Vec<StockMovement>, PurchaseError> {
         let limit = limit.clamp(1, 1000);
             let mut stmt = c.prepare(
-                "SELECT id, item_id, location_id, qty, type, ref_type, ref_id, reason, user_id, created_at
-                 FROM stock_movements WHERE item_id = ?1
-                 ORDER BY id DESC LIMIT ?2",
+                "SELECT sm.id, sm.item_id, sm.location_id, sm.qty, k.code, sm.ref_kind, sm.ref_id, sm.note, sm.created_at, sm.created_by
+                 FROM stock_movements sm
+                 JOIN stock_movement_kinds k ON k.id = sm.kind_id
+                 WHERE sm.item_id = ?1
+                 ORDER BY sm.id DESC LIMIT ?2",
             )?;
             let rows = stmt.query_map(params![item_id, limit], |r| {
                 Ok(StockMovement {
@@ -295,8 +293,8 @@ pub fn movements_for_item(
                     ref_type: r.get(5)?,
                     ref_id: r.get(6)?,
                     reason: r.get(7)?,
-                    user_id: r.get(8)?,
-                    created_at: r.get(9)?,
+                    user_id: r.get(9)?,
+                    created_at: r.get::<_, i64>(8)?.to_string(),
                 })
             })?;
         let mut out = Vec::new();
@@ -307,10 +305,12 @@ pub fn movements_for_item(
     })
 }
 
-fn load_items(c: &rusqlite::Connection, purchase_id: i64) -> Result<Vec<PurchaseItem>, rusqlite::Error> {
+fn load_items(
+    c: &rusqlite::Connection,
+    purchase_id: i64,
+) -> Result<Vec<PurchaseItem>, rusqlite::Error> {
     let mut stmt = c.prepare(
-        "SELECT pi.item_id, i.name, pi.qty, pi.cost_price,
-                pi.retail_price, pi.location_id
+        "SELECT pi.item_id, i.name, pi.qty, pi.unit_price_paise
          FROM purchase_items pi JOIN items i ON i.id = pi.item_id
          WHERE pi.purchase_id = ?1 ORDER BY pi.id",
     )?;
@@ -319,9 +319,8 @@ fn load_items(c: &rusqlite::Connection, purchase_id: i64) -> Result<Vec<Purchase
             item_id: r.get(0)?,
             item_name: r.get(1)?,
             qty: r.get(2)?,
-            cost_price: r.get(3)?,
-            retail_price: r.get(4)?,
-            location_id: r.get(5)?,
+            unit_price_paise: r.get(3)?,
+            location_id: 0,
         })
     })?;
     let mut out = Vec::new();
@@ -331,12 +330,15 @@ fn load_items(c: &rusqlite::Connection, purchase_id: i64) -> Result<Vec<Purchase
     Ok(out)
 }
 
-
 // -----------------------------------------------------------------------------
 // Create path.
 // -----------------------------------------------------------------------------
 
-pub fn create_inward(db: &Db, user_id: i64, req: NewPurchase) -> Result<PurchaseCreated, PurchaseError> {
+pub fn create_inward(
+    db: &Db,
+    user_id: i64,
+    req: NewPurchase,
+) -> Result<PurchaseCreated, PurchaseError> {
     if req.lines.is_empty() {
         return Err(PurchaseError::EmptyLines);
     }
@@ -344,24 +346,26 @@ pub fn create_inward(db: &Db, user_id: i64, req: NewPurchase) -> Result<Purchase
         if l.qty <= 0.0 || l.qty.is_nan() {
             return Err(PurchaseError::BadQty(i));
         }
-        if l.cost_price < 0 {
+        if l.unit_price_paise < 0 {
             return Err(PurchaseError::BadCost(i));
-        }
-        if l.retail_price < 0 {
-            return Err(PurchaseError::BadRetail(i));
         }
         if l.unit_type != "unit" && l.unit_type != "box" {
             return Err(PurchaseError::BadUnitType(i));
         }
     }
-    let date = req.date.unwrap_or_else(today);
+    let date_str = req.date.unwrap_or_else(today);
+    let bill_date = date_to_ms(&date_str);
+    let vendor_id = req
+        .vendor_id
+        .ok_or_else(|| PurchaseError::Other(anyhow!("vendor_id is required")))?;
+    let location_id = req.lines[0].location_id;
 
     let created = db.with_conn_immediate(|c| -> Result<PurchaseCreated, PurchaseError> {
         let mut upb_per_line: Vec<i64> = Vec::with_capacity(req.lines.len());
         for (i, l) in req.lines.iter().enumerate() {
             let upb: Option<i64> = c
                 .query_row(
-                    "SELECT units_per_box FROM items WHERE id = ?1",
+                    "SELECT units_per_pack FROM items WHERE id = ?1",
                     params![l.item_id],
                     |r| r.get::<_, i64>(0),
                 )
@@ -387,26 +391,31 @@ pub fn create_inward(db: &Db, user_id: i64, req: NewPurchase) -> Result<Purchase
             }
         }
         let total = purchase_total(&req.lines, &upb_per_line);
+        let next_id: i64 = c.query_row(
+            "SELECT COALESCE(MAX(id), 0) + 1 FROM purchases",
+            [],
+            |r| r.get(0),
+        )?;
+        let purchase_number = format!("PINV-{next_id:04}");
         let pid: i64 = c.query_row(
-            "INSERT INTO purchases (vendor_id, date, total, user_id, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id",
-            params![req.vendor_id, date, total, user_id, req.notes],
+            "INSERT INTO purchases (purchase_number, vendor_id, location_id, total_paise, created_by, notes, bill_date, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id",
+            params![purchase_number, vendor_id, location_id, total, user_id, req.notes, bill_date, now_ms(), now_ms()],
             |r| r.get(0),
         )?;
         for (i, l) in req.lines.iter().enumerate() {
             let upb = upb_per_line[i];
             let base = base_qty(l.qty, &l.unit_type, upb);
+            let line_total = base * l.unit_price_paise;
             c.execute(
-                "INSERT INTO purchase_items
-                    (purchase_id,item_id,qty,cost_price,retail_price,location_id)
-                 VALUES (?1,?2,?3,?4,?5,?6)",
-                params![pid, l.item_id, base, l.cost_price, l.retail_price, l.location_id],
+                "INSERT INTO purchase_items (purchase_id, item_id, qty, unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at)
+                 VALUES (?1, ?2, ?3, (SELECT unit_id FROM items WHERE id = ?2), ?4, 0, ?5, ?6)",
+                params![pid, l.item_id, base, l.unit_price_paise, line_total, now_ms()],
             )?;
             c.execute(
-                "INSERT INTO stock_movements
-                    (item_id, location_id, qty, type, ref_type, ref_id, user_id, created_at)
-                 VALUES (?1, ?2, ?3, 'inward', 'purchase', ?4, ?5, ?6)",
-                params![l.item_id, l.location_id, base, pid, user_id, now()],
+                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, unit_id, ref_kind, ref_id, note, created_at, created_by)
+                 VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='purchase'), (SELECT unit_id FROM items WHERE id = ?1), 'purchase', ?4, ?5, ?6, ?7)",
+                params![l.item_id, l.location_id, base, pid, req.notes, now_ms(), user_id],
             )?;
         }
         Ok(PurchaseCreated {
@@ -425,8 +434,18 @@ fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-fn now() -> String {
-    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+fn date_to_ms(date: &str) -> i64 {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map(|d| {
+            d.and_time(chrono::NaiveTime::MIN)
+                .and_utc()
+                .timestamp_millis()
+        })
+        .unwrap_or_else(|_| now_ms())
 }
 
 // -----------------------------------------------------------------------------
@@ -438,16 +457,25 @@ pub fn cmd_create_inward(
     state: tauri::State<'_, AppState>,
     req: NewPurchase,
 ) -> AppResult<PurchaseCreated> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let session = state.session.lock().map_err(|_| AppError::Internal("session lock poisoned".into()))?;
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
     create_inward(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_last_cost(state: tauri::State<'_, AppState>, item_id: i64) -> AppResult<Option<i64>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     last_cost_for_item(db, item_id).map_err(|e| AppError::Internal(e.to_string()))
 }
@@ -459,7 +487,10 @@ pub fn cmd_list_purchases(
     to_date: Option<String>,
     limit: Option<i64>,
 ) -> AppResult<Vec<Purchase>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     list(
         db,
@@ -472,7 +503,10 @@ pub fn cmd_list_purchases(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_get_purchase(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Purchase>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
@@ -483,9 +517,13 @@ pub fn cmd_movements_for_item(
     item_id: i64,
     limit: Option<i64>,
 ) -> AppResult<Vec<StockMovement>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    movements_for_item(db, item_id, limit.unwrap_or(200)).map_err(|e| AppError::Internal(e.to_string()))
+    movements_for_item(db, item_id, limit.unwrap_or(200))
+        .map_err(|e| AppError::Internal(e.to_string()))
 }
 
 // -----------------------------------------------------------------------------
@@ -501,8 +539,7 @@ mod tests {
             item_id: 1,
             qty,
             unit_type: unit.into(),
-            cost_price: cost,
-            retail_price: cost + 500,
+            unit_price_paise: cost,
             location_id: 1,
         }
     }
@@ -570,8 +607,7 @@ mod tests {
                     item_id: 1,
                     qty: 0.0,
                     unit_type: "unit".into(),
-                    cost_price: 100,
-                    retail_price: 150,
+                    unit_price_paise: 100,
                     location_id: 1,
                 }],
             },
@@ -587,15 +623,22 @@ mod tests {
 
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(
-                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) VALUES ('Owner','owner',X'00',X'00',6)",
+                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('Owner','owner',X'00',X'00',6,1,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, unit, units_per_box, retail_price, cost_price, is_active)
-                 VALUES ('TEST-001','1234567890','Red Paint 4L','L',4,25000,18000,1)",
+                "INSERT INTO items (sku_code, barcode, name, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, created_at, updated_at)
+                 VALUES ('TEST-001','1234567890','Red Paint 4L',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',4,25000,18000,1,0,0)",
                 [],
             )?;
-            c.execute("INSERT INTO locations (name) VALUES ('Main')", [])?;
+            c.execute(
+                "INSERT INTO locations (name, zone, is_default, is_active, created_at, updated_at) VALUES ('Main',NULL,1,1,0,0)",
+                [],
+            )?;
+            c.execute(
+                "INSERT INTO vendors (name, credit_limit_paise, is_active, created_at, updated_at) VALUES ('Vendor',0,1,0,0)",
+                [],
+            )?;
             Ok(())
         })
         .unwrap();
@@ -604,7 +647,7 @@ mod tests {
             &db,
             1,
             NewPurchase {
-                vendor_id: None,
+                vendor_id: Some(1),
                 date: Some("2026-06-19".into()),
                 notes: Some("opening stock".into()),
                 auto_print_label: true,
@@ -612,8 +655,7 @@ mod tests {
                     item_id: 1,
                     qty: 3.0,
                     unit_type: "box".into(),
-                    cost_price: 18000,
-                    retail_price: 25000,
+                    unit_price_paise: 18000,
                     location_id: 1,
                 }],
             },
@@ -632,7 +674,7 @@ mod tests {
         let moves = movements_for_item(&db, 1, 10).expect("moves");
         assert_eq!(moves.len(), 1);
         assert_eq!(moves[0].qty, 12);
-        assert_eq!(moves[0].r#type, "inward");
+        assert_eq!(moves[0].r#type, "purchase");
     }
 
     #[test]
@@ -644,10 +686,7 @@ mod tests {
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_last_retail(
-    state: tauri::State<'_, AppState>,
-    _item_id: i64,
-) -> AppResult<Option<i64>> {
+pub fn cmd_last_retail(state: tauri::State<'_, AppState>, _item_id: i64) -> AppResult<Option<i64>> {
     ipc_auth::authorize_err("cmd_last_retail", state.inner())?;
     Ok(None)
 }

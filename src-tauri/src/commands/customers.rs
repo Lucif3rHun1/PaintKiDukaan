@@ -5,6 +5,7 @@
 //!   `opening_balance` on create.
 //! - `customer_outstanding` = opening + Σ(sales.total - paid) - Σ(payments).
 
+use crate::commands::auth::AppState;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
@@ -12,7 +13,6 @@ use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use crate::commands::auth::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Customer {
@@ -79,7 +79,10 @@ fn validate_phone(phone: &str) -> AppResult<()> {
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_customer(state: State<'_, AppState>, payload: NewCustomer) -> AppResult<Customer> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     create_customer_impl(db, &user, payload)
@@ -139,7 +142,10 @@ pub fn update_customer(
     id: i64,
     patch: CustomerUpdate,
 ) -> AppResult<Customer> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     update_customer_impl(db, &user, id, patch)
@@ -170,30 +176,46 @@ fn update_customer_impl(
                 values.push(Box::new($val));
             }};
         }
-        if let Some(v) = &patch.name { add!("name =", v.clone()) }
+        if let Some(v) = &patch.name {
+            add!("name =", v.clone())
+        }
         if let Some(v) = &patch.phone {
-            let taken: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM customers WHERE phone = ?1 AND id <> ?2)",
-                params![v, id], |r| r.get(0),
-            ).unwrap_or(false);
+            let taken: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM customers WHERE phone = ?1 AND id <> ?2)",
+                    params![v, id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
             if taken {
                 return Err(AppError::Conflict(format!("phone {v} already exists")));
             }
             add!("phone =", v.clone());
         }
-        if let Some(v) = &patch.type_id { add!("type_id =", v) }
-        if let Some(v) = patch.opening_balance { add!("opening_balance =", v) }
-        if let Some(v) = &patch.notes { add!("notes =", v) }
+        if let Some(v) = &patch.type_id {
+            add!("type_id =", v)
+        }
+        if let Some(v) = patch.opening_balance {
+            add!("opening_balance =", v)
+        }
+        if let Some(v) = &patch.notes {
+            add!("notes =", v)
+        }
         if let Some(v) = patch.is_flagged {
             add!("is_flagged =", if v { 1_i64 } else { 0_i64 });
         }
-        if let Some(v) = patch.is_active { add!("is_active =", if v { 1_i64 } else { 0_i64 }) }
+        if let Some(v) = patch.is_active {
+            add!("is_active =", if v { 1_i64 } else { 0_i64 })
+        }
         if sets.is_empty() {
             return Err(AppError::Validation("no fields to update".into()));
         }
         sets.push("updated_at = datetime('now')");
         let sql = format!("UPDATE customers SET {} WHERE id = ?", sets.join(", "));
-        let mut pvec: Vec<&dyn rusqlite::ToSql> = values.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
+        let mut pvec: Vec<&dyn rusqlite::ToSql> = values
+            .iter()
+            .map(|b| &**b as &dyn rusqlite::ToSql)
+            .collect();
         pvec.push(&id);
         let n = tx.execute(&sql, pvec.as_slice())?;
         if n == 0 {
@@ -209,7 +231,10 @@ pub fn list_customers(
     query: Option<String>,
     include_inactive: bool,
 ) -> AppResult<Vec<Customer>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
@@ -247,7 +272,10 @@ pub fn list_customers(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn lookup_customer(state: State<'_, AppState>, phone: String) -> AppResult<Option<Customer>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     // Master plan §7.4: search by 4-10 digit phone substring.
@@ -323,11 +351,11 @@ fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<CustomerOutstanding>
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn customer_outstanding(
-    state: State<'_, AppState>,
-    id: i64,
-) -> AppResult<CustomerOutstanding> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+pub fn customer_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<CustomerOutstanding> {
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     customer_outstanding_impl(db, id)
@@ -366,8 +394,14 @@ fn list_customer_bills_impl(db: &Db, customer_id: i64) -> AppResult<Vec<Customer
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn list_customer_bills(state: State<'_, AppState>, customer_id: i64) -> AppResult<Vec<CustomerBill>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+pub fn list_customer_bills(
+    state: State<'_, AppState>,
+    customer_id: i64,
+) -> AppResult<Vec<CustomerBill>> {
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     list_customer_bills_impl(db, customer_id)
@@ -413,16 +447,28 @@ mod tests {
     use crate::db::Db;
     use crate::session::{set_current_user, User};
 
-    fn owner() -> User { User { id: 1, name: "O".into(), role: Role::Owner } }
-    fn cashier() -> User { User { id: 2, name: "C".into(), role: Role::Cashier } }
+    fn owner() -> User {
+        User {
+            id: 1,
+            name: "O".into(),
+            role: Role::Owner,
+        }
+    }
+    fn cashier() -> User {
+        User {
+            id: 2,
+            name: "C".into(),
+            role: Role::Cashier,
+        }
+    }
 
     #[test]
     fn phone_validation() {
         assert!(validate_phone("9876543210").is_ok());
         assert!(validate_phone("5987654321").is_err()); // starts with 5
-        assert!(validate_phone("987654321").is_err());  // 9 digits
+        assert!(validate_phone("987654321").is_err()); // 9 digits
         assert!(validate_phone("98765432101").is_err()); // 11 digits
-        assert!(validate_phone("98765abcde").is_err());  // non-digit
+        assert!(validate_phone("98765abcde").is_err()); // non-digit
     }
 
     #[test]
@@ -433,14 +479,20 @@ mod tests {
             c.execute(
                 "INSERT INTO customers (name, phone) VALUES ('A', '9876543210')",
                 [],
-            ).unwrap();
+            )
+            .unwrap();
         });
         let res: AppResult<()> = db.with_tx(|tx| {
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM customers WHERE phone = ?1)",
-                ["9876543210"], |r| r.get(0),
-            ).unwrap_or(false);
-            if exists { return Err(AppError::Conflict("dup".into())); }
+            let exists: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM customers WHERE phone = ?1)",
+                    ["9876543210"],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if exists {
+                return Err(AppError::Conflict("dup".into()));
+            }
             tx.execute(
                 "INSERT INTO customers (name, phone) VALUES ('B', '9876543210')",
                 [],
@@ -461,7 +513,8 @@ mod tests {
             c.execute(
                 "INSERT INTO customers (name, phone) VALUES ('Test', '9876543210')",
                 [],
-            ).unwrap();
+            )
+            .unwrap();
             c.last_insert_rowid()
         });
         let res = update_customer_impl(
@@ -496,7 +549,11 @@ mod tests {
                 is_active: None,
             },
         );
-        assert!(ok.is_ok(), "owner should be allowed, got: {:?}", ok.as_ref().err());
+        assert!(
+            ok.is_ok(),
+            "owner should be allowed, got: {:?}",
+            ok.as_ref().err()
+        );
         assert!(ok.unwrap().is_flagged);
     }
 
@@ -508,7 +565,8 @@ mod tests {
             c.execute(
                 "INSERT INTO customers (name, phone) VALUES ('Test', '9876543210')",
                 [],
-            ).unwrap();
+            )
+            .unwrap();
             c.last_insert_rowid()
         });
 
@@ -526,7 +584,10 @@ mod tests {
                 is_active: None,
             },
         );
-        assert!(matches!(res, Err(AppError::Forbidden(_))), "cashier updating opening_balance must be Forbidden");
+        assert!(
+            matches!(res, Err(AppError::Forbidden(_))),
+            "cashier updating opening_balance must be Forbidden"
+        );
 
         set_current_user(Some(owner()));
         let ok = update_customer_impl(
@@ -543,7 +604,11 @@ mod tests {
                 is_active: None,
             },
         );
-        assert!(ok.is_ok(), "owner should be allowed, got: {:?}", ok.as_ref().err());
+        assert!(
+            ok.is_ok(),
+            "owner should be allowed, got: {:?}",
+            ok.as_ref().err()
+        );
         assert_eq!(ok.unwrap().opening_balance, 1000);
     }
 
@@ -562,7 +627,8 @@ mod tests {
                 opening_balance: Some(2500),
                 notes: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(c.opening_balance, 2500);
     }
 
@@ -615,7 +681,8 @@ mod tests {
             c.execute(
                 "INSERT INTO customers (name, phone) VALUES ('Test', '9876543210')",
                 [],
-            ).unwrap();
+            )
+            .unwrap();
             let stored: String = c
                 .query_row("SELECT phone FROM customers LIMIT 1", [], |r| r.get(0))
                 .unwrap();
@@ -627,7 +694,8 @@ mod tests {
                 "SELECT name FROM customers WHERE phone LIKE '%4321%'",
                 [],
                 |r| r.get(0),
-            ).unwrap()
+            )
+            .unwrap()
         });
         assert_eq!(q4, "Test");
         // 10-digit full match.
@@ -636,7 +704,8 @@ mod tests {
                 "SELECT name FROM customers WHERE phone LIKE '%9876543210%'",
                 [],
                 |r| r.get(0),
-            ).unwrap()
+            )
+            .unwrap()
         });
         assert_eq!(q10, "Test");
     }

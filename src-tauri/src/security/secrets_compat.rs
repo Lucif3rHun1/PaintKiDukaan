@@ -100,7 +100,10 @@ mod tests {
         let protected = ProtectedDek::new(key);
         let debug_str = format!("{:?}", protected);
         assert!(debug_str.contains("REDACTED"));
-        assert!(!debug_str.contains("255"), "debug output should not contain key bytes");
+        assert!(
+            !debug_str.contains("255"),
+            "debug output should not contain key bytes"
+        );
     }
 
     #[test]

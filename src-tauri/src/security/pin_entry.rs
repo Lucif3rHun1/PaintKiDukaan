@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
-use crate::commands::auth::AppError;
 use crate::db::keywrap::{self, PinRole};
+use crate::error::AppError;
 
 #[derive(Debug)]
 pub struct UnlockResult {
@@ -192,8 +192,8 @@ mod tests {
         let ks = setup_pde_keystore(dir.path(), "111111", "222222", "333333");
         let db_path = ks.with_extension("db");
 
-        let err = try_unlock(&db_path, "999999", &real_db, &decoy_db)
-            .expect_err("wrong pin should fail");
+        let err =
+            try_unlock(&db_path, "999999", &real_db, &decoy_db).expect_err("wrong pin should fail");
         assert!(matches!(err, AppError::WrongPin));
     }
 }

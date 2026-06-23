@@ -3,14 +3,15 @@
  * routes them to the Rust backend logger so everything ends up in session.log.
  *
  * Cleared on each app start (the backend deletes the old log in lib.rs::run).
+ *
+ * All forwarded messages now include a correlation ID for cross-boundary tracing.
  */
-import { tauriInvoke } from "./tauri";
+import { tauriInvoke, generateCorrelationId } from "./tauri";
 
 let initialized = false;
 
 type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "log";
 
-/** Safe stringify that handles circular refs and big data. */
 function safeStringify(value: unknown): string {
   if (value instanceof Error) return value.stack ?? value.message;
   if (typeof value === "string") return value;
@@ -22,17 +23,15 @@ function safeStringify(value: unknown): string {
   }
 }
 
-/** Send a log line to the Rust backend. Fire-and-forget. */
 function sendToBackend(level: LogLevel, message: string) {
-  tauriInvoke("log_frontend", { level, message }).catch(() => {
+  const cid = generateCorrelationId();
+  // `console.log` is not a valid backend log level; map it to `info`.
+  const backendLevel = level === "log" ? "info" : level;
+  tauriInvoke("log_frontend", { level: backendLevel, message, correlation_id: cid }).catch(() => {
     // Backend not ready yet — ignore silently.
   });
 }
 
-/**
- * Initialize the session log. Call once at app start.
- * Overrides console methods and installs global error handlers.
- */
 export function initSessionLog() {
   if (initialized) return;
   initialized = true;
@@ -44,7 +43,6 @@ export function initSessionLog() {
     if (typeof original !== "function") continue;
 
     con[level] = (...args: unknown[]) => {
-      // Always call original so browser devtools still work.
       original.apply(console, args);
 
       const message = args.map(safeStringify).join(" ");
@@ -52,7 +50,6 @@ export function initSessionLog() {
     };
   }
 
-  // ── Unhandled errors ──────────────────────────────────────────────
   window.addEventListener("error", (event) => {
     const msg = `[FE:UNCAUGHT] ${event.message} @ ${event.filename}:${event.lineno}:${event.colno}`;
     sendToBackend("error", msg);

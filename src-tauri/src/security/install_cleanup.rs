@@ -17,10 +17,9 @@ fn register_uninstall_inner() -> Result<(), AppError> {
     let cmd_cstr =
         CString::new(uninstall_cmd).map_err(|e| AppError::Internal(format!("CString: {e}")))?;
 
-    let key_path = CString::new(
-        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PaintKiDukaan",
-    )
-    .unwrap();
+    let key_path =
+        CString::new("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PaintKiDukaan")
+            .unwrap();
 
     unsafe {
         let mut hkey = std::ptr::null_mut();

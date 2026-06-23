@@ -50,7 +50,7 @@ CREATE TABLE customer_types (
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-INSERT INTO customer_types(name) VALUES ('retail'),('painter'),('contractor'),('dealer');
+INSERT INTO customer_types(name) VALUES ('retailer'),('dealer'),('painter'),('contractor');
 
 -- Customers
 CREATE TABLE customers (

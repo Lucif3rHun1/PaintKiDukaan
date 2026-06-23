@@ -6,6 +6,7 @@ import { PackagePlus, Search, Truck, X } from "lucide-react";
 
 import { Button, InlineDialog, Money, MoneyInput, ShortcutsHint } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
+import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
 import { ItemForm } from "../../domain/items/ItemForm";
 import { listItems, updateItem } from "../../domain/items/api";
@@ -31,7 +32,6 @@ interface DraftLine {
   retail_overridden: boolean;
   location_id: number;
   item_query: string;
-  base_qty: number;
 }
 
 export default function InwardPage({ user: _user }: Props) {
@@ -86,7 +86,6 @@ export default function InwardPage({ user: _user }: Props) {
               retail_overridden: false,
               location_id: firstLoc,
               item_query: "",
-              base_qty: 1,
             },
           ]);
         }
@@ -138,14 +137,13 @@ export default function InwardPage({ user: _user }: Props) {
           retail_overridden: false,
           location_id: defaultLocationId,
           item_query: "",
-          base_qty: 1,
         },
       ]);
     }
   }, [lastLineHasItem, defaultLocationId]);
 
   const total = useMemo(
-    () => draft.reduce((s, l) => s + l.base_qty * l.cost_price, 0),
+    () => draft.reduce((s, l) => s + l.qty * l.cost_price, 0),
     [draft],
   );
 
@@ -164,13 +162,7 @@ export default function InwardPage({ user: _user }: Props) {
       retail_overridden: false,
       location_id: locationId,
       item_query: "",
-      base_qty: 1,
     };
-  }
-
-  function addLine() {
-    // Empty line — auto-add-on-fill handles prefill with cost/retail when item picked.
-    setDraft((p) => [...p, blankLine(null, defaultLocationId || locations[0]?.id || 1)]);
   }
 
   async function changeItemForRow(row: number, newItemId: number) {
@@ -220,7 +212,7 @@ export default function InwardPage({ user: _user }: Props) {
     const filled = draft.filter((l) => l.item_id > 0);
     const lines: InwardLine[] = filled.map((l) => ({
       item_id: l.item_id,
-      qty: l.base_qty,
+      qty: l.qty,
       unit_id: l.unit_id,
       unit_code: l.unit_code,
       cost_price: l.cost_price,
@@ -263,7 +255,7 @@ export default function InwardPage({ user: _user }: Props) {
       setNotes("");
       setRecent(await listPurchases());
     } catch (e) {
-      setStatus(`Error: ${String(e)}`);
+      setStatus(`Error: ${extractError(e)}`);
     }
   }
 
@@ -286,7 +278,6 @@ export default function InwardPage({ user: _user }: Props) {
           retail_overridden: false,
           location_id: defaultLocationId,
           item_query: "",
-          base_qty: 1,
         },
       ]);
       setStatus("Draft lines cleared");
@@ -434,9 +425,7 @@ export default function InwardPage({ user: _user }: Props) {
           <h2 className="text-sm font-semibold text-ink">
             Items {draft.length > 0 && <span className="text-ink-subtle">· {draft.length} line{draft.length !== 1 ? "s" : ""}</span>}
           </h2>
-          <Button type="button" variant="secondary" size="sm" onClick={addLine} data-testid="inward-add-line" className="!text-xs">
-            + Add line
-          </Button>
+
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -446,9 +435,6 @@ export default function InwardPage({ user: _user }: Props) {
                 <th className="px-3 py-2 font-medium">Qty</th>
                 <th className="px-3 py-2 font-medium">Cost</th>
                 <th className="px-3 py-2 font-medium">Retail</th>
-                <th className="px-3 py-2 font-medium">Last retail</th>
-                <th className="px-3 py-2 font-medium">Location</th>
-                <th className="px-3 py-2 font-medium">Base qty</th>
                 <th className="px-3 py-2 font-medium"></th>
               </tr>
             </thead>
@@ -464,31 +450,40 @@ export default function InwardPage({ user: _user }: Props) {
                           type="text"
                           list={`inward-items-${i}`}
                           value={l.item_query || ""}
-                          onChange={(e) =>
-                            setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: e.target.value } : x)))
-                          }
-                          onBlur={(e) => {
-                            const value = e.target.value.trim();
-                            const match = items.find(
-                              (it) =>
-                                it.name.toLowerCase() === value.toLowerCase() ||
-                                it.sku_code.toLowerCase() === value.toLowerCase() ||
-                                (it.barcode ?? "").toLowerCase() === value.toLowerCase(),
-                            );
-                            if (match) void changeItemForRow(i, match.id);
-                            else
-                              setDraft((p) =>
-                                p.map((x, j) =>
-                                  j === i ? { ...x, item_query: "", item_id: 0 } : x,
-                                ),
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: value } : x)));
+                            // Try to match by name (sku) prefix — datalist sends "Name (SKU)" format
+                            const nameMatch = value.match(/^(.+?)\s*\(([^)]+)\)$/);
+                            if (nameMatch) {
+                              const namePart = nameMatch[1].trim();
+                              const match = items.find(
+                                (it) => it.name.toLowerCase() === namePart.toLowerCase() ||
+                                        it.sku_code.toLowerCase() === nameMatch[2].trim().toLowerCase()
                               );
+                              if (match) {
+                                void changeItemForRow(i, match.id);
+                                setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: "" } : x)));
+                                return;
+                              }
+                            }
+                            // Also try exact match on full value
+                            const exactMatch = items.find(
+                              (it) => it.name.toLowerCase() === value.toLowerCase() ||
+                                      it.sku_code.toLowerCase() === value.toLowerCase() ||
+                                      (it.barcode ?? "").toLowerCase() === value.toLowerCase()
+                            );
+                            if (exactMatch) {
+                              void changeItemForRow(i, exactMatch.id);
+                              setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: "" } : x)));
+                            }
                           }}
                           placeholder="Type item name or SKU…"
                           className="input h-9 w-full py-2 pl-7 pr-2 text-sm"
                         />
                         <datalist id={`inward-items-${i}`}>
                           {items.map((it) => (
-                            <option key={it.id} value={`${it.name}${it.sku_code ? ` (${it.sku_code})` : ""}`}>
+                            <option key={it.id} value={it.name + (it.sku_code ? ` (${it.sku_code})` : "")}>
                               {`#${it.id}`}
                             </option>
                           ))}
@@ -504,7 +499,7 @@ export default function InwardPage({ user: _user }: Props) {
                         <PackagePlus className="h-4 w-4" />
                       </button>
                     </div>
-                    {/* Show item name below search when selected */}
+                    {/* Show item name + SKU below search when selected */}
                     {l.item_id > 0 && !l.item_query && (
                       <p className="mt-0.5 text-xs text-ink-subtle">
                         {items.find((it) => it.id === l.item_id)?.name ?? `#${l.item_id}`}
@@ -549,36 +544,7 @@ export default function InwardPage({ user: _user }: Props) {
                       className="w-24"
                     />
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">
-                    {l.item_id > 0 ? (
-                      l.last_retail != null ? (
-                        <Money paise={l.last_retail} />
-                      ) : (
-                        <span className="text-ink-subtle">—</span>
-                      )
-                    ) : (
-                      <span className="text-ink-subtle">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <select
-                      value={l.location_id}
-                      onChange={(e) =>
-                        setDraft((p) =>
-                          p.map((x, j) => (j === i ? { ...x, location_id: Number(e.target.value) } : x))
-                        )
-                      }
-                      className="input h-9 w-28 px-2 text-xs appearance-none pr-7"
-                    >
-                      {locations.length === 0 ? <option value={l.location_id}>{l.location_id}</option> : null}
-                      {locations.map((loc) => (
-                        <option key={loc.id} value={loc.id}>
-                          {loc.rack ? `${loc.name} (${loc.rack})` : loc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-3 py-2 text-ink-muted">{l.base_qty}</td>
+
                   <td className="px-3 py-2">
                     <button
                       type="button"
@@ -593,7 +559,7 @@ export default function InwardPage({ user: _user }: Props) {
               ))}
               {draft.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-ink-subtle">
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-ink-subtle">
                     Pick an item to start. New line appears automatically.
                   </td>
                 </tr>

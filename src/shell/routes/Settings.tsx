@@ -11,7 +11,6 @@ import {
   Monitor,
   PaintBucket,
   ReceiptText,
-  Ruler,
   ScanBarcode,
   ShieldCheck,
   Tags,
@@ -21,7 +20,7 @@ import {
 
 import { SETTINGS_CATEGORIES, type SettingsCategoryId } from "../AppShell";
 import { Button } from "../../components/ui";
-import { CustomerTypesSettings, LocationsSettings, CatalogBrandsSettings, CatalogUnitsSettings } from "./settings/CatalogSettings";
+import { CustomerTypesSettings, LocationsSettings, CatalogSettingsCombined } from "./settings/CatalogSettings";
 import {
   LabelSettings,
   ReceiptSettings,
@@ -37,8 +36,7 @@ type SettingsItemId =
   | "currency"
   | "customer-types"
   | "locations"
-  | "units"
-  | "brands"
+  | "catalog"
   | "label"
   | "receipt"
   | "scanner"
@@ -77,8 +75,7 @@ const SETTINGS_ITEMS: SettingsItem[] = [
   { id: "currency", category: "shop", title: "Currency", description: "Currency code, symbol, and decimal display precision.", icon: BadgeIndianRupee, Component: CurrencySettings },
   { id: "customer-types", category: "catalog", title: "Customer types", description: "Maintain customer groups used in billing and reporting.", icon: Tags, Component: CustomerTypesSettings },
   { id: "locations", category: "catalog", title: "Locations", description: "Configure stock locations for inventory movement.", icon: MapPin, Component: LocationsSettings },
-  { id: "units", category: "catalog", title: "Units", description: "Define measurement units and conversion rules (e.g. 1 L = 1000 ml).", icon: Ruler, Component: CatalogUnitsSettings },
-  { id: "brands", category: "catalog", title: "Brands", description: "Paint brand prefixes used by auto-generated EAN-13 barcodes.", icon: PaintBucket, Component: CatalogBrandsSettings },
+  { id: "catalog", category: "catalog", title: "Catalog", description: "Brands, categories, and units used across items and billing.", icon: PaintBucket, Component: CatalogSettingsCombined },
   { id: "label", category: "printing", title: "Label printer", description: "Label template, printer, and stock size for barcode shelf labels.", icon: Barcode, Component: LabelSettings },
   { id: "receipt", category: "printing", title: "Receipt printer", description: "Receipt template, printer, and paper size for customer invoices.", icon: ReceiptText, Component: ReceiptSettings },
   { id: "scanner", category: "printing", title: "Barcode scanner", description: "Tune keyboard-wedge detection thresholds and test scanner input.", icon: ScanBarcode, Component: PrintingScannerSettings },
@@ -191,11 +188,11 @@ function SettingsSubPageHeader({ categoryLabel, itemTitle, description, backHref
         Back to {categoryLabel}
       </Button>
       <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
           Settings &gt; {categoryLabel} &gt; {itemTitle}
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">{itemTitle}</h1>
-        <p className="max-w-3xl text-sm leading-6 text-ink-muted">{description}</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{itemTitle}</h1>
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
       </div>
     </header>
   );

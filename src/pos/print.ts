@@ -27,6 +27,8 @@ const BARCODE_OPTIONS = {
   textMargin: 2,
   margin: 1,
   height: 36,
+  width: 2,
+  background: "transparent",
 } as const;
 
 export interface LabelSpec {
@@ -169,7 +171,17 @@ export type PrintConfig =
 export async function makeBarcodePng(value: string): Promise<string> {
   try {
     const canvas = document.createElement("canvas");
-    JsBarcode(canvas, value, { ...BARCODE_OPTIONS, format: "EAN13" });
+    canvas.width = 900;
+    canvas.height = 300;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    JsBarcode(canvas, value, {
+      ...BARCODE_OPTIONS,
+      format: "EAN13",
+      scale: 3,
+      width: 2,
+      background: "transparent",
+    });
     return canvas.toDataURL("image/png");
   } catch (eanErr) {
     console.warn(
@@ -178,7 +190,17 @@ export async function makeBarcodePng(value: string): Promise<string> {
     );
     try {
       const canvas = document.createElement("canvas");
-      JsBarcode(canvas, value, { ...BARCODE_OPTIONS, format: "CODE128" });
+      canvas.width = 900;
+      canvas.height = 300;
+      const ctx = canvas.getContext("2d")!;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      JsBarcode(canvas, value, {
+        ...BARCODE_OPTIONS,
+        format: "CODE128",
+        scale: 3,
+        width: 2,
+        background: "transparent",
+      });
       return canvas.toDataURL("image/png");
     } catch (codeErr) {
       console.warn(`CODE128 encode failed for value='${value}':`, codeErr);

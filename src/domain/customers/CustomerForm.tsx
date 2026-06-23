@@ -1,7 +1,7 @@
 /**
  * CustomerForm — create or edit. Phone validation matches Rust regex.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createCustomer, updateCustomer } from "./api";
 import type {
   AppError,
@@ -47,6 +47,14 @@ export function CustomerForm({
   const [isFlagged, setIsFlagged] = useState(initial?.is_flagged ?? false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Default new customers to the "Retailer" type once types load.
+  useEffect(() => {
+    if (mode === "create" && !initial && types.length > 0 && typeId === "") {
+      const retailer = types.find((t) => t.name === "Retailer");
+      if (retailer) setTypeId(retailer.id.toString());
+    }
+  }, [mode, initial, types, typeId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

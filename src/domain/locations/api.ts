@@ -3,7 +3,7 @@
  * commands. Read by ItemForm's LocationAutocomplete and Settings (Slice D).
  */
 import { invoke } from "../ipc";
-import type { Location, NewLocation } from "../types";
+import type { Location, NewLocation, SubLocation } from "../types";
 
 export async function listLocations(
   includeInactive = false,
@@ -20,15 +20,40 @@ export async function createLocation(
 export async function renameLocation(
   id: number,
   newName: string,
-  newRack: string | null,
+  newZone: string | null,
 ): Promise<Location> {
   return invoke<Location>("rename_location", {
     id,
     new_name: newName,
-    new_rack: newRack,
+    new_zone: newZone,
   });
 }
 
 export async function deactivateLocation(id: number): Promise<void> {
   return invoke<void>("deactivate_location", { id });
+}
+
+export async function listSubLocations(
+  locationId?: number,
+): Promise<SubLocation[]> {
+  return invoke<SubLocation[]>("list_sub_locations", {
+    location_id: locationId ?? null,
+    include_inactive: false,
+  });
+}
+
+export async function createSubLocation(
+  locationId: number,
+  name: string,
+  position?: string,
+): Promise<SubLocation> {
+  return invoke<SubLocation>("create_sub_location", {
+    location_id: locationId,
+    name,
+    position: position ?? null,
+  });
+}
+
+export async function deactivateSubLocation(id: number): Promise<void> {
+  return invoke<void>("deactivate_sub_location", { id });
 }

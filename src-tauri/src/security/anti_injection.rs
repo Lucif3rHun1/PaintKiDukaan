@@ -9,7 +9,7 @@
 
 use serde::Serialize;
 
-use crate::commands::auth::AppError;
+use crate::error::AppError;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -202,10 +202,8 @@ mod win {
 pub fn snapshot_via_toolhelp() -> Result<ModuleSnapshot, AppError> {
     unsafe {
         let pid = win::GetCurrentProcessId();
-        let snap = win::CreateToolhelp32Snapshot(
-            win::TH32CS_SNAPMODULE | win::TH32CS_SNAPMODULE32,
-            pid,
-        );
+        let snap =
+            win::CreateToolhelp32Snapshot(win::TH32CS_SNAPMODULE | win::TH32CS_SNAPMODULE32, pid);
         if snap.is_null() || snap == (-1isize) as *mut std::ffi::c_void {
             return Err(AppError::Internal(format!(
                 "CreateToolhelp32Snapshot failed: {}",
@@ -346,9 +344,7 @@ pub fn detect_unauthorized_modules(
             let not_whitelisted = !whitelist.iter().any(|w| w.to_lowercase() == name_lower);
 
             // In whitelist but loaded from suspicious location.
-            let suspicious_location = suspicious_paths
-                .iter()
-                .any(|sp| path_lower.contains(sp));
+            let suspicious_location = suspicious_paths.iter().any(|sp| path_lower.contains(sp));
 
             not_whitelisted || suspicious_location
         })

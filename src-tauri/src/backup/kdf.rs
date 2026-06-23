@@ -3,9 +3,7 @@
 use argon2::{Algorithm, Argon2, Params, Version};
 use zeroize::Zeroize;
 
-use crate::backup::{
-    BACKUP_ARGON2_M_COST_KIB, BACKUP_ARGON2_P_COST, BACKUP_ARGON2_T_COST,
-};
+use crate::backup::{BACKUP_ARGON2_M_COST_KIB, BACKUP_ARGON2_P_COST, BACKUP_ARGON2_T_COST};
 
 /// Derive a 32-byte AES-256-GCM key from a recovery passphrase and salt.
 ///

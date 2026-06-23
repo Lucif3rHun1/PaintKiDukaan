@@ -4,7 +4,8 @@
  */
 import { useState } from "react";
 import { recordVendorPayment } from "./api";
-import { formatINR, type AppError, type Vendor, type VendorOutstanding } from "../types";
+import { Money } from "../../components/ui";
+import { type AppError, type Vendor, type VendorOutstanding } from "../types";
 
 interface Props {
   vendor: Vendor;
@@ -54,18 +55,16 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
 
   if (outstanding) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Payment recorded</h2>
-        <p className="mt-2 text-sm text-slate-700">
+        <p className="mt-2 text-sm text-foreground">
           New outstanding:{" "}
-          <span className="font-semibold">
-            {formatINR(outstanding.outstanding)}
-          </span>
+          <Money paise={outstanding.outstanding} className="font-semibold" />
         </p>
         <div className="mt-4 flex justify-end">
           <button
             onClick={onCancel}
-            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+            className="rounded border border-border px-4 py-2 text-sm hover:bg-card"
           >
             Close
           </button>
@@ -77,7 +76,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
   return (
     <form
       onSubmit={submit}
-      className="grid max-w-md gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+      className="grid max-w-md gap-4 rounded-lg border border-border bg-card p-6 shadow-sm"
     >
       <h2 className="text-lg font-semibold">Pay {vendor.name}</h2>
 
@@ -127,7 +126,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
       </Field>
 
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -137,7 +136,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
           <button
             type="button"
             onClick={onCancel}
-            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+            className="rounded border border-border px-4 py-2 text-sm hover:bg-card"
             disabled={busy}
           >
             Cancel
@@ -145,7 +144,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
         )}
         <button
           type="submit"
-          className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+          className="btn-primary"
           disabled={busy}
         >
           {busy ? "Saving…" : "Record payment"}
@@ -166,9 +165,9 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">
+      <span className="mb-1 block text-sm font-medium text-foreground">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required && <span className="text-destructive"> *</span>}
       </span>
       {children}
     </label>

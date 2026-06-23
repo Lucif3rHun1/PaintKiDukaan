@@ -12,13 +12,13 @@ use tempfile::NamedTempFile;
 use zeroize::Zeroize;
 
 use crate::backup::{
-    atomic_swap, decrypt_and_verify, encrypt_snapshot, list_backup_targets, snapshot,
-    BackupError, BackupMetadata, BackupTarget, TestRestoreResult,
+    atomic_swap, decrypt_and_verify, encrypt_snapshot, list_backup_targets, snapshot, BackupError,
+    BackupMetadata, BackupTarget, TestRestoreResult,
 };
 use crate::commands::auth::AppState;
 use crate::commands::recovery::wipe_existing_setup;
-use crate::security::ipc_auth;
 use crate::obs;
+use crate::security::ipc_auth;
 
 const PKB1_MAGIC: &[u8; 4] = b"PKB1";
 
@@ -27,8 +27,8 @@ fn canonicalize_and_validate_path<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> Result<PathBuf, String> {
     let path = PathBuf::from(raw);
-    let canonical = dunce::canonicalize(&path)
-        .map_err(|e| format!("path not found or inaccessible: {e}"))?;
+    let canonical =
+        dunce::canonicalize(&path).map_err(|e| format!("path not found or inaccessible: {e}"))?;
 
     if canonical != dunce::canonicalize(&canonical).unwrap_or(canonical.clone()) {
         return Err("path canonicalization failed".into());
@@ -38,10 +38,7 @@ fn canonicalize_and_validate_path<R: tauri::Runtime>(
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_default();
-    let allowed_dirs: Vec<PathBuf> = vec![
-        live_db_dir,
-        std::env::temp_dir(),
-    ];
+    let allowed_dirs: Vec<PathBuf> = vec![live_db_dir, std::env::temp_dir()];
 
     let is_allowed = allowed_dirs.iter().any(|dir| {
         if let Ok(canon_dir) = dunce::canonicalize(dir) {
@@ -52,10 +49,7 @@ fn canonicalize_and_validate_path<R: tauri::Runtime>(
     });
 
     if !is_allowed {
-        let ext = canonical
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = canonical.extension().and_then(|e| e.to_str()).unwrap_or("");
         if ext == "pkb1" {
             if let Some(parent) = canonical.parent() {
                 if parent.exists() {
@@ -74,8 +68,7 @@ fn canonicalize_and_validate_path<R: tauri::Runtime>(
 
 fn validate_envelope_magic(path: &std::path::Path) -> Result<(), String> {
     use std::io::Read;
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| format!("cannot read envelope: {e}"))?;
+    let mut file = std::fs::File::open(path).map_err(|e| format!("cannot read envelope: {e}"))?;
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)
         .map_err(|_| "envelope too small to contain magic bytes".to_string())?;
@@ -154,11 +147,9 @@ pub fn backup_now<R: tauri::Runtime>(
     // For the stubbed Db in Slice D we pass None, which treats the source as a
     // plain SQLite database for snapshotting purposes.
     let dek: Option<[u8; 32]> = None;
-    snapshot::snapshot_via_backup_api(&live_db, dek.as_ref(), &temp_path)
-        .map_err(err_str)?;
+    snapshot::snapshot_via_backup_api(&live_db, dek.as_ref(), &temp_path).map_err(err_str)?;
 
-    let metadata = encrypt_snapshot(&temp_path, &envelope_path, &passphrase)
-        .map_err(err_str)?;
+    let metadata = encrypt_snapshot(&temp_path, &envelope_path, &passphrase).map_err(err_str)?;
 
     // Drop the tempfile handle so the OS removes the plaintext snapshot.
     drop(temp_snapshot);
@@ -191,8 +182,7 @@ pub fn restore<R: tauri::Runtime>(
     let temp_plaintext = NamedTempFile::new().map_err(|e| err_str(BackupError::Io(e)))?;
     let temp_path = temp_plaintext.path().to_path_buf();
 
-    decrypt_and_verify(&canonical, &passphrase, &temp_path)
-        .map_err(err_str)?;
+    decrypt_and_verify(&canonical, &passphrase, &temp_path).map_err(err_str)?;
 
     atomic_swap(&live_db, &temp_path).map_err(err_str)?;
 

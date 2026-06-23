@@ -12,7 +12,9 @@ pub mod backup;
 pub mod hardening;
 pub mod scan;
 
-pub use commands::auth::AppError;
+pub use error::AppError;
+
+pub mod obs;
 
 const ALLOWED_LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 const MAX_LOG_MSG_LEN: usize = 4096;
@@ -89,12 +91,19 @@ pub fn run() {
 
             if let Ok(app_data) = app.path().app_data_dir() {
                 log::info!("App data dir: {}", app_data.display());
-                if let Ok(db_path) = std::fs::canonicalize(app_data.join(crate::obs!("paintkiduakan.db"))) {
+                if let Ok(db_path) =
+                    std::fs::canonicalize(app_data.join(crate::obs!("paintkiduakan.db")))
+                {
                     log::info!("DB path: {}", db_path.display());
                 } else {
                     log::info!("DB path: (not yet created)");
                 }
-                log::info!("Keystore exists: {}", app_data.join(crate::obs!("paintkiduakan.keystore")).exists());
+                log::info!(
+                    "Keystore exists: {}",
+                    app_data
+                        .join(crate::obs!("paintkiduakan.keystore"))
+                        .exists()
+                );
             }
 
             // Install panic hook that writes to the log before crashing.
@@ -339,7 +348,9 @@ mod poc_tests {
         // so the injected text appears on the SAME log line, not as a separate
         // spoofed line. This is acceptable behavior.
         assert!(
-            lines.iter().any(|l| l.contains("[INFO] forged admin event")),
+            lines
+                .iter()
+                .any(|l| l.contains("[INFO] forged admin event")),
             "sanitized payload should still be present: {:?}",
             lines
         );
@@ -391,26 +402,31 @@ mod poc_tests {
     }
 }
 
-    #[test]
-    fn test_csp_includes_frame_src_none() {
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let conf_path = std::path::PathBuf::from(manifest_dir).join("tauri.conf.json");
-        let raw = std::fs::read_to_string(&conf_path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", conf_path.display()));
-        let json: serde_json::Value = serde_json::from_str(&raw)
-            .unwrap_or_else(|e| panic!("parse {}: {e}", conf_path.display()));
-        let csp = json
-            .get("app")
-            .and_then(|a| a.get("security"))
-            .and_then(|s| s.get("csp"))
-            .and_then(|c| c.as_str())
-            .unwrap_or_else(|| panic!("no CSP at {}", conf_path.display()));
+#[test]
+fn test_csp_includes_frame_src_none() {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let conf_path = std::path::PathBuf::from(manifest_dir).join("tauri.conf.json");
+    let raw = std::fs::read_to_string(&conf_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", conf_path.display()));
+    let json: serde_json::Value =
+        serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {}: {e}", conf_path.display()));
+    let csp = json
+        .get("app")
+        .and_then(|a| a.get("security"))
+        .and_then(|s| s.get("csp"))
+        .and_then(|c| c.as_str())
+        .unwrap_or_else(|| panic!("no CSP at {}", conf_path.display()));
 
-        for directive in &["frame-src 'none'", "object-src 'none'", "base-uri 'none'", "form-action 'none'"] {
-            assert!(
-                csp.contains(directive),
-                "CSP must contain `{}` (got: {csp})",
-                directive
-            );
-        }
+    for directive in &[
+        "frame-src 'none'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'",
+    ] {
+        assert!(
+            csp.contains(directive),
+            "CSP must contain `{}` (got: {csp})",
+            directive
+        );
+    }
 }

@@ -4,6 +4,8 @@ pub mod recovery;
 
 // Slice B — domain commands
 pub mod brands;
+pub mod categories;
+pub mod customer_ledger;
 pub mod customer_types;
 pub mod customers;
 pub mod items;
@@ -20,9 +22,13 @@ pub mod reports;
 pub mod sales;
 pub mod sequences;
 
+// CSV import
+pub mod import;
+
 // Slice D — shell commands
 pub mod backup;
 pub mod discover_printers;
+pub mod printing;
 pub mod settings;
 
 // Slice E — cross-cutting alerts feed

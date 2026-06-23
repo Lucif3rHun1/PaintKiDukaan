@@ -1,0 +1,5 @@
+-- Migration 003: no longer needed as a schema change.
+-- The `brand`, `unit`, and `sell_unit` columns are already part of the
+-- canonical baseline in `schema.sql`. Existing databases that applied the
+-- previous version of this migration remain unchanged; fresh databases get
+-- these columns from the baseline.

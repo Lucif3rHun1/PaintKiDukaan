@@ -12,7 +12,7 @@
 
 use serde::Serialize;
 
-use crate::commands::auth::AppError;
+use crate::error::AppError;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -168,10 +168,11 @@ pub fn walk_iat() -> Result<IatReport, AppError> {
         }
 
         let mut report = IatReport::default();
-        let import_base = base.offset(import_dir.virtual_address as isize)
-            as *const win::IMAGE_IMPORT_DESCRIPTOR;
+        let import_base =
+            base.offset(import_dir.virtual_address as isize) as *const win::IMAGE_IMPORT_DESCRIPTOR;
 
-        let desc_count = import_dir.size / std::mem::size_of::<win::IMAGE_IMPORT_DESCRIPTOR>() as u32;
+        let desc_count =
+            import_dir.size / std::mem::size_of::<win::IMAGE_IMPORT_DESCRIPTOR>() as u32;
 
         for i in 0..desc_count {
             let desc = &*import_base.add(i as usize);
@@ -187,7 +188,8 @@ pub fn walk_iat() -> Result<IatReport, AppError> {
             let dll_size = get_module_size(dll_base);
 
             // Walk the FirstThunk array (IAT).
-            let thunk_ptr = base.offset(desc.first_thunk as isize) as *const win::IMAGE_THUNK_DATA64;
+            let thunk_ptr =
+                base.offset(desc.first_thunk as isize) as *const win::IMAGE_THUNK_DATA64;
             let mut j = 0;
             loop {
                 let thunk = &*thunk_ptr.add(j);
@@ -208,7 +210,9 @@ pub fn walk_iat() -> Result<IatReport, AppError> {
                             report.hooked_imports += 1;
                             // Try to get the function name from OriginalFirstThunk (hint).
                             let func_name = resolve_import_name(base, desc.original_first_thunk, j);
-                            report.hooked_functions.push(format!("{}!{}", dll_name, func_name));
+                            report
+                                .hooked_functions
+                                .push(format!("{}!{}", dll_name, func_name));
                         }
                     }
                 }
@@ -301,7 +305,9 @@ pub fn hash_text_section_on_disk() -> Result<[u8; 32], AppError> {
 
         let (text_offset, text_size) = find_text_section_in_file(&file_data)?;
         if text_offset + text_size > file_data.len() {
-            return Err(AppError::Internal("Text section extends beyond file".into()));
+            return Err(AppError::Internal(
+                "Text section extends beyond file".into(),
+            ));
         }
         Ok(sha256(&file_data[text_offset..text_offset + text_size]))
     }
@@ -407,12 +413,9 @@ fn find_text_section_in_file(data: &[u8]) -> Result<(usize, usize), AppError> {
         }
         let name = &data[off..off + 8];
         if name.starts_with(b".text") {
-            let virtual_size = u32::from_le_bytes([
-                data[off + 8],
-                data[off + 9],
-                data[off + 10],
-                data[off + 11],
-            ]) as usize;
+            let virtual_size =
+                u32::from_le_bytes([data[off + 8], data[off + 9], data[off + 10], data[off + 11]])
+                    as usize;
             let raw_offset = u32::from_le_bytes([
                 data[off + 20],
                 data[off + 21],
@@ -436,11 +439,7 @@ fn find_text_section_in_file(data: &[u8]) -> Result<(usize, usize), AppError> {
 
 /// Try to resolve an import function name from the OriginalFirstThunk hint/name table.
 #[cfg(target_os = "windows")]
-unsafe fn resolve_import_name(
-    base: *const u8,
-    oft_rva: u32,
-    index: usize,
-) -> String {
+unsafe fn resolve_import_name(base: *const u8, oft_rva: u32, index: usize) -> String {
     if oft_rva == 0 {
         return format!("ordinal#{}", index);
     }

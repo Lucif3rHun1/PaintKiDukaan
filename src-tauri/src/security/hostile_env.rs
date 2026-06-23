@@ -104,7 +104,12 @@ pub fn respond(report: &HostileEnvReport, action: HostileResponse) -> ResponseAc
 
 /// Compute weighted risk score from detection reports.
 /// Returns 0-100.
-fn compute_score(debug: &DebugReport, vm: &VmReport, sniff: &SniffReport, ntdll: &NtdllReport) -> u8 {
+fn compute_score(
+    debug: &DebugReport,
+    vm: &VmReport,
+    sniff: &SniffReport,
+    ntdll: &NtdllReport,
+) -> u8 {
     let debug_score = compute_debug_score(debug);
     let vm_score = compute_vm_score(vm);
     let sniff_score = compute_sniff_score(sniff);
@@ -285,10 +290,7 @@ mod tests {
             ntdll: NtdllReport::default(),
             score: 5,
         };
-        assert_eq!(
-            respond(&report, HostileResponse::Lock),
-            ResponseAction::Log
-        );
+        assert_eq!(respond(&report, HostileResponse::Lock), ResponseAction::Log);
     }
 
     #[test]

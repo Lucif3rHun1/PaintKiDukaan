@@ -49,9 +49,15 @@ pub struct User {
 }
 
 impl User {
-    pub fn is_owner(&self) -> bool { self.role == Role::Owner }
-    pub fn is_cashier(&self) -> bool { self.role == Role::Cashier }
-    pub fn is_stocker(&self) -> bool { self.role == Role::Stocker }
+    pub fn is_owner(&self) -> bool {
+        self.role == Role::Owner
+    }
+    pub fn is_cashier(&self) -> bool {
+        self.role == Role::Cashier
+    }
+    pub fn is_stocker(&self) -> bool {
+        self.role == Role::Stocker
+    }
 }
 
 static CURRENT: Mutex<Option<User>> = Mutex::new(None);
@@ -165,13 +171,21 @@ mod tests {
 
     #[test]
     fn require_role_passes_for_matching() {
-        let u = User { id: 1, name: "x".into(), role: Role::Cashier };
+        let u = User {
+            id: 1,
+            name: "x".into(),
+            role: Role::Cashier,
+        };
         assert!(require_role(&u, &[Role::Owner, Role::Cashier]).is_ok());
     }
 
     #[test]
     fn require_role_rejects_other() {
-        let u = User { id: 1, name: "x".into(), role: Role::Stocker };
+        let u = User {
+            id: 1,
+            name: "x".into(),
+            role: Role::Stocker,
+        };
         assert!(require_role(&u, &[Role::Owner]).is_err());
     }
 

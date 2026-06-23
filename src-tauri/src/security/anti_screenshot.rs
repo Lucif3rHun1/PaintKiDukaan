@@ -5,7 +5,7 @@
 //!
 //! On non-Windows platforms, provides stub implementations.
 
-use crate::commands::auth::AppError;
+use crate::error::AppError;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 

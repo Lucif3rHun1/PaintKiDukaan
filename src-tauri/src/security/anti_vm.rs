@@ -42,7 +42,9 @@ pub fn detect() -> VmReport {
     // 1. CPUID hypervisor present bit (x86/x86_64 only).
     if check_cpuid_real() {
         report.hypervisor_cpu = true;
-        report.evidence.push("CPUID leaf 1 ECX bit 31 (hypervisor) set".into());
+        report
+            .evidence
+            .push("CPUID leaf 1 ECX bit 31 (hypervisor) set".into());
     }
 
     // 2. Windows registry keys.
@@ -63,13 +65,17 @@ pub fn detect() -> VmReport {
     #[cfg(target_os = "windows")]
     if check_sandbox_dlls() {
         report.sandbox_dll = true;
-        report.evidence.push("Sandbox DLL detected (SbieDll/SxIn)".into());
+        report
+            .evidence
+            .push("Sandbox DLL detected (SbieDll/SxIn)".into());
     }
 
     // 5. Disk size anomaly.
     if check_disk_anomaly_real() {
         report.disk_anomaly = true;
-        report.evidence.push("Disk size < 60 GB — possible VM".into());
+        report
+            .evidence
+            .push("Disk size < 60 GB — possible VM".into());
     }
 
     report
@@ -187,8 +193,7 @@ mod win {
         pub fn GetModuleHandleW(lpModuleName: *const u16) -> *mut c_void;
     }
 
-    pub const HKEY_LOCAL_MACHINE: *mut std::ffi::c_void =
-        0x8000_0002 as *mut std::ffi::c_void;
+    pub const HKEY_LOCAL_MACHINE: *mut std::ffi::c_void = 0x8000_0002 as *mut std::ffi::c_void;
     pub const KEY_READ: u32 = 0x20019;
     pub const ERROR_SUCCESS: i32 = 0;
 }

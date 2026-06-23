@@ -34,11 +34,7 @@ pub fn get_setting(state: State<'_, AppState>, key: String) -> Result<String, St
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn set_setting(
-    state: State<'_, AppState>,
-    key: String,
-    value: String,
-) -> Result<(), String> {
+pub fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
     ipc_auth::authorize_err("set_setting", state.inner())?;
     let parsed: Value = serde_json::from_str(&value).unwrap_or(Value::String(value));
     state
@@ -81,10 +77,7 @@ pub fn enroll_device(
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn revoke_device(
-    _state: State<'_, AppState>,
-    device_id: String,
-) -> Result<(), String> {
+pub fn revoke_device(_state: State<'_, AppState>, device_id: String) -> Result<(), String> {
     ipc_auth::authorize_err("revoke_device", _state.inner())?;
     let mut devices = devices_store().write();
     let device = devices

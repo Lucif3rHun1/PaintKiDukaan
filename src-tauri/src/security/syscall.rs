@@ -342,20 +342,12 @@ fn extract_ssn_from_bytes(addr: usize) -> Option<u32> {
     unsafe {
         let bytes = std::slice::from_raw_parts(addr as *const u8, 8);
         // 4C 8B D1 B8 XX XX XX XX
-        if bytes[0] == 0x4C
-            && bytes[1] == 0x8B
-            && bytes[2] == 0xD1
-            && bytes[3] == 0xB8
-        {
-            return Some(u32::from_le_bytes([
-                bytes[4], bytes[5], bytes[6], bytes[7],
-            ]));
+        if bytes[0] == 0x4C && bytes[1] == 0x8B && bytes[2] == 0xD1 && bytes[3] == 0xB8 {
+            return Some(u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]));
         }
         // B8 XX XX XX XX
         if bytes[0] == 0xB8 {
-            return Some(u32::from_le_bytes([
-                bytes[1], bytes[2], bytes[3], bytes[4],
-            ]));
+            return Some(u32::from_le_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]));
         }
         None
     }
@@ -399,8 +391,7 @@ fn extract_ssn_following_jumps(addr: usize, depth: u8) -> Option<u32> {
         // 48 B8 XX XX XX XX XX XX XX XX — mov rax, imm64 (absolute jmp)
         if bytes[0] == 0x48 && bytes[1] == 0xB8 {
             let target = usize::from_le_bytes([
-                bytes[2], bytes[3], bytes[4], bytes[5],
-                bytes[6], bytes[7], bytes[8], bytes[9],
+                bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9],
             ]);
             if target != 0 {
                 return extract_ssn_from_bytes(target)
@@ -509,13 +500,7 @@ pub unsafe fn direct_syscall_6(
 
 // Non-Windows stubs (return -1 = STATUS_UNSUCCESSFUL)
 #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
-pub unsafe fn direct_syscall_4(
-    _ssn: u32,
-    _a1: usize,
-    _a2: usize,
-    _a3: usize,
-    _a4: usize,
-) -> i64 {
+pub unsafe fn direct_syscall_4(_ssn: u32, _a1: usize, _a2: usize, _a3: usize, _a4: usize) -> i64 {
     -1
 }
 

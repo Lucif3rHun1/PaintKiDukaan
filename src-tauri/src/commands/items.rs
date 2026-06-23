@@ -4,13 +4,13 @@
 //! returns different fields depending on the caller role. This is enforced
 //! server-side so a malicious frontend cannot see cost_paise as a cashier.
 
+use crate::commands::auth::AppState;
+use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::session::{current_user, require_role, Role};
-use crate::db::Db;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use crate::commands::auth::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Item {
@@ -20,6 +20,9 @@ pub struct Item {
     pub name: String,
     pub brand: Option<String>,
     pub category: Option<String>,
+    pub unit_id: i64,
+    pub unit_code: String,
+    pub unit_label: String,
     pub unit: String,
     pub units_per_pack: Option<i64>,
     pub sell_unit: String,
@@ -28,10 +31,11 @@ pub struct Item {
     pub promo_price_paise: Option<i64>,
     pub label_line1: Option<String>,
     pub label_line2: Option<String>,
-    pub location_text: Option<String>,
-    pub primary_location_id: i64,
+    pub primary_location_id: Option<i64>,
+    pub sub_location_id: Option<i64>,
+    pub position: Option<String>,
     pub min_qty: i64,
-    pub barcode_format: String,
+    pub barcode_format: Option<String>,
     pub is_active: bool,
     pub current_qty: i64,
     pub created_at: String,
@@ -42,8 +46,8 @@ pub struct Item {
 /// Minimal projection for the role-aware `lookup_item`.
 ///
 /// - `Owner`: all fields, including cost_paise.
-/// - `Cashier`: name, retail_price_paise, sell_unit, in_stock (aggregate across locations), location_text.
-/// - `Stocker`: name, location_text, qty_per_loc (grouped), min_qty.
+/// - `Cashier`: name, retail_price_paise, sell_unit, in_stock (aggregate across locations).
+/// - `Stocker`: name, qty_per_loc (grouped), min_qty.
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "scope", rename_all = "lowercase")]
 pub enum ItemLookup {
@@ -57,14 +61,12 @@ pub enum ItemLookup {
         unit: String,
         units_per_pack: Option<i64>,
         in_stock: f64,
-        location_text: Option<String>,
     },
     Stocker {
         id: i64,
         sku_code: String,
         name: String,
         min_qty: i64,
-        location_text: Option<String>,
         qty_per_loc: Vec<QtyPerLoc>,
     },
 }
@@ -92,7 +94,10 @@ pub struct NewItem {
     pub brand: Option<String>,
     pub brand_id: Option<i64>,
     pub category: Option<String>,
+    pub unit_id: Option<i64>,
     pub unit: Option<String>,
+    pub unit_code: Option<String>,
+    pub unit_label: Option<String>,
     pub units_per_pack: Option<i64>,
     pub sell_unit: Option<String>,
     pub retail_price_paise: i64,
@@ -100,8 +105,9 @@ pub struct NewItem {
     pub promo_price_paise: Option<i64>,
     pub label_line1: Option<String>,
     pub label_line2: Option<String>,
-    pub location_text: Option<String>,
     pub primary_location_id: i64,
+    pub sub_location_id: Option<i64>,
+    pub position: Option<String>,
     pub min_qty: i64,
     pub barcode_format: Option<String>,
     pub barcode: Option<String>,
@@ -113,7 +119,10 @@ pub struct ItemUpdate {
     pub brand: Option<String>,
     pub brand_id: Option<i64>,
     pub category: Option<String>,
+    pub unit_id: Option<i64>,
     pub unit: Option<String>,
+    pub unit_code: Option<String>,
+    pub unit_label: Option<String>,
     pub units_per_pack: Option<i64>,
     pub sell_unit: Option<String>,
     pub retail_price_paise: Option<i64>,
@@ -121,8 +130,9 @@ pub struct ItemUpdate {
     pub promo_price_paise: Option<i64>,
     pub label_line1: Option<String>,
     pub label_line2: Option<String>,
-    pub location_text: Option<String>,
     pub primary_location_id: Option<i64>,
+    pub sub_location_id: Option<i64>,
+    pub position: Option<String>,
     pub min_qty: Option<i64>,
     pub barcode_format: Option<String>,
     pub barcode: Option<String>,
@@ -141,22 +151,71 @@ pub fn to_base_units(qty: f64, sell_unit: &str, units_per_pack: Option<i64>) -> 
 
 /// Mint the next SKU and return it. Called inside the create_item transaction
 /// so the sequence advances atomically.
-fn mint_next_sku(tx: &rusqlite::Connection) -> AppResult<String> {
+///
+/// SKU format is name-based for readability:
+///   With brand:  `{BRAND_PREFIX}-{NAME_ABBR}-{SEQ:03}`  e.g. `AP-WHT-001`
+///   Without brand: `{NAME_ABBR}-{SEQ:03}`               e.g. `WHT-001`
+fn mint_next_sku(
+    tx: &rusqlite::Connection,
+    item_name: &str,
+    brand_prefix: Option<&str>,
+) -> AppResult<String> {
     tx.execute(
-        "UPDATE sequences SET last_value = last_value + 1 WHERE name = 'sku'",
+        "UPDATE sequences SET value = value + 1 WHERE name = 'sku'",
         [],
     )?;
-    let n: i64 = tx.query_row(
-        "SELECT last_value FROM sequences WHERE name = 'sku'",
-        [],
-        |r| r.get(0),
-    )?;
-    Ok(format!("SKU-{n:06}"))
+    let n: i64 = tx.query_row("SELECT value FROM sequences WHERE name = 'sku'", [], |r| {
+        r.get(0)
+    })?;
+    let name_abbr = make_name_abbreviation(item_name);
+    match brand_prefix {
+        Some(prefix) => Ok(format!("{}-{}-{:03}", prefix.to_uppercase(), name_abbr, n)),
+        None => Ok(format!("{}-{:03}", name_abbr, n)),
+    }
+}
+
+/// Extract a short uppercase abbreviation from an item name for SKU generation.
+/// Takes the first meaningful word(s), up to 4 chars total.
+/// Examples: "Asian Paints Apex" → "APA", "White Cement" → "WHI", "Roller 4 inch" → "ROL"
+pub fn make_name_abbreviation(name: &str) -> String {
+    let words: Vec<&str> = name.split_whitespace().collect();
+    let mut abbr = String::new();
+    for word in &words {
+        let clean: String = word.chars().filter(|c| c.is_alphabetic()).collect();
+        if clean.is_empty() {
+            continue;
+        }
+        if abbr.is_empty() {
+            // First word: take up to 3 chars
+            let take = clean.len().min(3);
+            abbr.push_str(&clean[..take].to_uppercase());
+        } else {
+            // Subsequent words: take first char only
+            let first = clean.chars().next().unwrap().to_uppercase().to_string();
+            abbr.push_str(&first);
+            if abbr.len() >= 4 {
+                break;
+            }
+        }
+    }
+    // Pad with first char if too short
+    if abbr.len() < 2 {
+        if let Some(first_word) = words.first() {
+            let clean: String = first_word.chars().filter(|c| c.is_alphabetic()).collect();
+            while abbr.len() < 2 && !clean.is_empty() {
+                abbr.push_str(&clean[..1].to_uppercase());
+            }
+        }
+    }
+    abbr
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<Item> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
@@ -173,15 +232,30 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
     // Read auto_generate_barcode setting before opening the txn so we
     // don't hold both settings.lock and db.lock concurrently.
     let auto_generate = {
-        let settings = state.settings.lock().map_err(|_| AppError::Internal("settings lock poisoned".into()))?;
+        let settings = state
+            .settings
+            .lock()
+            .map_err(|_| AppError::Internal("settings lock poisoned".into()))?;
         settings
             .get("auto_generate_barcode")
             .and_then(|v| v.as_bool())
             .unwrap_or(true)
     };
 
+    // Resolve brand prefix for SKU generation (read before txn to avoid nested locks)
+    let brand_prefix: Option<String> = payload.brand_id.and_then(|bid| {
+        db.with_raw(|conn| {
+            conn.query_row(
+                "SELECT prefix FROM brands WHERE id = ?1",
+                params![bid],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+        })
+    });
+
     db.with_tx(|tx| {
-        let sku = mint_next_sku(tx)?;
+        let sku = mint_next_sku(tx, &payload.name, brand_prefix.as_deref())?;
         // Barcode resolution order:
         // 1. caller-provided value
         // 2. auto-generated via brands::generate_brand_barcode (when ON + brand_id set)
@@ -198,13 +272,29 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
             sku.clone()
         };
         let barcode_format = payload.barcode_format.clone().unwrap_or_else(|| "CODE128".into());
+        // Resolve unit_code/unit_label from unit_id if the caller provided one
+        let (resolved_unit_id, resolved_unit_code, resolved_unit_label) =
+            if let Some(uid) = payload.unit_id {
+                let row: (String, String) = tx.query_row(
+                    "SELECT code, label FROM units WHERE id = ?1",
+                    params![uid],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )?;
+                (Some(uid), row.0, row.1)
+            } else {
+                let code = payload.unit_code.clone().unwrap_or_else(|| "pc".into());
+                let label = payload.unit_label.clone().unwrap_or_else(|| "Piece".into());
+                (None, code, label)
+            };
         tx.execute(
             "INSERT INTO items (
-                sku_code, barcode, name, brand, brand_id, category, unit, units_per_pack,
+                sku_code, barcode, name, brand, brand_id, category,
+                unit_id, unit_code, unit_label, unit, units_per_pack,
                 sell_unit, retail_price_paise, cost_paise, promo_price_paise,
-                label_line1, label_line2, location_text, primary_location_id,
-                min_qty, barcode_format, is_active
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, 1)",
+                label_line1, label_line2, primary_location_id,
+                sub_location_id, position, min_qty, barcode_format, is_active,
+                created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, 1, unixepoch('now'), unixepoch('now'))",
             params![
                 sku,
                 barcode,
@@ -212,16 +302,20 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
                 payload.brand,
                 payload.brand_id,
                 payload.category,
+                resolved_unit_id,
+                resolved_unit_code,
+                resolved_unit_label,
                 payload.unit.unwrap_or_else(|| "pc".into()),
-                payload.units_per_pack,
+                payload.units_per_pack.unwrap_or(1),
                 payload.sell_unit.unwrap_or_else(|| "unit".into()),
                 payload.retail_price_paise,
                 payload.cost_paise,
                 payload.promo_price_paise,
                 payload.label_line1,
                 payload.label_line2,
-                payload.location_text,
                 payload.primary_location_id,
+                payload.sub_location_id,
+                payload.position,
                 payload.min_qty,
                 barcode_format,
             ],
@@ -233,7 +327,10 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> AppResult<Item> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
@@ -247,30 +344,82 @@ pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> Ap
                 values.push(Box::new($val));
             }};
         }
-        if let Some(v) = &patch.name { add!("name =", v.clone()) }
-        if let Some(v) = &patch.brand { add!("brand =", v.clone()) }
-        if let Some(v) = patch.brand_id { add!("brand_id =", v) }
-        if let Some(v) = &patch.category { add!("category =", v.clone()) }
-        if let Some(v) = &patch.unit { add!("unit =", v.clone()) }
-        if let Some(v) = patch.units_per_pack { add!("units_per_pack =", v) }
-        if let Some(v) = &patch.sell_unit { add!("sell_unit =", v.clone()) }
-        if let Some(v) = patch.retail_price_paise { add!("retail_price_paise =", v) }
-        if let Some(v) = patch.cost_paise { add!("cost_paise =", v) }
-        if let Some(v) = patch.promo_price_paise { add!("promo_price_paise =", v) }
-        if let Some(v) = &patch.label_line1 { add!("label_line1 =", v.clone()) }
-        if let Some(v) = &patch.label_line2 { add!("label_line2 =", v.clone()) }
-        if let Some(v) = &patch.location_text { add!("location_text =", v.clone()) }
-        if let Some(v) = patch.primary_location_id { add!("primary_location_id =", v) }
-        if let Some(v) = patch.min_qty { add!("min_qty =", v) }
-        if let Some(v) = &patch.barcode_format { add!("barcode_format =", v.clone()) }
-        if let Some(v) = &patch.barcode { add!("barcode =", v.clone()) }
-        if let Some(v) = patch.is_active { add!("is_active =", if v { 1_i64 } else { 0_i64 }) }
+        if let Some(v) = &patch.name {
+            add!("name =", v.clone())
+        }
+        if let Some(v) = &patch.brand {
+            add!("brand =", v.clone())
+        }
+        if let Some(v) = patch.brand_id {
+            add!("brand_id =", v)
+        }
+        if let Some(v) = &patch.category {
+            add!("category =", v.clone())
+        }
+        if let Some(uid) = patch.unit_id {
+            let row: (String, String) = tx.query_row(
+                "SELECT code, label FROM units WHERE id = ?1",
+                params![uid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            add!("unit_id =", uid);
+            add!("unit_code =", row.0);
+            add!("unit_label =", row.1);
+        }
+        if let Some(v) = &patch.unit {
+            add!("unit =", v.clone())
+        }
+        if let Some(v) = patch.units_per_pack {
+            add!("units_per_pack =", v)
+        }
+        if let Some(v) = &patch.sell_unit {
+            add!("sell_unit =", v.clone())
+        }
+        if let Some(v) = patch.retail_price_paise {
+            add!("retail_price_paise =", v)
+        }
+        if let Some(v) = patch.cost_paise {
+            add!("cost_paise =", v)
+        }
+        if let Some(v) = patch.promo_price_paise {
+            add!("promo_price_paise =", v)
+        }
+        if let Some(v) = &patch.label_line1 {
+            add!("label_line1 =", v.clone())
+        }
+        if let Some(v) = &patch.label_line2 {
+            add!("label_line2 =", v.clone())
+        }
+        if let Some(v) = patch.primary_location_id {
+            add!("primary_location_id =", v)
+        }
+        if let Some(v) = patch.sub_location_id {
+            add!("sub_location_id =", v)
+        }
+        if let Some(v) = &patch.position {
+            add!("position =", v.clone())
+        }
+        if let Some(v) = patch.min_qty {
+            add!("min_qty =", v)
+        }
+        if let Some(v) = &patch.barcode_format {
+            add!("barcode_format =", v.clone())
+        }
+        if let Some(v) = &patch.barcode {
+            add!("barcode =", v.clone())
+        }
+        if let Some(v) = patch.is_active {
+            add!("is_active =", if v { 1_i64 } else { 0_i64 })
+        }
         if sets.is_empty() {
             return Err(AppError::Validation("no fields to update".into()));
         }
         sets.push("updated_at = datetime('now')");
         let sql = format!("UPDATE items SET {} WHERE id = ?", sets.join(", "));
-        let mut params_vec: Vec<&dyn rusqlite::ToSql> = values.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
+        let mut params_vec: Vec<&dyn rusqlite::ToSql> = values
+            .iter()
+            .map(|b| &**b as &dyn rusqlite::ToSql)
+            .collect();
         params_vec.push(&id);
         let n = tx.execute(&sql, params_vec.as_slice())?;
         if n == 0 {
@@ -282,12 +431,17 @@ pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> Ap
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<Vec<Item>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
-    let mut sql = String::from("SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE 1=1");
+    let mut sql = String::from("SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE 1=1");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-    if !filter.include_inactive { sql.push_str(" AND i.is_active = 1"); }
+    if !filter.include_inactive {
+        sql.push_str(" AND i.is_active = 1");
+    }
     if let Some(q) = &filter.query {
         sql.push_str(" AND (i.name LIKE ?1 OR i.sku_code LIKE ?1 OR i.barcode LIKE ?1)");
         args.push(Box::new(format!("%{}%", q)));
@@ -312,7 +466,8 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
     sql.push_str(&format!(" LIMIT {}", limit));
     db.with_raw(|c| {
         let mut stmt = c.prepare(&sql)?;
-        let dyn_args: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
+        let dyn_args: Vec<&dyn rusqlite::ToSql> =
+            args.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(dyn_args.as_slice(), row_to_item)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     })
@@ -320,12 +475,15 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE i.id = ?1",
+            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE i.id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], row_to_item)?;
         rows.next()
@@ -336,13 +494,16 @@ pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option<ItemLookup>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     // Search by barcode OR sku_code OR name match (best-effort).
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE (i.barcode = ?1 OR i.sku_code = ?1) AND i.is_active = 1 LIMIT 1",
+            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE (i.barcode = ?1 OR i.sku_code = ?1) AND i.is_active = 1 LIMIT 1",
         )?;
         let mut rows = stmt.query_map(params![code], row_to_item)?;
         let item = match rows.next() {
@@ -368,7 +529,6 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
                     unit: item.unit.clone(),
                     units_per_pack: item.units_per_pack,
                     in_stock,
-                    location_text: item.location_text.clone(),
                 }
             }
             Role::Stocker => {
@@ -385,7 +545,6 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
                     sku_code: item.sku_code.clone(),
                     name: item.name.clone(),
                     min_qty: item.min_qty,
-                    location_text: item.location_text.clone(),
                     qty_per_loc,
                 }
             }
@@ -400,7 +559,10 @@ pub fn box_unit_conversion(
     item_id: i64,
     qty: f64,
 ) -> AppResult<ConversionResult> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
@@ -410,7 +572,12 @@ pub fn box_unit_conversion(
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         let base = to_base_units(qty, &sell_unit, units_per_pack);
-        Ok(ConversionResult { qty, sell_unit, units_per_pack, qty_in_base_units: base })
+        Ok(ConversionResult {
+            qty,
+            sell_unit,
+            units_per_pack,
+            qty_in_base_units: base,
+        })
     })
 }
 
@@ -482,7 +649,10 @@ pub fn cmd_search_items(
     query: String,
     limit: Option<i64>,
 ) -> AppResult<Vec<ItemSearchHit>> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     search_items(db, &query, limit.unwrap_or(10)).map_err(|e| AppError::Internal(e.to_string()))
@@ -498,29 +668,33 @@ fn row_to_item(r: &rusqlite::Row<'_>) -> rusqlite::Result<Item> {
         name: r.get(3)?,
         brand: r.get(4)?,
         category: r.get(5)?,
-        unit: r.get(6)?,
-        units_per_pack: r.get(7)?,
-        sell_unit: r.get(8)?,
-        retail_price_paise: r.get(9)?,
-        cost_paise: r.get(10)?,
-        promo_price_paise: r.get(11)?,
-        label_line1: r.get(12)?,
-        label_line2: r.get(13)?,
-        location_text: r.get(14)?,
-        primary_location_id: r.get(15)?,
-        min_qty: r.get(16)?,
-        barcode_format: r.get(17)?,
-        is_active: r.get::<_, i64>(18)? != 0,
-        created_at: r.get(19)?,
-        updated_at: r.get(20)?,
-        current_qty: r.get(21)?,
-        brand_id: r.get(22)?,
+        unit_id: r.get(6)?,
+        unit_code: r.get(7)?,
+        unit_label: r.get(8)?,
+        unit: r.get(9)?,
+        units_per_pack: r.get(10)?,
+        sell_unit: r.get(11)?,
+        retail_price_paise: r.get(12)?,
+        cost_paise: r.get(13)?,
+        promo_price_paise: r.get(14)?,
+        label_line1: r.get(15)?,
+        label_line2: r.get(16)?,
+        primary_location_id: r.get(17)?,
+        sub_location_id: r.get(18)?,
+        position: r.get(19)?,
+        min_qty: r.get(20)?,
+        barcode_format: r.get(21)?,
+        is_active: r.get::<_, i64>(22)? != 0,
+        created_at: r.get::<_, i64>(23)?.to_string(),
+        updated_at: r.get::<_, i64>(24)?.to_string(),
+        current_qty: r.get(25)?,
+        brand_id: r.get(26)?,
     })
 }
 
 fn fetch_item_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Item> {
     let mut stmt = tx.prepare(
-        "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.location_text, i.primary_location_id, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE i.id = ?1",
+        "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_qty, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE((SELECT SUM(qty) FROM stock_balances WHERE item_id = i.id), 0) AS current_qty, i.brand_id FROM items i WHERE i.id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], row_to_item)?;
     rows.next()

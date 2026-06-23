@@ -26,10 +26,7 @@ pub fn secure_delete(path: &Path) -> Result<(), AppError> {
     }
     let len = meta.len();
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .open(path)
-        .map_err(io_err)?;
+    let mut file = OpenOptions::new().write(true).open(path).map_err(io_err)?;
 
     for pass in 0..SECURE_DELETE_PASSES {
         let mut written: u64 = 0;
@@ -75,7 +72,8 @@ pub fn secure_delete(path: &Path) -> Result<(), AppError> {
 fn deterministic_pass_bytes(pass: usize, offset: u64, len: usize) -> Vec<u8> {
     (0..len)
         .map(|i| {
-            let v = (pass as u8).wrapping_mul(0x9E)
+            let v = (pass as u8)
+                .wrapping_mul(0x9E)
                 .wrapping_add((offset + i as u64) as u8)
                 .wrapping_add(i as u8);
             match pass % 3 {
@@ -144,7 +142,10 @@ pub fn clear_thumbnail_cache() -> Result<(), AppError> {
     {
         let local_app_data = dirs::data_local_dir()
             .ok_or_else(|| AppError::Internal("cannot resolve LocalAppData".into()))?;
-        let explorer_dir = local_app_data.join("Microsoft").join("Windows").join("Explorer");
+        let explorer_dir = local_app_data
+            .join("Microsoft")
+            .join("Windows")
+            .join("Explorer");
         if !explorer_dir.exists() {
             return Ok(());
         }
@@ -170,11 +171,9 @@ pub fn install<R: tauri::Runtime>(
     let _ = app;
     std::thread::Builder::new()
         .name("pkb-anti-forensic".into())
-        .spawn(move || {
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(SCRUB_INTERVAL_SECS));
-                crate::session::rotate_log().ok();
-            }
+        .spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(SCRUB_INTERVAL_SECS));
+            crate::session::rotate_log().ok();
         })
         .map_err(|e| AppError::Internal(format!("failed to spawn scrub thread: {e}")))?;
 

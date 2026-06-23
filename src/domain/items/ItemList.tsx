@@ -1,7 +1,7 @@
 /**
  * ItemList — inventory CRUD + stock movement surface.
  *
- * Wires Add/Edit/Archive/Print-label + nav to Inward/Outward/Adjust.
+ * Wires Add/Edit/Archive/Print-label + nav to Inward/Outward.
  * Dark zinc theme consistent with the rest of the app shell.
  * Keyboard:
  *   n — new item
@@ -16,9 +16,9 @@ import {
   ArrowUpFromLine,
   Barcode,
   Edit3,
+  FileUp,
   IndianRupee,
   PackagePlus,
-  Scale,
   Search,
   TriangleAlert,
   TrendingDown,
@@ -34,15 +34,18 @@ import {
   PaginationControls,
   Skeleton,
 } from "../../components/ui";
+import { formatRupeesFromPaise } from "../../lib/money";
 import { toast } from "../../lib/feedback/toast";
 import { usePaginatedQuery } from "../../lib/query";
 import { listBrands, listItems, updateItem } from "./api";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Brand, Item } from "../types";
 import { ItemForm } from "./ItemForm";
+import { CsvImportDialog } from "./CsvImportDialog";
 import { printLabel } from "../../pos/print";
 import { listLocations } from "../locations/api";
 import type { Location } from "../types";
+import { extractError } from "../../lib/extractError";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
@@ -66,6 +69,7 @@ export function ItemList({ role }: Props) {
 
   const [mode, setMode] = useState<Mode>("list");
   const [editing, setEditing] = useState<Item | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -123,7 +127,7 @@ export function ItemList({ role }: Props) {
 
   const brandPrefixById = useMemo(() => {
     const map = new Map<number, string>();
-    for (const b of brands) if (b.code_prefix) map.set(b.id, b.code_prefix);
+    for (const b of brands) if (b.prefix) map.set(b.id, b.prefix);
     return map;
   }, [brands]);
 
@@ -134,9 +138,11 @@ export function ItemList({ role }: Props) {
   }, [brands]);
 
   function formatLocation(item: Item): string {
-    const where = locationNameById.get(item.primary_location_id) ?? "—";
-    const hint = item.location_text?.trim();
-    return hint ? `${where} / ${hint}` : where;
+    const where =
+      item.primary_location_id != null
+        ? (locationNameById.get(item.primary_location_id) ?? "—")
+        : "—";
+    return where;
   }
 
   function displayName(item: Item): string {
@@ -243,7 +249,7 @@ export function ItemList({ role }: Props) {
       // page/filter combination so the next read pulls fresh data.
       queryClient.invalidateQueries({ queryKey: ["items"] });
     } catch (e) {
-      toast.error(String(e));
+      toast.error(extractError(e));
     }
   };
 
@@ -276,7 +282,7 @@ export function ItemList({ role }: Props) {
       setSelectedIds(new Set());
       queryClient.invalidateQueries({ queryKey: ["items"] });
     } catch (e) {
-      toast.error(String(e));
+      toast.error(extractError(e));
     }
   };
 
@@ -332,7 +338,7 @@ export function ItemList({ role }: Props) {
         <MetricCard
           label="Total Items"
           value={metrics.total}
-          icon={<PackagePlus className="h-4 w-4 text-ink-muted" />}
+          icon={<PackagePlus className="h-4 w-4 text-muted-foreground" />}
         />
         <MetricCard
           label="Out of Stock"
@@ -356,8 +362,8 @@ export function ItemList({ role }: Props) {
         ) : null}
         <MetricCard
           label="Total Value"
-          value={`₹${(metrics.totalRetail / 100).toLocaleString("en-IN")}`}
-          icon={<IndianRupee className="h-4 w-4 text-ink-muted" />}
+          value={formatRupeesFromPaise(metrics.totalRetail)}
+          icon={<IndianRupee className="h-4 w-4 text-muted-foreground" />}
         />
       </div>
 
@@ -365,7 +371,7 @@ export function ItemList({ role }: Props) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[200px] flex-1">
           <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle"
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
           />
           <input
@@ -377,7 +383,7 @@ export function ItemList({ role }: Props) {
             className="input pl-9"
           />
         </div>
-        <label className="flex h-9 items-center gap-1.5 text-xs text-ink-muted">
+        <label className="flex h-9 items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
             checked={lowStockOnly}
@@ -386,7 +392,7 @@ export function ItemList({ role }: Props) {
           />
           Low stock
         </label>
-        <label className="flex h-9 items-center gap-1.5 text-xs text-ink-muted">
+        <label className="flex h-9 items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
             checked={includeInactive}
@@ -419,9 +425,14 @@ export function ItemList({ role }: Props) {
         <div className="h-5 w-px bg-border" />
 
         {canEdit ? (
-          <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} className="!text-xs">
-            Add Item
-          </Button>
+          <>
+            <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} className="!text-xs">
+              Add Item
+            </Button>
+            <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">
+              Import CSV
+            </Button>
+          </>
         ) : null}
         <Button
           type="button"
@@ -431,17 +442,7 @@ export function ItemList({ role }: Props) {
           onClick={() => (window.location.hash = "#/inward")}
           className="!text-xs"
         >
-          Inwards
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          icon={Scale}
-          onClick={() => (window.location.hash = "#/inward")}
-          className="!text-xs"
-        >
-          Adjust
+          Inward
         </Button>
         {selectedIds.size > 0 && canEdit ? (
           <Button type="button" size="sm" variant="danger" icon={Archive} onClick={() => void handleBulkArchive()} className="!text-xs">
@@ -477,25 +478,25 @@ export function ItemList({ role }: Props) {
           totalItems={totalItems}
           pageSize={pageSize}
           onPageChange={setPage}
-          className="card !rounded-lg !border-border !bg-surface-sunken px-3 py-2"
+          className="card !rounded-lg !border-border !bg-muted px-3 py-2"
         />
       ) : null}
       {[...grouped.entries()].map(([itemBrand, categories]) => (
         <section key={itemBrand} className="space-y-1.5">
-          <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+          <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {itemBrand}
           </h3>
           {[...categories.entries()].map(([itemCategory, rows]) => (
             <div
               key={itemCategory}
-              className="overflow-hidden rounded-lg border border-border bg-surface-raised"
+              className="overflow-hidden rounded-lg border border-border bg-card"
             >
-              <div className="border-b border-border bg-surface-sunken px-3 py-1.5 text-[11px] font-medium text-ink-subtle">
+              <div className="border-b border-border bg-muted px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
                 {itemCategory}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="text-left text-xs text-ink-subtle">
+                  <thead className="text-left text-xs text-muted-foreground">
                     <tr className="border-b border-border">
                       <th className="px-3 py-2 font-medium">
                         <input
@@ -529,14 +530,14 @@ export function ItemList({ role }: Props) {
                           key={item.id}
                           onClick={() => openEdit(item)}
                           className={[
-                            "cursor-pointer border-b border-border hover:bg-surface-sunken",
+                            "cursor-pointer border-b border-border hover:bg-muted",
                             stockAnomaly
-                              ? "border-l-2 border-l-red-500/80 bg-red-500/10"
+                              ? "border-l-2 border-l-destructive/80 bg-destructive/10"
                               : isOut
-                                ? "border-l-2 border-l-red-500/60 bg-red-500/5"
+                                ? "border-l-2 border-l-destructive/60 bg-destructive/5"
                                 : "",
                             lowStock
-                              ? "border-l-2 border-l-amber-400/60 bg-amber-500/5"
+                              ? "border-l-2 border-l-warning/60 bg-warning/5"
                               : "",
                             !item.is_active ? "opacity-50" : "",
                           ].join(" ")}
@@ -550,12 +551,12 @@ export function ItemList({ role }: Props) {
                               className="h-3.5 w-3.5"
                             />
                           </td>
-                          <td className="px-3 py-2 font-mono text-xs text-ink-muted">
+                          <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                             {item.sku_code}
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-medium text-ink">
+                              <span className="font-medium text-foreground">
                                 {displayName(item)}
                               </span>
                               {!item.is_active ? (
@@ -563,21 +564,21 @@ export function ItemList({ role }: Props) {
                               ) : null}
                             </div>
                           </td>
-                          <td className="px-3 py-2 text-ink-muted">
+                          <td className="px-3 py-2 text-muted-foreground">
                             {item.unit_label ?? item.unit_code ?? "—"}
                           </td>
-                          <td className="px-3 py-2 text-ink-muted">
+                          <td className="px-3 py-2 text-muted-foreground">
                             {formatLocation(item)}
                           </td>
                           {role === "owner" ? (
-                            <td className="px-3 py-2 text-right text-ink">
+                            <td className="px-3 py-2 text-right text-foreground">
                               <Money paise={item.cost_paise} />
                             </td>
                           ) : null}
-                          <td className="px-3 py-2 text-right text-ink">
+                          <td className="px-3 py-2 text-right text-foreground">
                             <Money paise={item.retail_price_paise} />
                           </td>
-                          <td className="px-3 py-2 text-right text-ink-muted">
+                          <td className="px-3 py-2 text-right text-muted-foreground">
                             {item.min_qty}
                           </td>
                           <td className="px-3 py-2">
@@ -646,6 +647,15 @@ export function ItemList({ role }: Props) {
           ))}
         </section>
       ))}
+
+      <CsvImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => {
+          toast.success("Items imported successfully");
+          refetch();
+        }}
+      />
     </div>
   );
 }
@@ -671,7 +681,7 @@ function StockBadges({
   if (stockAnomaly) {
     return (
       <span className="inline-flex items-center gap-1" data-testid="stock-anomaly">
-        <TriangleAlert className="h-4 w-4 text-red-400" aria-hidden="true" />
+        <TriangleAlert className="h-4 w-4 text-destructive" aria-hidden="true" />
         <Badge variant="danger">Stock anomaly · {currentQty}</Badge>
       </span>
     );
@@ -686,7 +696,7 @@ function StockBadges({
     return (
       <span className="inline-flex items-center gap-1" data-testid="stock-low">
         <TriangleAlert
-          className="h-4 w-4 text-amber-400"
+          className="h-4 w-4 text-warning"
           aria-hidden="true"
         />
         <Badge variant="warning">Low · {currentQty}</Badge>
@@ -696,7 +706,7 @@ function StockBadges({
   return (
     <span className="inline-flex items-center gap-1" data-testid="stock-in">
       <Badge variant="success">In stock</Badge>
-      <span className="text-xs text-ink-muted">· {currentQty}</span>
+      <span className="text-xs text-muted-foreground">· {currentQty}</span>
     </span>
   );
 }
@@ -714,22 +724,22 @@ function MetricCard({
 }) {
   const border =
     accent === "red"
-      ? "border-red-500/30"
+      ? "border-destructive/30"
       : accent === "amber"
-        ? "border-amber-500/30"
+        ? "border-warning/30"
         : accent === "green"
-          ? "border-emerald-500/30"
+          ? "border-success/30"
           : "border-border";
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border ${border} bg-surface-raised px-3 py-2.5`}
+      className={`flex items-center gap-3 rounded-lg border ${border} bg-card px-3 py-2.5`}
     >
       {icon}
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-subtle">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </p>
-        <p className="text-lg font-semibold text-ink">{value}</p>
+        <p className="text-lg font-semibold text-foreground">{value}</p>
       </div>
     </div>
   );

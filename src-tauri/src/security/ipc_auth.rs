@@ -17,7 +17,8 @@
 //! }
 //! ```
 
-use crate::commands::auth::{AppError, AppState};
+use crate::commands::auth::AppState;
+use crate::error::AppError;
 
 // ---------------------------------------------------------------------------
 // Role
@@ -69,172 +70,502 @@ pub struct CommandAcl {
 /// - **Owner-only** (23): admin — unlock, user mgmt, settings writes, backup, hardening, void.
 pub const COMMAND_ACL: &[CommandAcl] = &[
     // ── Public (7) ─────────────────────────────────────────────────────
-    CommandAcl { name: "log_frontend",             min_role: Role::Public },
-    CommandAcl { name: "app_bootstrap",            min_role: Role::Public },
-    CommandAcl { name: "login_user",               min_role: Role::Public },
-    CommandAcl { name: "touch_activity",           min_role: Role::Public },
-    CommandAcl { name: "current_session",          min_role: Role::Public },
-    CommandAcl { name: "first_launch_setup",       min_role: Role::Public },
-    CommandAcl { name: "restore_from_recovery",    min_role: Role::Public },
-
+    CommandAcl {
+        name: "log_frontend",
+        min_role: Role::Public,
+    },
+    CommandAcl {
+        name: "app_bootstrap",
+        min_role: Role::Public,
+    },
+    CommandAcl {
+        name: "login_user",
+        min_role: Role::Public,
+    },
+    CommandAcl {
+        name: "touch_activity",
+        min_role: Role::Public,
+    },
+    CommandAcl {
+        name: "current_session",
+        min_role: Role::Public,
+    },
+    CommandAcl {
+        name: "first_launch_setup",
+        min_role: Role::Public,
+    },
+    CommandAcl {
+        name: "restore_from_recovery",
+        min_role: Role::Public,
+    },
     // ── Owner-only (23) ────────────────────────────────────────────────
     // Auth & user management
-    CommandAcl { name: "unlock",                   min_role: Role::Owner },
-    CommandAcl { name: "change_pin",               min_role: Role::Owner },
-    CommandAcl { name: "create_user",              min_role: Role::Owner },
-    CommandAcl { name: "list_users",               min_role: Role::Owner },
-    CommandAcl { name: "delete_user",              min_role: Role::Owner },
+    CommandAcl {
+        name: "unlock",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "change_pin",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "create_user",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "list_users",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "delete_user",
+        min_role: Role::Owner,
+    },
     // Recovery setup
-    CommandAcl { name: "set_recovery_passphrase",  min_role: Role::Owner },
+    CommandAcl {
+        name: "set_recovery_passphrase",
+        min_role: Role::Owner,
+    },
     // Settings writes
-    CommandAcl { name: "set_setting",              min_role: Role::Owner },
-    CommandAcl { name: "enroll_device",            min_role: Role::Owner },
-    CommandAcl { name: "revoke_device",            min_role: Role::Owner },
+    CommandAcl {
+        name: "set_setting",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "enroll_device",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "revoke_device",
+        min_role: Role::Owner,
+    },
     // Backup operations
-    CommandAcl { name: "list_targets",             min_role: Role::Owner },
-    CommandAcl { name: "backup_now",               min_role: Role::Owner },
-    CommandAcl { name: "restore",                  min_role: Role::Owner },
-    CommandAcl { name: "restore_into_first_launch",min_role: Role::Owner },
-    CommandAcl { name: "test_restore",             min_role: Role::Owner },
-    CommandAcl { name: "backup_status",            min_role: Role::Owner },
+    CommandAcl {
+        name: "list_targets",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "backup_now",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "restore",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "restore_into_first_launch",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "test_restore",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "backup_status",
+        min_role: Role::Owner,
+    },
     // Hardening
-    CommandAcl { name: "master_health",            min_role: Role::Owner },
-    CommandAcl { name: "autostart_enable",         min_role: Role::Owner },
-    CommandAcl { name: "autostart_disable",        min_role: Role::Owner },
-    CommandAcl { name: "autostart_is_enabled",     min_role: Role::Owner },
-    CommandAcl { name: "set_prevent_sleep",        min_role: Role::Owner },
-    CommandAcl { name: "bitlocker_status",         min_role: Role::Owner },
+    CommandAcl {
+        name: "master_health",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "autostart_enable",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "autostart_disable",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "autostart_is_enabled",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "set_prevent_sleep",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "bitlocker_status",
+        min_role: Role::Owner,
+    },
     // Admin operations
-    CommandAcl { name: "cmd_admin_reopen_day",     min_role: Role::Owner },
-    CommandAcl { name: "cmd_void_sale",            min_role: Role::Owner },
-
+    CommandAcl {
+        name: "cmd_admin_reopen_day",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_void_sale",
+        min_role: Role::Owner,
+    },
     // ── Stocker+ (12) — read-only reference data ───────────────────────
-    CommandAcl { name: "list_items",               min_role: Role::Stocker },
-    CommandAcl { name: "get_item",                 min_role: Role::Stocker },
-    CommandAcl { name: "lookup_item",              min_role: Role::Stocker },
-    CommandAcl { name: "cmd_search_items",         min_role: Role::Stocker },
-    CommandAcl { name: "list_brands",              min_role: Role::Stocker },
-    CommandAcl { name: "get_brand",                min_role: Role::Stocker },
-    CommandAcl { name: "list_label_prints",        min_role: Role::Stocker },
-    CommandAcl { name: "list_units",               min_role: Role::Stocker },
-    CommandAcl { name: "list_unit_conversions",    min_role: Role::Stocker },
-    CommandAcl { name: "list_customer_types",      min_role: Role::Stocker },
-    CommandAcl { name: "list_locations",           min_role: Role::Stocker },
-    CommandAcl { name: "list_sub_locations",       min_role: Role::Stocker },
-
+    CommandAcl {
+        name: "list_items",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "get_item",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "lookup_item",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_search_items",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "list_brands",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "get_brand",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "list_label_prints",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "list_units",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "list_unit_conversions",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "list_customer_types",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "list_locations",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "list_sub_locations",
+        min_role: Role::Stocker,
+    },
     // ── Cashier+ (75) — operational commands ───────────────────────────
     // Session
-    CommandAcl { name: "lock",                     min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "lock",
+        min_role: Role::Cashier,
+    },
     // Customer types (write)
-    CommandAcl { name: "add_customer_type",        min_role: Role::Cashier },
-    CommandAcl { name: "rename_customer_type",     min_role: Role::Cashier },
-    CommandAcl { name: "deactivate_customer_type", min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "add_customer_type",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "rename_customer_type",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "deactivate_customer_type",
+        min_role: Role::Cashier,
+    },
     // Locations (write)
-    CommandAcl { name: "create_location",          min_role: Role::Cashier },
-    CommandAcl { name: "rename_location",          min_role: Role::Cashier },
-    CommandAcl { name: "deactivate_location",      min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "create_location",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "rename_location",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "deactivate_location",
+        min_role: Role::Cashier,
+    },
     // Sub-locations (write)
-    CommandAcl { name: "create_sub_location",      min_role: Role::Cashier },
-    CommandAcl { name: "update_sub_location",      min_role: Role::Cashier },
-    CommandAcl { name: "deactivate_sub_location",  min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "create_sub_location",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "update_sub_location",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "deactivate_sub_location",
+        min_role: Role::Cashier,
+    },
     // Items (write)
-    CommandAcl { name: "create_item",              min_role: Role::Cashier },
-    CommandAcl { name: "update_item",              min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "create_item",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "update_item",
+        min_role: Role::Cashier,
+    },
     // Brands (write)
-    CommandAcl { name: "create_brand",             min_role: Role::Cashier },
-    CommandAcl { name: "deactivate_brand",         min_role: Role::Cashier },
-    CommandAcl { name: "update_brand_code_prefix", min_role: Role::Cashier },
-    CommandAcl { name: "preview_next_barcode",     min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "create_brand",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "deactivate_brand",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "update_brand_code_prefix",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "preview_next_barcode",
+        min_role: Role::Cashier,
+    },
     // Label log (write)
-    CommandAcl { name: "record_label_print",       min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "record_label_print",
+        min_role: Role::Cashier,
+    },
     // Units (write)
-    CommandAcl { name: "create_unit",              min_role: Role::Cashier },
-    CommandAcl { name: "create_unit_conversion",   min_role: Role::Cashier },
-    CommandAcl { name: "update_unit",              min_role: Role::Cashier },
-    CommandAcl { name: "deactivate_unit",          min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "create_unit",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "create_unit_conversion",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "update_unit",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "deactivate_unit",
+        min_role: Role::Cashier,
+    },
     // Customers
-    CommandAcl { name: "create_customer",          min_role: Role::Cashier },
-    CommandAcl { name: "update_customer",          min_role: Role::Cashier },
-    CommandAcl { name: "list_customers",           min_role: Role::Cashier },
-    CommandAcl { name: "lookup_customer",          min_role: Role::Cashier },
-    CommandAcl { name: "customer_outstanding",     min_role: Role::Cashier },
-    CommandAcl { name: "list_customer_bills",      min_role: Role::Cashier },
-    CommandAcl { name: "customer_ledger",          min_role: Role::Cashier },
-    CommandAcl { name: "customer_credit_sales",    min_role: Role::Cashier },
-    CommandAcl { name: "record_customer_payment",  min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "create_customer",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "update_customer",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "list_customers",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "lookup_customer",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "customer_outstanding",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "list_customer_bills",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "customer_ledger",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "customer_credit_sales",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "record_customer_payment",
+        min_role: Role::Cashier,
+    },
     // Vendors
-    CommandAcl { name: "create_vendor",            min_role: Role::Cashier },
-    CommandAcl { name: "list_vendors",             min_role: Role::Cashier },
-    CommandAcl { name: "get_vendor",               min_role: Role::Cashier },
-    CommandAcl { name: "update_vendor",            min_role: Role::Cashier },
-    CommandAcl { name: "record_vendor_payment",    min_role: Role::Cashier },
-    CommandAcl { name: "vendor_outstanding",       min_role: Role::Cashier },
-    CommandAcl { name: "list_vendor_payments",     min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "create_vendor",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "list_vendors",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "get_vendor",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "update_vendor",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "record_vendor_payment",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "vendor_outstanding",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "list_vendor_payments",
+        min_role: Role::Cashier,
+    },
     // Sales
-    CommandAcl { name: "cmd_create_sale",          min_role: Role::Cashier },
-    CommandAcl { name: "cmd_create_sale_return",   min_role: Role::Cashier },
-    CommandAcl { name: "cmd_convert_quotation",    min_role: Role::Cashier },
-    CommandAcl { name: "cmd_edit_sale",            min_role: Role::Cashier },
-    CommandAcl { name: "cmd_get_sale",             min_role: Role::Cashier },
-    CommandAcl { name: "cmd_get_sale_return",      min_role: Role::Cashier },
-    CommandAcl { name: "cmd_list_sales",           min_role: Role::Cashier },
-    CommandAcl { name: "cmd_list_sale_returns",    min_role: Role::Cashier },
-    CommandAcl { name: "cmd_list_sale_payments",   min_role: Role::Cashier },
-    CommandAcl { name: "cmd_record_sale_payment",  min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "cmd_create_sale",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_create_sale_return",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_convert_quotation",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_edit_sale",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_get_sale",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_get_sale_return",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_sales",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_sale_returns",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_sale_payments",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_record_sale_payment",
+        min_role: Role::Cashier,
+    },
     // Purchases
-    CommandAcl { name: "cmd_create_inward",        min_role: Role::Cashier },
-    CommandAcl { name: "cmd_last_cost",            min_role: Role::Cashier },
-    CommandAcl { name: "cmd_last_retail",          min_role: Role::Cashier },
-    CommandAcl { name: "cmd_list_purchases",       min_role: Role::Cashier },
-    CommandAcl { name: "cmd_get_purchase",         min_role: Role::Cashier },
-    CommandAcl { name: "cmd_movements_for_item",   min_role: Role::Cashier },
-    CommandAcl { name: "cmd_list_purchases_by_vendor", min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "cmd_create_inward",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_last_cost",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_last_retail",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_purchases",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_get_purchase",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_movements_for_item",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_purchases_by_vendor",
+        min_role: Role::Cashier,
+    },
     // Day close
-    CommandAcl { name: "cmd_cash_sales_for",       min_role: Role::Cashier },
-    CommandAcl { name: "cmd_last_opening_for",     min_role: Role::Cashier },
-    CommandAcl { name: "cmd_backup_gate_check",    min_role: Role::Cashier },
-    CommandAcl { name: "cmd_trigger_day_close",    min_role: Role::Cashier },
-    CommandAcl { name: "cmd_lock_state",           min_role: Role::Cashier },
-    CommandAcl { name: "cmd_list_day_close",       min_role: Role::Cashier },
-    CommandAcl { name: "cmd_get_day_close",        min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "cmd_cash_sales_for",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_last_opening_for",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_backup_gate_check",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_trigger_day_close",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_lock_state",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_day_close",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_get_day_close",
+        min_role: Role::Cashier,
+    },
     // Reports
-    CommandAcl { name: "cmd_daily_sales",          min_role: Role::Cashier },
-    CommandAcl { name: "cmd_stock_report",         min_role: Role::Cashier },
-    CommandAcl { name: "cmd_outstanding_report",   min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "cmd_daily_sales",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_stock_report",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_outstanding_report",
+        min_role: Role::Cashier,
+    },
     // Sequences
-    CommandAcl { name: "cmd_mint_next_sale_no",    min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "cmd_mint_next_sale_no",
+        min_role: Role::Cashier,
+    },
     // Settings (read)
-    CommandAcl { name: "get_setting",              min_role: Role::Cashier },
-    CommandAcl { name: "list_devices",             min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "get_setting",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "list_devices",
+        min_role: Role::Cashier,
+    },
     // Printer discovery
-    CommandAcl { name: "discover_system_printers", min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "discover_system_printers",
+        min_role: Role::Cashier,
+    },
     // Alerts
-    CommandAcl { name: "cmd_list_alerts",          min_role: Role::Cashier },
-    CommandAcl { name: "cmd_unread_alert_count",   min_role: Role::Cashier },
-    CommandAcl { name: "cmd_mark_alert_read",      min_role: Role::Cashier },
-    CommandAcl { name: "cmd_mark_all_alerts_read", min_role: Role::Cashier },
-    CommandAcl { name: "cmd_refresh_alerts",       min_role: Role::Cashier },
-
+    CommandAcl {
+        name: "cmd_list_alerts",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_unread_alert_count",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_mark_alert_read",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_mark_all_alerts_read",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_refresh_alerts",
+        min_role: Role::Cashier,
+    },
     // Scanner
-    CommandAcl { name: "set_scan_target",          min_role: Role::Cashier },
-    CommandAcl { name: "scan_target",              min_role: Role::Cashier },
+    CommandAcl {
+        name: "set_scan_target",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "scan_target",
+        min_role: Role::Cashier,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -254,7 +585,9 @@ pub fn authorize(cmd_name: &str, state: &AppState) -> Result<(), AppError> {
         Some(e) => e,
         None => {
             log::warn!("ACL default-deny: unknown command '{cmd_name}'");
-            return Err(AppError::Unauthorized);
+            return Err(AppError::Unauthorized(format!(
+                "unknown command '{cmd_name}'"
+            )));
         }
     };
 
@@ -281,27 +614,29 @@ pub fn authorize(cmd_name: &str, state: &AppState) -> Result<(), AppError> {
                     role,
                     entry.min_role
                 );
-                Err(AppError::Unauthorized)
+                Err(AppError::Unauthorized(format!(
+                    "command '{cmd_name}' denied: insufficient role"
+                )))
             }
         }
         Some(_) => {
             log::warn!("ACL denied '{cmd_name}': user is inactive");
-            Err(AppError::Unauthorized)
+            Err(AppError::Unauthorized(format!(
+                "command '{cmd_name}' denied: user inactive"
+            )))
         }
         None => {
             log::warn!("ACL denied '{cmd_name}': no active session");
-            Err(AppError::Unauthorized)
+            Err(AppError::Unauthorized(format!(
+                "command '{cmd_name}' denied: no session"
+            )))
         }
     }
 }
 
-pub fn authorize_err(
-    cmd_name: &str,
-    state: &AppState,
-) -> Result<(), crate::error::AppError> {
-    authorize(cmd_name, state).map_err(|_| {
-        crate::error::AppError::Unauthorized(format!("command '{cmd_name}' denied"))
-    })
+pub fn authorize_err(cmd_name: &str, state: &AppState) -> Result<(), crate::error::AppError> {
+    authorize(cmd_name, state)
+        .map_err(|_| crate::error::AppError::Unauthorized(format!("command '{cmd_name}' denied")))
 }
 
 // ---------------------------------------------------------------------------
@@ -385,10 +720,7 @@ mod tests {
             "current_session",
         ];
         for name in &public_cmds {
-            assert!(
-                authorize(name, &state).is_ok(),
-                "'{name}' should be public"
-            );
+            assert!(authorize(name, &state).is_ok(), "'{name}' should be public");
         }
     }
 

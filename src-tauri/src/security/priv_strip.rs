@@ -119,9 +119,7 @@ mod win {
     }
 
     /// Look up the LUID for a privilege name.
-    pub unsafe fn lookup_privilege_luid(
-        name: &[u16],
-    ) -> Result<Luid, std::io::Error> {
+    pub unsafe fn lookup_privilege_luid(name: &[u16]) -> Result<Luid, std::io::Error> {
         let mut luid = Luid {
             low_part: 0,
             high_part: 0,
@@ -136,17 +134,16 @@ mod win {
 #[cfg(target_os = "windows")]
 fn strip_privilege_inner(name: &str) -> Result<(), AppError> {
     unsafe {
-        let token = win::open_current_token(
-            win::TOKEN_ADJUST_PRIVILEGES | win::TOKEN_QUERY,
-        )
-        .map_err(|e| AppError::Internal(format!("OpenProcessToken failed: {e}")))?;
+        let token = win::open_current_token(win::TOKEN_ADJUST_PRIVILEGES | win::TOKEN_QUERY)
+            .map_err(|e| AppError::Internal(format!("OpenProcessToken failed: {e}")))?;
 
         // Ensure handle is closed on all exit paths.
         let _guard = HandleGuard(token);
 
         let wide_name = win::to_wide(name);
-        let luid = win::lookup_privilege_luid(&wide_name)
-            .map_err(|e| AppError::Internal(format!("LookupPrivilegeValueW({name}) failed: {e}")))?;
+        let luid = win::lookup_privilege_luid(&wide_name).map_err(|e| {
+            AppError::Internal(format!("LookupPrivilegeValueW({name}) failed: {e}"))
+        })?;
 
         let tp = win::TokenPrivileges {
             privilege_count: 1,
@@ -193,8 +190,9 @@ fn has_privilege_inner(name: &str) -> Result<bool, AppError> {
         // Query the privilege via GetTokenInformation + TokenPrivileges.
         // We use a fixed buffer since we're checking one privilege at a time.
         let wide_name = win::to_wide(name);
-        let target_luid = win::lookup_privilege_luid(&wide_name)
-            .map_err(|e| AppError::Internal(format!("LookupPrivilegeValueW({name}) failed: {e}")))?;
+        let target_luid = win::lookup_privilege_luid(&wide_name).map_err(|e| {
+            AppError::Internal(format!("LookupPrivilegeValueW({name}) failed: {e}"))
+        })?;
 
         // Enumerate all privileges via GetTokenInformation.
         const TOKEN_INFORMATION_CLASS_PRIVILEGES: u32 = 3; // TokenPrivileges
@@ -245,8 +243,7 @@ fn has_privilege_inner(name: &str) -> Result<bool, AppError> {
         // Check if target LUID is in the privilege set.
         for i in 0..buf.privilege_count as usize {
             let p = &buf.privilege[i];
-            if p.luid.low_part == target_luid.low_part
-                && p.luid.high_part == target_luid.high_part
+            if p.luid.low_part == target_luid.low_part && p.luid.high_part == target_luid.high_part
             {
                 return Ok(true);
             }
@@ -298,7 +295,11 @@ mod tests {
         // SeDebugPrivilege, so AdjustTokenPrivileges succeeds with
         // ERROR_NOT_ALL_ASSIGNED (which we treat as success).
         let result = strip_se_debug_privilege();
-        assert!(result.is_ok(), "strip_se_debug should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "strip_se_debug should succeed: {:?}",
+            result.err()
+        );
     }
 
     #[test]

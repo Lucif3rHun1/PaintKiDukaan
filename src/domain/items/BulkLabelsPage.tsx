@@ -24,6 +24,7 @@ import {
   type BatchLabel,
   type PrintConfig,
 } from "../../pos/print";
+import { extractError } from "../../lib/extractError";
 
 type PrinterType = "thermal" | "laser-a4";
 type ThermalSize = "50x25" | "50x50" | "38x25";
@@ -69,6 +70,7 @@ export function BulkLabelsPage() {
   const [count, setCount] = useState<number>(1);
   const [line1, setLine1] = useState("");
   const [line2, setLine2] = useState("");
+  const [skuOverride, setSkuOverride] = useState("");
 
   const [printer, setPrinter] = useState<PrinterType>("thermal");
   const [sizeChoice, setSizeChoice] = useState<string>("50x25");
@@ -93,13 +95,12 @@ export function BulkLabelsPage() {
   });
   const items = itemsQuery.data ?? [];
   const loadingItems = itemsQuery.isLoading;
-  const itemError = itemsQuery.error ? String(itemsQuery.error) : null;
+  const itemError = itemsQuery.error ? extractError(itemsQuery.error) : null;
 
   useEffect(() => {
     let cancelled = false;
     getSetting("shop_name")
-      .then((v) => !cancelled && setShopName(v || ""))
-      .catch(() => {});
+      .then((v) => !cancelled && setShopName(v || "")).catch((err: unknown) => console.error("Silent catch replaced:", err));
     Promise.all([
       getSetting("label_size").catch(() => ""),
       getSetting("receipt_template").catch(() => ""),
@@ -125,8 +126,7 @@ export function BulkLabelsPage() {
             /* ignore corrupt JSON */
           }
         }
-      })
-      .catch(() => {});
+      }).catch((err: unknown) => console.error("Silent catch replaced:", err));
     return () => {
       cancelled = true;
     };
@@ -138,7 +138,7 @@ export function BulkLabelsPage() {
       const rows = await listLabelPrints({ limit: 50 });
       setHistory(rows);
     } catch (e) {
-      setActionMsg(`Failed to load print history: ${String(e)}`);
+      setActionMsg(`Failed to load print history: ${extractError(e)}`);
     } finally {
       setHistoryLoading(false);
     }
@@ -157,9 +157,9 @@ export function BulkLabelsPage() {
     if (!selectedItem) {
       setLine1("");
       setLine2("");
+      setSkuOverride("");
       return;
     }
-    // Strip surrounding double quotes from template values
     const rawLine1 = shopName || selectedItem.label_line1 || "";
     setLine1(rawLine1.replace(/^"|"$/g, ""));
     const brandPart = selectedItem.brand ?? "";
@@ -167,6 +167,7 @@ export function BulkLabelsPage() {
     setLine2(
       [brandName, selectedItem.name].filter(Boolean).join(" "),
     );
+    setSkuOverride(selectedItem.sku_code);
   }, [selectedItem, shopName]);
 
   // When printer changes, snap size choice to a valid value.
@@ -189,6 +190,7 @@ export function BulkLabelsPage() {
           barcode: selectedItem.barcode!,
           line1: line1.trim() || undefined,
           line2: line2.trim() || undefined,
+          sku: skuOverride.trim() || selectedItem.sku_code,
         },
         itemId: selectedItem.id,
         itemName: selectedItem.name,
@@ -244,7 +246,7 @@ export function BulkLabelsPage() {
       await printLabelBatch(labels, configFromFormat(record.format));
       setActionMsg(`Reprinted ${record.qty} label${record.qty === 1 ? "" : "s"} for ${record.itemName}.`);
     } catch (e) {
-      setActionMsg(`Failed: ${String(e)}`);
+      setActionMsg(`Failed: ${extractError(e)}`);
     } finally {
       setBusy(false);
     }
@@ -263,7 +265,7 @@ export function BulkLabelsPage() {
       await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
       setActionMsg(`Downloaded PDF with ${batch.length} label(s).`);
     } catch (e) {
-      setActionMsg(`Failed: ${String(e)}`);
+      setActionMsg(`Failed: ${extractError(e)}`);
     } finally {
       setBusy(false);
     }
@@ -282,7 +284,7 @@ export function BulkLabelsPage() {
       setPreviewUrl(url);
       setActionMsg(`Preview ready — review before downloading or printing.`);
     } catch (e) {
-      setActionMsg(`Failed: ${String(e)}`);
+      setActionMsg(`Failed: ${extractError(e)}`);
     } finally {
       setBusy(false);
     }
@@ -313,7 +315,7 @@ export function BulkLabelsPage() {
       await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
       setActionMsg(`Sent ${batch.length} label(s) to printer.`);
     } catch (e) {
-      setActionMsg(`Failed: ${String(e)}`);
+      setActionMsg(`Failed: ${extractError(e)}`);
     } finally {
       setBusy(false);
     }
@@ -322,23 +324,23 @@ export function BulkLabelsPage() {
   return (
     <div className="grid gap-4 lg:grid-cols-12">
       {/* LEFT: compose — 5 cols */}
-      <section className="space-y-3 rounded-lg border border-white/10 bg-zinc-900/60 p-4 lg:col-span-5">
+      <section className="space-y-3 rounded-lg border border-border bg-card/60 p-4 lg:col-span-5">
         <header className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-zinc-200">Compose label</h3>
-          <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
+          <h3 className="text-sm font-semibold text-foreground">Compose label</h3>
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
             {LOCKED_FORMAT}
           </span>
         </header>
 
         {/* Item picker */}
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-zinc-400">Item</label>
+          <label className="text-xs font-medium text-muted-foreground">Item</label>
           <select
             value={selectedItemId}
             onChange={(e) =>
               setSelectedItemId(e.target.value ? Number(e.target.value) : "")
             }
-            className="w-full rounded-md border border-white/10 bg-zinc-950 px-2.5 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+            className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             disabled={loadingItems}
           >
             <option value="">— Pick an item —</option>
@@ -348,30 +350,30 @@ export function BulkLabelsPage() {
               </option>
             ))}
           </select>
-          {itemError && <p className="text-xs text-red-400">{itemError}</p>}
+          {itemError && <p className="text-xs text-destructive">{itemError}</p>}
         </div>
 
         {/* Count + barcode row */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400">Count</label>
+            <label className="text-xs font-medium text-muted-foreground">Count</label>
             <input
               type="number"
               min={1}
               max={500}
               value={count}
               onChange={(e) => setCount(Number(e.target.value) || 1)}
-              className="w-full rounded-md border border-white/10 bg-zinc-950 px-2.5 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+              className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400">Barcode</label>
+            <label className="text-xs font-medium text-muted-foreground">Barcode</label>
             <input
               type="text"
               value={selectedItem?.barcode ?? ""}
               readOnly
               placeholder="(auto from item)"
-              className="w-full cursor-not-allowed rounded-md border border-white/10 bg-zinc-900 px-2.5 py-2 font-mono text-sm text-zinc-500"
+              className="w-full cursor-not-allowed rounded-md border border-border bg-muted px-2.5 py-2 font-mono text-sm text-muted-foreground"
             />
           </div>
         </div>
@@ -379,48 +381,60 @@ export function BulkLabelsPage() {
         {/* Label text lines */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400">Line 1</label>
+            <label className="text-xs font-medium text-muted-foreground">Line 1</label>
             <input
               type="text"
               value={line1}
               onChange={(e) => setLine1(e.target.value)}
               placeholder="Item name"
-              className="w-full rounded-md border border-white/10 bg-zinc-950 px-2.5 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+              className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400">Line 2</label>
+            <label className="text-xs font-medium text-muted-foreground">Line 2</label>
             <input
               type="text"
               value={line2}
               onChange={(e) => setLine2(e.target.value)}
               placeholder="SKU / size"
-              className="w-full rounded-md border border-white/10 bg-zinc-950 px-2.5 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+              className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
           </div>
+        </div>
+
+        {/* SKU input */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">SKU</label>
+          <input
+            type="text"
+            value={skuOverride}
+            onChange={(e) => setSkuOverride(e.target.value)}
+            placeholder={selectedItem?.sku_code ?? "SKU code"}
+            className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+          />
         </div>
 
         {/* Printer settings */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400">Printer</label>
+            <label className="text-xs font-medium text-muted-foreground">Printer</label>
             <select
               value={printer}
               onChange={(e) => setPrinter(e.target.value as PrinterType)}
-              className="w-full rounded-md border border-white/10 bg-zinc-950 px-2.5 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+              className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             >
               <option value="thermal">Thermal</option>
               <option value="laser-a4">Laser (A4 sheet)</option>
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400">
+            <label className="text-xs font-medium text-muted-foreground">
               {printer === "thermal" ? "Label size" : "Labels per A4"}
             </label>
             <select
               value={sizeChoice}
               onChange={(e) => setSizeChoice(e.target.value)}
-              className="w-full rounded-md border border-white/10 bg-zinc-950 px-2.5 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+              className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             >
               {PRINTER_PRESETS[printer].map((p) => (
                 <option key={p} value={p}>
@@ -432,11 +446,11 @@ export function BulkLabelsPage() {
           </div>
           {printer === "thermal" && (
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-400">Labels per row</label>
+              <label className="text-xs font-medium text-muted-foreground">Labels per row</label>
               <select
                 value={labelsPerRow}
                 onChange={(e) => setLabelsPerRow(Number(e.target.value) || 1)}
-                className="w-full rounded-md border border-white/10 bg-zinc-950 px-2.5 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+                className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {[1, 2, 3, 4].map((value) => (
                   <option key={value} value={value}>
@@ -450,14 +464,14 @@ export function BulkLabelsPage() {
 
         {/* Live preview */}
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-zinc-400">Preview</label>
-          <div className="rounded-lg border border-white/10 bg-zinc-950 p-4">
+          <label className="text-xs font-medium text-muted-foreground">Preview</label>
+          <div className="rounded-lg border border-border bg-background p-4">
             {selectedItem?.barcode ? (
               <div className="flex flex-col items-center gap-1">
-                <div className="text-center text-[10px] font-medium leading-tight text-zinc-200">
+                <div className="text-center text-[10px] font-medium leading-tight text-foreground">
                   {line1 || "—"}
                 </div>
-                <div className="text-center text-[9px] leading-tight text-zinc-500">
+                <div className="text-center text-[9px] leading-tight text-muted-foreground">
                   {line2 || "—"}
                 </div>
                 <div className="w-full px-2">
@@ -467,9 +481,12 @@ export function BulkLabelsPage() {
                     containerHeight={56}
                   />
                 </div>
+                <div className="text-center text-[8px] font-mono leading-tight text-muted-foreground">
+                  {skuOverride || selectedItem.sku_code}
+                </div>
               </div>
             ) : (
-              <p className="py-8 text-center text-xs text-zinc-600">
+              <p className="py-8 text-center text-xs text-muted-foreground">
                 Pick an item to preview the label.
               </p>
             )}
@@ -481,43 +498,43 @@ export function BulkLabelsPage() {
           type="button"
           onClick={addToList}
           disabled={!selectedItem?.barcode}
-          className="w-full rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:opacity-40"
+          className="btn-primary w-full"
         >
           + Add {count} label{count === 1 ? "" : "s"} to batch
         </button>
 
         {actionMsg && (
-          <p className="rounded bg-zinc-800/50 px-2 py-1 text-xs text-zinc-400">{actionMsg}</p>
+          <p className="rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{actionMsg}</p>
         )}
       </section>
 
       {/* RIGHT: batch + actions + preview + history — 7 cols */}
       <section className="space-y-4 lg:col-span-7">
         {/* Batch table */}
-        <div className="rounded-lg border border-white/10 bg-zinc-900/60 p-4">
+        <div className="rounded-lg border border-border bg-card/60 p-4">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-200">
-              Batch <span className="text-zinc-500">({batch.length})</span>
+            <h3 className="text-sm font-semibold text-foreground">
+              Batch <span className="text-muted-foreground">({batch.length})</span>
             </h3>
             {batch.length > 0 && (
               <button
                 type="button"
                 onClick={clearBatch}
-                className="rounded border border-white/10 px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/5"
+                className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted"
               >
                 Clear all
               </button>
             )}
           </div>
 
-          <div className="max-h-[220px] overflow-y-auto rounded-md border border-white/10 bg-zinc-950">
+          <div className="max-h-[220px] overflow-y-auto rounded-md border border-border bg-background">
             {batch.length === 0 ? (
-              <p className="p-4 text-center text-xs text-zinc-600">
+              <p className="p-4 text-center text-xs text-muted-foreground">
                 No labels yet — add from the left.
               </p>
             ) : (
               <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 border-b border-white/10 bg-zinc-950 text-zinc-500">
+                <thead className="sticky top-0 border-b border-border bg-background text-muted-foreground">
                   <tr>
                     <th className="px-2.5 py-1.5 font-medium">Barcode</th>
                     <th className="font-medium">Item</th>
@@ -526,23 +543,23 @@ export function BulkLabelsPage() {
                 </thead>
                 <tbody>
                   {batch.map((row) => (
-                    <tr key={row.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                    <tr key={row.id} className="border-b border-border hover:bg-muted/50">
                       <td className="px-2.5 py-1.5">
                         <BarcodeThumb
                           value={row.label.barcode}
                           containerWidth={80}
                           containerHeight={28}
                         />
-                        <div className="mt-0.5 font-mono text-[10px] text-zinc-500">
+                        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                           {row.label.barcode}
                         </div>
                       </td>
-                      <td className="py-1.5 text-zinc-200">{row.itemName}</td>
+                      <td className="py-1.5 text-foreground">{row.itemName}</td>
                       <td className="py-1.5 text-right">
                         <button
                           type="button"
                           onClick={() => removeRow(row.id)}
-                          className="rounded border border-red-400/20 px-2 py-0.5 text-[10px] text-red-400/80 hover:bg-red-400/10 hover:text-red-300"
+                          className="rounded border border-destructive/20 px-2 py-0.5 text-[10px] text-destructive/80 hover:bg-destructive/10 hover:text-destructive"
                         >
                           Remove
                         </button>
@@ -560,7 +577,7 @@ export function BulkLabelsPage() {
               type="button"
               onClick={handlePreview}
               disabled={batch.length === 0 || busy}
-              className="rounded-md border border-white/10 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40"
             >
               Preview
             </button>
@@ -568,7 +585,7 @@ export function BulkLabelsPage() {
               type="button"
               onClick={handleDownload}
               disabled={batch.length === 0 || busy}
-              className="rounded-md bg-sky-600 px-3 py-2 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+              className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
             >
               Download PDF
             </button>
@@ -576,7 +593,7 @@ export function BulkLabelsPage() {
               type="button"
               onClick={handlePrint}
               disabled={batch.length === 0 || busy}
-              className="rounded-md border border-white/10 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40"
             >
               Print
             </button>
@@ -584,9 +601,9 @@ export function BulkLabelsPage() {
         </div>
 
         {/* PDF preview */}
-        <div className="rounded-lg border border-white/10 bg-zinc-900/60 p-4">
+        <div className="rounded-lg border border-border bg-card/60 p-4">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-200">Verify before print</h3>
+            <h3 className="text-sm font-semibold text-foreground">Verify before print</h3>
             {previewUrl && (
               <button
                 type="button"
@@ -594,7 +611,7 @@ export function BulkLabelsPage() {
                   URL.revokeObjectURL(previewUrl);
                   setPreviewUrl(null);
                 }}
-                className="rounded border border-white/10 px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/5"
+                className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted"
               >
                 Clear
               </button>
@@ -604,12 +621,12 @@ export function BulkLabelsPage() {
             <iframe
               src={previewUrl}
               title="Label PDF preview"
-              className="h-[380px] w-full rounded-md border border-white/10 bg-zinc-950"
+              className="h-[380px] w-full rounded-md border border-border bg-background"
             />
           ) : (
-            <div className="flex h-[380px] items-center justify-center rounded-md border border-dashed border-white/10 bg-zinc-950">
-              <p className="text-center text-xs text-zinc-600">
-                Click <span className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">Preview</span> to
+            <div className="flex h-[380px] items-center justify-center rounded-md border border-dashed border-border bg-background">
+              <p className="text-center text-xs text-muted-foreground">
+                Click <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">Preview</span> to
                 render the batch here.
               </p>
             </div>
@@ -617,32 +634,32 @@ export function BulkLabelsPage() {
         </div>
 
         {/* History */}
-        <div className="rounded-lg border border-white/10 bg-zinc-900/60 p-4">
+        <div className="rounded-lg border border-border bg-card/60 p-4">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-200">Recent prints</h3>
+            <h3 className="text-sm font-semibold text-foreground">Recent prints</h3>
             <button
               type="button"
               onClick={() => void loadHistory()}
               disabled={historyLoading || busy}
-              className="rounded border border-white/10 px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/5 disabled:opacity-40"
+              className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted disabled:opacity-40"
             >
               Refresh
             </button>
           </div>
-          <div className="max-h-[200px] overflow-y-auto rounded-md border border-white/10 bg-zinc-950">
+          <div className="max-h-[200px] overflow-y-auto rounded-md border border-border bg-background">
             {historyLoading ? (
-              <p className="p-4 text-center text-xs text-zinc-600">Loading…</p>
+              <p className="p-4 text-center text-xs text-muted-foreground">Loading…</p>
             ) : history.length === 0 ? (
-              <p className="p-4 text-center text-xs text-zinc-600">No print history yet.</p>
+              <p className="p-4 text-center text-xs text-muted-foreground">No print history yet.</p>
             ) : (
-              <div className="divide-y divide-white/5">
+              <div className="divide-y divide-border">
                 {history.map((row) => (
-                  <div key={row.id} className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-white/[0.02]">
+                  <div key={row.id} className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-muted/50">
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-medium text-zinc-200">
+                      <p className="truncate text-xs font-medium text-foreground">
                         {row.itemName}
                       </p>
-                      <p className="font-mono text-[10px] text-zinc-500">
+                      <p className="font-mono text-[10px] text-muted-foreground">
                         {row.barcode} · qty {row.qty}
                       </p>
                     </div>
@@ -650,7 +667,7 @@ export function BulkLabelsPage() {
                       type="button"
                       onClick={() => void reprint(row)}
                       disabled={busy}
-                      className="inline-flex shrink-0 items-center gap-1 rounded border border-sky-400/20 px-2 py-1 text-[10px] text-sky-300/80 hover:bg-sky-400/10 disabled:opacity-40"
+                      className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/20 px-2 py-1 text-[10px] text-primary/80 hover:bg-primary/10 disabled:opacity-40"
                     >
                       <Printer className="h-3 w-3" />
                       Reprint

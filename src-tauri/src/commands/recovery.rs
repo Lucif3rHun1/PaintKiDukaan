@@ -7,13 +7,14 @@ use zeroize::Zeroizing;
 
 use crate::commands::auth::{
     default_lockout_row, now_unix, read_keywrap_from_keystore, sync_session_to_static,
-    validate_owner_pin, write_keywrap_to_keystore, write_lockout_to_keystore, AppError, AppState,
-    Session, User,
+    validate_owner_pin, write_keywrap_to_keystore, write_lockout_to_keystore, AppState, Session,
+    User,
 };
 use crate::crypto::kdf::{self, random_dek, random_salt, KdfParams, KEK_LEN};
 use crate::crypto::wrap::wrap_dek;
 use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
+use crate::error::AppError;
 use crate::obs;
 
 /// Wipe any leftover database files and sidecar before first-launch setup.
@@ -91,11 +92,9 @@ pub(crate) fn first_launch_setup_at_path(
     log::info!("[SETUP] Recovery KEK derived OK");
 
     log::info!("[SETUP] Wrapping DEK with PIN KEK...");
-    let pin_wrapped_dek = wrap_dek(&dek, &pin_kek)
-        .map_err(|e| AppError::Crypto(e.to_string()))?;
+    let pin_wrapped_dek = wrap_dek(&dek, &pin_kek).map_err(|e| AppError::Crypto(e.to_string()))?;
     log::info!("[SETUP] Wrapping DEK with recovery KEK...");
-    let rec_wrapped_dek = wrap_dek(&dek, &rec_kek)
-        .map_err(|e| AppError::Crypto(e.to_string()))?;
+    let rec_wrapped_dek = wrap_dek(&dek, &rec_kek).map_err(|e| AppError::Crypto(e.to_string()))?;
     log::info!("[SETUP] DEK wrapped OK");
 
     kdf::zeroize_key(&mut pin_kek);
@@ -106,20 +105,25 @@ pub(crate) fn first_launch_setup_at_path(
     let db = db::Db::open(db_path, &dek)?;
     log::info!("[SETUP] DB opened OK, seeding data...");
 
+    let ts = (now_unix() as i64) * 1000;
     db.with_conn(|conn: &Connection| {
         conn.execute(
-            "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) \
-             VALUES (?1, 'owner', ?2, ?3, 6)",
-            params!["Owner", &[0u8; 16] as &[u8], &[0u8; KEK_LEN] as &[u8]],
+            "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) \
+             VALUES (?1, 'owner', ?2, ?3, 6, ?4, ?5)",
+            params!["Owner", &[0u8; 16] as &[u8], &[0u8; KEK_LEN] as &[u8], ts, ts],
         )?;
 
         conn.execute(
-            "INSERT OR REPLACE INTO settings (id, shop_name, address, phone) \
-             VALUES (1, ?1, ?2, ?3)",
-            params![shop_name, address, phone],
+            "INSERT OR REPLACE INTO settings (id, shop_name, address, phone, created_at, updated_at) \
+             VALUES (1, ?1, ?2, ?3, ?4, ?5)",
+            params![shop_name, address, phone, ts, ts],
         )?;
 
-        conn.execute("INSERT INTO locations (name) VALUES ('Shop'), ('Godown')", [])?;
+        conn.execute(
+            "INSERT INTO locations (name, zone, is_default, is_active, created_at, updated_at) \
+             VALUES ('Shop', NULL, 1, 1, ?1, ?2), ('Godown', NULL, 0, 1, ?1, ?2)",
+            params![ts, ts],
+        )?;
 
         Ok::<_, rusqlite::Error>(())
     })?;
@@ -213,13 +217,12 @@ pub fn first_launch_setup<R: tauri::Runtime>(
     std::fs::create_dir_all(&app_dir)?;
     let db_path: PathBuf = app_dir.join(obs!("paintkiduakan.db"));
 
-    let session = first_launch_setup_at_path(
-        &state, &db_path, pin, passphrase, shop_name, address, phone,
-    )?;
+    let session =
+        first_launch_setup_at_path(&state, &db_path, pin, passphrase, shop_name, address, phone)?;
 
     if let (Some(dp), Some(dup), Some(fs)) = (decoy_pin, duress_pin, fake_shop_name) {
         log::info!("[SETUP] Provisioning decoy DB (PDE)...");
-        if let Err(e) = crate::security::pde::provision_decoy_db(&db_path, &dp, &dup, &fs) {
+        if let Err(e) = crate::security::pde::provision_decoy_db_impl(&db_path, &dp, &dup, &fs) {
             log::warn!("[SETUP] PDE provisioning failed (non-fatal): {e}");
         }
     }
@@ -237,10 +240,15 @@ pub fn set_recovery_passphrase(
     let session = state.session.lock().unwrap();
     let session = session.as_ref().ok_or(AppError::NotUnlocked)?;
     if session.role != "owner" {
-        return Err(AppError::Unauthorized);
+        return Err(AppError::Unauthorized("owner role required".into()));
     }
 
-    let db_path = state.db_path.lock().unwrap().clone().ok_or(AppError::NoDb)?;
+    let db_path = state
+        .db_path
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(AppError::NoDb)?;
     let db = state.db.lock().unwrap();
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
     let dek = db.dek();
@@ -290,8 +298,9 @@ pub fn restore_from_recovery(
     *state.db_path.lock().unwrap() = Some(db_path.clone());
 
     let user = db.with_conn(|conn: &Connection| {
-        let mut stmt = conn
-            .prepare("SELECT id, name, role FROM users WHERE role = 'owner' AND active = 1 LIMIT 1")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, role FROM users WHERE role = 'owner' AND is_active = 1 LIMIT 1",
+        )?;
         stmt.query_row([], |r| {
             Ok(User {
                 id: r.get(0)?,
@@ -405,7 +414,7 @@ mod tests {
     fn pre_db_open_flow_with_prod_cipher() {
         use crate::crypto::kdf::{derive_pin_kek, random_dek, random_salt, KdfParams, KEK_LEN};
         use crate::crypto::wrap::wrap_dek;
-        use crate::db::keywrap::{KeywrapRow, PinRole, pin_verifier_for_kek};
+        use crate::db::keywrap::{pin_verifier_for_kek, KeywrapRow, PinRole};
 
         let dir = unique_test_dir("pre-open");
         let db_path = dir.join("paintkiduakan.db");
@@ -418,19 +427,22 @@ mod tests {
         let dek = random_dek();
         let db = Db::open(&db_path, &dek).expect("Db::open with real file + prod cipher");
 
+        let ts = (now_unix() as i64) * 1000;
         db.with_conn::<_, _, rusqlite::Error>(|conn| {
             conn.execute(
-                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) \
-                 VALUES (?1, 'owner', ?2, ?3, 6)",
-                params!["Owner", &[0u8; 16][..], &[0u8; KEK_LEN][..]],
+                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) \
+                 VALUES (?1, 'owner', ?2, ?3, 6, ?4, ?5)",
+                params!["Owner", &[0u8; 16][..], &[0u8; KEK_LEN][..], ts, ts],
             )?;
             conn.execute(
-                "INSERT OR REPLACE INTO settings (id, shop_name, address, phone) VALUES (1, ?1, ?2, ?3)",
-                params!["Test Shop", "123 Test St", "555-0100"],
+                "INSERT OR REPLACE INTO settings (id, shop_name, address, phone, created_at, updated_at) \
+                 VALUES (1, ?1, ?2, ?3, ?4, ?5)",
+                params!["Test Shop", "123 Test St", "555-0100", ts, ts],
             )?;
             conn.execute(
-                "INSERT INTO locations(name) VALUES (?1), (?2)",
-                params!["Shop", "Godown"],
+                "INSERT INTO locations (name, zone, is_default, is_active, created_at, updated_at) \
+                 VALUES (?1, NULL, 1, 1, ?3, ?4), (?2, NULL, 0, 1, ?3, ?4)",
+                params!["Shop", "Godown", ts, ts],
             )?;
             Ok(())
         })
@@ -473,14 +485,15 @@ mod tests {
         drop(db);
         let db2 = Db::open(&db_path, &dek).expect("Db::open second time");
         db2.with_conn::<_, _, rusqlite::Error>(|conn| {
-            let user_count: i64 =
-                conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
+            let user_count: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
             assert_eq!(user_count, 1, "owner user should persist");
             let settings_count: i64 =
                 conn.query_row("SELECT COUNT(*) FROM settings", [], |r| r.get(0))?;
             assert_eq!(settings_count, 1, "settings row should persist");
             let shop_name: String =
-                conn.query_row("SELECT shop_name FROM settings WHERE id=1", [], |r| r.get(0))?;
+                conn.query_row("SELECT shop_name FROM settings WHERE id=1", [], |r| {
+                    r.get(0)
+                })?;
             assert_eq!(shop_name, "Test Shop");
             let loc_count: i64 =
                 conn.query_row("SELECT COUNT(*) FROM locations", [], |r| r.get(0))?;
@@ -551,8 +564,9 @@ mod tests {
         write_lockout_to_keystore(&db_path, &default_lockout_row())
             .expect("write_lockout_to_keystore should succeed");
 
-        let read_row = read_keywrap_from_keystore(&db_path)
-            .expect("read_keywrap_from_keystore should find the persisted row while main db is still open");
+        let read_row = read_keywrap_from_keystore(&db_path).expect(
+            "read_keywrap_from_keystore should find the persisted row while main db is still open",
+        );
         assert_eq!(read_row.id, 1);
         assert_eq!(read_row.pin_salt, pin_salt.to_vec());
         assert_eq!(read_row.backup_salt, backup_salt.to_vec());
@@ -669,10 +683,24 @@ mod tests {
             .expect("keywrap row must be readable after process restart");
 
         assert_eq!(row.id, 1, "keywrap row must have id=1");
-        assert_eq!(row.pin_salt.len(), 32, "pin_salt must be 32 bytes (CWE-759)");
-        assert!(!row.pin_wrapped_dek.is_empty(), "pin_wrapped_dek must be non-empty");
-        assert_eq!(row.rec_salt.len(), 32, "rec_salt must be 32 bytes (CWE-759)");
-        assert!(!row.rec_wrapped_dek.is_empty(), "rec_wrapped_dek must be non-empty");
+        assert_eq!(
+            row.pin_salt.len(),
+            32,
+            "pin_salt must be 32 bytes (CWE-759)"
+        );
+        assert!(
+            !row.pin_wrapped_dek.is_empty(),
+            "pin_wrapped_dek must be non-empty"
+        );
+        assert_eq!(
+            row.rec_salt.len(),
+            32,
+            "rec_salt must be 32 bytes (CWE-759)"
+        );
+        assert!(
+            !row.rec_wrapped_dek.is_empty(),
+            "rec_wrapped_dek must be non-empty"
+        );
         assert!(!row.pin_params.is_empty(), "pin_params must be serialized");
         assert!(!row.rec_params.is_empty(), "rec_params must be serialized");
 
@@ -709,14 +737,11 @@ mod tests {
 
         drop(state);
 
-        let row = read_keywrap_from_keystore(&db_path)
-            .expect("keywrap must survive restart");
+        let row = read_keywrap_from_keystore(&db_path).expect("keywrap must survive restart");
 
-        let dek = keywrap::unwrap_with_pin(&row, &pin)
-            .expect("PIN unwrap must succeed");
+        let dek = keywrap::unwrap_with_pin(&row, &pin).expect("PIN unwrap must succeed");
 
-        let db = db::Db::open(&db_path, &dek)
-            .expect("SQLCipher DB must open with recovered DEK");
+        let db = db::Db::open(&db_path, &dek).expect("SQLCipher DB must open with recovered DEK");
 
         let table_count: i64 = db
             .with_conn(|c| -> Result<i64, rusqlite::Error> {
@@ -761,11 +786,10 @@ mod tests {
 
         drop(state);
 
-        let row = read_keywrap_from_keystore(&db_path)
-            .expect("keywrap must survive restart");
+        let row = read_keywrap_from_keystore(&db_path).expect("keywrap must survive restart");
 
-        let err = keywrap::unwrap_with_pin(&row, &wrong_pin)
-            .expect_err("wrong PIN must be rejected");
+        let err =
+            keywrap::unwrap_with_pin(&row, &wrong_pin).expect_err("wrong PIN must be rejected");
         match err {
             crate::AppError::WrongPin => {}
             other => panic!("expected WrongPin, got {other:?}"),
@@ -802,8 +826,7 @@ mod tests {
 
         drop(state);
 
-        let row = read_keywrap_from_keystore(&db_path)
-            .expect("keywrap must survive restart");
+        let row = read_keywrap_from_keystore(&db_path).expect("keywrap must survive restart");
 
         let err = keywrap::unwrap_with_recovery(&row, wrong_passphrase)
             .expect_err("wrong recovery passphrase must be rejected");
@@ -813,10 +836,7 @@ mod tests {
         }
 
         let ok = keywrap::unwrap_with_recovery(&row, right_passphrase);
-        assert!(
-            ok.is_ok(),
-            "correct recovery passphrase must unwrap DEK"
-        );
+        assert!(ok.is_ok(), "correct recovery passphrase must unwrap DEK");
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -857,8 +877,7 @@ mod tests {
         .expect("re-setup on existing files must wipe and rebuild");
         drop(state);
 
-        let row = read_keywrap_from_keystore(&db_path)
-            .expect("keywrap must exist after re-setup");
+        let row = read_keywrap_from_keystore(&db_path).expect("keywrap must exist after re-setup");
 
         let err = keywrap::unwrap_with_pin(&row, &old_pin)
             .expect_err("old PIN must be rejected after re-setup");
@@ -867,8 +886,8 @@ mod tests {
             other => panic!("expected WrongPin for old PIN, got {other:?}"),
         }
 
-        let dek = keywrap::unwrap_with_pin(&row, &new_pin)
-            .expect("new PIN must unwrap after re-setup");
+        let dek =
+            keywrap::unwrap_with_pin(&row, &new_pin).expect("new PIN must unwrap after re-setup");
         let _db = db::Db::open(&db_path, &dek)
             .expect("SQLCipher DB must open with new DEK after re-setup");
 

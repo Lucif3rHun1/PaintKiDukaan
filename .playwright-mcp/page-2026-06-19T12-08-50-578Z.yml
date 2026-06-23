@@ -1,0 +1,16 @@
+- main [ref=e3]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - paragraph [ref=e8]: PaintKiDukaan
+        - heading "Enter your PIN" [level=1] [ref=e9]
+        - paragraph [ref=e10]: Enter the 6-digit PIN to unlock the shop database.
+      - img "PaintKiDukaan" [ref=e11]
+    - text: Owner PIN
+    - generic [ref=e12]:
+      - textbox "Six digit PIN" [ref=e13]:
+        - /placeholder: ••••••
+      - img
+    - paragraph [ref=e15]: Your PIN stays in memory only. It is never stored in plain text.
+    - button "Unlock" [disabled]
+    - button "Forgot PIN? Use recovery passphrase" [ref=e16] [cursor=pointer]

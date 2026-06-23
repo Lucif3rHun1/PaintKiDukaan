@@ -9,9 +9,9 @@
 
 use chrono::Local;
 
+use crate::commands::auth::AppState;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::commands::auth::AppState;
 
 /// Kinds of sequence we mint. `Sku` is exposed so other commands can use the
 /// same primitive (Slice B's item-create will need it).
@@ -46,16 +46,15 @@ impl Kind {
 pub fn mint_next(db: &Db, kind: Kind) -> anyhow::Result<String> {
     db.with_conn_immediate(|c| {
         // Atomic bump + read. If the row doesn't exist yet we INSERT it.
-        let next: i64 = c
-            .query_row(
-                "INSERT INTO sequences(name,last_value)
+        let next: i64 = c.query_row(
+            "INSERT INTO sequences(name,last_value)
                  VALUES (?1, 1)
                  ON CONFLICT(name) DO UPDATE
                    SET last_value = last_value + 1
                  RETURNING last_value",
-                rusqlite::params![kind.as_seq_name()],
-                |r| r.get(0),
-            )?;
+            rusqlite::params![kind.as_seq_name()],
+            |r| r.get(0),
+        )?;
         Ok(format_number(kind, next))
     })
 }
@@ -103,16 +102,21 @@ pub fn parse(no: &str) -> Option<(Kind, i32, i64)> {
 // -----------------------------------------------------------------------------
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_mint_next_sale_no(
-    state: tauri::State<'_, AppState>,
-    kind: String,
-) -> AppResult<String> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+pub fn cmd_mint_next_sale_no(state: tauri::State<'_, AppState>, kind: String) -> AppResult<String> {
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let k = match kind.as_str() {
         "inv" | "sale_inv" | "INV" => Kind::SaleInv,
         "qtn" | "sale_qtn" | "QTN" => Kind::SaleQtn,
-        _ => return Err(AppError::Internal(format!("unknown sequence kind: {}", kind))),
+        _ => {
+            return Err(AppError::Internal(format!(
+                "unknown sequence kind: {}",
+                kind
+            )))
+        }
     };
     mint_next_sale_no(db, k).map_err(|e| AppError::Internal(e.to_string()))
 }

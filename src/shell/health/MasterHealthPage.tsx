@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { MasterHealth } from "../lib/ipc";
 import { fetchMasterHealth } from "./api";
 import { SkeletonRow } from "../components/SkeletonRow";
+import { extractError } from "../../lib/extractError";
 
 export function MasterHealthPage() {
   const [data, setData] = useState<MasterHealth | null>(null);
@@ -11,12 +12,12 @@ export function MasterHealthPage() {
   useEffect(() => {
     fetchMasterHealth()
       .then(setData)
-      .catch((e: unknown) => setError(String(e)));
+      .catch((e: unknown) => setError(extractError(e)));
   }, []);
 
   if (error) {
     return (
-      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+      <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
         {error}
       </div>
     );
@@ -79,7 +80,7 @@ export function MasterHealthPage() {
         <Row k="Pending sales" v={String(data.ops.pending_sales)} />
       </Section>
 
-      <div className="text-xs text-slate-500">
+      <div className="text-xs text-muted-foreground">
         checked at {data.checked_at}
       </div>
     </div>
@@ -89,20 +90,20 @@ export function MasterHealthPage() {
 function badge(level: string): string {
   switch (level) {
     case "ok":
-      return "bg-emerald-100 text-emerald-800";
+      return "bg-success/20 text-success";
     case "warn":
-      return "bg-amber-100 text-amber-800";
+      return "bg-warning/20 text-warning";
     case "error":
-      return "bg-red-100 text-red-800";
+      return "bg-destructive/20 text-destructive";
     default:
-      return "bg-slate-100 text-slate-800";
+      return "bg-muted text-foreground";
   }
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-md border border-slate-200 p-3">
-      <h4 className="mb-2 text-sm font-semibold text-slate-700">{title}</h4>
+    <section className="rounded-md border border-border p-3">
+      <h4 className="mb-2 text-sm font-semibold text-foreground">{title}</h4>
       <div className="space-y-1">{children}</div>
     </section>
   );
@@ -111,7 +112,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between gap-3 text-sm">
-      <span className="text-slate-500">{k}</span>
+      <span className="text-muted-foreground">{k}</span>
       <span className="font-mono">{v}</span>
     </div>
   );

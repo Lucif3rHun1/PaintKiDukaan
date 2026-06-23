@@ -29,7 +29,7 @@ use std::sync::OnceLock;
 
 use sha2::{Digest, Sha256};
 
-use crate::commands::auth::AppError;
+use crate::error::AppError;
 
 /// Application-specific DPAPI entropy. Used on Windows so that another
 /// process running as the same user cannot decrypt our keystore without
@@ -351,8 +351,13 @@ mod tests {
     #[test]
     fn sqlite_magic_detects_plaintext() {
         assert!(is_sqlite_plaintext(b"SQLite format 3\x00more"));
-        assert!(is_sqlite_plaintext(&[b'S', b'Q', b'L', b'i', b't', b'e', b' ', b'f', b'o', b'r', b'm', b'a', b't', b' ', b'3', 0]));
-        assert!(!is_sqlite_plaintext(b"\x01\x0c\x00\x00random dpapi bytes here"));
+        assert!(is_sqlite_plaintext(&[
+            b'S', b'Q', b'L', b'i', b't', b'e', b' ', b'f', b'o', b'r', b'm', b'a', b't', b' ',
+            b'3', 0
+        ]));
+        assert!(!is_sqlite_plaintext(
+            b"\x01\x0c\x00\x00random dpapi bytes here"
+        ));
         assert!(!is_sqlite_plaintext(b""));
     }
 
@@ -374,7 +379,10 @@ mod tests {
     fn machine_salt_is_32_bytes() {
         let s = machine_salt_for_hostname("");
         assert_eq!(s.len(), 32);
-        assert_ne!(s, [0u8; 32], "empty hostname must still produce non-zero salt");
+        assert_ne!(
+            s, [0u8; 32],
+            "empty hostname must still produce non-zero salt"
+        );
     }
 
     #[test]
@@ -389,7 +397,11 @@ mod tests {
     fn dpapi_encrypt_decrypt_roundtrip() {
         let plaintext = b"hello, keystore world!";
         let encrypted = encrypt_keystore(plaintext).expect("encrypt must succeed");
-        assert_ne!(&encrypted[..], plaintext, "ciphertext must differ from plaintext");
+        assert_ne!(
+            &encrypted[..],
+            plaintext,
+            "ciphertext must differ from plaintext"
+        );
         let decrypted = decrypt_keystore(&encrypted).expect("decrypt must succeed");
         assert_eq!(decrypted, plaintext, "roundtrip must recover plaintext");
     }
@@ -413,7 +425,11 @@ mod tests {
     fn dpapi_stub_is_passthrough() {
         let plaintext = b"plaintext on non-windows";
         let encrypted = encrypt_keystore(plaintext).expect("stub encrypt");
-        assert_eq!(&encrypted[..], plaintext, "non-windows stub must pass through");
+        assert_eq!(
+            &encrypted[..],
+            plaintext,
+            "non-windows stub must pass through"
+        );
 
         let decrypted = decrypt_keystore(&encrypted).expect("stub decrypt");
         assert_eq!(decrypted, plaintext);
@@ -432,8 +448,7 @@ mod tests {
     #[test]
     fn app_entropy_is_stable() {
         assert_eq!(
-            APP_DPAPI_ENTROPY,
-            b"paintkiduakan-master.keystore.v1",
+            APP_DPAPI_ENTROPY, b"paintkiduakan-master.keystore.v1",
             "changing APP_DPAPI_ENTROPY breaks all existing encrypted keystores"
         );
     }

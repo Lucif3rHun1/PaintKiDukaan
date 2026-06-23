@@ -57,9 +57,7 @@ impl Db {
 
         // -- Run schema migrations ----------------------------------------
         migrations::run(&mut conn).map_err(|e| {
-            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
-                e.to_string(),
-            )))
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
         })?;
 
         // -- Performance / safety (AFTER migrations, outside txn) ---------
@@ -87,9 +85,7 @@ impl Db {
              PRAGMA cipher_page_size = 4096;",
         )?;
         migrations::run(&mut conn).map_err(|e| {
-            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
-                e.to_string(),
-            )))
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
         })?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\
@@ -116,7 +112,10 @@ impl Db {
                 Ok(val)
             }
             Err(e) => {
-                let _ = conn.execute("ROLLBACK", []);
+                if let Err(rb_err) = conn.execute("ROLLBACK", []) {
+                    let cid = crate::obs::correlation_id();
+                    log::error!("[DB] ROLLBACK failed cid={cid}: {rb_err}");
+                }
                 Err(e)
             }
         }
@@ -136,7 +135,10 @@ impl Db {
                 Ok(val)
             }
             Err(e) => {
-                let _ = conn.execute("ROLLBACK", []);
+                if let Err(rb_err) = conn.execute("ROLLBACK", []) {
+                    let cid = crate::obs::correlation_id();
+                    log::error!("[DB] ROLLBACK (immediate) failed cid={cid}: {rb_err}");
+                }
                 Err(e)
             }
         }
@@ -168,7 +170,10 @@ impl Db {
                 Ok(val)
             }
             Err(e) => {
-                let _ = conn.execute("ROLLBACK", []);
+                if let Err(rb_err) = conn.execute("ROLLBACK", []) {
+                    let cid = crate::obs::correlation_id();
+                    log::error!("[DB] ROLLBACK (tx) failed cid={cid}: {rb_err}");
+                }
                 Err(e)
             }
         }
@@ -216,24 +221,20 @@ mod tests {
 
         // Exact pattern from recovery.rs::first_launch_setup:
         db.with_conn::<_, _, rusqlite::Error>(|c| {
-            // users (Owner) — 6 columns, 3 placeholders.
             c.execute(
                 "INSERT OR IGNORE INTO users \
-                 (name, role, pin_salt, pin_verifier, pin_length, active) \
-                 VALUES (?1, 'owner', ?2, ?3, 6, 1)",
+                 (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) \
+                 VALUES (?1, 'owner', ?2, ?3, 6, 1, 0, 0)",
                 params!["Owner", &[0u8; 16][..], &[0u8; 32][..]],
             )?;
-
-            // settings — INSERT OR REPLACE (our fix).
             c.execute(
-                "INSERT OR REPLACE INTO settings (id, shop_name, address, phone) \
-                 VALUES (1, 'Test Shop', 'Test Address', 'Test Phone')",
+                "INSERT OR REPLACE INTO settings (id, shop_name, address, phone, created_at, updated_at) \
+                 VALUES (1, 'Test Shop', 'Test Address', 'Test Phone', 0, 0)",
                 [],
             )?;
-
-            // locations (Shop, Godown) — multi-row VALUES.
             c.execute(
-                "INSERT INTO locations (name) VALUES ('Shop'), ('Godown')",
+                "INSERT INTO locations (name, zone, is_default, is_active, created_at, updated_at) \
+                 VALUES ('Shop', NULL, 1, 1, 0, 0), ('Godown', NULL, 0, 1, 0, 0)",
                 [],
             )?;
 
@@ -246,7 +247,7 @@ mod tests {
             assert_eq!(shop_name, "Test Shop");
 
             let owner: String = c.query_row(
-                "SELECT name FROM users WHERE role = 'owner' AND active = 1",
+                "SELECT name FROM users WHERE role = 'owner' AND is_active = 1",
                 [],
                 |r| r.get(0),
             )?;

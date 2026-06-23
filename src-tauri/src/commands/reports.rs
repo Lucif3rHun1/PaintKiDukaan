@@ -11,10 +11,10 @@
 use rusqlite::params;
 use serde::Serialize;
 
+use crate::commands::auth::AppState;
 use crate::commands::purchases::StockMovement;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::commands::auth::AppState;
 
 // -----------------------------------------------------------------------------
 // Daily sales report.
@@ -51,15 +51,14 @@ pub fn daily_sales(
     to_date: &str,
 ) -> Result<DailySalesReport, ReportsError> {
     db.with_conn(|c| -> Result<DailySalesReport, ReportsError> {
-        // Aggregate by date.
         let mut stmt = c.prepare(
-            "SELECT date,
+            "SELECT date(created_at/1000, 'unixepoch') AS day,
                     COUNT(*) AS bills,
-                    SUM(total) AS grand_total,
-                    SUM(bill_discount) AS total_discount
+                    SUM(total_paise) AS grand_total,
+                    SUM(discount_paise) AS total_discount
              FROM sales
-             WHERE status = 'final' AND date BETWEEN ?1 AND ?2
-             GROUP BY date ORDER BY date ASC",
+             WHERE status = 'finalized' AND day BETWEEN ?1 AND ?2
+             GROUP BY day ORDER BY day ASC",
         )?;
         let agg_rows = stmt.query_map(params![from_date, to_date], |r| {
             Ok((
@@ -76,37 +75,26 @@ pub fn daily_sales(
             by_date.insert(d, (bills, gt, disc, Vec::new()));
         }
 
-        // Aggregate by (date, mode) from the JSON payment_modes_json column.
-        // We can't SUM JSON easily in SQLite, so iterate sales in range and
-        // accumulate per date.
         let mut stmt2 = c.prepare(
-            "SELECT date, payment_modes_json
-             FROM sales WHERE status = 'final' AND date BETWEEN ?1 AND ?2",
+            "SELECT date(s.created_at/1000, 'unixepoch') AS day, sp.mode, sp.amount_paise
+             FROM sales s
+             JOIN sale_payments sp ON sp.sale_id = s.id
+             WHERE s.status = 'finalized' AND day BETWEEN ?1 AND ?2",
         )?;
-        let sale_rows = stmt2.query_map(params![from_date, to_date], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        let mode_rows = stmt2.query_map(params![from_date, to_date], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         })?;
-        for r in sale_rows {
-            let (d, json) = r?;
+        for r in mode_rows {
+            let (d, mode, amt) = r?;
             if let Some(entry) = by_date.get_mut(&d) {
-                if let Ok(modes) = serde_json::from_str::<Vec<serde_json::Value>>(&json) {
-                    for m in modes {
-                        if let (Some(mode), Some(amt)) = (
-                            m.get("mode").and_then(|x| x.as_str()),
-                            m.get("amount").and_then(|x| x.as_i64()),
-                        ) {
-                            if let Some(existing) =
-                                entry.3.iter_mut().find(|x| x.mode == mode)
-                            {
-                                existing.amount += amt;
-                            } else {
-                                entry.3.push(ModeTotal {
-                                    mode: mode.to_string(),
-                                    amount: amt,
-                                });
-                            }
-                        }
-                    }
+                if let Some(existing) = entry.3.iter_mut().find(|x| x.mode == mode) {
+                    existing.amount += amt;
+                } else {
+                    entry.3.push(ModeTotal { mode, amount: amt });
                 }
             }
         }
@@ -173,7 +161,7 @@ pub fn stock_report(db: &Db) -> Result<StockReport, ReportsError> {
         {
             let mut stmt = c.prepare(
                 "SELECT sb.item_id, i.sku_code, i.name, sb.location_id, l.name, sb.qty,
-                        i.reorder_level
+                        i.min_qty
                  FROM stock_balances sb
                  JOIN items i ON i.id = sb.item_id
                  JOIN locations l ON l.id = sb.location_id
@@ -206,11 +194,12 @@ pub fn stock_report(db: &Db) -> Result<StockReport, ReportsError> {
         let mut by_group: Vec<StockGroupRow> = Vec::new();
         {
             let mut stmt = c.prepare(
-                "SELECT COALESCE(NULLIF(i.brand, ''), NULLIF(i.category, ''), '(uncategorised)') AS grp,
+                "SELECT COALESCE(NULLIF(b.name, ''), NULLIF(i.category, ''), '(uncategorised)') AS grp,
                         COALESCE(SUM(sb.qty), 0) AS qty,
-                        COALESCE(SUM(sb.qty * i.retail_price), 0) AS value
+                        COALESCE(SUM(sb.qty * i.retail_price_paise), 0) AS value
                  FROM stock_balances sb
                  JOIN items i ON i.id = sb.item_id
+                 LEFT JOIN brands b ON b.id = i.brand_id
                  GROUP BY grp ORDER BY grp",
             )?;
             let rows = stmt.query_map([], |r| {
@@ -268,10 +257,10 @@ pub fn outstanding_report(db: &Db) -> Result<OutstandingReport, ReportsError> {
                 "SELECT id, name, phone, outstanding
                  FROM (
                      SELECT c.id, c.name, c.phone,
-                            c.opening_balance
-                            + COALESCE((SELECT SUM(s.total - s.paid_amount) FROM sales s
-                                        WHERE s.customer_id = c.id AND s.status = 'final'), 0)
-                            - COALESCE((SELECT SUM(p.amount) FROM customer_payments p
+                            c.opening_balance_paise
+                            + COALESCE((SELECT SUM(s.total_paise - s.paid_paise) FROM sales s
+                                        WHERE s.customer_id = c.id AND s.status = 'finalized'), 0)
+                            - COALESCE((SELECT SUM(p.amount_paise) FROM customer_payments p
                                         WHERE p.customer_id = c.id), 0)
                             AS outstanding
                      FROM customers c
@@ -300,10 +289,9 @@ pub fn outstanding_report(db: &Db) -> Result<OutstandingReport, ReportsError> {
                 "SELECT id, name, outstanding
                  FROM (
                      SELECT v.id, v.name,
-                            v.opening_balance
-                            + COALESCE((SELECT SUM(p.total) FROM purchases p
+                            COALESCE((SELECT SUM(p.total_paise) FROM purchases p
                                         WHERE p.vendor_id = v.id), 0)
-                            - COALESCE((SELECT SUM(vp.amount) FROM vendor_payments vp
+                            - COALESCE((SELECT SUM(vp.amount_paise) FROM vendor_payments vp
                                         WHERE vp.vendor_id = v.id), 0)
                             AS outstanding
                      FROM vendors v
@@ -342,11 +330,10 @@ pub fn movements_for_item(
     item_id: i64,
     limit: i64,
 ) -> Result<Vec<StockMovement>, ReportsError> {
-    crate::commands::purchases::movements_for_item(db, item_id, limit)
-        .map_err(|e| match e {
-            crate::commands::purchases::PurchaseError::Db(r) => ReportsError::Db(r),
-            other => ReportsError::Other(anyhow::anyhow!(other.to_string())),
-        })
+    crate::commands::purchases::movements_for_item(db, item_id, limit).map_err(|e| match e {
+        crate::commands::purchases::PurchaseError::Db(r) => ReportsError::Db(r),
+        other => ReportsError::Other(anyhow::anyhow!(other.to_string())),
+    })
 }
 
 // -----------------------------------------------------------------------------
@@ -371,21 +358,30 @@ pub fn cmd_daily_sales(
     from_date: String,
     to_date: String,
 ) -> AppResult<DailySalesReport> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     daily_sales(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_stock_report(state: tauri::State<'_, AppState>) -> AppResult<StockReport> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     stock_report(db).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_outstanding_report(state: tauri::State<'_, AppState>) -> AppResult<OutstandingReport> {
-    let guard = state.db.lock().map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     outstanding_report(db).map_err(|e| AppError::Internal(e.to_string()))
 }
@@ -403,41 +399,46 @@ mod tests {
         crate::session::__test_set_role(db, crate::session::Role::Owner);
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(
-                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) VALUES ('Owner','owner',X'00',X'00',6)",
+                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('Owner','owner',X'00',X'00',6,1,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, brand, category, unit, units_per_box,
-                   retail_price, cost_price, reorder_level, is_active)
-                 VALUES ('SK001','111','Red 4L','AsianPaints','Interior','L',1,10000,5000,2,1)",
+                "INSERT INTO brands (name, is_active, created_at, updated_at) VALUES ('AsianPaints',1,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, brand, category, unit, units_per_box,
-                   retail_price, cost_price, reorder_level, is_active)
-                 VALUES ('SK002','222','Blue 4L','AsianPaints','Interior','L',1,15000,8000,2,1)",
+                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, min_qty, is_active, created_at, updated_at)
+                 VALUES ('SK001','111','Red 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,10000,5000,2,1,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO customers (name, phone, credit_limit, opening_balance, is_flagged)
-                 VALUES ('Walk-in Mr A', '9999000001', NULL, 0, 0)",
+                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, min_qty, is_active, created_at, updated_at)
+                 VALUES ('SK002','222','Blue 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,15000,8000,2,1,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO customers (name, phone, credit_limit, opening_balance, is_flagged)
-                 VALUES ('Credit Mr B', '9999000002', 100000, 0, 0)",
+                "INSERT INTO customers (name, phone, opening_balance_paise, is_active, created_at, updated_at)
+                 VALUES ('Walk-in Mr A', '9999000001', 0, 1, 0, 0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO customers (name, phone, credit_limit, opening_balance, is_flagged)
-                 VALUES ('Zero Mr C', '9999000003', 0, 0, 0)",
+                "INSERT INTO customers (name, phone, opening_balance_paise, is_active, created_at, updated_at)
+                 VALUES ('Credit Mr B', '9999000002', 0, 1, 0, 0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO vendors (name, opening_balance, is_active) VALUES ('Acme Paints', 0, 1)",
+                "INSERT INTO customers (name, phone, opening_balance_paise, is_active, created_at, updated_at)
+                 VALUES ('Zero Mr C', '9999000003', 0, 1, 0, 0)",
                 [],
             )?;
-            c.execute("INSERT INTO locations (name) VALUES ('Main')", [])?;
+            c.execute(
+                "INSERT INTO vendors (name, credit_limit_paise, is_active, created_at, updated_at) VALUES ('Acme Paints', 0, 1, 0, 0)",
+                [],
+            )?;
+            c.execute(
+                "INSERT INTO locations (name, zone, is_default, is_active, created_at, updated_at) VALUES ('Main',NULL,1,1,0,0)",
+                [],
+            )?;
             Ok(())
         })
         .unwrap();
@@ -453,7 +454,10 @@ mod tests {
                 date: Some(date.into()),
                 bill_discount: 0,
                 paid_amount: amt,
-                payment_modes: vec![PaymentSplit { mode: mode.into(), amount: amt }],
+                payment_modes: vec![PaymentSplit {
+                    mode: mode.into(),
+                    amount: amt,
+                }],
                 validity_days: None,
                 acknowledge_flag: false,
                 lines: vec![CartLine {
@@ -499,23 +503,23 @@ mod tests {
         seed(&db);
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(
-                "INSERT INTO sales (no, customer_id, date, status, subtotal, total, paid_amount, user_id)
-                 VALUES ('INV-TEST-0001', 2, '2026-06-19', 'final', 7500, 7500, 0, 1)",
+                "INSERT INTO sales (sale_number, kind, status, customer_id, location_id, user_id, subtotal_paise, discount_paise, tax_paise, total_paise, paid_paise, balance_paise, created_at, updated_at)
+                 VALUES ('INV-TEST-0001','invoice','finalized',2,1,1,7500,0,0,7500,0,7500,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO customers (name, phone, credit_limit, opening_balance, is_flagged)
-                 VALUES ('Heavy Mr D', '9999000004', 50000, 0, 0)",
+                "INSERT INTO customers (name, phone, opening_balance_paise, is_active, created_at, updated_at)
+                 VALUES ('Heavy Mr D', '9999000004', 0, 1, 0, 0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO sales (no, customer_id, date, status, subtotal, total, paid_amount, user_id)
-                 VALUES ('INV-TEST-0002', 4, '2026-06-19', 'final', 12000, 12000, 0, 1)",
+                "INSERT INTO sales (sale_number, kind, status, customer_id, location_id, user_id, subtotal_paise, discount_paise, tax_paise, total_paise, paid_paise, balance_paise, created_at, updated_at)
+                 VALUES ('INV-TEST-0002','invoice','finalized',4,1,1,12000,0,0,12000,0,12000,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO purchases (vendor_id, date, total, user_id)
-                 VALUES (1, '2026-06-19', 5000, 1)",
+                "INSERT INTO purchases (purchase_number, vendor_id, location_id, total_paise, created_by, created_at, updated_at)
+                 VALUES ('PINV-0001',1,1,5000,1,0,0)",
                 [],
             )?;
             Ok(())
@@ -543,7 +547,7 @@ mod tests {
             &db,
             1,
             crate::commands::purchases::NewPurchase {
-                vendor_id: None,
+                vendor_id: Some(1),
                 date: Some("2026-06-18".into()),
                 notes: None,
                 auto_print_label: false,
@@ -551,8 +555,7 @@ mod tests {
                     item_id: 1,
                     qty: 2.0,
                     unit_type: "unit".into(),
-                    cost_price: 5000,
-                    retail_price: 10000,
+                    unit_price_paise: 5000,
                     location_id: 1,
                 }],
             },

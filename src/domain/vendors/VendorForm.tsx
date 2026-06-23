@@ -63,7 +63,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
   return (
     <form
       onSubmit={submit}
-      className="grid max-w-xl gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+      className="grid max-w-xl gap-4 rounded-lg border border-border bg-card p-6 shadow-sm"
     >
       <h2 className="text-lg font-semibold">
         {mode === "create" ? "New vendor" : `Edit ${initial?.name ?? ""}`}
@@ -107,7 +107,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
       </Field>
 
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -116,14 +116,14 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
         <button
           type="button"
           onClick={onCancel}
-          className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+          className="rounded border border-border px-4 py-2 text-sm hover:bg-card"
           disabled={busy}
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+          className="btn-primary"
           disabled={busy}
         >
           {busy ? "Saving…" : "Save"}
@@ -144,9 +144,9 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">
+      <span className="mb-1 block text-sm font-medium text-foreground">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required && <span className="text-destructive"> *</span>}
       </span>
       {children}
     </label>

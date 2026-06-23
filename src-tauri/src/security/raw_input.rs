@@ -7,7 +7,7 @@
 
 use serde::Serialize;
 
-use crate::commands::auth::AppError;
+use crate::error::AppError;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -193,7 +193,11 @@ pub fn register_raw_input(hwnd: win::HWND, config: &RawInputConfig) -> Result<()
         hwndTarget: hwnd,
     };
     let ret = unsafe {
-        win::RegisterRawInputDevices(&device, 1, std::mem::size_of::<win::RAWINPUTDEVICE>() as u32)
+        win::RegisterRawInputDevices(
+            &device,
+            1,
+            std::mem::size_of::<win::RAWINPUTDEVICE>() as u32,
+        )
     };
     if ret == 0 {
         Err(AppError::Internal(format!(
@@ -225,7 +229,9 @@ pub fn parse_raw_input(lparam: win::LPARAM) -> Result<Option<RawInputEvent>, App
         )
     };
     if ret == u32::MAX {
-        return Err(AppError::Internal("GetRawInputData size query failed".into()));
+        return Err(AppError::Internal(
+            "GetRawInputData size query failed".into(),
+        ));
     }
     if size == 0 {
         return Ok(None);
@@ -402,16 +408,66 @@ mod tests {
     #[test]
     fn extract_chars_handles_word_hello() {
         let events = vec![
-            RawInputEvent { vk_code: 0x48, scan_code: 0x23, flags: 0, timestamp: 0 }, // H
-            RawInputEvent { vk_code: 0x48, scan_code: 0x23, flags: 1, timestamp: 1 },
-            RawInputEvent { vk_code: 0x45, scan_code: 0x12, flags: 0, timestamp: 2 }, // E
-            RawInputEvent { vk_code: 0x45, scan_code: 0x12, flags: 1, timestamp: 3 },
-            RawInputEvent { vk_code: 0x4C, scan_code: 0x26, flags: 0, timestamp: 4 }, // L
-            RawInputEvent { vk_code: 0x4C, scan_code: 0x26, flags: 1, timestamp: 5 },
-            RawInputEvent { vk_code: 0x4C, scan_code: 0x26, flags: 0, timestamp: 6 }, // L
-            RawInputEvent { vk_code: 0x4C, scan_code: 0x26, flags: 1, timestamp: 7 },
-            RawInputEvent { vk_code: 0x4F, scan_code: 0x18, flags: 0, timestamp: 8 }, // O
-            RawInputEvent { vk_code: 0x4F, scan_code: 0x18, flags: 1, timestamp: 9 },
+            RawInputEvent {
+                vk_code: 0x48,
+                scan_code: 0x23,
+                flags: 0,
+                timestamp: 0,
+            }, // H
+            RawInputEvent {
+                vk_code: 0x48,
+                scan_code: 0x23,
+                flags: 1,
+                timestamp: 1,
+            },
+            RawInputEvent {
+                vk_code: 0x45,
+                scan_code: 0x12,
+                flags: 0,
+                timestamp: 2,
+            }, // E
+            RawInputEvent {
+                vk_code: 0x45,
+                scan_code: 0x12,
+                flags: 1,
+                timestamp: 3,
+            },
+            RawInputEvent {
+                vk_code: 0x4C,
+                scan_code: 0x26,
+                flags: 0,
+                timestamp: 4,
+            }, // L
+            RawInputEvent {
+                vk_code: 0x4C,
+                scan_code: 0x26,
+                flags: 1,
+                timestamp: 5,
+            },
+            RawInputEvent {
+                vk_code: 0x4C,
+                scan_code: 0x26,
+                flags: 0,
+                timestamp: 6,
+            }, // L
+            RawInputEvent {
+                vk_code: 0x4C,
+                scan_code: 0x26,
+                flags: 1,
+                timestamp: 7,
+            },
+            RawInputEvent {
+                vk_code: 0x4F,
+                scan_code: 0x18,
+                flags: 0,
+                timestamp: 8,
+            }, // O
+            RawInputEvent {
+                vk_code: 0x4F,
+                scan_code: 0x18,
+                flags: 1,
+                timestamp: 9,
+            },
         ];
         let chars = extract_chars(&events);
         assert_eq!(chars, vec!['h', 'e', 'l', 'l', 'o']);

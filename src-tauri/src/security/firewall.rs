@@ -123,10 +123,7 @@ mod win {
 
     #[link(name = "ole32")]
     extern "system" {
-        pub fn CoInitializeEx(
-            pvReserved: *mut c_void,
-            dwCoInit: u32,
-        ) -> i32;
+        pub fn CoInitializeEx(pvReserved: *mut c_void, dwCoInit: u32) -> i32;
         pub fn CoCreateInstance(
             rclsid: *const GUID,
             pUnkOuter: *mut c_void,
@@ -256,10 +253,7 @@ mod win {
         pub invoke: *const (),
         // INetFwRules
         pub get_count: *const (),
-        pub add: unsafe extern "system" fn(
-            this: *mut INetFwRules,
-            rule: *mut c_void,
-        ) -> i32,
+        pub add: unsafe extern "system" fn(this: *mut INetFwRules, rule: *mut c_void) -> i32,
         pub remove: unsafe extern "system" fn(
             this: *mut INetFwRules,
             name: *mut u16, // BSTR
@@ -287,17 +281,12 @@ mod win {
         pub invoke: *const (),
         // INetFwRule
         pub get_name: *const (),
-        pub put_name: unsafe extern "system" fn(
-            this: *mut INetFwRule,
-            name: *mut u16,
-        ) -> i32,
+        pub put_name: unsafe extern "system" fn(this: *mut INetFwRule, name: *mut u16) -> i32,
         pub get_description: *const (),
         pub put_description: *const (),
         pub get_application_name: *const (),
-        pub put_application_name: unsafe extern "system" fn(
-            this: *mut INetFwRule,
-            image_filename: *mut u16,
-        ) -> i32,
+        pub put_application_name:
+            unsafe extern "system" fn(this: *mut INetFwRule, image_filename: *mut u16) -> i32,
         pub get_service_name: *const (),
         pub put_service_name: *const (),
         pub get_protocol: *const (),
@@ -307,31 +296,21 @@ mod win {
         pub remote_ports: *const (),
         pub put_remote_ports: *const (),
         pub local_addresses: *const (),
-        pub put_local_addresses: unsafe extern "system" fn(
-            this: *mut INetFwRule,
-            local_addrs: *mut u16,
-        ) -> i32,
+        pub put_local_addresses:
+            unsafe extern "system" fn(this: *mut INetFwRule, local_addrs: *mut u16) -> i32,
         pub remote_addresses: *const (),
-        pub put_remote_addresses: unsafe extern "system" fn(
-            this: *mut INetFwRule,
-            remote_addrs: *mut u16,
-        ) -> i32,
+        pub put_remote_addresses:
+            unsafe extern "system" fn(this: *mut INetFwRule, remote_addrs: *mut u16) -> i32,
         pub icmp_types_and_codes: *const (),
         pub put_icmp_types_and_codes: *const (),
         pub get_direction: *const (),
-        pub put_direction: unsafe extern "system" fn(
-            this: *mut INetFwRule,
-            dir: i32,
-        ) -> i32,
+        pub put_direction: unsafe extern "system" fn(this: *mut INetFwRule, dir: i32) -> i32,
         pub get_interfaces: *const (),
         pub put_interfaces: *const (),
         pub interface_types: *const (),
         pub put_interface_types: *const (),
         pub get_enabled: *const (),
-        pub put_enabled: unsafe extern "system" fn(
-            this: *mut INetFwRule,
-            enabled: i16,
-        ) -> i32,
+        pub put_enabled: unsafe extern "system" fn(this: *mut INetFwRule, enabled: i16) -> i32,
         pub grouping: *const (),
         pub put_grouping: *const (),
         pub profiles: *const (),
@@ -339,10 +318,7 @@ mod win {
         pub edge_traversal: *const (),
         pub put_edge_traversal: *const (),
         pub get_action: *const (),
-        pub put_action: unsafe extern "system" fn(
-            this: *mut INetFwRule,
-            action: i32,
-        ) -> i32,
+        pub put_action: unsafe extern "system" fn(this: *mut INetFwRule, action: i32) -> i32,
     }
 
     // NET_FW_PROFILE2_ALL = 0x7FFFFFFF (all profiles combined)
@@ -380,7 +356,9 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
     };
 
     if hr != win::S_OK || policy_ptr.is_null() {
-        report.errors.push(format!("CoCreateInstance(INetFwPolicy2) failed: 0x{hr:08X}"));
+        report.errors.push(format!(
+            "CoCreateInstance(INetFwPolicy2) failed: 0x{hr:08X}"
+        ));
         return Ok(report);
     }
 
@@ -399,7 +377,8 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
         let get_rules: unsafe extern "system" fn(
             this: *mut win::INetFwPolicy2,
             rules: *mut *mut c_void,
-        ) -> i32 = std::mem::transmute(*(&vtable.get_firewall_enabled as *const _ as *const usize).add(1));
+        ) -> i32 =
+            std::mem::transmute(*(&vtable.get_firewall_enabled as *const _ as *const usize).add(1));
 
         let hr = get_rules(policy_ptr as *mut win::INetFwPolicy2, &mut rules_ptr);
         if hr != win::S_OK || rules_ptr.is_null() {
@@ -445,7 +424,9 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
             if hr == win::S_OK {
                 report.outbound_blocked = true;
             } else {
-                report.errors.push(format!("Add outbound rule failed: 0x{hr:08X}"));
+                report
+                    .errors
+                    .push(format!("Add outbound rule failed: 0x{hr:08X}"));
             }
 
             win::SysFreeString(name_bstr);
@@ -456,7 +437,9 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
 
         release_com(rule_ptr);
     } else {
-        report.errors.push(format!("CoCreateInstance(INetFwRule) failed: 0x{hr:08X}"));
+        report
+            .errors
+            .push(format!("CoCreateInstance(INetFwRule) failed: 0x{hr:08X}"));
     }
 
     // ─── Create loopback allow rule ─────────────────────────────────────
@@ -493,7 +476,9 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
             if hr == win::S_OK {
                 report.loopback_allowed = true;
             } else {
-                report.errors.push(format!("Add loopback rule failed: 0x{hr:08X}"));
+                report
+                    .errors
+                    .push(format!("Add loopback rule failed: 0x{hr:08X}"));
             }
 
             win::SysFreeString(name_bstr);
@@ -504,12 +489,16 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
 
         release_com(rule_ptr);
     } else {
-        report.errors.push(format!("CoCreateInstance(INetFwRule) for loopback failed: 0x{hr:08X}"));
+        report.errors.push(format!(
+            "CoCreateInstance(INetFwRule) for loopback failed: 0x{hr:08X}"
+        ));
     }
 
     release_com(rules_ptr);
     release_com(policy_ptr);
-    unsafe { win::CoUninitialize(); }
+    unsafe {
+        win::CoUninitialize();
+    }
 
     Ok(report)
 }
@@ -532,7 +521,9 @@ fn windows_unblock() -> Result<(), AppError> {
     };
 
     if hr != win::S_OK || policy_ptr.is_null() {
-        unsafe { win::CoUninitialize(); }
+        unsafe {
+            win::CoUninitialize();
+        }
         return Err(AppError::Internal(format!(
             "CoCreateInstance failed: 0x{hr:08X}"
         )));
@@ -568,7 +559,9 @@ fn windows_unblock() -> Result<(), AppError> {
 
     release_com(rules_ptr);
     release_com(policy_ptr);
-    unsafe { win::CoUninitialize(); }
+    unsafe {
+        win::CoUninitialize();
+    }
 
     Ok(())
 }
@@ -591,7 +584,9 @@ fn windows_is_firewall_enabled() -> bool {
     };
 
     if hr != win::S_OK || policy_ptr.is_null() {
-        unsafe { win::CoUninitialize(); }
+        unsafe {
+            win::CoUninitialize();
+        }
         return false;
     }
 
@@ -607,7 +602,9 @@ fn windows_is_firewall_enabled() -> bool {
     }
 
     release_com(policy_ptr);
-    unsafe { win::CoUninitialize(); }
+    unsafe {
+        win::CoUninitialize();
+    }
 
     enabled != 0
 }

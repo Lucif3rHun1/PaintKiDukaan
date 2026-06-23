@@ -7,16 +7,20 @@ import { useEffect, useState } from "react";
 import { MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { createItem, listBrands, updateItem, previewNextBarcode } from "./api";
-import { LocationAutocomplete } from "./LocationAutocomplete";
-import { listLocations } from "../locations/api";
+import { listLocations, listSubLocations } from "../locations/api";
+import { createInward } from "../../pos/api";
+import type { NewPurchase } from "../../pos/types";
+import { listCategories } from "../categories/api";
 import { BarcodeThumb } from "./BarcodeThumb";
 import type {
   AppError,
   Brand,
+  Category,
   Item,
   Unit,
   NewItem,
   Location,
+  SubLocation,
 } from "../types";
 import { listUnits } from "../units/api";
 
@@ -34,6 +38,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   const [brandId, setBrandId] = useState<number | null>(initial?.brand_id ?? null);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [category, setCategory] = useState(initial?.category ?? "");
+  const [categories, setCategories] = useState<Category[]>([]);
   const [unitId, setUnitId] = useState<number | null>(initial?.unit_id ?? null);
   const [units, setUnits] = useState<Unit[]>([]);
   const [retailPricePaise, setRetailPricePaise] = useState(
@@ -43,12 +48,14 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   const [promoPricePaise, setPromoPricePaise] = useState<number | null>(
     initial?.promo_price_paise ?? null,
   );
-  const [locationText, setLocationText] = useState(
-    initial?.location_text ?? "",
-  );
   const [primaryLocationId, setPrimaryLocationId] = useState<number>(
     initial?.primary_location_id ?? 0,
   );
+  const [subLocationId, setSubLocationId] = useState<number | null>(
+    initial?.sub_location_id ?? null,
+  );
+  const [subLocations, setSubLocations] = useState<SubLocation[]>([]);
+  const [position, setPosition] = useState(initial?.position ?? "");
   const [minQty, setMinQty] = useState(initial?.min_qty?.toString() ?? "1");
   const [locations, setLocations] = useState<Location[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +65,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     initial?.barcode ?? "",
   );
   const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [openingStock, setOpeningStock] = useState("0");
 
   useEffect(() => {
     listLocations(false)
@@ -71,12 +79,12 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     listBrands()
       .then((b) => setBrands(b))
       .catch(() => setBrands([]));
+    listCategories()
+      .then((c) => setCategories(c))
+      .catch(() => setCategories([]));
     listUnits()
       .then((u) => {
         setUnits(u);
-        // Auto-select first active unit if item has no unit yet. This way
-        // the form never lands on "— Select unit —" for brand-new items
-        // when at least one unit is configured.
         const firstActive = u.find((x) => x.is_active);
         if (firstActive && mode === "create") {
           setUnitId((current) => current ?? firstActive.id);
@@ -85,10 +93,20 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       .catch(() => setUnits([]));
   }, [mode]);
 
+  useEffect(() => {
+    if (primaryLocationId > 0) {
+      listSubLocations(primaryLocationId)
+        .then(setSubLocations)
+        .catch(() => setSubLocations([]));
+    } else {
+      setSubLocations([]);
+    }
+    setSubLocationId(null);
+  }, [primaryLocationId]);
+
   // Predict barcode when brand or name changes (create mode only).
   useEffect(() => {
-    if (mode !== "create" || !brandId || !name.trim()) {
-      if (mode === "create" && !brandId) setPredictedBarcode("");
+    if (mode !== "create" || !name.trim()) {
       return;
     }
     setBarcodeLoading(true);
@@ -125,8 +143,9 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         retail_price_paise: retailPricePaise,
         cost_paise: costPaise,
         promo_price_paise: promoPricePaise,
-        location_text: locationText || null,
         primary_location_id: primaryLocationId,
+        sub_location_id: subLocationId,
+        position: position || null,
         min_qty: Number(minQty),
         barcode: null as string | null,
       };
@@ -136,6 +155,24 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           success: (it) => `Added ${it.name}`,
           error: (err) => (err as AppError)?.message ?? "Save failed",
         });
+        const openingQty = Number(openingStock) || 0;
+        if (openingQty > 0 && item.primary_location_id) {
+          const unit = units.find((u) => u.id === item.unit_id);
+          const req: NewPurchase = {
+            vendor_id: null,
+            auto_print_label: false,
+            lines: [{
+              item_id: item.id,
+              qty: openingQty,
+              unit_id: item.unit_id ?? 0,
+              unit_code: unit?.code ?? "pc",
+              cost_price: item.cost_paise,
+              retail_price: item.retail_price_paise,
+              location_id: item.primary_location_id,
+            }],
+          };
+          await createInward(req);
+        }
         onSaved(item);
       } else if (initial) {
         const item = await toast.promise(updateItem(initial.id, base), {
@@ -173,10 +210,10 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       className="card mx-auto w-full max-w-3xl space-y-6"
     >
       <header className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-100">
+        <h2 className="text-lg font-semibold text-foreground">
           {mode === "create" ? "New item" : `Edit ${initial?.sku_code ?? ""}`}
         </h2>
-        <span className="text-[11px] text-zinc-500">
+        <span className="text-[11px] text-muted-foreground">
           ⏎ save · Esc cancel
         </span>
       </header>
@@ -203,17 +240,29 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               <option value={0}>— None —</option>
               {brands.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} ({b.code_prefix})
+                  {b.name} ({b.prefix})
                 </option>
               ))}
             </select>
           </Field>
           <Field label="Category">
-            <input
+            <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               className="input-dark"
-            />
+            >
+              <option value="">— None —</option>
+              {categories.filter((c) => c.is_active).map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {categories.filter((c) => c.is_active).length === 0 ? (
+              <span className="mt-1 block text-[10px] text-warning">
+                No categories configured — add categories in Settings.
+              </span>
+            ) : null}
           </Field>
         </div>
       </Section>
@@ -235,7 +284,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               ))}
             </select>
             {units.filter((u) => u.is_active).length === 0 ? (
-              <span className="mt-1 block text-[10px] text-amber-400">
+              <span className="mt-1 block text-[10px] text-warning">
                 No units configured — add units in Settings.
               </span>
             ) : null}
@@ -294,13 +343,13 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           <div className="flex-1">
             <Field
               label="Barcode"
-              hint={mode === "create" ? "Auto-generated on save (from brand prefix)" : "Assigned on creation — cannot be changed"}
+              hint={mode === "create" ? "Auto-generated on save" : "Assigned on creation — cannot be changed"}
             >
               <input
                 value={displayBarcode}
                 readOnly
                 placeholder={barcodeLoading ? "Loading…" : "Will be auto-generated"}
-                className="input-dark cursor-not-allowed font-mono text-zinc-400"
+                className="input-dark cursor-not-allowed font-mono text-muted-foreground"
               />
             </Field>
           </div>
@@ -308,13 +357,13 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             <BarcodeThumb value={displayBarcode} containerWidth={140} containerHeight={48} />
           </div>
         </div>
-        {selectedBrand && mode === "create" && predictedBarcode && (
-          <p className="text-[11px] text-zinc-500">
-            Predicted: <span className="font-mono text-zinc-400">{predictedBarcode}</span> — actual barcode assigned on save
+        {mode === "create" && predictedBarcode && (
+          <p className="text-[11px] text-muted-foreground">
+            Predicted: <span className="font-mono text-muted-foreground">{predictedBarcode}</span> — actual barcode assigned on save
           </p>
         )}
-        <p className="text-[11px] text-zinc-500">
-          Manage shelf labels in the <span className="text-zinc-400">Barcodes</span> tab
+        <p className="text-[11px] text-muted-foreground">
+          Manage shelf labels in the <span className="text-muted-foreground">Barcodes</span> tab
         </p>
       </Section>
 
@@ -333,20 +382,56 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             <option value={0}>Select location…</option>
             {locations.map((loc) => (
               <option key={loc.id} value={loc.id}>
-                {loc.rack ? `${loc.name} (${loc.rack})` : loc.name}
+                {loc.name}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Rack / hint (optional)">
-          <LocationAutocomplete value={locationText} onChange={setLocationText} />
+        {subLocations.length > 0 && (
+          <Field label="Sub-location">
+            <select
+              value={subLocationId ?? 0}
+              onChange={(e) => setSubLocationId(Number(e.target.value) || null)}
+              className="input-dark"
+            >
+              <option value={0}>— None —</option>
+              {subLocations.map((sub) => (
+                <option key={sub.id} value={sub.id}>
+                  {sub.name}{sub.position ? ` (${sub.position})` : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+        <Field label="Position">
+          <input
+            value={position}
+            onChange={(e) => setPosition(e.target.value)}
+            placeholder="e.g. Aisle 3, Bay 2"
+            className="input-dark"
+          />
         </Field>
       </Section>
+
+      {mode === "create" && (
+        <Section title="Opening stock">
+          <Field label="Quantity" hint="Initial stock count — creates an inward entry on save">
+            <input
+              value={openingStock}
+              type="number"
+              min="0"
+              step="1"
+              onChange={(e) => setOpeningStock(e.target.value)}
+              className="input-dark"
+            />
+          </Field>
+        </Section>
+      )}
 
       {error && (
         <p
           role="alert"
-          className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+          className="rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {error}
         </p>
@@ -377,8 +462,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-3 rounded-md border border-white/5 bg-zinc-950/40 p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    <section className="space-y-3 rounded-md border border-border bg-muted/40 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </h3>
       <div className="space-y-3">{children}</div>
@@ -403,14 +488,14 @@ function Field({
     <label className="block">
       <span className="label-text">
         {label}
-        {required && <span className="text-red-400"> *</span>}
+        {required && <span className="text-destructive"> *</span>}
       </span>
       {children}
       {hint && !error && (
-        <span className="mt-1 block text-[10px] text-zinc-500">{hint}</span>
+        <span className="mt-1 block text-[10px] text-muted-foreground">{hint}</span>
       )}
       {error && (
-        <span className="mt-1 block text-[10px] text-red-400">{error}</span>
+        <span className="mt-1 block text-[10px] text-destructive">{error}</span>
       )}
     </label>
   );

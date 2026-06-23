@@ -56,7 +56,7 @@ export function MoneyInput({
       <span
         className={cn(
           "pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm",
-          tone === "dark" ? "text-zinc-500" : "text-slate-500",
+          tone === "dark" ? "text-muted-foreground" : "text-muted-foreground",
         )}
       >
         ₹
@@ -83,8 +83,8 @@ export function MoneyInput({
         className={cn(
           "w-full rounded border px-2 py-1.5 pl-6 text-sm tabular-nums outline-none transition-colors disabled:cursor-not-allowed",
           tone === "dark"
-            ? "border-white/10 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50"
-            : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-100 disabled:text-slate-500",
+            ? "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+            : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-muted disabled:text-muted-foreground",
         )}
       />
     </div>

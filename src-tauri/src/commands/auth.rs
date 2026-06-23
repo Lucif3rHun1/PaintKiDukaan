@@ -15,121 +15,8 @@ use crate::crypto::kdf::{self, random_salt};
 use crate::crypto::wrap;
 use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
+use crate::error::AppError;
 use crate::obs;
-
-// ---------------------------------------------------------------------------
-// AppError — shared error type for all Tauri commands
-// ---------------------------------------------------------------------------
-
-#[derive(Debug)]
-pub enum AppError {
-    Db(rusqlite::Error),
-    Crypto(String),
-    NoKeywrap,
-    NoDb,
-    NotUnlocked,
-    WrongPin,
-    WrongRecoveryPassphrase,
-    TooManyAttempts,
-    Unauthorized,
-    Io(std::io::Error),
-    InvalidPinFormat,
-    LockedOut { until: u64 },
-    Wiped,
-    Internal(String),
-    PathTraversal(String),
-    LogInjection(String),
-}
-
-impl std::fmt::Display for AppError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AppError::Db(e) => write!(f, "database error: {e}"),
-            AppError::Crypto(s) => write!(f, "crypto error: {s}"),
-            AppError::NoKeywrap => write!(f, "no keywrap row found"),
-            AppError::NoDb => write!(f, "no database configured"),
-            AppError::NotUnlocked => write!(f, "database is locked"),
-            AppError::WrongPin => write!(f, "incorrect PIN or passphrase"),
-            AppError::WrongRecoveryPassphrase => write!(f, "incorrect recovery passphrase"),
-            AppError::TooManyAttempts => write!(f, "too many failed attempts"),
-            AppError::Unauthorized => write!(f, "unauthorized"),
-            AppError::Io(e) => write!(f, "I/O error: {e}"),
-            AppError::InvalidPinFormat => write!(f, "PIN must be exactly 6 digits"),
-            AppError::LockedOut { until } => write!(f, "locked out until unix {}", until),
-            AppError::Wiped => write!(f, "data wiped — recovery passphrase required"),
-            AppError::Internal(s) => write!(f, "internal error: {s}"),
-            AppError::PathTraversal(s) => write!(f, "path traversal rejected: {s}"),
-            AppError::LogInjection(s) => write!(f, "log injection rejected: {s}"),
-        }
-    }
-}
-
-impl std::error::Error for AppError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            AppError::Db(e) => Some(e),
-            AppError::Io(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl Serialize for AppError {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("AppError", 2)?;
-        s.serialize_field("kind", self.kind())?;
-        s.serialize_field("message", &self.to_string())?;
-        s.end()
-    }
-}
-
-impl AppError {
-    fn kind(&self) -> &str {
-        match self {
-            AppError::Db(_) => "db",
-            AppError::Crypto(_) => "crypto",
-            AppError::NoKeywrap => "no_keywrap",
-            AppError::NoDb => "no_db",
-            AppError::NotUnlocked => "not_unlocked",
-            AppError::WrongPin => "wrong_pin",
-            AppError::WrongRecoveryPassphrase => "wrong_recovery_passphrase",
-            AppError::TooManyAttempts => "too_many_attempts",
-            AppError::Unauthorized => "unauthorized",
-            AppError::Io(_) => "io",
-            AppError::InvalidPinFormat => "invalid_pin_format",
-            AppError::LockedOut { .. } => "locked_out",
-            AppError::Wiped => "wiped",
-            AppError::Internal(_) => "internal",
-            AppError::PathTraversal(_) => "path_traversal",
-            AppError::LogInjection(_) => "log_injection",
-        }
-    }
-}
-
-impl From<rusqlite::Error> for AppError {
-    fn from(e: rusqlite::Error) -> Self {
-        AppError::Db(e)
-    }
-}
-
-impl From<std::io::Error> for AppError {
-    fn from(e: std::io::Error) -> Self {
-        AppError::Io(e)
-    }
-}
-
-impl From<kdf::KdfError> for AppError {
-    fn from(e: kdf::KdfError) -> Self {
-        AppError::Crypto(e.to_string())
-    }
-}
-
-impl From<wrap::WrapError> for AppError {
-    fn from(e: wrap::WrapError) -> Self {
-        AppError::Crypto(e.to_string())
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Session & AppState
@@ -172,14 +59,8 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         let mut settings = HashMap::new();
-        settings.insert(
-            "scanner_min_length".into(),
-            Value::Number(4.into()),
-        );
-        settings.insert(
-            "scanner_avg_ms_per_char".into(),
-            Value::Number(25.into()),
-        );
+        settings.insert("scanner_min_length".into(), Value::Number(4.into()));
+        settings.insert("scanner_avg_ms_per_char".into(), Value::Number(25.into()));
         Self {
             db: Mutex::new(None),
             session: Mutex::new(None),
@@ -250,9 +131,7 @@ pub(crate) fn write_keywrap_to_keystore(db_path: &Path, row: &KeywrapRow) -> Res
     Ok(())
 }
 
-pub(crate) fn read_lockout_from_keystore(
-    db_path: &Path,
-) -> Result<keywrap::LockoutRow, AppError> {
+pub(crate) fn read_lockout_from_keystore(db_path: &Path) -> Result<keywrap::LockoutRow, AppError> {
     let kp = keystore_path(db_path);
     let conn = open_keystore(&kp)?;
     keywrap::read_lockout(&conn, 1).map_err(AppError::Db)
@@ -369,7 +248,9 @@ pub(crate) const DECEPTION_THRESHOLD: u32 = 3;
 /// Read the configured max-failed-attempts from settings (falls back to default).
 fn max_failed_attempts(state: &AppState) -> u32 {
     let settings = state.settings.lock().unwrap();
-    let raw = settings.get("failed_attempts_lockout").and_then(|v| v.as_u64());
+    let raw = settings
+        .get("failed_attempts_lockout")
+        .and_then(|v| v.as_u64());
     match raw {
         Some(0) | None => DEFAULT_MAX_FAILED_ATTEMPTS,
         Some(n) => n.min(20) as u32,
@@ -413,7 +294,9 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
     if let Some(locked_until_unix) = current_lockout_until(&db_path)? {
         let now = now_unix();
         if now < locked_until_unix {
-            return Err(AppError::LockedOut { until: locked_until_unix });
+            return Err(AppError::LockedOut {
+                until: locked_until_unix,
+            });
         }
         // Lockout window expired — clear it.
         clear_lockout(&db_path, &state)?;
@@ -438,7 +321,7 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
             // Read the owner user from the users table.
             let user = db.with_conn(|conn| {
                 let mut stmt = conn
-                    .prepare("SELECT id, name, role FROM users WHERE role = 'owner' AND active = 1 LIMIT 1")?;
+                    .prepare("SELECT id, name, role FROM users WHERE role = 'owner' AND is_active = 1 LIMIT 1")?;
                 stmt.query_row([], |r| {
                     Ok(User {
                         id: r.get(0)?,
@@ -528,8 +411,9 @@ pub(crate) fn unlock_into_decoy(
 
             let user = db
                 .with_conn(|c| {
-                    let mut stmt = c
-                        .prepare("SELECT id, name, role FROM users WHERE active = 1 ORDER BY id LIMIT 1")?;
+                    let mut stmt = c.prepare(
+                        "SELECT id, name, role FROM users WHERE is_active = 1 ORDER BY id LIMIT 1",
+                    )?;
                     stmt.query_row([], |r| {
                         Ok(User {
                             id: r.get(0)?,
@@ -580,7 +464,12 @@ fn record_failed_attempt(db_path: &Path, attempts: u32) -> Result<(), AppError> 
 /// - `"wipe"`:    zeroize DEK in RAM + delete the keywrap row from the
 ///   keystore (forcing recovery passphrase + backup to rebuild).
 fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
-    let db_path = state.db_path.lock().unwrap().clone().ok_or(AppError::NoDb)?;
+    let db_path = state
+        .db_path
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(AppError::NoDb)?;
     let lockout = read_lockout_from_keystore(&db_path).unwrap_or_else(|_| default_lockout_row());
     let action = lockout.action.clone();
     let base_minutes = lockout.base_minutes as u64;
@@ -660,7 +549,10 @@ fn backup_before_wipe(state: &AppState, db_path: &Path) -> Result<(), AppError> 
         .ok_or_else(|| AppError::Internal("db_path has no parent".into()))?;
     let backup_dir = app_dir.join(obs!(".duress_backup"));
     if let Err(e) = std::fs::create_dir_all(&backup_dir) {
-        log::error!("backup-before-wipe: mkdir {} failed: {e}", backup_dir.display());
+        log::error!(
+            "backup-before-wipe: mkdir {} failed: {e}",
+            backup_dir.display()
+        );
         return Ok(());
     }
 
@@ -677,7 +569,9 @@ fn backup_before_wipe(state: &AppState, db_path: &Path) -> Result<(), AppError> 
     let temp_path = temp_snapshot.path().to_path_buf();
 
     let dek: Option<[u8; 32]> = None;
-    if let Err(e) = crate::backup::snapshot::snapshot_via_backup_api(db_path, dek.as_ref(), &temp_path) {
+    if let Err(e) =
+        crate::backup::snapshot::snapshot_via_backup_api(db_path, dek.as_ref(), &temp_path)
+    {
         log::error!("backup-before-wipe: snapshot_via_backup_api failed: {e}");
         return Ok(());
     }
@@ -750,14 +644,19 @@ pub fn change_pin(
     let session = state.session.lock().unwrap();
     let session_ref = session.as_ref().ok_or(AppError::NotUnlocked)?;
     if session_ref.role != "owner" {
-        return Err(AppError::Unauthorized);
+        return Err(AppError::Unauthorized("owner role required".into()));
     }
     drop(session);
 
     // Defense-in-depth: validate new PIN format on the Rust side too.
     validate_owner_pin(&new_pin)?;
 
-    let db_path = state.db_path.lock().unwrap().clone().ok_or(AppError::NoDb)?;
+    let db_path = state
+        .db_path
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(AppError::NoDb)?;
     let db = state.db.lock().unwrap();
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
 
@@ -808,13 +707,15 @@ pub fn create_user(
         let session = state.session.lock().unwrap();
         let s = session.as_ref().ok_or(AppError::NotUnlocked)?;
         if s.role != "owner" {
-            return Err(AppError::Unauthorized);
+            return Err(AppError::Unauthorized("owner role required".into()));
         }
     }
 
     // Validate role.
     if role != "cashier" && role != "stocker" {
-        return Err(AppError::Crypto("role must be 'cashier' or 'stocker'".into()));
+        return Err(AppError::Crypto(
+            "role must be 'cashier' or 'stocker'".into(),
+        ));
     }
 
     // Validate PIN format (6 digits).
@@ -831,8 +732,8 @@ pub fn create_user(
     // Generate per-user PIN salt and verifier.
     let salt = random_salt();
     let params = kdf::KdfParams::PIN;
-    let mut kek = kdf::derive_pin_kek(&pin, &salt, &params)
-        .map_err(|e| AppError::Crypto(e.to_string()))?;
+    let mut kek =
+        kdf::derive_pin_kek(&pin, &salt, &params).map_err(|e| AppError::Crypto(e.to_string()))?;
     // Store the KEK as the verifier (the DB-level per-user auth checks
     // re-deriving this from input PIN against stored salt).
     let verifier: Vec<u8> = kek.to_vec();
@@ -840,11 +741,12 @@ pub fn create_user(
 
     let salt_bytes = salt.to_vec();
 
+    let ts = (now_unix() as i64) * 1000;
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) \
-             VALUES (?1, ?2, ?3, ?4, 6)",
-            rusqlite::params![name, role, &salt_bytes, &verifier],
+            "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, 6, ?5, ?6)",
+            rusqlite::params![name, role, &salt_bytes, &verifier, ts, ts],
         )
     })
     .map_err(AppError::Db)?;
@@ -852,7 +754,7 @@ pub fn create_user(
     // Read back the inserted user to get the id.
     let user = db.with_conn(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, name, role FROM users WHERE name = ?1 AND active = 1 LIMIT 1",
+            "SELECT id, name, role FROM users WHERE name = ?1 AND is_active = 1 LIMIT 1",
         )?;
         stmt.query_row(rusqlite::params![name], |r| {
             Ok(User {
@@ -874,7 +776,7 @@ pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
         let session = state.session.lock().unwrap();
         let s = session.as_ref().ok_or(AppError::NotUnlocked)?;
         if s.role != "owner" {
-            return Err(AppError::Unauthorized);
+            return Err(AppError::Unauthorized("owner role required".into()));
         }
     }
 
@@ -883,7 +785,7 @@ pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
 
     let users = db.with_conn(|conn| {
         let mut stmt =
-            conn.prepare("SELECT id, name, role, active FROM users ORDER BY role, name")?;
+            conn.prepare("SELECT id, name, role, is_active FROM users ORDER BY role, name")?;
         let rows = stmt.query_map([], |r| {
             Ok(User {
                 id: r.get(0)?,
@@ -905,10 +807,12 @@ pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError>
         let session = state.session.lock().unwrap();
         let s = session.as_ref().ok_or(AppError::NotUnlocked)?;
         if s.role != "owner" {
-            return Err(AppError::Unauthorized);
+            return Err(AppError::Unauthorized("owner role required".into()));
         }
         if s.id == user_id {
-            return Err(AppError::Crypto("cannot deactivate your own account".into()));
+            return Err(AppError::Crypto(
+                "cannot deactivate your own account".into(),
+            ));
         }
     }
 
@@ -918,7 +822,7 @@ pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError>
     let affected = db
         .with_conn(|conn| {
             conn.execute(
-                "UPDATE users SET active = 0 WHERE id = ?1 AND active = 1",
+                "UPDATE users SET is_active = 0 WHERE id = ?1 AND is_active = 1",
                 rusqlite::params![user_id],
             )
         })
@@ -941,11 +845,18 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
     validate_owner_pin(&pin)?;
 
     // Check active lockout (same policy as owner unlock — CWE custom #9).
-    let db_path = state.db_path.lock().unwrap().clone().ok_or(AppError::NoDb)?;
+    let db_path = state
+        .db_path
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(AppError::NoDb)?;
     if let Some(locked_until_unix) = current_lockout_until(&db_path)? {
         let now = now_unix();
         if now < locked_until_unix {
-            return Err(AppError::LockedOut { until: locked_until_unix });
+            return Err(AppError::LockedOut {
+                until: locked_until_unix,
+            });
         }
         clear_lockout(&db_path, &state)?;
     }
@@ -958,7 +869,7 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
         .with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, name, role, pin_salt, pin_verifier \
-                 FROM users WHERE name = ?1 AND active = 1 LIMIT 1",
+                 FROM users WHERE name = ?1 AND is_active = 1 LIMIT 1",
             )?;
             stmt.query_row(rusqlite::params![name], |r| {
                 let id: i64 = r.get(0)?;
@@ -975,8 +886,8 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
 
     // Derive KEK from input PIN and compare against stored verifier.
     let params = kdf::KdfParams::PIN;
-    let mut kek = kdf::derive_pin_kek(&pin, &salt, &params)
-        .map_err(|e| AppError::Crypto(e.to_string()))?;
+    let mut kek =
+        kdf::derive_pin_kek(&pin, &salt, &params).map_err(|e| AppError::Crypto(e.to_string()))?;
     let derived_verifier = kek.to_vec();
     kdf::zeroize_key(&mut kek);
 
@@ -995,7 +906,12 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
         return Err(AppError::WrongPin);
     }
 
-    let authenticated_user = User { id, name, role, is_active: true };
+    let authenticated_user = User {
+        id,
+        name,
+        role,
+        is_active: true,
+    };
     *state.session.lock().unwrap() = Some(authenticated_user.clone());
     sync_session_to_static(&state);
     *state.failed_attempts.lock().unwrap() = 0;
@@ -1005,6 +921,30 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
         user: Some(authenticated_user),
         locked: false,
     })
+}
+
+/// Verify an owner PIN without unlocking or mutating session state.
+/// Used by privileged operations (e.g., backdated sales returns) that need
+/// an extra owner approval step.
+pub fn verify_owner_pin(state: &AppState, pin: &str) -> Result<(), AppError> {
+    validate_owner_pin(pin)?;
+
+    let db_path = state
+        .db_path
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?
+        .clone()
+        .ok_or(AppError::NoDb)?;
+
+    // Deception mode: once tripped, no PIN can pass an owner check from
+    // inside the app because the real owner must recover out-of-band.
+    if read_deception_flag(&db_path)? {
+        return Err(AppError::WrongPin);
+    }
+
+    let row = read_keywrap_from_keystore(&db_path)?;
+    keywrap::unwrap_with_pin(&row, pin)?;
+    Ok(())
 }
 
 /// Free function for cross-slice middleware (slice plan §1 contract):
@@ -1063,7 +1003,6 @@ mod tests {
         assert_eq!(LOCKOUT_BACKOFF_MINUTES, &[15, 30, 60, 240, 1440]);
     }
 
-
     #[test]
     fn test_build_session_locked_when_db_is_none() {
         let state = AppState::default();
@@ -1090,7 +1029,8 @@ mod tests {
         use zeroize::Zeroizing;
 
         let state = AppState::default();
-        *state.recovery_passphrase.lock().unwrap() = Some(Zeroizing::new("toy-recovery-passphrase".to_string()));
+        *state.recovery_passphrase.lock().unwrap() =
+            Some(Zeroizing::new("toy-recovery-passphrase".to_string()));
 
         let guard = state.recovery_passphrase.lock().unwrap();
         let stored = guard.as_ref().unwrap();
@@ -1129,7 +1069,11 @@ mod tests {
         *state.db_path.lock().unwrap() = Some(db_path.clone());
 
         let result = handle_lockout(&state, 5);
-        assert!(matches!(result, Err(AppError::Wiped)), "expected Wiped, got {:?}", result);
+        assert!(
+            matches!(result, Err(AppError::Wiped)),
+            "expected Wiped, got {:?}",
+            result
+        );
 
         assert!(
             !db_path.exists(),
@@ -1253,9 +1197,9 @@ mod tests {
 
         let state = AppState::default();
         *state.db_path.lock().unwrap() = Some(db_path.clone());
-        *state.recovery_passphrase.lock().unwrap() = Some(
-            zeroize::Zeroizing::new("wipe-backup-test-passphrase".to_string()),
-        );
+        *state.recovery_passphrase.lock().unwrap() = Some(zeroize::Zeroizing::new(
+            "wipe-backup-test-passphrase".to_string(),
+        ));
 
         let result = handle_lockout(&state, 5);
         assert!(matches!(result, Err(AppError::Wiped)));
@@ -1271,11 +1215,7 @@ mod tests {
         let entries: Vec<_> = std::fs::read_dir(&backup_dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with("duress-wipe-")
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with("duress-wipe-"))
             .collect();
         assert!(
             !entries.is_empty(),

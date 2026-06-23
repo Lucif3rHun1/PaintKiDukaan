@@ -75,11 +75,7 @@ pub struct WatchHandle {
 /// for changes to the key at `hkey\path`.
 ///
 /// On non-Windows, returns a no-op handle.
-pub fn watch_key<F>(
-    _hkey: &str,
-    _path: &str,
-    _callback: F,
-) -> Result<WatchHandle, AppError>
+pub fn watch_key<F>(_hkey: &str, _path: &str, _callback: F) -> Result<WatchHandle, AppError>
 where
     F: Fn() + Send + 'static,
 {
@@ -227,16 +223,12 @@ fn hive_to_handle(hive: &str) -> isize {
 }
 
 #[cfg(target_os = "windows")]
-fn windows_watch_key<F>(
-    hkey: &str,
-    path: &str,
-    callback: F,
-) -> Result<WatchHandle, AppError>
+fn windows_watch_key<F>(hkey: &str, path: &str, callback: F) -> Result<WatchHandle, AppError>
 where
     F: Fn() + Send + 'static,
 {
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     let should_stop = Arc::new(AtomicBool::new(false));
     let should_stop_clone = should_stop.clone();
@@ -282,11 +274,8 @@ where
                         | win::REG_NOTIFY_CHANGE_SECURITY;
 
                     let status = win::RegNotifyChangeKeyValue(
-                        hkey,
-                        1, // watch subtree
-                        filter,
-                        event,
-                        1, // asynchronous
+                        hkey, 1, // watch subtree
+                        filter, event, 1, // asynchronous
                     );
 
                     if status == win::ERROR_SUCCESS {
@@ -317,36 +306,37 @@ fn windows_verify_manifest(manifest: &RegistryManifest) -> Result<RegistryReport
 
     for entry in &manifest.entries {
         let path = format!("{}\\{}\\{}", entry.hive, entry.subpath, entry.value_name);
-        let status = match windows_read_registry_value(&entry.hive, &entry.subpath, &entry.value_name) {
-            Ok(data) => {
-                let mut hasher = Sha256::new();
-                hasher.update(&data);
-                let actual = hex::encode(hasher.finalize());
-                let m = actual == entry.expected_sha256;
-                if m {
-                    matched += 1;
-                } else {
+        let status =
+            match windows_read_registry_value(&entry.hive, &entry.subpath, &entry.value_name) {
+                Ok(data) => {
+                    let mut hasher = Sha256::new();
+                    hasher.update(&data);
+                    let actual = hex::encode(hasher.finalize());
+                    let m = actual == entry.expected_sha256;
+                    if m {
+                        matched += 1;
+                    } else {
+                        mismatched += 1;
+                    }
+                    RegistryEntryStatus {
+                        path: path.clone(),
+                        expected_hash: entry.expected_sha256.clone(),
+                        actual_hash: actual,
+                        matches: m,
+                        error: None,
+                    }
+                }
+                Err(e) => {
                     mismatched += 1;
+                    RegistryEntryStatus {
+                        path: path.clone(),
+                        expected_hash: entry.expected_sha256.clone(),
+                        actual_hash: String::new(),
+                        matches: false,
+                        error: Some(e.to_string()),
+                    }
                 }
-                RegistryEntryStatus {
-                    path: path.clone(),
-                    expected_hash: entry.expected_sha256.clone(),
-                    actual_hash: actual,
-                    matches: m,
-                    error: None,
-                }
-            }
-            Err(e) => {
-                mismatched += 1;
-                RegistryEntryStatus {
-                    path: path.clone(),
-                    expected_hash: entry.expected_sha256.clone(),
-                    actual_hash: String::new(),
-                    matches: false,
-                    error: Some(e.to_string()),
-                }
-            }
-        };
+            };
         statuses.push(status);
     }
 
@@ -366,17 +356,15 @@ fn windows_read_registry_value(
 ) -> Result<Vec<u8>, AppError> {
     let hive_handle = hive_to_handle(hive);
     let wide_sub: Vec<u16> = subpath.encode_utf16().chain(std::iter::once(0)).collect();
-    let wide_name: Vec<u16> = value_name.encode_utf16().chain(std::iter::once(0)).collect();
+    let wide_name: Vec<u16> = value_name
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
 
     unsafe {
         let mut hkey: isize = 0;
-        let status = win::RegOpenKeyExW(
-            hive_handle,
-            wide_sub.as_ptr(),
-            0,
-            win::KEY_READ,
-            &mut hkey,
-        );
+        let status =
+            win::RegOpenKeyExW(hive_handle, wide_sub.as_ptr(), 0, win::KEY_READ, &mut hkey);
         if status != win::ERROR_SUCCESS {
             return Err(AppError::Internal(format!(
                 "RegOpenKeyExW failed: {status}"
@@ -437,7 +425,8 @@ mod tests {
                 hive: "HKCU".into(),
                 subpath: "Software\\PaintKiDukaan".into(),
                 value_name: "Version".into(),
-                expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000".into(),
+                expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+                    .into(),
             }],
         };
 

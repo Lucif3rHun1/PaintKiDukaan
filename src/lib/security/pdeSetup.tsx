@@ -32,17 +32,17 @@ const STEPS: ReadonlyArray<{ key: Step; label: string; icon: typeof Shield }> = 
 ];
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 text-sm text-zinc-100 outline-none transition-colors duration-150 placeholder:text-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50";
-const labelClass = "text-sm font-medium text-zinc-200";
+  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+const labelClass = "text-sm font-medium text-foreground";
 const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-indigo-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-white/10 px-4 text-sm font-medium text-zinc-200 transition-colors duration-150 hover:border-white/20 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function fieldError(message?: string) {
   if (!message) return null;
   return (
-    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-red-400" role="alert">
+      <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
       <AlertCircle className="h-4 w-4" aria-hidden="true" />
       {message}
     </p>
@@ -50,15 +50,15 @@ function fieldError(message?: string) {
 }
 
 function pinStrength(pin: string): { label: string; color: string; width: string } {
-  if (pin.length === 0) return { label: "", color: "bg-zinc-700", width: "w-0" };
-  if (pin.length < 4) return { label: "Weak", color: "bg-red-500", width: "w-1/4" };
+  if (pin.length === 0) return { label: "", color: "bg-muted", width: "w-0" };
+  if (pin.length < 4) return { label: "Weak", color: "bg-destructive", width: "w-1/4" };
   const uniqueDigits = new Set(pin).size;
   const isSequential = /0123|1234|2345|3456|4567|5678|6789|9876|8765|7654|6543|5432|4321|3210/.test(pin);
   const isRepeating = /^(\d)\1{5}$/.test(pin);
-  if (isRepeating || isSequential) return { label: "Weak", color: "bg-red-500", width: "w-1/4" };
-  if (uniqueDigits <= 2) return { label: "Fair", color: "bg-amber-500", width: "w-2/4" };
-  if (uniqueDigits <= 4) return { label: "Good", color: "bg-emerald-500", width: "w-3/4" };
-  return { label: "Strong", color: "bg-emerald-400", width: "w-full" };
+  if (isRepeating || isSequential) return { label: "Weak", color: "bg-destructive", width: "w-1/4" };
+  if (uniqueDigits <= 2) return { label: "Fair", color: "bg-warning", width: "w-2/4" };
+  if (uniqueDigits <= 4) return { label: "Good", color: "bg-success", width: "w-3/4" };
+  return { label: "Strong", color: "bg-success", width: "w-full" };
 }
 
 function PinStrengthMeter({ pin }: { pin: string }) {
@@ -66,7 +66,7 @@ function PinStrengthMeter({ pin }: { pin: string }) {
   if (!s.label) return null;
   return (
     <div className="mt-1.5 flex items-center gap-2">
-      <div className="h-1.5 flex-1 rounded-full bg-zinc-800">
+      <div className="h-1.5 flex-1 rounded-full bg-muted">
         <div className={`h-full rounded-full transition-all duration-300 ${s.color} ${s.width}`} />
       </div>
       <span className={`text-xs font-medium ${s.color.replace("bg-", "text-")}`}>{s.label}</span>
@@ -185,17 +185,17 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
               <div
                 className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-200 ${
                   i < stepIndex
-                    ? "bg-emerald-500 text-white"
+                    ? "bg-success text-success-foreground"
                     : i === stepIndex
-                      ? "bg-indigo-500 text-white"
-                      : "bg-zinc-800 text-zinc-500"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
                 }`}
               >
                 {i < stepIndex ? "✓" : i + 1}
               </div>
               <span
                 className={`text-xs font-medium hidden sm:inline ${
-                  i === stepIndex ? "text-zinc-100" : "text-zinc-500"
+                  i === stepIndex ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
                 {s.label}
@@ -209,10 +209,10 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
               key={i}
               className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${
                 i < stepIndex
-                  ? "bg-emerald-500"
+                  ? "bg-success"
                   : i === stepIndex
-                    ? "bg-indigo-500"
-                    : "bg-zinc-800"
+                    ? "bg-primary"
+                    : "bg-muted"
               }`}
             />
           ))}
@@ -220,11 +220,11 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       </div>
 
       {/* Step description */}
-      <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-3">
-        <currentMeta.icon className="h-5 w-5 shrink-0 text-indigo-300" aria-hidden="true" />
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-card/60 p-3">
+        <currentMeta.icon className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
         <div>
-          <p className="text-sm font-medium text-zinc-100">{currentMeta.label}</p>
-          <p className="text-xs text-zinc-400">
+          <p className="text-sm font-medium text-foreground">{currentMeta.label}</p>
+          <p className="text-xs text-muted-foreground">
             {step === "opt-in" && "Set up a Plausible Deniability Environment with decoy and duress PINs."}
             {step === "decoy-pin" && "This PIN opens a plausible fake shop database."}
             {step === "duress-pin" && "This PIN triggers silent secure deletion, then opens the decoy database."}
@@ -236,7 +236,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
 
       {/* Backend error */}
       {backendError && (
-        <div className="flex gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200" role="alert">
+        <div className="flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{backendError}</span>
         </div>
@@ -245,24 +245,24 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       {/* Step: opt-in */}
       {step === "opt-in" && (
         <div className="space-y-4">
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-            <p className="text-sm font-medium text-amber-200">What is Plausible Deniability?</p>
-            <p className="mt-1 text-xs leading-5 text-amber-200/80">
+          <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
+            <p className="text-sm font-medium text-warning">What is Plausible Deniability?</p>
+            <p className="mt-1 text-xs leading-5 text-warning/80">
               PDE creates a separate encrypted database with fake shop data. If someone forces you
               to unlock the app, the <strong>decoy PIN</strong> shows plausible fake data. The{" "}
               <strong>duress PIN</strong> silently wipes the real database and shows the decoy data.
               An attacker cannot tell which PIN is real.
             </p>
           </div>
-          <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/60 p-4 cursor-pointer">
+          <label className="flex items-center gap-3 rounded-xl border border-border bg-card/60 p-4 cursor-pointer">
             <input
               type="checkbox"
-              className="h-5 w-5 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500"
+              className="h-5 w-5 rounded border-border bg-muted text-primary focus:ring-ring"
               {...register("enabled")}
             />
             <div>
-              <span className="text-sm font-medium text-zinc-100">Enable Plausible Deniability</span>
-              <p className="text-xs text-zinc-400">Create decoy and duress PINs for hostile situations.</p>
+              <span className="text-sm font-medium text-foreground">Enable Plausible Deniability</span>
+              <p className="text-xs text-muted-foreground">Create decoy and duress PINs for hostile situations.</p>
             </div>
           </label>
         </div>
@@ -285,7 +285,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
                 {...register("decoyPin")}
               />
               <button
-                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-100"
+                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                 type="button"
                 onClick={() => setShowPins((v) => !v)}
                 aria-label={showPins ? "Hide PINs" : "Show PINs"}
@@ -316,9 +316,9 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       {/* Step: duress PIN */}
       {step === "duress-pin" && (
         <div className="space-y-4">
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-            <p className="text-sm font-medium text-red-200">Warning</p>
-            <p className="mt-1 text-xs leading-5 text-red-200/80">
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3">
+            <p className="text-sm font-medium text-destructive">Warning</p>
+            <p className="mt-1 text-xs leading-5 text-destructive/80">
               The duress PIN will <strong>permanently and irreversibly</strong> wipe your real shop
               data after unlock. Only set this if you understand the consequences.
             </p>
@@ -337,7 +337,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
                 {...register("duressPin")}
               />
               <button
-                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-100"
+                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                 type="button"
                 onClick={() => setShowPins((v) => !v)}
                 aria-label={showPins ? "Hide PINs" : "Show PINs"}
@@ -368,7 +368,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       {/* Step: fake data */}
       {step === "fake-data" && (
         <div className="space-y-4">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-muted-foreground">
             Configure the fake shop that appears when the decoy or duress PIN is used.
             Default values create a believable paint shop.
           </p>
@@ -389,27 +389,27 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       {/* Step: confirm */}
       {step === "confirm" && (
         <div className="space-y-4">
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-3">
-            <p className="text-sm font-medium text-emerald-200">PDE Configuration Summary</p>
-            <div className="space-y-2 text-sm text-emerald-200/80">
+          <div className="rounded-xl border border-success/30 bg-success/10 p-4 space-y-3">
+            <p className="text-sm font-medium text-success">PDE Configuration Summary</p>
+            <div className="space-y-2 text-sm text-success/80">
               <div className="flex justify-between">
                 <span>Decoy PIN:</span>
-                <span className="font-mono text-emerald-100">{"•".repeat(6)}</span>
+                <span className="font-mono text-success">{"•".repeat(6)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Duress PIN:</span>
-                <span className="font-mono text-emerald-100">{"•".repeat(6)}</span>
+                <span className="font-mono text-success">{"•".repeat(6)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Fake shop name:</span>
-                <span className="font-medium text-emerald-100">{values.fakeShopName}</span>
+                <span className="font-medium text-success">{values.fakeShopName}</span>
               </div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 space-y-2">
-            <p className="text-sm font-medium text-indigo-200">What happens next</p>
-            <ul className="space-y-1 text-xs leading-5 text-indigo-200/80">
+          <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 space-y-2">
+            <p className="text-sm font-medium text-primary">What happens next</p>
+            <ul className="space-y-1 text-xs leading-5 text-primary/80">
               <li>• A separate encrypted decoy database will be created with fake shop data.</li>
               <li>• Your <strong>decoy PIN</strong> shows plausible fake data — the intruder sees a real-looking shop.</li>
               <li>• Your <strong>duress PIN</strong> silently wipes the real database after unlock, then shows the decoy data.</li>

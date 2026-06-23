@@ -1,0 +1,810 @@
+-- =====================================================================
+-- PaintKiDukaan Master — canonical SQLite schema
+-- =====================================================================
+-- This file is the single source of truth for the production DB. Every
+-- fresh install runs this once during first launch. Any future change
+-- goes into src-tauri/src/db/migrations/NNN__slug.sql and is applied
+-- incrementally by the rusqlite_migration runner.
+--
+-- Design axioms (locked in the schema redesign grilling sessions):
+--   * Soft-delete only — every entity has is_active. FKs use ON DELETE
+--     NO ACTION (the default) so historical transactions keep their
+--     references valid forever.
+--   * Money is INTEGER paise. Sign enforcement lives in the app layer;
+--     DB does not constrain sign on *_paise columns.
+--   * Timestamps are INTEGER epoch milliseconds UTC. day_close.day is
+--     the only TEXT date (calendar day, 'YYYY-MM-DD').
+--   * Audit columns (created_by/updated_by) are nullable; NULL means
+--     "system row" (wizard, migration, seed).
+--   * No JSON-in-DB except where unavoidable. sale_payments and
+--     alert_roles/alert_reads are normalized.
+--   * Polymorphic references (stock_movements.ref_kind/ref_id,
+--     alerts.entity_kind/entity_id) are by convention, not FK.
+--   * Every index has a comment naming the query it serves.
+-- =====================================================================
+
+PRAGMA foreign_keys = ON;
+
+-- =====================================================================
+-- SECTION A — Identity & access
+-- =====================================================================
+
+-- A1. Users (owners + cashiers + stockers)
+CREATE TABLE users (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  name            TEXT    NOT NULL,
+  role            TEXT    NOT NULL CHECK(role IN ('owner','cashier','stocker')),
+  pin_salt        BLOB    NOT NULL,
+  pin_verifier    BLOB    NOT NULL,
+  pin_length      INTEGER NOT NULL DEFAULT 6,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until    INTEGER,                        -- epoch ms; NULL = not locked
+  is_active       INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  created_by      INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by      INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "list active cashiers for shift handover dropdown"
+CREATE INDEX idx_users_role_active ON users(role) WHERE is_active = 1;
+
+-- serves: "user picker" / "settings → user management list"
+CREATE INDEX idx_users_is_active_name ON users(is_active, name);
+
+-- A2. Lockouts (audit log of past lockout events)
+CREATE TABLE lockouts (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+  locked_until INTEGER NOT NULL,                  -- epoch ms
+  reason       TEXT,
+  created_at   INTEGER NOT NULL
+);
+
+-- serves: "show lockout history for this user"
+CREATE INDEX idx_lockouts_user_id ON lockouts(user_id);
+
+-- A3. Devices (workstations/registers)
+CREATE TABLE devices (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  name         TEXT    NOT NULL UNIQUE,
+  last_seen_at INTEGER,                           -- epoch ms; NULL = never
+  is_active    INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL,
+  created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "device dropdown / active register list"
+CREATE INDEX idx_devices_is_active_name ON devices(is_active, name);
+
+-- A4. Settings (singleton row, id = 1)
+CREATE TABLE settings (
+  id                       INTEGER PRIMARY KEY CHECK(id = 1),
+  shop_name                TEXT    NOT NULL DEFAULT 'My Shop',
+  address                  TEXT,
+  phone                    TEXT,
+  currency_code            TEXT    NOT NULL DEFAULT 'INR',
+  currency_symbol          TEXT    NOT NULL DEFAULT '₹',
+  currency_decimal_places  INTEGER NOT NULL DEFAULT 2,
+  label_printer_name       TEXT,
+  receipt_printer_name     TEXT,
+  label_size               TEXT,
+  failed_attempts_lockout  INTEGER NOT NULL DEFAULT 5,
+  alerts_retention_days    INTEGER NOT NULL DEFAULT 30,
+  last_backup_unix_ms      INTEGER,
+  created_at               INTEGER NOT NULL,
+  updated_at               INTEGER NOT NULL,
+  created_by               INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by               INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+-- (default_location_id intentionally absent — locations.is_default is the
+--  single source of truth, enforced by uniq_one_default_location below.)
+
+-- =====================================================================
+-- SECTION B — Locations & topology
+-- =====================================================================
+
+-- B1. Locations (Shop, Godown, etc.)
+CREATE TABLE locations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL,
+  zone       TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)),
+  is_active  INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  created_by INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "location dropdown"
+CREATE INDEX idx_locations_is_active_name ON locations(is_active, name);
+
+-- DB invariant: at most one location has is_default = 1
+CREATE UNIQUE INDEX uniq_one_default_location ON locations(is_default) WHERE is_default = 1;
+
+-- B2. Sub-locations (racks / bins within a location)
+CREATE TABLE sub_locations (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+  name        TEXT    NOT NULL,
+  position    TEXT,
+  is_active   INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL,
+  created_by  INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by  INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  UNIQUE(location_id, name)
+);
+
+-- serves: "list sublocations at this Shop"
+CREATE INDEX idx_sub_locations_location_active ON sub_locations(location_id) WHERE is_active = 1;
+
+-- B3. Units (master list — seeded with the 10 known units)
+CREATE TABLE units (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  code       TEXT    NOT NULL UNIQUE,
+  label      TEXT    NOT NULL,
+  is_active  INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  created_by INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- B3.5. Item categories (managed in Settings → Catalog)
+CREATE TABLE categories (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL UNIQUE,
+  is_active  INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- B4. Unit conversions (e.g. 1 L = 1000 ml)
+CREATE TABLE unit_conversions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_unit_id INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  to_unit_id   INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  factor       REAL    NOT NULL CHECK(factor > 0),
+  is_active    INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL,
+  created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  UNIQUE(from_unit_id, to_unit_id),
+  CHECK(from_unit_id <> to_unit_id)
+);
+
+-- serves: "find conversion X → Y when scanning a barcode in ml for an L item"
+CREATE INDEX idx_uc_from ON unit_conversions(from_unit_id) WHERE is_active = 1;
+CREATE INDEX idx_uc_to   ON unit_conversions(to_unit_id)   WHERE is_active = 1;
+
+-- =====================================================================
+-- SECTION C — Parties
+-- =====================================================================
+
+-- C1. Customer types (lookup)
+CREATE TABLE customer_types (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL,
+  is_active  INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  created_by INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- unique-while-active so you can re-add a deactivated type later
+CREATE UNIQUE INDEX uniq_customer_types_active_name ON customer_types(name) WHERE is_active = 1;
+
+-- C2. Customers
+CREATE TABLE customers (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  name                 TEXT    NOT NULL,
+  phone                TEXT,
+  email                TEXT,
+  address              TEXT,
+  customer_type_id     INTEGER REFERENCES customer_types(id) ON DELETE NO ACTION,
+  opening_balance_paise INTEGER NOT NULL DEFAULT 0,  -- can be negative (overpayment)
+  is_active            INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at           INTEGER NOT NULL,
+  updated_at           INTEGER NOT NULL,
+  created_by           INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by           INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "customer picker / search"
+CREATE INDEX idx_customers_is_active_name ON customers(is_active, name);
+
+-- Label print audit log
+CREATE TABLE label_print_log (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  barcode    TEXT    NOT NULL,
+  qty        INTEGER NOT NULL CHECK(qty > 0),
+  format     TEXT    NOT NULL,
+  line1      TEXT,
+  line2      TEXT,
+  user_id    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_label_print_log_item_created ON label_print_log(item_id, created_at DESC);
+CREATE INDEX idx_label_print_log_created     ON label_print_log(created_at DESC);
+
+-- serves: "lookup by phone at billing time"
+CREATE INDEX idx_customers_phone ON customers(phone) WHERE phone IS NOT NULL AND is_active = 1;
+
+-- C3. Vendors
+CREATE TABLE vendors (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  name                 TEXT    NOT NULL,
+  phone                TEXT,
+  email                TEXT,
+  address              TEXT,
+  contact_person       TEXT,
+  credit_limit_paise   INTEGER NOT NULL DEFAULT 0 CHECK(credit_limit_paise >= 0),
+  is_active            INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at           INTEGER NOT NULL,
+  updated_at           INTEGER NOT NULL,
+  created_by           INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by           INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "vendor picker / search"
+CREATE INDEX idx_vendors_is_active_name ON vendors(is_active, name);
+
+-- serves: "lookup vendor by phone"
+CREATE INDEX idx_vendors_phone ON vendors(phone) WHERE phone IS NOT NULL AND is_active = 1;
+
+-- =====================================================================
+-- SECTION D — Catalog
+-- =====================================================================
+
+-- D1. Brands
+CREATE TABLE brands (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL,
+  prefix     TEXT,                                 -- barcode prefix (e.g. "APA" for APACE)
+  is_active  INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  created_by INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- unique-while-active
+CREATE UNIQUE INDEX uniq_brands_active_name ON brands(name) WHERE is_active = 1;
+
+-- D2. Per-brand barcode sequence (UPDATE...RETURNING for atomic mint)
+CREATE TABLE brand_sequences (
+  brand_id INTEGER PRIMARY KEY REFERENCES brands(id) ON DELETE NO ACTION,
+  prefix   TEXT    NOT NULL,
+  next_seq INTEGER NOT NULL DEFAULT 1 CHECK(next_seq >= 1),
+  padding  INTEGER NOT NULL DEFAULT 4 CHECK(padding BETWEEN 1 AND 12),
+  updated_at INTEGER NOT NULL
+);
+
+-- D3. Global sequences (sku, sale_number, ...)
+CREATE TABLE sequences (
+  name  TEXT    PRIMARY KEY,
+  value INTEGER NOT NULL DEFAULT 1 CHECK(value >= 1)
+);
+
+-- D4. Items (the catalog)
+CREATE TABLE items (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  sku_code            TEXT    NOT NULL UNIQUE,
+  barcode             TEXT,                       -- nullable; unique when set
+  name                TEXT    NOT NULL,
+  brand_id            INTEGER REFERENCES brands(id) ON DELETE NO ACTION,  -- SET NULL preserves history; enforced at app layer
+  brand               TEXT,                       -- denormalized brand name for cashier projection
+  category            TEXT,
+  unit_id             INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  unit_code           TEXT    NOT NULL,           -- denormalized for cashier projection
+  unit_label          TEXT    NOT NULL,           -- denormalized for cashier projection
+  unit                TEXT    NOT NULL DEFAULT 'pc',  -- denormalized unit code (legacy compat)
+  sell_unit           TEXT    NOT NULL DEFAULT 'unit', -- "unit" or "box"
+  retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),
+  cost_paise          INTEGER NOT NULL CHECK(cost_paise >= 0),
+  promo_price_paise   INTEGER CHECK(promo_price_paise >= 0),
+  label_line1         TEXT,
+  label_line2         TEXT,
+  primary_location_id INTEGER REFERENCES locations(id) ON DELETE NO ACTION,
+  min_qty             INTEGER NOT NULL DEFAULT 0 CHECK(min_qty >= 0),
+  barcode_format      TEXT,
+  units_per_pack      INTEGER NOT NULL DEFAULT 1 CHECK(units_per_pack >= 1),
+  sub_location_id     INTEGER REFERENCES sub_locations(id) ON DELETE NO ACTION,
+  position            TEXT,
+  is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at          INTEGER NOT NULL,
+  updated_at          INTEGER NOT NULL,
+  created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "lookup by SKU"
+CREATE UNIQUE INDEX uniq_items_sku ON items(sku_code);
+
+-- serves: "scan barcode at POS"
+CREATE UNIQUE INDEX uniq_items_barcode ON items(barcode) WHERE barcode IS NOT NULL;
+
+-- serves: "item picker / search by name"
+CREATE INDEX idx_items_is_active_name ON items(is_active, name);
+
+-- serves: "filter by brand in catalog"
+CREATE INDEX idx_items_brand_id ON items(brand_id) WHERE is_active = 1;
+
+-- serves: "list items at this location"
+CREATE INDEX idx_items_primary_location_id ON items(primary_location_id) WHERE is_active = 1;
+
+-- serves: "fast partial barcode prefix match" (e.g. typeahead scan)
+CREATE INDEX idx_items_is_active_barcode ON items(barcode) WHERE is_active = 1 AND barcode IS NOT NULL;
+
+-- =====================================================================
+-- SECTION E — Stock
+-- =====================================================================
+
+-- E1. Stock movement kinds (lookup; new kinds are INSERTs, never schema changes)
+CREATE TABLE stock_movement_kinds (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  code       TEXT    NOT NULL UNIQUE,
+  label      TEXT    NOT NULL,
+  sign       INTEGER NOT NULL CHECK(sign IN (-1, 0, 1)),
+  is_inbound INTEGER NOT NULL DEFAULT 0 CHECK(is_inbound IN (0,1))
+);
+
+-- E2. Stock movements (append-only ledger)
+CREATE TABLE stock_movements (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id      INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  location_id  INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+  kind_id      INTEGER NOT NULL REFERENCES stock_movement_kinds(id) ON DELETE NO ACTION,
+  qty          INTEGER NOT NULL CHECK(qty <> 0),  -- sign comes from kinds, but we still ban 0
+  unit_id      INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  ref_kind     TEXT    CHECK(ref_kind IN ('sale','purchase','return','adjustment') OR ref_kind IS NULL),
+  ref_id       INTEGER,
+  note         TEXT,
+  created_at   INTEGER NOT NULL,
+  created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "current stock at location" / "stock history for item"
+CREATE INDEX idx_stock_movements_item_loc_created ON stock_movements(item_id, location_id, created_at DESC);
+
+-- serves: "stock movement report for location"
+CREATE INDEX idx_stock_movements_loc_created ON stock_movements(location_id, created_at DESC);
+
+-- serves: "find the movement(s) behind this sale/purchase/return"
+CREATE INDEX idx_stock_movements_ref ON stock_movements(ref_kind, ref_id) WHERE ref_id IS NOT NULL;
+
+-- serves: "kind-based reports (all damages / all adjustments)"
+CREATE INDEX idx_stock_movements_kind_id ON stock_movements(kind_id);
+
+-- E3. Stock balances (hot read path; maintained by trigger)
+CREATE TABLE stock_balances (
+  item_id          INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  location_id      INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+  qty              INTEGER NOT NULL DEFAULT 0,
+  last_movement_id INTEGER REFERENCES stock_movements(id) ON DELETE NO ACTION,
+  updated_at       INTEGER NOT NULL,
+  PRIMARY KEY (item_id, location_id)
+);
+
+-- serves: "list all balances for this item" (e.g. for stocker view)
+CREATE INDEX idx_stock_balances_item ON stock_balances(item_id);
+
+-- E4. Trigger: refresh stock_balances on every stock_movements INSERT
+-- (stock_movements is append-only — UPDATE/DELETE blocked by triggers below)
+CREATE TRIGGER stock_movements_ai
+AFTER INSERT ON stock_movements
+FOR EACH ROW
+BEGIN
+  INSERT INTO stock_balances (item_id, location_id, qty, last_movement_id, updated_at)
+  VALUES (NEW.item_id, NEW.location_id, NEW.qty, NEW.id, NEW.created_at)
+  ON CONFLICT(item_id, location_id) DO UPDATE SET
+    qty            = stock_balances.qty + excluded.qty,
+    last_movement_id = excluded.last_movement_id,
+    updated_at     = excluded.updated_at;
+END;
+
+-- Block UPDATE on the ledger — corrections are new movements with kind='adjustment'
+CREATE TRIGGER stock_movements_bu
+BEFORE UPDATE ON stock_movements
+BEGIN
+  SELECT RAISE(ABORT, 'stock_movements is append-only; insert a corrective movement instead');
+END;
+
+-- Block DELETE on the ledger
+CREATE TRIGGER stock_movements_bd
+BEFORE DELETE ON stock_movements
+BEGIN
+  SELECT RAISE(ABORT, 'stock_movements is append-only');
+END;
+
+-- =====================================================================
+-- SECTION F — Purchases
+-- =====================================================================
+
+-- F1. Purchase documents (header)
+CREATE TABLE purchases (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  purchase_number TEXT    NOT NULL UNIQUE,
+  vendor_id       INTEGER NOT NULL REFERENCES vendors(id) ON DELETE NO ACTION,
+  location_id     INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+  subtotal_paise  INTEGER NOT NULL DEFAULT 0,
+  discount_paise  INTEGER NOT NULL DEFAULT 0,
+  tax_paise       INTEGER NOT NULL DEFAULT 0,
+  total_paise     INTEGER NOT NULL DEFAULT 0,
+  paid_paise      INTEGER NOT NULL DEFAULT 0,
+  balance_paise   INTEGER NOT NULL DEFAULT 0,
+  status          TEXT    NOT NULL DEFAULT 'open'
+                    CHECK(status IN ('open','finalized','cancelled')),
+  bill_number     TEXT,
+  bill_date       INTEGER,                        -- epoch ms (vendor's invoice date)
+  notes           TEXT,
+  is_active       INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  created_by      INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by      INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "purchases by vendor, newest first"
+CREATE INDEX idx_purchases_vendor_created ON purchases(vendor_id, created_at DESC);
+
+-- serves: "purchases received at this location"
+CREATE INDEX idx_purchases_location_created ON purchases(location_id, created_at DESC);
+
+-- serves: "open purchase orders" / "finalized purchase reports"
+CREATE INDEX idx_purchases_status ON purchases(status) WHERE is_active = 1;
+
+-- F2. Purchase lines
+CREATE TABLE purchase_items (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  purchase_id        INTEGER NOT NULL REFERENCES purchases(id) ON DELETE NO ACTION,
+  item_id            INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  qty                INTEGER NOT NULL CHECK(qty > 0),
+  unit_id            INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  unit_price_paise   INTEGER NOT NULL CHECK(unit_price_paise >= 0),
+  line_discount_paise INTEGER NOT NULL DEFAULT 0 CHECK(line_discount_paise >= 0),
+  line_total_paise   INTEGER NOT NULL CHECK(line_total_paise >= 0),
+  created_at         INTEGER NOT NULL,
+  created_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "lines for this purchase"
+CREATE INDEX idx_purchase_items_purchase_id ON purchase_items(purchase_id);
+
+-- serves: "purchase history for this item"
+CREATE INDEX idx_purchase_items_item_id ON purchase_items(item_id);
+
+-- F3. Vendor payments (settlements against purchases)
+CREATE TABLE vendor_payments (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  vendor_id    INTEGER NOT NULL REFERENCES vendors(id) ON DELETE NO ACTION,
+  purchase_id  INTEGER REFERENCES purchases(id) ON DELETE NO ACTION,
+  mode         TEXT    NOT NULL,
+  amount_paise INTEGER NOT NULL CHECK(amount_paise <> 0),
+  reference    TEXT,
+  note         TEXT,
+  created_at   INTEGER NOT NULL,
+  created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "vendor ledger"
+CREATE INDEX idx_vendor_payments_vendor_created ON vendor_payments(vendor_id, created_at DESC);
+
+-- serves: "settlements for this purchase"
+CREATE INDEX idx_vendor_payments_purchase_id ON vendor_payments(purchase_id) WHERE purchase_id IS NOT NULL;
+
+-- =====================================================================
+-- SECTION G — Sales
+-- =====================================================================
+
+-- G1. Sales (quotations + invoices in one table, distinguished by `kind`)
+CREATE TABLE sales (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_number        TEXT    NOT NULL UNIQUE,
+  kind               TEXT    NOT NULL CHECK(kind IN ('quotation','invoice')),
+  status             TEXT    NOT NULL DEFAULT 'open'
+                       CHECK(status IN ('open','finalized','voided','converted')),
+  customer_id        INTEGER REFERENCES customers(id) ON DELETE NO ACTION,
+  location_id        INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+  user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+  subtotal_paise     INTEGER NOT NULL DEFAULT 0,
+  discount_paise     INTEGER NOT NULL DEFAULT 0,
+  tax_paise          INTEGER NOT NULL DEFAULT 0,
+  total_paise        INTEGER NOT NULL DEFAULT 0,
+  paid_paise         INTEGER NOT NULL DEFAULT 0,
+  balance_paise      INTEGER NOT NULL DEFAULT 0,
+  validity_days      INTEGER,                     -- only meaningful for quotations
+  converted_from_id  INTEGER REFERENCES sales(id) ON DELETE NO ACTION,
+  voided_at          INTEGER,
+  voided_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  void_reason        TEXT,
+  edited_at          INTEGER,
+  edited_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  edit_reason        TEXT,
+  is_active          INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at         INTEGER NOT NULL,
+  updated_at         INTEGER NOT NULL,
+  created_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "sales by cashier, newest first"
+CREATE INDEX idx_sales_user_created ON sales(user_id, created_at DESC);
+
+-- serves: "sales for this customer"
+CREATE INDEX idx_sales_customer_created ON sales(customer_id, created_at DESC) WHERE customer_id IS NOT NULL;
+
+-- serves: "sales at this location"
+CREATE INDEX idx_sales_location_created ON sales(location_id, created_at DESC);
+
+-- serves: "open / voided filter"
+CREATE INDEX idx_sales_status ON sales(status) WHERE is_active = 1;
+
+-- serves: "all quotations, newest first"
+CREATE INDEX idx_sales_kind_created ON sales(kind, created_at DESC);
+
+-- G2. Sale lines
+CREATE TABLE sale_items (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_id            INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
+  item_id            INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  qty                INTEGER NOT NULL CHECK(qty > 0),
+  unit_id            INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  unit_price_paise   INTEGER NOT NULL CHECK(unit_price_paise >= 0),
+  line_discount_paise INTEGER NOT NULL DEFAULT 0 CHECK(line_discount_paise >= 0),
+  line_total_paise   INTEGER NOT NULL CHECK(line_total_paise >= 0),
+  created_at         INTEGER NOT NULL,
+  created_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "lines for this sale"
+CREATE INDEX idx_sale_items_sale_id ON sale_items(sale_id);
+
+-- serves: "sale history for this item"
+CREATE INDEX idx_sale_items_item_id ON sale_items(item_id);
+
+-- G3. Sale payments — source of truth for payment splits (Q9: no JSON blob)
+CREATE TABLE sale_payments (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_id      INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
+  mode         TEXT    NOT NULL,
+  amount_paise INTEGER NOT NULL CHECK(amount_paise <> 0),
+  reference    TEXT,
+  created_at   INTEGER NOT NULL,
+  created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "payments for this sale"
+CREATE INDEX idx_sale_payments_sale_id ON sale_payments(sale_id);
+
+-- serves: "all UPI sales today"
+CREATE INDEX idx_sale_payments_mode_created ON sale_payments(mode, created_at DESC);
+
+-- G4. Customer payments (khata settlements — separate from sale_payments because
+-- a settlement can be unlinked or pre-pay a future sale)
+CREATE TABLE customer_payments (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id  INTEGER NOT NULL REFERENCES customers(id) ON DELETE NO ACTION,
+  sale_id      INTEGER REFERENCES sales(id) ON DELETE NO ACTION,
+  mode         TEXT    NOT NULL,
+  amount_paise INTEGER NOT NULL CHECK(amount_paise <> 0),
+  reference    TEXT,
+  note         TEXT,
+  created_at   INTEGER NOT NULL,
+  created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "customer ledger"
+CREATE INDEX idx_customer_payments_customer_created ON customer_payments(customer_id, created_at DESC);
+
+-- serves: "settlements for this sale"
+CREATE INDEX idx_customer_payments_sale_id ON customer_payments(sale_id) WHERE sale_id IS NOT NULL;
+
+-- =====================================================================
+-- SECTION H — Returns
+-- =====================================================================
+
+-- H1. Sale return documents
+CREATE TABLE sale_returns (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_id           INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
+  refund_total_paise INTEGER NOT NULL DEFAULT 0,
+  reason            TEXT,
+  created_at        INTEGER NOT NULL,
+  created_by        INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "returns for this sale"
+CREATE INDEX idx_sale_returns_sale_id ON sale_returns(sale_id);
+
+-- serves: "returns report by date"
+CREATE INDEX idx_sale_returns_created ON sale_returns(created_at DESC);
+
+-- H2. Sale return lines
+CREATE TABLE sale_return_lines (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_return_id   INTEGER NOT NULL REFERENCES sale_returns(id) ON DELETE NO ACTION,
+  sale_item_id     INTEGER NOT NULL REFERENCES sale_items(id) ON DELETE NO ACTION,
+  qty              INTEGER NOT NULL CHECK(qty > 0),
+  refund_paise     INTEGER NOT NULL CHECK(refund_paise >= 0),
+  created_at       INTEGER NOT NULL,
+  created_by       INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "lines for this return"
+CREATE INDEX idx_sale_return_lines_return_id ON sale_return_lines(sale_return_id);
+
+-- =====================================================================
+-- SECTION I — Day close
+-- =====================================================================
+
+-- I1. Per-location end-of-day settlement
+CREATE TABLE day_close (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  day                 TEXT    NOT NULL,           -- 'YYYY-MM-DD' (calendar day, NOT epoch)
+  location_id         INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+  user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+  opening_cash_paise  INTEGER NOT NULL DEFAULT 0,
+  cash_sales_paise    INTEGER NOT NULL DEFAULT 0,
+  card_sales_paise    INTEGER NOT NULL DEFAULT 0,
+  upi_sales_paise     INTEGER NOT NULL DEFAULT 0,
+  expenses_paise      INTEGER NOT NULL DEFAULT 0,
+  closing_cash_paise  INTEGER NOT NULL DEFAULT 0,
+  actual_cash_paise   INTEGER,                    -- counted; NULL until counted
+  variance_paise      INTEGER,                    -- actual_cash - closing_cash; can be negative
+  note                TEXT,
+  created_at          INTEGER NOT NULL,
+  updated_at          INTEGER NOT NULL,
+  created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  updated_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  UNIQUE(day, location_id)
+);
+
+-- serves: "show day-close history for this location"
+CREATE INDEX idx_day_close_location_day ON day_close(location_id, day DESC);
+
+-- =====================================================================
+-- SECTION J — Alerts (Q9: roles + reads normalized, no JSON blobs)
+-- =====================================================================
+
+-- J1. Alerts
+CREATE TABLE alerts (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind         TEXT    NOT NULL,
+  severity     TEXT    NOT NULL CHECK(severity IN ('info','warning','error')),
+  title        TEXT    NOT NULL,
+  message      TEXT,
+  entity_kind  TEXT,                              -- 'item' | 'sale' | 'purchase' | ...
+  entity_id    TEXT,                              -- polymorphic (sku_code, sale_number, ...)
+  resolved_at  INTEGER,                           -- NULL = open
+  resolved_by  INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  is_active    INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at   INTEGER NOT NULL,
+  created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "active alerts, newest first"
+CREATE INDEX idx_alerts_is_active_created ON alerts(is_active, created_at DESC) WHERE is_active = 1;
+
+-- serves: "alerts about this thing"
+CREATE INDEX idx_alerts_kind_entity ON alerts(kind, entity_kind, entity_id) WHERE entity_kind IS NOT NULL;
+
+-- serves: retention GC — "drop alerts resolved more than N days ago"
+CREATE INDEX idx_alerts_resolved ON alerts(resolved_at) WHERE resolved_at IS NOT NULL;
+
+-- J2. Alert visibility per role
+CREATE TABLE alert_roles (
+  alert_id INTEGER NOT NULL REFERENCES alerts(id) ON DELETE NO ACTION,
+  role     TEXT    NOT NULL CHECK(role IN ('owner','cashier','stocker')),
+  PRIMARY KEY (alert_id, role)
+);
+
+-- serves: "what alerts should this cashier see?"
+CREATE INDEX idx_alert_roles_role ON alert_roles(role);
+
+-- J3. Per-user read receipts
+CREATE TABLE alert_reads (
+  alert_id INTEGER NOT NULL REFERENCES alerts(id) ON DELETE NO ACTION,
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+  read_at  INTEGER NOT NULL,
+  PRIMARY KEY (alert_id, user_id)
+);
+
+-- serves: "which alerts has this user read?"
+CREATE INDEX idx_alert_reads_user ON alert_reads(user_id);
+
+-- =====================================================================
+-- SEED DATA — reference lookups only
+-- =====================================================================
+-- User data (Owner, settings singleton, locations Shop/Godown) is seeded
+-- by the Rust first_launch_setup wizard, NOT here. This section only
+-- inserts lookup values that the wizard and every command assume exist.
+
+-- J1-equivalent: stock movement kinds (8)
+INSERT INTO stock_movement_kinds (code, label, sign, is_inbound) VALUES
+  ('purchase',     'Purchase (vendor inward)',     1, 1),
+  ('sale',         'Sale (POS outward)',          -1, 0),
+  ('return',       'Customer return',              1, 1),
+  ('adjustment',   'Manual adjustment',            0, 0),
+  ('transfer_in',  'Transfer in (from another loc)', 1, 1),
+  ('transfer_out', 'Transfer out (to another loc)', -1, 0),
+  ('damage',       'Damage / write-off',          -1, 0),
+  ('recount',      'Recount correction',           0, 0);
+
+-- B3: units (10 known units)
+INSERT INTO units (code, label, created_at, updated_at) VALUES
+  ('L',      'Liter',       0, 0),
+  ('ml',     'Milliliter',  0, 0),
+  ('kg',     'Kilogram',    0, 0),
+  ('g',      'Gram',        0, 0),
+  ('pc',     'Piece',       0, 0),
+  ('box',    'Box',         0, 0),
+  ('bundle', 'Bundle',      0, 0),
+  ('roll',   'Roll',        0, 0),
+  ('sqft',   'Square foot', 0, 0),
+  ('sqm',    'Square meter',0, 0);
+
+-- B4: unit conversions (4 well-known pairs)
+INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at)
+SELECT from_u.id, to_u.id, 1000.0, 0, 0
+  FROM units from_u JOIN units to_u ON from_u.code = 'L'   AND to_u.code = 'ml';
+INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at)
+SELECT from_u.id, to_u.id, 0.001,  0, 0
+  FROM units from_u JOIN units to_u ON from_u.code = 'ml'  AND to_u.code = 'L';
+INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at)
+SELECT from_u.id, to_u.id, 1000.0, 0, 0
+  FROM units from_u JOIN units to_u ON from_u.code = 'kg'  AND to_u.code = 'g';
+INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at)
+SELECT from_u.id, to_u.id, 0.001,  0, 0
+  FROM units from_u JOIN units to_u ON from_u.code = 'g'   AND to_u.code = 'kg';
+INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at)
+SELECT from_u.id, to_u.id, 0.092903, 0, 0
+  FROM units from_u JOIN units to_u ON from_u.code = 'sqft' AND to_u.code = 'sqm';
+INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at)
+SELECT from_u.id, to_u.id, 10.7639, 0, 0
+  FROM units from_u JOIN units to_u ON from_u.code = 'sqm' AND to_u.code = 'sqft';
+INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at)
+SELECT from_u.id, to_u.id, 12.0, 0, 0
+  FROM units from_u JOIN units to_u ON from_u.code = 'box' AND to_u.code = 'pc';
+INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at)
+SELECT from_u.id, to_u.id, 1.0/12.0, 0, 0
+  FROM units from_u JOIN units to_u ON from_u.code = 'pc'  AND to_u.code = 'box';
+
+-- C1: customer types (4 known; Retailer is the default)
+INSERT INTO customer_types (name, created_at, updated_at) VALUES
+  ('Retailer',   0, 0),
+  ('Dealer',     0, 0),
+  ('Painter',    0, 0),
+  ('Contractor', 0, 0);
+
+-- D3: sequences
+INSERT INTO sequences (name, value) VALUES
+  ('sku',         1),
+  ('sale_number', 1);
+
+-- D1: brands (13 reputed Indian paint brands)
+INSERT OR IGNORE INTO brands (name, prefix, created_at, updated_at) VALUES
+  ('Asian Paints',   'AP', 0, 0),
+  ('Berger Paints',  'BG', 0, 0),
+  ('Kansai Nerolac', 'KN', 0, 0),
+  ('Dulux',          'DL', 0, 0),
+  ('Shalimar',       'SH', 0, 0),
+  ('British Paints', 'BR', 0, 0),
+  ('Nippon Paint',   'NP', 0, 0),
+  ('Indigo Paints',  'IN', 0, 0),
+  ('Birla Opus',     'BO', 0, 0),
+  ('Kamdhenu Paints','KA', 0, 0),
+  ('Snowcem',        'SC', 0, 0),
+  ('Jenson & Nicholson','JN', 0, 0),
+  ('Mysore Paints',  'MY', 0, 0);
+
+-- D2: brand_sequences for seeded brands (each starts at seq = 1)
+INSERT OR IGNORE INTO brand_sequences (brand_id, prefix, next_seq, padding, updated_at)
+  SELECT id, prefix, 1, 4, 0 FROM brands;
