@@ -208,7 +208,7 @@ export function VendorList({
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-right">
-                        <Money paise={v.opening_balance} muted />
+                        <Money paise={(v.opening_balance ?? 0) * 100} muted />
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {outstandings[v.id] != null ? (
