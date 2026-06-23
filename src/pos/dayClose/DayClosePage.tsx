@@ -30,11 +30,11 @@ export default function DayClosePage({ user }: Props) {
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    backupGateCheck().then(setGate).catch((e: unknown) => {
+    backupGateCheck().then((d) => setGate(d ?? null)).catch((e: unknown) => {
       // eslint-disable-next-line no-console
       console.error("[DayClosePage] failed to load backup gate", e);
     });
-    cashSalesFor(user.id, date).then(setSummary).catch((e: unknown) => {
+    cashSalesFor(user.id, date).then((d) => setSummary(d ?? null)).catch((e: unknown) => {
       // eslint-disable-next-line no-console
       console.error("[DayClosePage] failed to load cash sales summary", e);
     });
@@ -42,7 +42,7 @@ export default function DayClosePage({ user }: Props) {
       // eslint-disable-next-line no-console
       console.error("[DayClosePage] failed to load last opening", e);
     });
-    listDayClose(30).then(setRecent).catch((e: unknown) => {
+    listDayClose(30).then((d) => setRecent(d ?? [])).catch((e: unknown) => {
       // eslint-disable-next-line no-console
       console.error("[DayClosePage] failed to load day-close history", e);
     });

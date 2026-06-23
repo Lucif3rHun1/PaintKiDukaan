@@ -64,7 +64,7 @@ export default function InwardPage({ user: _user }: Props) {
   const seededRef = useRef(false);
 
   useEffect(() => {
-    listPurchases().then(setRecent).catch((e: unknown) => {
+    listPurchases().then((d) => setRecent(d ?? [])).catch((e: unknown) => {
       // eslint-disable-next-line no-console
       console.error("[InwardPage] failed to load recent purchases", e);
     });
@@ -75,7 +75,7 @@ export default function InwardPage({ user: _user }: Props) {
       })
       .catch(() => setItems([]));
     listVendors()
-      .then(setVendors)
+      .then((d) => setVendors(d ?? []))
       .catch(() => setVendors([]));
     listLocations(false)
       .then((locs) => {

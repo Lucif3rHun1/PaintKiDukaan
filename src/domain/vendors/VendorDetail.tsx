@@ -17,7 +17,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
 
   useEffect(() => {
     vendorOutstanding(vendor.id)
-      .then(setOutstanding)
+      .then((d) => setOutstanding(d ?? null))
       .catch((e) => setError(e.message ?? "Failed"));
   }, [vendor.id]);
 

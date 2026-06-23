@@ -23,7 +23,7 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, onChange, o
       return;
     }
     const timer = setTimeout(() => {
-      listCustomers(query, false).then(setResults).catch(() => setResults([]));
+      listCustomers(query, false).then((d) => setResults(d ?? [])).catch(() => setResults([]));
     }, 200);
     return () => clearTimeout(timer);
   }, [query]);

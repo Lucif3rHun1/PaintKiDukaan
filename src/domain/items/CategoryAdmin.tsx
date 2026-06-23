@@ -28,7 +28,7 @@ export function CategoryAdmin({ role }: Props) {
     setLoading(true);
     setError(null);
     listCategories()
-      .then(setCategories)
+      .then((d) => setCategories(d ?? []))
       .catch((e: unknown) => setError(extractError(e)))
       .finally(() => setLoading(false));
   };

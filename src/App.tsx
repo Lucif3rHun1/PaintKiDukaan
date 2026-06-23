@@ -124,7 +124,7 @@ export default function App() {
   // Fetch customer types once the app is unlocked
   useEffect(() => {
     if (phase === "unlocked") {
-      listCustomerTypes().then(setCustomerTypes).catch((e: unknown) => {
+      listCustomerTypes().then((d) => setCustomerTypes(d ?? [])).catch((e: unknown) => {
         // eslint-disable-next-line no-console
         console.error("[App] failed to load customer types", e);
       });

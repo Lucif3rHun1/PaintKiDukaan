@@ -219,7 +219,7 @@ export default function SalesPage({ user, onExit }: Props) {
   const refreshRecent = useCallback(() => {
     setLoadingRecent(true);
     listSales(undefined, undefined, 10)
-      .then(setRecent)
+      .then((d) => setRecent(d ?? []))
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : String(e)),
       )

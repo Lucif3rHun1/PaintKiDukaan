@@ -96,7 +96,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   useEffect(() => {
     if (primaryLocationId > 0) {
       listSubLocations(primaryLocationId)
-        .then(setSubLocations)
+        .then((d) => setSubLocations(d ?? []))
         .catch(() => setSubLocations([]));
     } else {
       setSubLocations([]);

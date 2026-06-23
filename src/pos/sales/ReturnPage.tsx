@@ -131,7 +131,7 @@ export default function ReturnPage({ user, onBack }: Props) {
   }
 
   useEffect(() => {
-    listCustomerTypes().then(setCustomerTypes).catch((err: unknown) => console.error("Failed to load customer types:", err));
+    listCustomerTypes().then((d) => setCustomerTypes(d ?? [])).catch((err: unknown) => console.error("Failed to load customer types:", err));
   }, []);
 
   useEffect(() => {

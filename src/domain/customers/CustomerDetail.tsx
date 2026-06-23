@@ -21,7 +21,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
 
   useEffect(() => {
     customerOutstanding(customer.id)
-      .then(setOutstanding)
+      .then((d) => setOutstanding(d ?? null))
       .catch((e) => setError(e.message ?? "Failed"));
   }, [customer.id]);
 

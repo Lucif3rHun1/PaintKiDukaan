@@ -20,7 +20,7 @@ export function SalesListPage({ onCreate }: Props) {
     setLoading(true);
     setError(null);
     listSales()
-      .then(setRows)
+      .then((d) => setRows(d ?? []))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }, []);

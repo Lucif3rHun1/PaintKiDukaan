@@ -112,10 +112,10 @@ export function ItemList({ role }: Props) {
 
   useEffect(() => {
     listLocations(false)
-      .then(setLocations)
+      .then((d) => setLocations(d ?? []))
       .catch(() => setLocations([]));
     listBrands()
-      .then(setBrands)
+      .then((d) => setBrands(d ?? []))
       .catch(() => setBrands([]));
   }, []);
 

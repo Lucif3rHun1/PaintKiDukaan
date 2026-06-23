@@ -29,7 +29,7 @@ export function KhataRecord({ customerId }: Props) {
 
   useEffect(() => {
     customerOutstanding(customerId)
-      .then(setData)
+      .then((d) => setData(d ?? null))
       .catch((e) => setError(e.message ?? "Failed"));
   }, [customerId]);
 

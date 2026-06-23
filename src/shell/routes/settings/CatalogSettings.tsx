@@ -48,7 +48,7 @@ function SubLocationList({ locationId, onError }: { locationId: number; onError:
   const [newName, setNewName] = useState("");
 
   const refresh = () => {
-    ipc.listSubLocations(locationId).then(setSubs).catch((e: unknown) => onError(extractError(e)));
+    ipc.listSubLocations(locationId).then((d) => setSubs(d ?? [])).catch((e: unknown) => onError(extractError(e)));
   };
 
   useEffect(refresh, [locationId]);
@@ -198,7 +198,7 @@ export function CustomerTypesSettings() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = () => {
-    ipc.listCustomerTypes().then(setCustomerTypes).catch((e: unknown) => setError(extractError(e)));
+    ipc.listCustomerTypes().then((d) => setCustomerTypes(d ?? [])).catch((e: unknown) => setError(extractError(e)));
   };
 
   useEffect(refresh, []);

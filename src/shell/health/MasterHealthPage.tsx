@@ -11,7 +11,7 @@ export function MasterHealthPage() {
 
   useEffect(() => {
     fetchMasterHealth()
-      .then(setData)
+      .then((d) => setData(d ?? null))
       .catch((e: unknown) => setError(extractError(e)));
   }, []);
 

@@ -35,7 +35,7 @@ export function BrandAdmin({ role }: Props) {
     setLoading(true);
     setError(null);
     listBrands()
-      .then(setBrands)
+      .then((d) => setBrands(d ?? []))
       .catch((e: unknown) => setError(extractError(e)))
       .finally(() => setLoading(false));
   };

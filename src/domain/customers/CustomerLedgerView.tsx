@@ -25,7 +25,7 @@ export function CustomerLedgerView({ customer }: Props) {
   function load() {
     setError(null);
     fetchCustomerLedger(customer.id, 200)
-      .then(setLedger)
+      .then((d) => setLedger(d ?? null))
       .catch((e: AppError) => setError(e.message ?? "Failed to load ledger"));
   }
 
@@ -151,7 +151,7 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
 
   useEffect(() => {
     listItems({ limit: 500 })
-      .then(setItems)
+      .then((d) => setItems(d ?? []))
       .catch(() => setItems([]));
   }, []);
 
