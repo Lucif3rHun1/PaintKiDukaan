@@ -51,7 +51,7 @@ export function InlineDialog({
           </div>
           <button
             onClick={onClose}
-            className="text-muted-foreground hover:text-foreground"
+            className="rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <X className="h-5 w-5" />
           </button>

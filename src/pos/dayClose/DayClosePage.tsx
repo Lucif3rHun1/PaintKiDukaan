@@ -180,21 +180,21 @@ export default function DayClosePage({ user }: Props) {
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               onClick={() => submit("back_up")}
-              className="rounded bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white"
+              className="rounded bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               data-testid="backup-and-close"
             >
               Back up &amp; close
             </button>
             <button
               onClick={() => submit("skip")}
-              className="rounded border border-amber-300 px-3 py-1.5 text-sm"
+              className="rounded border border-amber-300 px-3 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               data-testid="skip-once"
             >
               Skip once
             </button>
             <button
               onClick={() => submit("fresh")}
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+              className="rounded border border-slate-300 px-3 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               Mark fresh &amp; close
             </button>
@@ -202,7 +202,7 @@ export default function DayClosePage({ user }: Props) {
         ) : (
           <button
             onClick={() => submit("fresh")}
-            className="mt-3 w-full rounded bg-emerald-600 py-2 font-semibold text-white"
+              className="mt-3 w-full rounded bg-emerald-600 py-2 font-semibold text-white focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             data-testid="close-day"
           >
             Close day

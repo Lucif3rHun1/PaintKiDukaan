@@ -29,7 +29,7 @@ export function ThemeSettings() {
               <label
                 key={id}
                 className={
-                  "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors " +
+                  "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 " +
                   (selected
                     ? "border-primary bg-primary/10"
                     : "border-border bg-card hover:bg-muted")
