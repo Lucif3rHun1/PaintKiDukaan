@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "../../../lib/feedback/toast";
 import { Button, Card, Section, Skeleton, Badge } from "../../../components/ui";
+import { formatDateForDisplay } from "../../../lib/date";
 import { ipc, type Device } from "../../lib/ipc";
 import { extractError } from "../../../lib/extractError";
 
@@ -198,11 +199,7 @@ export function UsersSettings() {
 const ROLES = ["owner", "cashier", "stocker"] as const;
 
 function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDateForDisplay(ms);
 }
 
 export function DevicesSettings() {

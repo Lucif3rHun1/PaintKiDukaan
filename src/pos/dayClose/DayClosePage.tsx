@@ -11,6 +11,7 @@ import {
 } from "../api";
 import type { BackupGate, CashSalesSummary, DayClose } from "../types";
 import { formatRupeesFromPaise } from "../../lib/money";
+import { formatDateForDisplay } from "../../lib/date";
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
@@ -92,7 +93,7 @@ export default function DayClosePage({ user }: Props) {
                 : `Backup is fresh (${gate.age_hours?.toFixed(1)}h).`}
             </p>
             <p className="text-xs text-slate-500">
-              last_backup_at: {gate.last_backup_at ?? "—"}
+              last_backup_at: {gate.last_backup_at ? formatDateForDisplay(gate.last_backup_at) : "—"}
             </p>
           </>
         ) : (
@@ -225,7 +226,7 @@ export default function DayClosePage({ user }: Props) {
           <tbody>
             {recent.map((d) => (
               <tr key={d.id} className="border-t border-slate-100">
-                <td>{d.date}</td>
+                <td>{formatDateForDisplay(d.date)}</td>
                 <td>{formatRupeesFromPaise(d.cash_sales)}</td>
                 <td>{formatRupeesFromPaise(d.expected_cash)}</td>
                 <td>{formatRupeesFromPaise(d.counted_cash)}</td>

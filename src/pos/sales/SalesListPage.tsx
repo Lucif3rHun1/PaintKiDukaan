@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { Money } from "../../components/ui";
 import { listSales } from "../api";
+import { formatDateForDisplay } from "../../lib/date";
 import type { Sale } from "../types";
 
 interface Props {
@@ -62,7 +63,7 @@ export function SalesListPage({ onCreate }: Props) {
               {rows.map((s) => (
                 <tr key={s.id} className="border-t border-border">
                   <td className="px-3 py-1.5 font-mono">{s.no}</td>
-                  <td className="px-3 py-1.5">{s.date}</td>
+                  <td className="px-3 py-1.5">{formatDateForDisplay(s.date)}</td>
                   <td className="px-3 py-1.5">{s.status}</td>
                   <td className="px-3 py-1.5">{s.customer_name ?? "Walk-in"}</td>
                   <td className="px-3 py-1.5 text-right">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Money, MoneyInput } from "../../components/ui";
+import { formatDateForDisplay } from "../../lib/date";
 import { fetchCustomerLedger, createCustomerCreditInvoice } from "./api";
 import { listItems } from "../items/api";
 import { toast } from "../../lib/feedback/toast";
@@ -107,7 +108,7 @@ export function CustomerLedgerView({ customer }: Props) {
 function LedgerRow({ row }: { row: CustomerLedgerTransaction }) {
   return (
     <tr className="border-t border-border">
-      <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">{row.date}</td>
+      <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">{formatDateForDisplay(row.date)}</td>
       <td className="px-3 py-1.5">
         <span
           className={`rounded px-1.5 py-0.5 text-xs ${

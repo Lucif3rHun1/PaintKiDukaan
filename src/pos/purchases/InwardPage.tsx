@@ -16,6 +16,7 @@ import { createVendor, listVendors, vendorOutstanding } from "../../domain/vendo
 import type { Item, Location, Vendor } from "../../domain/types";
 import { createInward, lastCost, lastRetail, listPurchases } from "../api";
 import { formatRupeesFromPaise } from "../../lib/money";
+import { formatDateForDisplay } from "../../lib/date";
 import type { InwardLine, NewPurchase, Purchase } from "../types";
 
 interface Props {
@@ -603,7 +604,7 @@ export default function InwardPage({ user: _user }: Props) {
                 {recent.map((p) => (
                   <tr key={p.id} className="border-b border-border hover:bg-muted">
                     <td className="px-4 py-1.5 text-foreground">{p.id}</td>
-                    <td className="px-3 py-1.5 text-muted-foreground">{p.date}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{formatDateForDisplay(p.date)}</td>
                     <td className="px-3 py-1.5 text-foreground">{p.vendor_name ?? <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-3 py-1.5 text-right text-muted-foreground">{p.items.length}</td>
                     <td className="px-3 py-1.5 text-right text-foreground"><Money paise={p.total} /></td>

@@ -37,6 +37,7 @@ import {
   listSales,
 } from "../api";
 import { formatRupeesFromPaise } from "../../lib/money";
+import { formatDateForDisplay } from "../../lib/date";
 import type {
   CartLine,
   ItemSearchHit,
@@ -551,7 +552,7 @@ export default function SalesPage({ user, onExit }: Props) {
                             </Badge>
                           </div>
                           <div className="truncate text-xs text-muted-foreground">
-                            {s.customer_name ?? "Walk-in"} · {s.date}
+                            {s.customer_name ?? "Walk-in"} · {formatDateForDisplay(s.date)}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">

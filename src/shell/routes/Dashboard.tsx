@@ -19,6 +19,7 @@ import { Skeleton } from "../../components/ui";
 import { Alert } from "../../components/ui";
 import { EmptyState } from "../../components/ui";
 import { useSecurity } from "../../lib/security/state";
+import { formatDateForDisplay } from "../../lib/date";
 import { ipc, type BackupStatus } from "../lib/ipc";
 import { listSales, dailySales } from "../../pos/api";
 import { listItems } from "../../domain/items/api";
@@ -221,10 +222,7 @@ export function Dashboard() {
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {new Date(s.date).toLocaleDateString("en-IN", {
-                          day: "2-digit",
-                          month: "short",
-                        })}
+                        {formatDateForDisplay(s.date)}
                       </span>
                       <Money paise={s.total} compact />
                     </div>

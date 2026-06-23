@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Badge, Card, Money, Section, ShortcutsHint, Skeleton } from "../../components/ui";
 import { useShortcut } from "../../lib/shortcuts";
+import { formatDateForDisplay } from "../../lib/date";
 import { dailySales, stockReport, outstandingReport } from "../api";
 import type {
   DailySalesReport,
@@ -154,7 +155,7 @@ export default function SalesReportPage({ user }: Props) {
               <tbody>
                 {sales?.rows.map((r) => (
                   <tr key={r.date} className="border-b border-border hover:bg-muted">
-                    <td className="px-3 py-1.5 text-foreground">{r.date}</td>
+                    <td className="px-3 py-1.5 text-foreground">{formatDateForDisplay(r.date)}</td>
                     <td className="px-3 py-1.5 text-foreground">{r.bill_count}</td>
                     <td className="px-3 py-1.5 text-foreground">
                       <Money paise={r.total_discount} />

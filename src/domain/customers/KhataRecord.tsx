@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { customerOutstanding } from "./api";
 import { formatRupeesFromPaise } from "../../lib/money";
+import { formatDateForDisplay } from "../../lib/date";
 import type { CustomerOutstanding } from "../types";
 
 interface Props {
@@ -71,7 +72,7 @@ export function KhataRecord({ customerId }: Props) {
         <tbody>
           {placeholder.map((r, idx) => (
             <tr key={idx} className="border-b border-slate-100">
-              <td className="py-1 font-mono text-xs">{r.date}</td>
+              <td className="py-1 font-mono text-xs">{r.date === "—" ? r.date : formatDateForDisplay(r.date)}</td>
               <td>{r.kind}</td>
               <td>{r.ref}</td>
               <td className="text-right">{formatRupeesFromPaise(r.amount)}</td>
