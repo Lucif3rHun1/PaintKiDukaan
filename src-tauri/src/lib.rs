@@ -176,6 +176,10 @@ pub fn run() {
             commands::customer_types::add_customer_type,
             commands::customer_types::rename_customer_type,
             commands::customer_types::deactivate_customer_type,
+            // Categories (Slice B)
+            commands::categories::list_categories,
+            commands::categories::create_category,
+            commands::categories::deactivate_category,
             // Locations (Slice B)
             commands::locations::list_locations,
             commands::locations::create_location,
@@ -265,6 +269,14 @@ pub fn run() {
             commands::reports::cmd_outstanding_report,
             // Sequences (Slice C)
             commands::sequences::cmd_mint_next_sale_no,
+            commands::sequences::get_next_invoice_number,
+            commands::sequences::get_next_quotation_number,
+            commands::sequences::get_next_return_number,
+            // PDE (Slice A)
+            security::pde::get_pde_status,
+            security::pde::provision_decoy_db,
+            security::pde::change_decoy_pin,
+            security::pde::change_duress_pin,
             // Settings (Slice D)
             commands::settings::get_setting,
             commands::settings::set_setting,
