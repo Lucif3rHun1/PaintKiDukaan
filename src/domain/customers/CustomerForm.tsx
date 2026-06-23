@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button } from "../../components/ui";
 import { createCustomer, updateCustomer } from "./api";
 import type {
   AppError,
@@ -81,14 +82,7 @@ export function CustomerForm({
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="grid max-w-xl gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
-    >
-      <h2 className="text-lg font-semibold">
-        {mode === "create" ? "New customer" : `Edit ${initial?.phone ?? ""}`}
-      </h2>
-
+    <form onSubmit={submit} className="grid gap-4">
       <Field label="Name" required>
         <input
           value={name}
@@ -136,27 +130,23 @@ export function CustomerForm({
       </Field>
 
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
 
-      <div className="flex justify-end gap-2">
-        <button
+      <div className="flex justify-end gap-2 border-t border-border pt-4">
+        <Button
           type="button"
+          variant="secondary"
           onClick={onCancel}
-          className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
           disabled={busy}
         >
           Cancel
-        </button>
-        <button
-          type="submit"
-          className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
-          disabled={busy}
-        >
+        </Button>
+        <Button type="submit" loading={busy} disabled={busy}>
           {busy ? "Saving…" : "Save"}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -173,9 +163,9 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">
+      <span className="mb-1 block text-sm font-medium text-foreground">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required && <span className="text-destructive"> *</span>}
       </span>
       {children}
     </label>
