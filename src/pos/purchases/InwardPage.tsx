@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PackagePlus, Search, Truck, X } from "lucide-react";
-import { EmptyState } from "../../components/ui";
+import { EmptyState, Skeleton } from "../../components/ui";
 
 import { Button, InlineDialog, Money, MoneyInput, ShortcutsHint } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
@@ -61,31 +61,20 @@ export default function InwardPage({ user: _user }: Props) {
   const [addVendorOpen, setAddVendorOpen] = useState(false);
   const [addItemForRow, setAddItemForRow] = useState<number | null>(null);
   const [vendorOutstandings, setVendorOutstandings] = useState<Record<number, number>>({});
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const seededRef = useRef(false);
 
   useEffect(() => {
-    listPurchases().then((d) => setRecent(d ?? [])).catch((e: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error("[InwardPage] failed to load recent purchases", e);
-    });
-    listItems({ limit: 200 })
-      .then((rows) => {
+    // Four independent fetches in parallel; allSettled isolates failures.
+    Promise.allSettled([
+      listPurchases().then((d) => setRecent(d ?? [])),
+      listItems({ limit: 200 }).then((rows) => {
         setItems(rows);
         if (rows.length > 0) setDefaultItemId((current) => current ?? rows[0].id);
-      })
-      .catch((e) => {
-        console.error("[InwardPage] failed to load items", e);
-        setItems([]);
-      });
-    listVendors()
-      .then((d) => setVendors(d ?? []))
-      .catch((e) => {
-        console.error("[InwardPage] failed to load vendors", e);
-        setVendors([]);
-      });
-    listLocations(false)
-      .then((locs) => {
+      }),
+      listVendors().then((d) => setVendors(d ?? [])),
+      listLocations(false).then((locs) => {
         setLocations(locs);
         const firstLoc = locs[0]?.id ?? 0;
         setDefaultLocationId((current) => (current > 0 ? current : firstLoc));
@@ -108,11 +97,25 @@ export default function InwardPage({ user: _user }: Props) {
             },
           ]);
         }
-      })
-      .catch((e) => {
-        console.error("[InwardPage] failed to load locations", e);
+      }),
+    ]).then(([purchases, itemsResult, vendorsResult, locationsResult]) => {
+      setInitialLoading(false);
+      if (purchases.status === "rejected") {
+        console.error("[InwardPage] failed to load recent purchases", purchases.reason);
+      }
+      if (itemsResult.status === "rejected") {
+        console.error("[InwardPage] failed to load items", itemsResult.reason);
+        setItems([]);
+      }
+      if (vendorsResult.status === "rejected") {
+        console.error("[InwardPage] failed to load vendors", vendorsResult.reason);
+        setVendors([]);
+      }
+      if (locationsResult.status === "rejected") {
+        console.error("[InwardPage] failed to load locations", locationsResult.reason);
         setLocations([]);
-      });
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -463,7 +466,24 @@ export default function InwardPage({ user: _user }: Props) {
                 <th className="px-3 py-2 font-medium"></th>
               </tr>
             </thead>
-            <tbody>
+        <tbody>
+          {initialLoading ? (
+            <tr>
+              <td colSpan={5} className="px-4 py-4">
+                <div
+                  role="status"
+                  aria-live="polite"
+                  aria-label="Loading items and locations"
+                  className="space-y-2"
+                >
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-11/12" />
+                  <Skeleton className="h-9 w-10/12" />
+                </div>
+              </td>
+            </tr>
+          ) : (
+            <>
               {draft.map((l, i) => (
                 <tr key={l.row_id} className="border-b border-border align-top transition-colors hover:bg-muted/60">
                   {/* Item cell — prominent name + search */}
@@ -593,7 +613,9 @@ export default function InwardPage({ user: _user }: Props) {
                   </td>
                 </tr>
               )}
-            </tbody>
+            </>
+          )}
+        </tbody>
           </table>
         </div>
       </section>

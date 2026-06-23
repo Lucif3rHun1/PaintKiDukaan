@@ -96,7 +96,6 @@ export function ManageTypes() {
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
       <DataTable
         data={types}
@@ -108,7 +107,7 @@ export function ManageTypes() {
                 <input
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="rounded border border-border px-2 py-1 text-sm"
+                  className="rounded border border-border bg-background px-2 py-1 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               ) : (
                 <span className="text-foreground">{t.name}</span>
@@ -135,13 +134,13 @@ export function ManageTypes() {
                 <>
                   <button
                     onClick={() => saveEdit(t.id)}
-                    className="mr-2 rounded bg-primary px-2 py-1 text-xs text-primary-foreground"
+                    className="mr-2 rounded bg-primary px-2 py-1 text-xs text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                   >
                     Save
                   </button>
                   <button
                     onClick={() => setEditing(null)}
-                    className="rounded border border-border px-2 py-1 text-xs"
+                    className="rounded border border-border px-2 py-1 text-xs outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                   >
                     Cancel
                   </button>
@@ -153,14 +152,14 @@ export function ManageTypes() {
                       setEditing(t.id);
                       setEditName(t.name);
                     }}
-                    className="mr-2 rounded border border-border px-2 py-1 text-xs hover:bg-card"
+                    className="mr-2 rounded border border-border px-2 py-1 text-xs outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                   >
                     Rename
                   </button>
                   {t.is_active && (
                     <button
                       onClick={() => deactivate(t.id)}
-                      className="rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-card"
+                      className="rounded border border-border px-2 py-1 text-xs text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                     >
                       Deactivate
                     </button>

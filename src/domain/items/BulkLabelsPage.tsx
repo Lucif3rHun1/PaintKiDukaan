@@ -27,6 +27,7 @@ import {
   type ThermalSize,
   THERMAL_SIZES,
 } from "../../pos/print";
+import { Skeleton } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 
 type PrinterType = "thermal" | "laser-a4";
@@ -652,7 +653,11 @@ export function BulkLabelsPage() {
           </div>
           <div className="max-h-[200px] overflow-y-auto rounded-md border border-border bg-background">
             {historyLoading ? (
-              <p className="p-4 text-center text-xs text-muted-foreground">Loading…</p>
+              <div role="status" aria-live="polite" aria-label="Loading print history" className="space-y-2 p-3">
+                <Skeleton className="h-6 w-full" />
+                <Skeleton className="h-6 w-11/12" />
+                <Skeleton className="h-6 w-10/12" />
+              </div>
             ) : history.length === 0 ? (
               <p className="p-4 text-center text-xs text-muted-foreground">No print history yet.</p>
             ) : (

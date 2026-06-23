@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   DataTable,
   Money,
+  Skeleton,
 } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import {
@@ -160,7 +161,10 @@ export default function DayClosePage({ user }: Props) {
             </p>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">Checking…</p>
+          <div className="space-y-2" role="status" aria-live="polite" aria-label="Checking backup status">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
         )}
       </section>
       <section className="rounded border border-border bg-card p-4">
