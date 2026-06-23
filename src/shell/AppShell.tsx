@@ -22,6 +22,8 @@ import logo32 from "../assets/logo-32.png";
 import logo64 from "../assets/logo-64.png";
 const LOGO_64 = logo64;
 import { cn, Toaster } from "../components/ui";
+import { AlertBell } from "./components/AlertBell";
+import type { Role } from "../lib/security/state";
 
 export type AppShellTab =
   | "dashboard"
@@ -268,9 +270,16 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
             <img src={LOGO_64} alt="PaintKiDukaan" width={28} height={28} className="h-7 w-7 rounded-md object-contain" />
             <span className="text-sm font-semibold text-sidebar-foreground">PaintKiDukaan</span>
           </div>
-          <button type="button" onClick={onLock} className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
-            <Lock className="h-4 w-4" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-1">
+            <AlertBell currentRole={user?.role as Role | undefined} />
+            <button type="button" onClick={onLock} className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
+              <Lock className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        </header>
+
+        <header className="hidden md:flex items-center justify-end border-b border-border bg-card px-4 py-2">
+          <AlertBell currentRole={user?.role as Role | undefined} />
         </header>
 
         <nav className="flex overflow-x-auto border-b border-border bg-muted px-2 py-1 md:hidden">
