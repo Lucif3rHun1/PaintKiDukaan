@@ -499,7 +499,7 @@ export function Dashboard() {
                 {(todayBills.data ?? []).slice(0, 8).map((s, i) => (
                   <li
                     key={s.id}
-                    className="flex animate-in fade-in slide-in-from-bottom-2 items-center justify-between gap-3 px-4 py-3 text-sm duration-200"
+                    className="flex animate-in fade-in motion-reduce:animate-none slide-in-from-bottom-2 items-center justify-between gap-3 px-4 py-3 text-sm duration-200"
                     style={{ animationDelay: `${i * 50}ms` }}
                   >
                     <div className="flex min-w-0 flex-col">
@@ -579,7 +579,7 @@ function QuickAction({ icon: Icon, title, subtitle, href, badge }: QuickActionPr
   return (
     <a
       href={href}
-      className="group relative flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm shadow-foreground/5 ring-1 ring-border/30 transition-all hover:-translate-y-0.5 hover:bg-accent hover:shadow-md active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group relative flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm shadow-foreground/5 ring-1 ring-border/30 transition-all motion-reduce:transition-none hover:-translate-y-0.5 hover:bg-accent hover:shadow-md motion-reduce:hover:translate-y-0 active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
         <Icon className="h-5 w-5" />
@@ -591,7 +591,7 @@ function QuickAction({ icon: Icon, title, subtitle, href, badge }: QuickActionPr
         </div>
         <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
       </div>
-      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity motion-reduce:transition-none group-hover:opacity-100" />
     </a>
   );
 }

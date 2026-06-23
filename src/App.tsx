@@ -271,14 +271,14 @@ export default function App() {
     >
       {tab === "dashboard" && (
         <ErrorBoundary context="Dashboard">
-          <div className="animate-in fade-in duration-200">
+          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
             <Dashboard />
           </div>
         </ErrorBoundary>
       )}
       {tab === "sales" && salesRoute === "new" ? (
         <ErrorBoundary context="Sales — new">
-          <div className="animate-in fade-in duration-200">
+          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
             <SalesPage
               user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
               onExit={() => (window.location.hash = "#/sales")}
@@ -288,7 +288,7 @@ export default function App() {
       ) : null}
       {tab === "sales" && salesRoute === "return" ? (
         <ErrorBoundary context="Sales — return">
-          <div className="animate-in fade-in duration-200">
+          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
             <ReturnPage
               user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
               onBack={() => (window.location.hash = "#/sales")}
@@ -298,14 +298,14 @@ export default function App() {
       ) : null}
       {tab === "sales" && salesRoute === "list" ? (
         <ErrorBoundary context="Sales — list">
-          <div className="animate-in fade-in duration-200">
+          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
             <SalesListPage onCreate={() => (window.location.hash = "#/sales/new")} />
           </div>
         </ErrorBoundary>
       ) : null}
       {tab === "inward" && (
         <ErrorBoundary context="Inward">
-          <div className="animate-in fade-in duration-200">
+          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
             <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
           </div>
         </ErrorBoundary>
@@ -313,14 +313,14 @@ export default function App() {
       {tab === "sales-report" && (
         <RoleGuard minRole="stocker">
           <ErrorBoundary context="Sales Report">
-            <div className="animate-in fade-in duration-200">
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
             </div>
           </ErrorBoundary>
         </RoleGuard>
       )}
       {tab === "items" && (
-        <div className="animate-in fade-in space-y-3 duration-200">
+        <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
             <ItemSubNav active="items" />
@@ -331,7 +331,7 @@ export default function App() {
         </div>
       )}
       {tab === "barcodes" && (
-        <div className="animate-in fade-in space-y-3 duration-200">
+        <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
             <ItemSubNav active="barcodes" />
@@ -343,7 +343,7 @@ export default function App() {
       )}
       {tab === "vendors" && (
         <ErrorBoundary context="Vendors">
-          <div className="animate-in fade-in duration-200">
+          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
             <VendorList
               role={role}
               refreshKey={refreshKey}
@@ -356,7 +356,7 @@ export default function App() {
       )}
       {tab === "customers" && (
         <ErrorBoundary context="Customers">
-          <div className="animate-in fade-in duration-200">
+          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
             <CustomerList
               role={role}
               refreshKey={refreshKey}
@@ -370,7 +370,7 @@ export default function App() {
       {tab === "settings" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Settings">
-            <div className="animate-in fade-in duration-200">
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <SettingsPage />
             </div>
           </ErrorBoundary>
@@ -379,7 +379,7 @@ export default function App() {
       {tab === "health" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Health">
-            <div className="animate-in fade-in duration-200">
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <MasterHealthPage />
             </div>
           </ErrorBoundary>
@@ -388,7 +388,7 @@ export default function App() {
       {tab === "logs" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Logs">
-            <div className="animate-in fade-in duration-200">
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <AdminLogs />
             </div>
           </ErrorBoundary>

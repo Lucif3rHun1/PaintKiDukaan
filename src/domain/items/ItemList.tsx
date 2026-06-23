@@ -488,7 +488,7 @@ export function ItemList({ role }: Props) {
           {[...categories.entries()].map(([itemCategory, rows], catIdx) => (
             <div
               key={itemCategory}
-              className="animate-in fade-in slide-in-from-bottom-2 overflow-hidden rounded-lg border border-border bg-card duration-200"
+              className="animate-in fade-in motion-reduce:animate-none slide-in-from-bottom-2 overflow-hidden rounded-lg border border-border bg-card duration-200"
               style={{ animationDelay: `${catIdx * 40}ms` }}
             >
               <div className="border-b border-border bg-muted px-3 py-1.5 text-[11px] font-medium text-muted-foreground">

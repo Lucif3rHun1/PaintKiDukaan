@@ -179,7 +179,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
       <div className="flex h-screen overflow-hidden bg-sidebar text-sidebar-foreground">
         <aside
           className={cn(
-            "hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-2 transition-[width] duration-200 md:flex",
+            "hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-2 transition-[width] duration-200 motion-reduce:transition-none md:flex",
             collapsed ? "w-14" : "w-60",
           )}
         >
@@ -240,7 +240,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
                 >
                   <group.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                   {!collapsed ? <span className="flex-1 text-left">{group.label}</span> : null}
-                  {!collapsed ? <ChevronDown className={cn("h-4 w-4 transition-transform", !expanded[group.id] && "-rotate-90")} /> : null}
+                  {!collapsed ? <ChevronDown className={cn("h-4 w-4 transition-transform motion-reduce:transition-none", !expanded[group.id] && "-rotate-90")} /> : null}
                 </button>
                 {expanded[group.id] && !collapsed ? (
                   <div className="mt-0.5 space-y-0.5">
