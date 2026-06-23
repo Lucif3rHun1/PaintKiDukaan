@@ -9,10 +9,10 @@ import {
   markAllAlertsRead,
   type Severity,
   type Alert,
-} from "@/domain/alerts";
-import { Badge, cn, EmptyState } from "@/components/ui";
-import type { Role } from "@/lib/security/state";
-import { SkeletonRow } from "@/components/ui/SkeletonRow";
+} from "../../domain/alerts";
+import { Badge, cn, EmptyState } from "../../components/ui";
+import type { Role } from "../../lib/security/state";
+import { SkeletonRow } from "../../components/ui/SkeletonRow";
 
 const severityClasses: Record<Severity, string> = {
   info: "border-l-4 border-info bg-info/10",

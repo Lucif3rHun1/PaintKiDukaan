@@ -1,4 +1,4 @@
-import { tauriInvoke } from "@/lib/security/tauri";
+import { tauriInvoke } from "../lib/security/tauri";
 
 export type AlertKind =
   | "low_stock"
