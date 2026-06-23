@@ -1,15 +1,12 @@
 /**
  * KhataRecord — chronological list of sales and payments for a customer.
- * Slice C will own the actual sales/payments write paths; this view is
- * read-only and pulls aggregated numbers via the `customer_outstanding`
- * command. It is intentionally a thin ledger: nothing more than a sum
- * line per (sale|payment) the day Slice C lands. For now it surfaces a
- * placeholder so the UI is testable.
+ * Uses canonical DataTable primitive.
  */
 import { useEffect, useState } from "react";
-import { customerOutstanding } from "./api";
-import { formatRupeesFromPaise } from "../../lib/money";
+import { DataTable, Money } from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { formatDateForDisplay } from "../../lib/date";
+import { customerOutstanding } from "./api";
 import type { CustomerOutstanding } from "../types";
 
 interface Props {
@@ -33,8 +30,6 @@ export function KhataRecord({ customerId }: Props) {
       .catch((e) => setError(e.message ?? "Failed"));
   }, [customerId]);
 
-  // Slice C will write sales + customer_payments rows; B only reads the
-  // aggregate here. The detailed per-row ledger is wired in Slice C.
   const placeholder: Row[] = data
     ? [
         {
@@ -52,6 +47,30 @@ export function KhataRecord({ customerId }: Props) {
       ]
     : [];
 
+  const columns: ColumnDef<Row>[] = [
+    {
+      header: "Date",
+      cell: (r) => (
+        <span className="font-mono text-xs text-foreground">
+          {r.date === "—" ? r.date : formatDateForDisplay(r.date)}
+        </span>
+      ),
+    },
+    {
+      header: "Type",
+      cell: (r) => <span className="text-foreground">{r.kind}</span>,
+    },
+    {
+      header: "Ref",
+      cell: (r) => <span className="text-muted-foreground">{r.ref}</span>,
+    },
+    {
+      header: "Amount",
+      align: "right",
+      cell: (r) => <Money paise={r.amount} />,
+    },
+  ];
+
   return (
     <div>
       <h3 className="mb-2 text-sm font-semibold text-foreground">Khata</h3>
@@ -60,26 +79,11 @@ export function KhataRecord({ customerId }: Props) {
           {error}
         </p>
       )}
-      <table className="w-full text-sm">
-        <thead className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="py-1">Date</th>
-            <th>Type</th>
-            <th>Ref</th>
-            <th className="text-right">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {placeholder.map((r, idx) => (
-            <tr key={idx} className="border-b border-border">
-              <td className="py-1 font-mono text-xs">{r.date === "—" ? r.date : formatDateForDisplay(r.date)}</td>
-              <td>{r.kind}</td>
-              <td>{r.ref}</td>
-              <td className="text-right">{formatRupeesFromPaise(r.amount)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        data={placeholder}
+        columns={columns}
+        keyExtractor={(_, idx) => idx}
+      />
       <p className="mt-2 text-xs text-muted-foreground">
         Detailed per-transaction ledger is wired in Slice C.
       </p>

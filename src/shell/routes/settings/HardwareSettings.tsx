@@ -50,7 +50,7 @@ function TabButton({
       onClick={onClick}
       aria-pressed={active}
       className={
-        "flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium " +
+        "flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
         (active
           ? "border-primary text-foreground"
           : "border-transparent text-muted-foreground hover:text-foreground")
@@ -414,6 +414,9 @@ function PrinterForm({
 function ScannerPanel() {
   const [minLength, setMinLength] = useState<number>(4);
   const [avgMs, setAvgMs] = useState<number>(25);
+  const [terminator, setTerminator] = useState<string>("enter");
+  const [timeoutMs, setTimeoutMs] = useState<number>(200);
+  const [maxSdMs, setMaxSdMs] = useState<number>(8);
   const [loaded, setLoaded] = useState(false);
   const [testInput, setTestInput] = useState("");
   const [lastFired, setLastFired] = useState<string | null>(null);
@@ -426,9 +429,15 @@ function ScannerPanel() {
       try {
         const min = await ipc.getSetting("scanner_min_length");
         const avg = await ipc.getSetting("scanner_avg_ms_per_char");
+        const term = await ipc.getSetting("scanner_terminator");
+        const tms = await ipc.getSetting("scanner_timeout_ms");
+        const sd = await ipc.getSetting("scanner_max_sd_ms");
         if (cancelled) return;
         if (typeof min === "number") setMinLength(min);
         if (typeof avg === "number") setAvgMs(avg);
+        if (typeof term === "string") setTerminator(term);
+        if (typeof tms === "number") setTimeoutMs(tms);
+        if (typeof sd === "number") setMaxSdMs(sd);
         setLoaded(true);
       } catch (e) {
         setError(extractError(e));
@@ -445,6 +454,9 @@ function ScannerPanel() {
     try {
       await ipc.setSetting("scanner_min_length", minLength);
       await ipc.setSetting("scanner_avg_ms_per_char", avgMs);
+      await ipc.setSetting("scanner_terminator", terminator);
+      await ipc.setSetting("scanner_timeout_ms", timeoutMs);
+      await ipc.setSetting("scanner_max_sd_ms", maxSdMs);
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -492,6 +504,37 @@ function ScannerPanel() {
               min={1}
               value={avgMs}
               onChange={(e) => setAvgMs(Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Terminator mode">
+            <select
+              className="input"
+              value={terminator}
+              onChange={(e) => setTerminator(e.target.value)}
+            >
+              <option value="enter">Enter</option>
+              <option value="tab">Tab</option>
+              <option value="enter+tab">Enter + Tab</option>
+              <option value="timeout">Timeout (time-gap)</option>
+            </select>
+          </Field>
+          <Field label="Timeout ms (time-gap mode)">
+            <input
+              className="input"
+              type="number"
+              min={50}
+              value={timeoutMs}
+              onChange={(e) => setTimeoutMs(Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Max inter-key SD (ms)">
+            <input
+              className="input"
+              type="number"
+              min={1}
+              step={0.5}
+              value={maxSdMs}
+              onChange={(e) => setMaxSdMs(Number(e.target.value))}
             />
           </Field>
         </div>

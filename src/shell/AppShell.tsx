@@ -272,7 +272,12 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           </div>
           <div className="flex items-center gap-1">
             <AlertBell currentRole={user?.role as Role | undefined} />
-            <button type="button" onClick={onLock} className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
+            <button
+              type="button"
+              onClick={onLock}
+              aria-label="Lock app"
+              className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            >
               <Lock className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>

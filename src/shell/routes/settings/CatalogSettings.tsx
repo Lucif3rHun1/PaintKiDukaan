@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { toast } from "../../../lib/feedback/toast";
-import { Alert, Button, Card, EmptyState, Section } from "../../../components/ui";
+import { Alert, Button, Card, DataTable, EmptyState, Section } from "../../../components/ui";
+import type { ColumnDef } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import { ipc } from "../../lib/ipc";
 import { tauriInvoke } from "../../../lib/security/tauri";
@@ -11,6 +12,64 @@ import type { Unit, UnitDimension } from "../../../domain/types";
 import { listUnits, createUnit, deactivateUnit } from "../../../domain/units/api";
 
 import { extractError } from "../../../lib/extractError";
+interface UnitsTableProps {
+  units: Unit[];
+  loading: boolean;
+  onDeactivate: (id: number) => void;
+}
+
+function UnitsTable({ units, loading, onDeactivate }: UnitsTableProps) {
+  const columns: ColumnDef<Unit>[] = [
+    {
+      header: "Code",
+      cell: (u) => (
+        <span className="font-mono font-medium text-foreground">{u.code}</span>
+      ),
+    },
+    {
+      header: "Label",
+      cell: (u) => <span className="text-foreground">{u.label}</span>,
+    },
+    {
+      header: "Dimension",
+      cell: (u) => (
+        <span className="capitalize text-muted-foreground">{u.dimension}</span>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      className: "w-24",
+      cell: (u) => (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => onDeactivate(u.id)}
+          className="text-destructive hover:bg-destructive/10"
+        >
+          Deactivate
+        </Button>
+      ),
+    },
+  ];
+
+  return (
+    <DataTable
+      data={units}
+      columns={columns}
+      keyExtractor={(u) => u.id}
+      loading={loading}
+      emptyState={
+        <EmptyState
+          title="No units configured"
+          description="Add one above to make it available across billing and catalog workflows."
+          className="rounded-md border border-border py-8"
+        />
+      }
+    />
+  );
+}
 
 function SettingsList({ items, emptyText, onRemove }: { items: string[]; emptyText: string; onRemove: (item: string) => void }) {
   if (items.length === 0) {
@@ -436,48 +495,11 @@ export function CatalogUnitsSettings() {
             </div>
           )}
 
-          {loading ? (
-            <SkeletonRow count={3} />
-          ) : units.length === 0 ? (
-            <EmptyState
-              title="No units configured"
-              description="Add one above to make it available across billing and catalog workflows."
-              className="rounded-md border border-border py-8"
-            />
-          ) : (
-            <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-card">
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Code</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Label</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Dimension</th>
-                    <th className="text-right py-3 px-4 font-medium text-muted-foreground w-24">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {units.map((unit) => (
-                    <tr key={unit.id} className="hover:bg-card/50">
-                      <td className="py-3 px-4 font-mono font-medium text-foreground">{unit.code}</td>
-                      <td className="py-3 px-4 text-foreground">{unit.label}</td>
-                      <td className="py-3 px-4 text-muted-foreground capitalize">{unit.dimension}</td>
-                      <td className="py-3 px-4 text-right">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDeactivate(unit.id)}
-                          className="text-destructive hover:bg-destructive/10"
-                        >
-                          Deactivate
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <UnitsTable
+            units={units}
+            loading={loading}
+            onDeactivate={handleDeactivate}
+          />
         </div>
       </Section>
     </Card>

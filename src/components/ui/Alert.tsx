@@ -48,7 +48,7 @@ export function Alert({
       {onDismiss && (
         <button
           onClick={onDismiss}
-          className="mt-2 text-xs underline-offset-2 hover:underline"
+          className="mt-2 rounded text-xs underline-offset-2 outline-none transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
           Dismiss
         </button>

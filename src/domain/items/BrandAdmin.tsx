@@ -10,11 +10,128 @@ import { Tag } from "lucide-react";
 import { listBrands, createBrand, updateBrandCodePrefix, deactivateBrand } from "./api";
 import type { Brand } from "../types";
 import { extractError } from "../../lib/extractError";
-import { SkeletonRow } from "../../components/ui/SkeletonRow";
-import { EmptyState } from "../../components/ui";
+import { DataTable, SkeletonRow, EmptyState } from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
+}
+
+interface BrandTableProps {
+  brands: Brand[];
+  loading: boolean;
+  editingId: number | null;
+  editingPrefix: string;
+  setEditingPrefix: (value: string) => void;
+  busy: boolean;
+  onStartEdit: (b: Brand) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDeactivate: (id: number) => void;
+}
+
+function BrandTable({
+  brands,
+  loading,
+  editingId,
+  editingPrefix,
+  setEditingPrefix,
+  busy,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDeactivate,
+}: BrandTableProps) {
+  const columns: ColumnDef<Brand>[] = [
+    {
+      header: "Name",
+      cell: (b) => <span className="text-foreground">{b.name}</span>,
+    },
+    {
+      header: "Code prefix",
+      cell: (b) =>
+        editingId === b.id ? (
+          <input
+            type="text"
+            value={editingPrefix}
+            maxLength={4}
+            onChange={(e) => setEditingPrefix(e.target.value.toUpperCase())}
+            className="w-20 rounded border border-border bg-card px-2 py-1 font-mono text-sm text-foreground focus:border-primary focus:outline-none"
+          />
+        ) : (
+          <span className="font-mono text-foreground">{b.prefix}</span>
+        ),
+    },
+    {
+      header: "Next seq",
+      align: "right",
+      cell: (b) => (
+        <span className="font-mono tabular-nums text-muted-foreground">
+          {String(b.next_seq).padStart(3, "0")}
+        </span>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      cell: (b) =>
+        editingId === b.id ? (
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onSaveEdit}
+              disabled={busy}
+              className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground outline-none transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              disabled={busy}
+              className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-card disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => onStartEdit(b)}
+              disabled={busy}
+              className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-card disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            >
+              Edit prefix
+            </button>
+            <button
+              type="button"
+              onClick={() => onDeactivate(b.id)}
+              disabled={busy}
+              className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive outline-none transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            >
+              Deactivate
+            </button>
+          </div>
+        ),
+    },
+  ];
+
+  return (
+    <DataTable
+      data={brands}
+      columns={columns}
+      keyExtractor={(b) => b.id}
+      loading={loading}
+      emptyState={
+        <EmptyState
+          icon={Tag}
+          title="No brands configured"
+          description="Add a brand above to enable auto-generated barcodes."
+        />
+      }
+    />
+  );
 }
 
 export function BrandAdmin({ role }: Props) {
@@ -203,100 +320,25 @@ export function BrandAdmin({ role }: Props) {
           type="button"
           onClick={addBrand}
           disabled={addDisabled}
-          className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           Add brand
         </button>
       </div>
 
       {/* Brand table */}
-      <div className="overflow-x-auto rounded border border-border bg-card">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-border bg-card text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2">Code prefix</th>
-              <th className="px-3 py-2 text-right">Next seq</th>
-              <th className="px-3 py-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {brands.map((b) => (
-              <tr key={b.id} className="border-b border-border last:border-0">
-                <td className="px-3 py-2 text-foreground">{b.name}</td>
-                <td className="px-3 py-2">
-                  {editingId === b.id ? (
-                    <input
-                      type="text"
-                      value={editingPrefix}
-                      maxLength={4}
-                      onChange={(e) => setEditingPrefix(e.target.value.toUpperCase())}
-                      className="w-20 rounded border border-border bg-card px-2 py-1 font-mono text-sm text-foreground focus:border-primary focus:outline-none"
-                    />
-                  ) : (
-                    <span className="font-mono text-foreground">{b.prefix}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-muted-foreground tabular-nums">
-                  {String(b.next_seq).padStart(3, "0")}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {editingId === b.id ? (
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={saveEdit}
-                        disabled={busy}
-                        className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelEdit}
-                        disabled={busy}
-                        className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(b)}
-                        disabled={busy}
-                        className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50"
-                      >
-                        Edit prefix
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeactivate(b.id)}
-                        disabled={busy}
-                        className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                      >
-                        Deactivate
-                      </button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {brands.length === 0 && !loading && (
-              <tr>
-                <td colSpan={4} className="px-3 py-4">
-                  <EmptyState
-                    icon={Tag}
-                    title="No brands configured"
-                    description="Add a brand above to enable auto-generated barcodes."
-                  />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <BrandTable
+        brands={brands}
+        loading={loading}
+        editingId={editingId}
+        editingPrefix={editingPrefix}
+        setEditingPrefix={setEditingPrefix}
+        busy={busy}
+        onStartEdit={startEdit}
+        onSaveEdit={saveEdit}
+        onCancelEdit={cancelEdit}
+        onDeactivate={handleDeactivate}
+      />
 
       <p className="text-[11px] text-muted-foreground">
         The code prefix combines with 3 chars of the item name + a 3-digit

@@ -354,7 +354,7 @@ export default function InwardPage({ user: _user }: Props) {
                 setVendorId(null);
                 setVendorQuery("");
               }}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               aria-label="Clear vendor"
             >
               <X className="h-3 w-3" />
@@ -387,7 +387,7 @@ export default function InwardPage({ user: _user }: Props) {
                       setVendorQuery("");
                       setVendorMenuOpen(false);
                     }}
-                    className="flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5 text-left text-xs hover:bg-muted"
+                    className="flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5 text-left text-xs outline-none transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   >
                     <span className="text-foreground">{parts.join(" · ")}</span>
                   </button>
@@ -464,7 +464,7 @@ export default function InwardPage({ user: _user }: Props) {
             </thead>
             <tbody>
               {draft.map((l, i) => (
-                <tr key={l.row_id} className="border-b border-border align-top hover:bg-muted">
+                <tr key={l.row_id} className="border-b border-border align-top transition-colors hover:bg-muted/60">
                   {/* Item cell — prominent name + search */}
                   <td className="px-4 py-2">
                     <div className="flex gap-1.5">
@@ -518,7 +518,7 @@ export default function InwardPage({ user: _user }: Props) {
                         onClick={() => setAddItemForRow(i)}
                         title="Add new item"
                         aria-label="Add new item"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                       >
                         <PackagePlus className="h-4 w-4" />
                       </button>
@@ -574,7 +574,7 @@ export default function InwardPage({ user: _user }: Props) {
                       type="button"
                       onClick={() => setDraft((p) => p.filter((_, j) => j !== i))}
                       aria-label={`Remove line ${i + 1}`}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                     >
                       ×
                     </button>
@@ -616,11 +616,11 @@ export default function InwardPage({ user: _user }: Props) {
               </thead>
               <tbody>
                 {recent.map((p) => (
-                  <tr key={p.id} className="border-b border-border hover:bg-muted">
-                    <td className="px-4 py-1.5 text-foreground">{p.id}</td>
+                  <tr key={p.id} className="border-b border-border transition-colors hover:bg-muted/60">
+                    <td className="px-4 py-1.5 text-foreground tabular-nums">{p.id}</td>
                     <td className="px-3 py-1.5 text-muted-foreground">{formatDateForDisplay(p.date)}</td>
                     <td className="px-3 py-1.5 text-foreground">{p.vendor_name ?? <span className="text-muted-foreground">—</span>}</td>
-                    <td className="px-3 py-1.5 text-right text-muted-foreground">{p.items.length}</td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground tabular-nums">{p.items.length}</td>
                     <td className="px-3 py-1.5 text-right text-foreground"><Money paise={p.total} /></td>
                   </tr>
                 ))}

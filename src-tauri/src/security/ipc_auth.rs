@@ -698,7 +698,7 @@ mod tests {
             db_path: Mutex::new(None),
             failed_attempts: Mutex::new(0),
             settings: Mutex::new(HashMap::new()),
-            scan_target: Mutex::new(String::new()),
+            scan_target: parking_lot::RwLock::new(String::new()),
             last_backup_unix_ms: Mutex::new(None),
             recovery_passphrase: Mutex::new(None),
             last_test_restore_unix_ms: Mutex::new(None),

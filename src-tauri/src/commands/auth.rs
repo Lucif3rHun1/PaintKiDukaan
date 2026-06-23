@@ -48,7 +48,7 @@ pub struct AppState {
     /// Runtime settings (scanner params, theme, etc.).
     pub settings: Mutex<HashMap<String, Value>>,
     /// Current barcode scan routing target.
-    pub scan_target: Mutex<String>,
+    pub scan_target: parking_lot::RwLock<String>,
     /// Timestamp of last successful backup (unix ms).
     pub last_backup_unix_ms: Mutex<Option<i64>>,
     pub recovery_passphrase: Mutex<Option<Zeroizing<String>>>,
@@ -61,6 +61,12 @@ impl Default for AppState {
         let mut settings = HashMap::new();
         settings.insert("scanner_min_length".into(), Value::Number(4.into()));
         settings.insert("scanner_avg_ms_per_char".into(), Value::Number(25.into()));
+        settings.insert("scanner_terminator".into(), Value::String("enter".into()));
+        settings.insert("scanner_timeout_ms".into(), Value::Number(200.into()));
+        settings.insert(
+            "scanner_max_sd_ms".into(),
+            Value::Number(serde_json::Number::from_f64(8.0).unwrap()),
+        );
         Self {
             db: Mutex::new(None),
             session: Mutex::new(None),
@@ -68,7 +74,7 @@ impl Default for AppState {
             db_path: Mutex::new(None),
             failed_attempts: Mutex::new(0),
             settings: Mutex::new(settings),
-            scan_target: Mutex::new(String::new()),
+            scan_target: parking_lot::RwLock::new(String::new()),
             last_backup_unix_ms: Mutex::new(None),
             last_test_restore_unix_ms: Mutex::new(None),
             recovery_passphrase: Mutex::new(None),

@@ -3,6 +3,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  DataTable,
+  Money,
+} from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
+import {
   backupGateCheck,
   cashSalesFor,
   lastOpeningFor,
@@ -15,6 +20,64 @@ import { formatDateForDisplay } from "../../lib/date";
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
+}
+
+const recentClosesColumns: ColumnDef<DayClose>[] = [
+  {
+    header: "Date",
+    cell: (d) => (
+      <span className="text-foreground">{formatDateForDisplay(d.date)}</span>
+    ),
+  },
+  {
+    header: "Cash sales",
+    align: "right",
+    cell: (d) => <Money paise={d.cash_sales} />,
+  },
+  {
+    header: "Expected",
+    align: "right",
+    cell: (d) => <Money paise={d.expected_cash} />,
+  },
+  {
+    header: "Counted",
+    align: "right",
+    cell: (d) => <Money paise={d.counted_cash} />,
+  },
+  {
+    header: "Variance",
+    align: "right",
+    cell: (d) => (
+      <span
+        className={
+          d.variance === 0 ? "text-success" : "text-destructive"
+        }
+      >
+        <Money paise={d.variance} />
+      </span>
+    ),
+  },
+  {
+    header: "Backup",
+    cell: (d) => (
+      <span className="text-muted-foreground">{d.backup_check_status}</span>
+    ),
+  },
+];
+
+function RecentClosesTable({ rows }: { rows: DayClose[] }) {
+  return (
+    <DataTable
+      data={rows}
+      columns={recentClosesColumns}
+      keyExtractor={(d) => d.id}
+      emptyState={
+        <p className="px-3 py-3 text-center text-muted-foreground">
+          No recent day closes.
+        </p>
+      }
+    />
+  );
 }
 
 export default function DayClosePage({ user }: Props) {
@@ -180,21 +243,21 @@ export default function DayClosePage({ user }: Props) {
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               onClick={() => submit("back_up")}
-              className="rounded bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="rounded bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               data-testid="backup-and-close"
             >
               Back up &amp; close
             </button>
             <button
               onClick={() => submit("skip")}
-              className="rounded border border-warning px-3 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="rounded border border-warning px-3 py-1.5 text-sm outline-none transition-colors hover:bg-warning/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               data-testid="skip-once"
             >
               Skip once
             </button>
             <button
               onClick={() => submit("fresh")}
-              className="rounded border border-border px-3 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="rounded border border-border px-3 py-1.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             >
               Mark fresh &amp; close
             </button>
@@ -202,7 +265,7 @@ export default function DayClosePage({ user }: Props) {
         ) : (
           <button
             onClick={() => submit("fresh")}
-              className="mt-3 w-full rounded bg-primary py-2 font-semibold text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="mt-3 w-full rounded bg-primary py-2 font-semibold text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             data-testid="close-day"
           >
             Close day
@@ -212,32 +275,7 @@ export default function DayClosePage({ user }: Props) {
       </section>
       <section className="col-span-2 rounded border border-border bg-card p-4">
         <h2 className="mb-2 text-sm font-semibold">Recent closes</h2>
-        <table className="w-full text-sm">
-          <thead className="text-left text-muted-foreground">
-            <tr>
-              <th>Date</th>
-              <th>Cash sales</th>
-              <th>Expected</th>
-              <th>Counted</th>
-              <th>Variance</th>
-              <th>Backup</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recent.map((d) => (
-              <tr key={d.id} className="border-t border-border">
-                <td>{formatDateForDisplay(d.date)}</td>
-                <td>{formatRupeesFromPaise(d.cash_sales)}</td>
-                <td>{formatRupeesFromPaise(d.expected_cash)}</td>
-                <td>{formatRupeesFromPaise(d.counted_cash)}</td>
-                <td className={d.variance === 0 ? "text-success" : "text-destructive"}>
-                  {formatRupeesFromPaise(d.variance)}
-                </td>
-                <td>{d.backup_check_status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <RecentClosesTable rows={recent} />
       </section>
     </div>
   );

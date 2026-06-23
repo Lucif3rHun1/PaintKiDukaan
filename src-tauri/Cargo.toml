@@ -68,6 +68,9 @@ parking_lot = "0.12"
 # Scanner wedge (desktop global keyboard hook)
 rdev = "0.5"
 
+# USB HID scanner support (M4.2)
+hidapi = "2"
+
 # System paths (config / data dirs)
 dirs = "5"
 fs2 = "0.4"
@@ -91,6 +94,11 @@ windows = { version = "0.58", features = [
     "Win32_System_Com",
     "Win32_Graphics_Printing",
 ] }
+
+# macOS CGEventTap for barcode scanner hook (M4.1)
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.24"
+core-foundation = "0.10"
 
 [dev-dependencies]
 

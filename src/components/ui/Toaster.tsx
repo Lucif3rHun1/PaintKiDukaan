@@ -40,7 +40,8 @@ function ToastItem({ toast: t }: { toast: Toast }) {
       <span className="text-foreground">{t.message}</span>
       <button
         onClick={() => toast.dismiss(t.id)}
-        className="ml-1 text-muted-foreground hover:text-foreground"
+        aria-label="Dismiss"
+        className="ml-1 rounded p-0.5 text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
       >
         <X className="h-3 w-3" />
       </button>

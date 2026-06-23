@@ -17,13 +17,13 @@ interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants = {
   primary:
-    "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/90",
+    "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
   secondary:
-    "border border-border bg-secondary text-secondary-foreground hover:bg-secondary/80 active:bg-secondary/80",
+    "border border-border bg-secondary text-secondary-foreground hover:bg-secondary/80 active:bg-secondary/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
   ghost:
-    "text-muted-foreground hover:bg-muted hover:text-foreground",
+    "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
   danger:
-    "bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive",
+    "bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive focus-visible:ring-2 focus-visible:ring-destructive/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 };
 
 const sizes = {

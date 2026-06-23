@@ -1,14 +1,73 @@
 // @ts-nocheck
 import { useEffect, useState } from "react";
-import { Badge, Card, Money, Section, ShortcutsHint, Skeleton } from "../../components/ui";
+import {
+  Badge,
+  Card,
+  DataTable,
+  Money,
+  Section,
+  ShortcutsHint,
+  Skeleton,
+} from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { useShortcut } from "../../lib/shortcuts";
 import { formatDateForDisplay } from "../../lib/date";
 import { dailySales, stockReport, outstandingReport } from "../api";
 import type {
+  DailySalesRow,
   DailySalesReport,
   OutstandingReport,
   StockReport,
 } from "../types";
+
+const salesColumns: ColumnDef<DailySalesRow>[] = [
+  {
+    header: "Date",
+    cell: (r) => (
+      <span className="text-foreground">{formatDateForDisplay(r.date)}</span>
+    ),
+  },
+  {
+    header: "Bills",
+    cell: (r) => <span className="text-foreground">{r.bill_count}</span>,
+  },
+  {
+    header: "Discount",
+    cell: (r) => <Money paise={r.total_discount} />,
+  },
+  {
+    header: "Total",
+    cell: (r) => <Money paise={r.grand_total} />,
+  },
+  {
+    header: "By mode",
+    cell: (r) => (
+      <span className="text-muted-foreground">
+        {r.by_mode.map((m, index) => (
+          <span key={m.mode}>
+            {index > 0 && ", "}
+            {m.mode} <Money paise={m.amount} />
+          </span>
+        ))}
+      </span>
+    ),
+  },
+];
+
+function SalesReportTable({ rows }: { rows: DailySalesRow[] }) {
+  return (
+    <DataTable
+      data={rows}
+      columns={salesColumns}
+      keyExtractor={(r) => r.date}
+      emptyState={
+        <p className="px-3 py-3 text-center text-muted-foreground">
+          No sales in this range.
+        </p>
+      }
+    />
+  );
+}
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
@@ -103,7 +162,7 @@ export default function SalesReportPage({ user }: Props) {
                       setTo(t);
                     }}
                     className={[
-                      "rounded px-2 py-1 text-xs font-medium transition-colors",
+                      "rounded px-2 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                       isActive
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -142,52 +201,23 @@ export default function SalesReportPage({ user }: Props) {
           {loading ? (
             <Skeleton variant="card" className="h-40" />
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-muted-foreground">
-                <tr className="border-b border-border">
-                  <th className="px-3 py-2 font-medium">Date</th>
-                  <th className="px-3 py-2 font-medium">Bills</th>
-                  <th className="px-3 py-2 font-medium">Discount</th>
-                  <th className="px-3 py-2 font-medium">Total</th>
-                  <th className="px-3 py-2 font-medium">By mode</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sales?.rows.map((r) => (
-                  <tr key={r.date} className="border-b border-border hover:bg-muted">
-                    <td className="px-3 py-1.5 text-foreground">{formatDateForDisplay(r.date)}</td>
-                    <td className="px-3 py-1.5 text-foreground">{r.bill_count}</td>
-                    <td className="px-3 py-1.5 text-foreground">
-                      <Money paise={r.total_discount} />
-                    </td>
-                    <td className="px-3 py-1.5 text-foreground">
-                      <Money paise={r.grand_total} />
-                    </td>
-                    <td className="px-3 py-1.5 text-muted-foreground">
-                      {r.by_mode.map((m, index) => (
-                        <span key={m.mode}>
-                          {index > 0 && ", "}
-                          {m.mode} <Money paise={m.amount} />
-                        </span>
-                      ))}
-                    </td>
-                  </tr>
-                ))}
-                {sales && (
-                  <tr className="border-t border-border font-semibold">
-                    <td className="px-3 py-1.5 text-foreground">Total</td>
-                    <td className="px-3 py-1.5 text-foreground">{sales.bill_count}</td>
-                    <td className="px-3 py-1.5 text-foreground">
-                      <Money paise={sales.total_discount} />
-                    </td>
-                    <td className="px-3 py-1.5 text-foreground">
-                      <Money paise={sales.grand_total} />
-                    </td>
-                    <td></td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <div className="space-y-2">
+              <SalesReportTable rows={sales?.rows ?? []} />
+              {sales && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-muted/50 px-3 py-2 text-sm font-semibold">
+                  <span className="text-foreground">Total</span>
+                  <div className="flex flex-wrap gap-4 text-foreground">
+                    <span>{sales.bill_count} bills</span>
+                    <span>
+                      Discount <Money paise={sales.total_discount} />
+                    </span>
+                    <span>
+                      Total <Money paise={sales.grand_total} />
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </Card>
       </Section>
@@ -209,7 +239,7 @@ export default function SalesReportPage({ user }: Props) {
                   {stock?.low_stock.map((r) => (
                     <li
                       key={`${r.item_id}-${r.location_id}`}
-                      className="flex items-center justify-between border-b border-border py-1"
+                      className="flex items-center justify-between border-b border-border py-1 transition-colors hover:text-foreground"
                     >
                       <span>{r.name}</span>
                       <Badge variant="warning" size="sm">
@@ -230,7 +260,7 @@ export default function SalesReportPage({ user }: Props) {
                   {stock?.by_group.map((g) => (
                     <li
                       key={g.group}
-                      className="flex items-center justify-between border-b border-border py-1"
+                      className="flex items-center justify-between border-b border-border py-1 transition-colors hover:text-foreground"
                     >
                       <span>{g.group}</span>
                       <span>

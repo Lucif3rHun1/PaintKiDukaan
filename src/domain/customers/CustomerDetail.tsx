@@ -41,7 +41,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
           {onEdit && (
             <button
               onClick={onEdit}
-              className="rounded border border-border px-3 py-1 text-sm text-foreground hover:bg-muted"
+              className="rounded border border-border px-3 py-1 text-sm text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             >
               Edit
             </button>
@@ -49,7 +49,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
           {onRecordPayment && (
             <button
               onClick={onRecordPayment}
-              className="rounded bg-primary px-3 py-1 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="rounded bg-primary px-3 py-1 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             >
               Record payment
             </button>

@@ -525,7 +525,8 @@ function ItemSubNav({ active }: { active: "items" | "barcodes" }) {
         <a
           key={t.id}
           href={t.href}
-          className={`rounded-t-md border border-b-0 px-3 py-1.5 text-sm whitespace-nowrap transition-colors ${
+          aria-current={active === t.id ? "page" : undefined}
+          className={`rounded-t-md border border-b-0 px-3 py-1.5 text-sm whitespace-nowrap outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
             active === t.id
               ? "border-slate-200 bg-white font-medium text-slate-900"
               : "border-transparent text-slate-500 hover:bg-white hover:text-slate-700"

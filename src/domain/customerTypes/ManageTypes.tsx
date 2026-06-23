@@ -1,5 +1,6 @@
 /**
  * ManageTypes — owner-only screen to add / rename / deactivate customer types.
+ * Uses canonical DataTable primitive.
  */
 import { useEffect, useState } from "react";
 import {
@@ -8,6 +9,8 @@ import {
   listCustomerTypes,
   renameCustomerType,
 } from "./api";
+import { DataTable } from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { type AppError, type CustomerType } from "../types";
 
 export function ManageTypes() {
@@ -95,81 +98,85 @@ export function ManageTypes() {
       )}
       {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
-      <table className="w-full text-sm">
-        <thead className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="py-1">Name</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {types.map((t) => (
-            <tr key={t.id} className="border-b border-border">
-              <td className="py-1">
-                {editing === t.id ? (
-                  <input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="rounded border border-border px-2 py-1 text-sm"
-                  />
-                ) : (
-                  t.name
-                )}
-              </td>
-              <td>
-                {t.is_active ? (
-                  <span className="rounded bg-success/20 px-2 text-xs text-success">
-                    active
-                  </span>
-                ) : (
-                  <span className="rounded bg-muted px-2 text-xs text-muted-foreground">
-                    inactive
-                  </span>
-                )}
-              </td>
-              <td className="text-right">
-                {editing === t.id ? (
-                  <>
+      <DataTable
+        data={types}
+        columns={[
+          {
+            header: "Name",
+            cell: (t) =>
+              editing === t.id ? (
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="rounded border border-border px-2 py-1 text-sm"
+                />
+              ) : (
+                <span className="text-foreground">{t.name}</span>
+              ),
+          },
+          {
+            header: "Status",
+            cell: (t) =>
+              t.is_active ? (
+                <span className="rounded bg-success/20 px-2 text-xs text-success">
+                  active
+                </span>
+              ) : (
+                <span className="rounded bg-muted px-2 text-xs text-muted-foreground">
+                  inactive
+                </span>
+              ),
+          },
+          {
+            header: "",
+            align: "right",
+            cell: (t) =>
+              editing === t.id ? (
+                <>
+                  <button
+                    onClick={() => saveEdit(t.id)}
+                    className="mr-2 rounded bg-primary px-2 py-1 text-xs text-primary-foreground"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditing(null)}
+                    className="rounded border border-border px-2 py-1 text-xs"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setEditing(t.id);
+                      setEditName(t.name);
+                    }}
+                    className="mr-2 rounded border border-border px-2 py-1 text-xs hover:bg-card"
+                  >
+                    Rename
+                  </button>
+                  {t.is_active && (
                     <button
-                      onClick={() => saveEdit(t.id)}
-                      className="mr-2 rounded bg-primary px-2 py-1 text-xs text-primary-foreground"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setEditing(null)}
-                      className="rounded border border-border px-2 py-1 text-xs"
-                    >
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => {
-                        setEditing(t.id);
-                        setEditName(t.name);
-                      }}
-                      className="mr-2 rounded border border-border px-2 py-1 text-xs hover:bg-card"
-                    >
-                      Rename
-                    </button>
-                    {t.is_active && (
-                      <button
-                        onClick={() => deactivate(t.id)}
+                      onClick={() => deactivate(t.id)}
                       className="rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-card"
-                      >
-                        Deactivate
-                      </button>
-                    )}
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                    >
+                      Deactivate
+                    </button>
+                  )}
+                </>
+              ),
+          },
+        ]}
+        keyExtractor={(t) => t.id}
+        loading={loading}
+        emptyState={
+          <p className="px-3 py-3 text-center text-muted-foreground">
+            No customer types configured.
+          </p>
+        }
+      />
     </div>
   );
 }

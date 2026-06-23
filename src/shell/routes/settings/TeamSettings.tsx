@@ -1,7 +1,8 @@
 // @ts-nocheck
 import { useEffect, useState } from "react";
 import { toast } from "../../../lib/feedback/toast";
-import { Button, Card, Section, Skeleton, Badge } from "../../../components/ui";
+import { Button, Card, DataTable, Section, Skeleton, Badge } from "../../../components/ui";
+import type { ColumnDef } from "../../../components/ui";
 import { formatDateForDisplay } from "../../../lib/date";
 import { ipc, type Device } from "../../lib/ipc";
 import { extractError } from "../../../lib/extractError";
@@ -35,6 +36,67 @@ interface UserRecord {
   name: string;
   role: string;
   is_active: boolean;
+}
+
+function UsersTable({
+  users,
+  onDelete,
+}: {
+  users: UserRecord[];
+  onDelete: (user: UserRecord) => void;
+}) {
+  const columns: ColumnDef<UserRecord>[] = [
+    {
+      header: "User",
+      cell: (user) => (
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-foreground">{user.name}</span>
+          <Badge variant="info" size="sm">
+            {user.role}
+          </Badge>
+          {!user.is_active && (
+            <Badge variant="muted" size="sm">
+              Inactive
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      header: "Action",
+      align: "right",
+      cell: (user) =>
+        user.role === "owner" ? (
+          <span
+            className="cursor-not-allowed text-xs text-muted-foreground"
+            title="The owner account cannot be deleted"
+          >
+            Owner
+          </span>
+        ) : (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => onDelete(user)}
+          >
+            Delete
+          </Button>
+        ),
+    },
+  ];
+
+  return (
+    <DataTable
+      data={users}
+      columns={columns}
+      keyExtractor={(user) => user.id}
+      emptyState={
+        <p className="px-3 py-3 text-center text-muted-foreground">
+          No users configured.
+        </p>
+      }
+    />
+  );
 }
 
 export function UsersSettings() {
@@ -102,48 +164,7 @@ export function UsersSettings() {
       >
         <div className="space-y-4 text-sm">
           {/* user list */}
-          {users.length === 0 ? (
-            <p className="text-muted-foreground">No users configured.</p>
-          ) : (
-            <ul className="divide-y divide-border rounded-md border border-border">
-              {users.map((user) => (
-                <li
-                  key={user.id}
-                  className="flex items-center justify-between gap-3 px-3 py-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-foreground">
-                      {user.name}
-                    </span>
-                    <Badge variant="info" size="sm">
-                      {user.role}
-                    </Badge>
-                    {!user.is_active && (
-                      <Badge variant="muted" size="sm">
-                        Inactive
-                      </Badge>
-                    )}
-                  </div>
-                  {user.role === "owner" ? (
-                    <span
-                      className="cursor-not-allowed text-xs text-muted-foreground"
-                      title="The owner account cannot be deleted"
-                    >
-                      Owner
-                    </span>
-                  ) : (
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => deleteUser(user)}
-                    >
-                      Delete
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+          <UsersTable users={users} onDelete={deleteUser} />
 
           {/* add user form */}
           <div className="flex items-end gap-3 rounded-lg border border-border bg-muted/30 p-3">
@@ -262,54 +283,7 @@ export function DevicesSettings() {
       >
         <div className="space-y-4 text-sm">
           {/* device table */}
-          {devices.length === 0 ? (
-            <p className="text-muted-foreground">No devices enrolled yet.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2">Name</th>
-                    <th className="px-3 py-2">Role</th>
-                    <th className="px-3 py-2">Enrolled</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {devices.map((d) => (
-                    <tr key={d.id} className="text-foreground">
-                      <td className="px-3 py-2 font-medium">{d.name}</td>
-                      <td className="px-3 py-2">
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
-                          {d.role}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {formatDate(d.enrolled_at_unix_ms)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {d.is_active ? (
-                          <span className="text-success">Active</span>
-                        ) : (
-                          <span className="text-muted-foreground">Inactive</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => revoke(d)}
-                        >
-                          Revoke
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DevicesTable devices={devices} onRevoke={revoke} />
 
           {/* enroll form */}
           <div className="flex items-end gap-3 rounded-lg border border-border bg-muted/30 p-3">

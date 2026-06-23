@@ -9,7 +9,9 @@ pub mod session;
 
 // Slice D — shell modules
 pub mod backup;
+pub mod cg_scanner;
 pub mod hardening;
+pub mod hid_scanner;
 pub mod scan;
 
 pub use error::AppError;
@@ -131,11 +133,19 @@ pub fn run() {
                     log::warn!("Scan init failed (non-fatal): {}", e);
                 }
             } else {
-                log::warn!(
-                    "Barcode scanner hook disabled on macOS: rdev calls \
-                     TSMGetInputSourceProperty off the main thread, which \
-                     triggers dispatch_assert_queue and crashes the process."
-                );
+                match cg_scanner::try_init(app.handle()) {
+                    Ok(()) => log::info!("macOS CGEventTap scanner hook initialized"),
+                    Err(e) => log::warn!(
+                        "CGEventTap scanner init failed (non-fatal): {e}. \
+                         Scanner requires Accessibility permissions."
+                    ),
+                }
+            }
+
+            // M4.2: USB HID scanner runs alongside keyboard-wedge hooks.
+            match hid_scanner::try_init(app.handle().clone()) {
+                Ok(()) => log::info!("HID scanner hook initialized (non-fatal if no device)"),
+                Err(e) => log::info!("HID scanner init skipped: {e}"),
             }
 
             if let Err(e) = hardening::prevent_sleep::apply_on_launch(app) {

@@ -253,8 +253,9 @@ export default function SalesPage({ user, onExit }: Props) {
               key={k}
               type="button"
               onClick={() => setKind(k)}
+              aria-pressed={kind === k}
               className={cn(
-                "rounded px-3 py-1 font-medium transition-colors",
+                "rounded px-3 py-1 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                 kind === k
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -540,7 +541,7 @@ export default function SalesPage({ user, onExit }: Props) {
                     {recent.slice(0, 6).map((s) => (
                       <li
                         key={s.id}
-                        className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+                        className="flex items-center justify-between gap-2 px-3 py-2 text-sm transition-colors hover:bg-muted/40"
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">

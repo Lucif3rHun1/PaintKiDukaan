@@ -7,10 +7,61 @@
 import { useEffect, useState } from "react";
 import { listCategories, createCategory, deactivateCategory } from "../categories/api";
 import type { Category } from "../types";
+import { DataTable } from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
+}
+
+interface CategoryTableProps {
+  categories: Category[];
+  loading: boolean;
+  busy: boolean;
+  onDeactivate: (id: number) => void;
+}
+
+function CategoryTable({
+  categories,
+  loading,
+  busy,
+  onDeactivate,
+}: CategoryTableProps) {
+  const columns: ColumnDef<Category>[] = [
+    {
+      header: "Name",
+      cell: (c) => <span className="text-foreground">{c.name}</span>,
+    },
+    {
+      header: "Actions",
+      align: "right",
+      cell: (c) => (
+        <button
+          type="button"
+          onClick={() => onDeactivate(c.id)}
+          disabled={busy}
+          className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+        >
+          Deactivate
+        </button>
+      ),
+    },
+  ];
+
+  return (
+    <DataTable
+      data={categories}
+      columns={columns}
+      keyExtractor={(c) => c.id}
+      loading={loading}
+      emptyState={
+        <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+          No categories configured.
+        </p>
+      }
+    />
+  );
 }
 
 export function CategoryAdmin({ role }: Props) {
@@ -126,40 +177,12 @@ export function CategoryAdmin({ role }: Props) {
       </div>
 
       {/* Category table */}
-      <div className="overflow-x-auto rounded border border-border bg-card">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-border bg-card text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map((c) => (
-              <tr key={c.id} className="border-b border-border last:border-0">
-                <td className="px-3 py-2 text-foreground">{c.name}</td>
-                <td className="px-3 py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => handleDeactivate(c.id)}
-                    disabled={busy}
-                    className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                  >
-                    Deactivate
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {categories.length === 0 && !loading && (
-              <tr>
-                <td colSpan={2} className="px-3 py-4 text-center text-xs text-muted-foreground">
-                  No categories configured.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <CategoryTable
+        categories={categories}
+        loading={loading}
+        busy={busy}
+        onDeactivate={handleDeactivate}
+      />
 
       <p className="text-[11px] text-muted-foreground">
         Categories group items for filtering and reporting. Deactivating a category

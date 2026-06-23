@@ -500,7 +500,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                 </thead>
                 <tbody>
                   {lines.map((line, index) => (
-                    <tr key={`${line.item_id}-${index}`} className="border-b border-border align-middle">
+                    <tr key={`${line.item_id}-${index}`} className="border-b border-border align-middle transition-colors hover:bg-muted/40">
                       <td className="py-2">
                         <input
                           type="checkbox"
@@ -563,7 +563,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                           type="button"
                           aria-label="Remove line"
                           onClick={() => removeLine(index)}
-                          className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          className="rounded px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                         >
                           Remove
                         </button>

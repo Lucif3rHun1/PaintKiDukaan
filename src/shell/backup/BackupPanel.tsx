@@ -75,14 +75,14 @@ export function BackupPanel() {
           type="button"
           disabled={busy}
           onClick={onBackup}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           {busy ? "Working…" : "Back up now"}
         </button>
         <button
           type="button"
           onClick={() => setRestoreOpen(true)}
-          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
+          className="rounded-md border border-border px-3 py-1.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           Restore…
         </button>

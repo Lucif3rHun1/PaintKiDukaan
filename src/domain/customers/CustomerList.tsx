@@ -1,14 +1,25 @@
 /**
  * CustomerList — searchable list with flag indicator + role-gated actions.
- * Debounced search, design-system tokens, empty/loading states.
+ * Uses canonical SearchInput, DataTable, PaginationControls, and usePaginatedQuery.
  */
-import { useEffect, useRef, useState } from "react";
-import { Search, UserPlus, Flag, Phone, Banknote, IndianRupee } from "lucide-react";
+import { useMemo } from "react";
+import { UserPlus, Flag, Phone, Banknote } from "lucide-react";
 
-import { Alert, Badge, Button, Card, EmptyState, Money, Skeleton } from "../../components/ui";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  DataTable,
+  EmptyState,
+  Money,
+  PaginationControls,
+  SearchInput,
+} from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { listCustomers } from "./api";
-import { formatRupeesFromPaise } from "../../lib/money";
+import { usePaginatedQuery } from "../../lib/query";
 import type { Customer } from "../types";
 import { extractError } from "../../lib/extractError";
 
@@ -20,7 +31,7 @@ interface Props {
   role: "owner" | "cashier" | "stocker";
 }
 
-const SEARCH_DEBOUNCE_MS = 250;
+const PAGE_SIZE = 25;
 
 export function CustomerList({
   onSelect,
@@ -29,43 +40,29 @@ export function CustomerList({
   refreshKey,
   role,
 }: Props) {
-  const [items, setItems] = useState<Customer[]>([]);
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canCreate = onCreate && (role === "owner" || role === "cashier");
+  const canPay = (role === "owner" || role === "cashier") && onRecordPayment;
 
-  // Debounce query input
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setDebouncedQuery(query.trim());
-    }, SEARCH_DEBOUNCE_MS);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [query]);
-
-  // Fetch on debounced query or refreshKey
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    listCustomers(debouncedQuery || undefined)
-      .then((rows) => {
-        if (!cancelled) setItems(rows);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(extractError(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedQuery, refreshKey]);
+  const {
+    data: items,
+    allData,
+    isLoading,
+    isFetching,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    totalItems,
+    totalPages,
+    pageSize,
+    refetch,
+  } = usePaginatedQuery<Customer>({
+    queryKey: ["customers", refreshKey ?? 0],
+    pageSize: PAGE_SIZE,
+    queryFn: ({ search: debouncedSearch }) =>
+      listCustomers(debouncedSearch || undefined),
+  });
 
   function handlePay(c: Customer) {
     if (onRecordPayment) {
@@ -75,8 +72,101 @@ export function CustomerList({
     toast.info(`No payment handler available for ${c.name}`);
   }
 
-  const canCreate = onCreate && (role === "owner" || role === "cashier");
-  const canPay = (role === "owner" || role === "cashier") && onRecordPayment;
+  const columns = useMemo<ColumnDef<Customer>[]>(() => {
+    const cols: ColumnDef<Customer>[] = [
+      {
+        header: "Name",
+        cell: (c) => (
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-foreground">{c.name}</span>
+              {c.is_flagged ? (
+                <Badge variant="danger" size="sm">
+                  <Flag className="h-3 w-3" />
+                  Flagged
+                </Badge>
+              ) : null}
+            </div>
+            {c.email ? (
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                {c.email}
+              </div>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        header: "Phone",
+        cell: (c) =>
+          c.phone ? (
+            <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
+              <Phone className="h-3 w-3" />
+              {c.phone}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        header: "Type",
+        cell: (c) => (
+          <span className="text-muted-foreground">
+            {c.type_name ?? "—"}
+          </span>
+        ),
+      },
+      {
+        header: "Status",
+        cell: (c) =>
+          !c.is_active ? (
+            <Badge variant="muted" size="sm">
+              Inactive
+            </Badge>
+          ) : (
+            <Badge variant="success" size="sm">
+              Active
+            </Badge>
+          ),
+      },
+      {
+        header: "Credit",
+        align: "right",
+        cell: (c) =>
+          c.credit_limit != null ? (
+            <Money paise={c.credit_limit} />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        header: "Opening",
+        align: "right",
+        cell: (c) => <Money paise={c.opening_balance_paise} muted />,
+      },
+    ];
+
+    if (canPay) {
+      cols.push({
+        header: "Action",
+        align: "right",
+        cell: (c) => (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            icon={Banknote}
+            onClick={() => handlePay(c)}
+          >
+            Pay
+          </Button>
+        ),
+      });
+    }
+
+    return cols;
+  }, [canPay]);
+
+  const rowClassName = (c: Customer) => (c.is_active ? "" : "opacity-60");
 
   return (
     <div className="space-y-4">
@@ -84,8 +174,8 @@ export function CustomerList({
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold tracking-tight">Customers</h2>
           <p className="text-sm text-muted-foreground">
-            {items.length} {items.length === 1 ? "customer" : "customers"}
-            {debouncedQuery ? ` matching "${debouncedQuery}"` : ""}
+            {totalItems} {totalItems === 1 ? "customer" : "customers"}
+            {search ? ` matching "${search}"` : ""}
           </p>
         </div>
         {canCreate ? (
@@ -103,159 +193,61 @@ export function CustomerList({
 
       <Card>
         <Card.Body className="space-y-3">
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              placeholder="Search by name or phone…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="input h-10 w-full pl-9"
-              aria-label="Search customers"
-            />
-          </div>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by name or phone…"
+            ariaLabel="Search customers"
+          />
 
           {error ? (
-            <Alert
-              title="Could not load customers"
-              variant="destructive"
-            >
-              {error}
+            <Alert title="Could not load customers" variant="destructive">
+              {extractError(error)}
             </Alert>
           ) : null}
 
-          {loading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full" />
-              ))}
-            </div>
-          ) : items.length === 0 ? (
-            <EmptyState
-              icon={UserPlus}
-              title={debouncedQuery ? "No matches" : "No customers yet"}
-              description={
-                debouncedQuery
-                  ? `Nothing matches "${debouncedQuery}". Try a different search.`
-                  : "Add the first customer to start recording sales and credit."
-              }
-              primary={
-                canCreate ? (
-                  <Button type="button" onClick={onCreate} icon={UserPlus}>
-                    Add Customer
-                  </Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full text-sm">
-                <thead className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Name</th>
-                    <th className="px-3 py-2 font-medium">Phone</th>
-                    <th className="px-3 py-2 font-medium">Type</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 text-right font-medium">Credit</th>
-                    <th className="px-3 py-2 text-right font-medium">Opening</th>
-                    {canPay ? (
-                      <th className="px-3 py-2 text-right font-medium">Action</th>
-                    ) : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((c, i) => (
-                    <tr
-                      key={c.id}
-                      onClick={() => onSelect?.(c)}
-                      className={[
-                        "cursor-pointer border-b border-border last:border-b-0",
-                        "transition-colors hover:bg-muted/50",
-                        "animate-in fade-in slide-in-from-bottom-2 duration-200",
-                        c.is_active ? "" : "opacity-60",
-                      ].join(" ")}
-                      style={{ animationDelay: `${i * 40}ms` }}
+          <DataTable
+            data={items}
+            columns={columns}
+            keyExtractor={(c) => c.id}
+            loading={isLoading || isFetching}
+            emptyState={
+              <EmptyState
+                icon={UserPlus}
+                title={search ? "No matches" : "No customers yet"}
+                description={
+                  search
+                    ? `Nothing matches "${search}". Try a different search.`
+                    : "Add the first customer to start recording sales and credit."
+                }
+                primary={
+                  canCreate ? (
+                    <Button
+                      type="button"
+                      onClick={onCreate}
+                      icon={UserPlus}
                     >
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-foreground">
-                            {c.name}
-                          </span>
-                          {c.is_flagged ? (
-                            <Badge variant="danger" size="sm">
-                              <Flag className="h-3 w-3" />
-                              Flagged
-                            </Badge>
-                          ) : null}
-                        </div>
-                        {c.email ? (
-                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {c.email}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {c.phone ? (
-                          <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
-                            <Phone className="h-3 w-3" />
-                            {c.phone}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">
-                        {c.type_name ?? "—"}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {!c.is_active ? (
-                          <Badge variant="muted" size="sm">
-                            Inactive
-                          </Badge>
-                        ) : (
-                          <Badge variant="success" size="sm">
-                            Active
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {c.credit_limit != null ? (
-                          <span className="inline-flex items-baseline gap-1">
-                            <IndianRupee className="h-3 w-3 translate-y-[0.1em] text-muted-foreground" />
-                            {formatRupeesFromPaise(c.credit_limit)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <Money paise={c.opening_balance_paise} muted />
-                      </td>
-                      {canPay ? (
-                        <td
-                          className="px-3 py-2.5 text-right"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            icon={Banknote}
-                            onClick={() => handlePay(c)}
-                          >
-                            Pay
-                          </Button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                      Add Customer
+                    </Button>
+                  ) : undefined
+                }
+              />
+            }
+            error={error}
+            onRetry={refetch}
+            onRowClick={onSelect ? (c) => onSelect(c) : undefined}
+            rowClassName={rowClassName}
+          />
+
+          {!isLoading && allData.length > 0 ? (
+            <PaginationControls
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              onPageChange={setPage}
+            />
+          ) : null}
         </Card.Body>
       </Card>
     </div>

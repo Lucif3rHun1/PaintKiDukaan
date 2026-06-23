@@ -1,14 +1,25 @@
 /**
  * VendorList — searchable list with outstanding + role-gated Pay action.
- * Debounced search, batch outstanding fetch (no N+1), design-system tokens.
+ * Uses canonical SearchInput, DataTable, PaginationControls, and usePaginatedQuery.
  */
-import { useEffect, useRef, useState } from "react";
-import { Banknote, Phone, Search, Truck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Banknote, Phone, Truck } from "lucide-react";
 
-import { Alert, Button, Card, EmptyState, Money, Skeleton } from "../../components/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  DataTable,
+  EmptyState,
+  Money,
+  PaginationControls,
+  SearchInput,
+} from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { listVendors } from "./api";
 import { outstandingReport } from "../../pos/api";
+import { usePaginatedQuery } from "../../lib/query";
 import { type Vendor } from "../types";
 import { extractError } from "../../lib/extractError";
 
@@ -20,7 +31,7 @@ interface Props {
   role: "owner" | "cashier" | "stocker";
 }
 
-const SEARCH_DEBOUNCE_MS = 250;
+const PAGE_SIZE = 25;
 
 export function VendorList({
   onSelect,
@@ -29,63 +40,55 @@ export function VendorList({
   refreshKey,
   role,
 }: Props) {
-  const [items, setItems] = useState<Vendor[]>([]);
   const [outstandings, setOutstandings] = useState<Record<number, number>>({});
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounce query input
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setDebouncedQuery(query.trim());
-    }, SEARCH_DEBOUNCE_MS);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [query]);
+  const {
+    data: items,
+    allData,
+    isLoading,
+    isFetching,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    totalItems,
+    totalPages,
+    pageSize,
+    refetch,
+  } = usePaginatedQuery<Vendor>({
+    queryKey: ["vendors", refreshKey ?? 0],
+    pageSize: PAGE_SIZE,
+    queryFn: ({ search: debouncedSearch }) =>
+      listVendors(debouncedSearch || undefined),
+  });
 
-  // Fetch vendors + batch outstanding on debounced query or refreshKey
+  // Batch fetch outstanding report once the vendor list changes.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    listVendors(debouncedQuery || undefined)
-      .then(async (rows) => {
+    if (allData.length === 0) {
+      setOutstandings({});
+      return;
+    }
+    outstandingReport()
+      .then((report) => {
         if (cancelled) return;
-        setItems(rows);
-        // Batch fetch: one outstandingReport call returns all vendors
-        // at once. No N+1, no per-vendor round-trip.
-        try {
-          const report = await outstandingReport();
-          if (cancelled) return;
-          const map: Record<number, number> = {};
-          for (const v of report.vendors) {
-            map[v.vendor_id] = v.outstanding;
-          }
-          setOutstandings(map);
-        } catch (e) {
-          // If the batch outstanding call fails, surface but don't fail
-          // the whole list — outstanding is optional info.
-          if (!cancelled) {
-            toast.warning(extractError(e));
-            setOutstandings({});
-          }
+        const map: Record<number, number> = {};
+        for (const v of report.vendors) {
+          map[v.vendor_id] = v.outstanding;
         }
+        setOutstandings(map);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(extractError(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          toast.warning(extractError(e));
+          setOutstandings({});
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, refreshKey]);
+  }, [allData]);
 
   function handlePay(v: Vendor) {
     if (onRecordPayment) {
@@ -98,14 +101,77 @@ export function VendorList({
   const canCreate = onCreate && (role === "owner" || role === "stocker");
   const canPay = (role === "owner" || role === "stocker") && onRecordPayment;
 
+  const columns = useMemo<ColumnDef<Vendor>[]>(() => {
+    const cols: ColumnDef<Vendor>[] = [
+      {
+        header: "Name",
+        cell: (v) => (
+          <span className="font-medium text-foreground">{v.name}</span>
+        ),
+      },
+      {
+        header: "Phone",
+        cell: (v) =>
+          v.phone ? (
+            <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
+              <Phone className="h-3 w-3" />
+              {v.phone}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        header: "Opening",
+        align: "right",
+        cell: (v) => <Money paise={(v.opening_balance ?? 0) * 100} muted />,
+      },
+      {
+        header: "Outstanding",
+        align: "right",
+        cell: (v) =>
+          outstandings[v.id] != null ? (
+            <Money
+              paise={outstandings[v.id]}
+              negative={outstandings[v.id] < 0}
+            />
+          ) : (
+            <span className="text-xs text-muted-foreground">…</span>
+          ),
+      },
+    ];
+
+    if (canPay) {
+      cols.push({
+        header: "Action",
+        align: "right",
+        cell: (v) => (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            icon={Banknote}
+            onClick={() => handlePay(v)}
+          >
+            Pay
+          </Button>
+        ),
+      });
+    }
+
+    return cols;
+  }, [canPay, outstandings]);
+
+  const rowClassName = (v: Vendor) => (v.is_active ? "" : "opacity-60");
+
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold tracking-tight">Vendors</h2>
           <p className="text-sm text-muted-foreground">
-            {items.length} {items.length === 1 ? "vendor" : "vendors"}
-            {debouncedQuery ? ` matching "${debouncedQuery}"` : ""}
+            {totalItems} {totalItems === 1 ? "vendor" : "vendors"}
+            {search ? ` matching "${search}"` : ""}
           </p>
         </div>
         {canCreate ? (
@@ -123,125 +189,57 @@ export function VendorList({
 
       <Card>
         <Card.Body className="space-y-3">
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              placeholder="Search by name or phone…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="input h-10 w-full pl-9"
-              aria-label="Search vendors"
-            />
-          </div>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by name or phone…"
+            ariaLabel="Search vendors"
+          />
 
           {error ? (
             <Alert title="Could not load vendors" variant="destructive">
-              {error}
+              {extractError(error)}
             </Alert>
           ) : null}
 
-          {loading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full" />
-              ))}
-            </div>
-          ) : items.length === 0 ? (
-            <EmptyState
-              icon={Truck}
-              title={debouncedQuery ? "No matches" : "No vendors yet"}
-              description={
-                debouncedQuery
-                  ? `Nothing matches "${debouncedQuery}". Try a different search.`
-                  : "Add the first vendor to start receiving stock and tracking payables."
-              }
-              primary={
-                canCreate ? (
-                  <Button type="button" onClick={onCreate} icon={Truck}>
-                    Add Vendor
-                  </Button>
-                ) : undefined
-              }
+          <DataTable
+            data={items}
+            columns={columns}
+            keyExtractor={(v) => v.id}
+            loading={isLoading || isFetching}
+            emptyState={
+              <EmptyState
+                icon={Truck}
+                title={search ? "No matches" : "No vendors yet"}
+                description={
+                  search
+                    ? `Nothing matches "${search}". Try a different search.`
+                    : "Add the first vendor to start receiving stock and tracking payables."
+                }
+                primary={
+                  canCreate ? (
+                    <Button type="button" onClick={onCreate} icon={Truck}>
+                      Add Vendor
+                    </Button>
+                  ) : undefined
+                }
+              />
+            }
+            error={error}
+            onRetry={refetch}
+            onRowClick={onSelect ? (v) => onSelect(v) : undefined}
+            rowClassName={rowClassName}
+          />
+
+          {!isLoading && allData.length > 0 ? (
+            <PaginationControls
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              onPageChange={setPage}
             />
-          ) : (
-            <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full text-sm">
-                <thead className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Name</th>
-                    <th className="px-3 py-2 font-medium">Phone</th>
-                    <th className="px-3 py-2 text-right font-medium">Opening</th>
-                    <th className="px-3 py-2 text-right font-medium">Outstanding</th>
-                    {canPay ? (
-                      <th className="px-3 py-2 text-right font-medium">Action</th>
-                    ) : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((v, i) => (
-                    <tr
-                      key={v.id}
-                      onClick={() => onSelect?.(v)}
-                      className={[
-                        "cursor-pointer border-b border-border last:border-b-0",
-                        "transition-colors hover:bg-muted/50",
-                        "animate-in fade-in slide-in-from-bottom-2 duration-200",
-                        v.is_active ? "" : "opacity-60",
-                      ].join(" ")}
-                      style={{ animationDelay: `${i * 40}ms` }}
-                    >
-                      <td className="px-3 py-2.5 font-medium text-foreground">
-                        {v.name}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {v.phone ? (
-                          <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
-                            <Phone className="h-3 w-3" />
-                            {v.phone}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <Money paise={(v.opening_balance ?? 0) * 100} muted />
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {outstandings[v.id] != null ? (
-                          <Money
-                            paise={outstandings[v.id]}
-                            negative={outstandings[v.id] < 0}
-                          />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">…</span>
-                        )}
-                      </td>
-                      {canPay ? (
-                        <td
-                          className="px-3 py-2.5 text-right"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            icon={Banknote}
-                            onClick={() => handlePay(v)}
-                          >
-                            Pay
-                          </Button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          ) : null}
         </Card.Body>
       </Card>
     </div>

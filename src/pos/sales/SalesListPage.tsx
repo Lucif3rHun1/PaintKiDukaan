@@ -1,9 +1,21 @@
-// Minimal SalesListPage stub — shows recent sales with a "New" button.
-// TODO: replace with full sales list UI (filter by date, customer, status; etc).
+// Sales list page — recent sales with search, date filter, and pagination.
 
-import { useEffect, useState } from "react";
-import { Money } from "../../components/ui";
+import { useMemo, useState } from "react";
+import { Plus, Receipt } from "lucide-react";
+
+import {
+  Badge,
+  Button,
+  Card,
+  DataTable,
+  EmptyState,
+  Money,
+  PaginationControls,
+  SearchInput,
+} from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { listSales } from "../api";
+import { usePaginatedQuery } from "../../lib/query";
 import { formatDateForDisplay } from "../../lib/date";
 import type { Sale } from "../types";
 
@@ -11,73 +23,187 @@ interface Props {
   onCreate: () => void;
 }
 
-export function SalesListPage({ onCreate }: Props) {
-  const [rows, setRows] = useState<Sale[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const PAGE_SIZE = 25;
 
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    listSales()
-      .then((d) => setRows(d ?? []))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
-  }, []);
+export function SalesListPage({ onCreate }: Props) {
+  const [from, setFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const {
+    data: rows,
+    allData,
+    isLoading,
+    isFetching,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    totalItems,
+    totalPages,
+    pageSize,
+    refetch,
+  } = usePaginatedQuery<Sale>({
+    queryKey: ["sales-list", from, to],
+    pageSize: PAGE_SIZE,
+    queryFn: async () => {
+      const sales = await listSales(from, to, 500);
+      return sales ?? [];
+    },
+    clientFilter: (sale, q) => {
+      const term = q.toLowerCase();
+      return (
+        (sale.no ?? "").toLowerCase().includes(term) ||
+        (sale.customer_name ?? "walk-in").toLowerCase().includes(term) ||
+        (sale.status ?? "").toLowerCase().includes(term)
+      );
+    },
+  });
+
+  const columns = useMemo<ColumnDef<Sale>[]>(
+    () => [
+      {
+        header: "No",
+        cell: (s) => (
+          <span className="font-mono tabular-nums text-foreground">
+            {s.no}
+          </span>
+        ),
+      },
+      {
+        header: "Date",
+        cell: (s) => (
+          <span className="text-foreground">
+            {formatDateForDisplay(s.date)}
+          </span>
+        ),
+      },
+      {
+        header: "Status",
+        cell: (s) => {
+          const variant = s.status === "final" ? "success" : "info";
+          return (
+            <Badge variant={variant} size="sm">
+              {s.status}
+            </Badge>
+          );
+        },
+      },
+      {
+        header: "Customer",
+        cell: (s) => (
+          <span className="text-foreground">
+            {s.customer_name ?? "Walk-in"}
+          </span>
+        ),
+      },
+      {
+        header: "Total",
+        align: "right",
+        cell: (s) => <Money paise={s.total} />,
+      },
+      {
+        header: "Paid",
+        align: "right",
+        cell: (s) => <Money paise={s.paid_amount} />,
+      },
+    ],
+    [],
+  );
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-foreground">Sales</h1>
-        <button
-          type="button"
-          onClick={onCreate}
-          className="btn-primary text-sm"
-        >
-          + New Sale
-        </button>
-      </div>
-
-      {error ? (
-        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
-      ) : null}
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No sales yet. Click "+ New Sale" to create one.</p>
-      ) : (
-        <div className="overflow-x-auto rounded border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-card text-left text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2">No</th>
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Customer</th>
-                <th className="px-3 py-2 text-right">Total</th>
-                <th className="px-3 py-2 text-right">Paid</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((s) => (
-                <tr key={s.id} className="border-t border-border">
-                  <td className="px-3 py-1.5 font-mono tabular-nums">{s.no}</td>
-                  <td className="px-3 py-1.5">{formatDateForDisplay(s.date)}</td>
-                  <td className="px-3 py-1.5">{s.status}</td>
-                  <td className="px-3 py-1.5">{s.customer_name ?? "Walk-in"}</td>
-                  <td className="px-3 py-1.5 text-right">
-                    <Money paise={s.total} />
-                  </td>
-                  <td className="px-3 py-1.5 text-right">
-                    <Money paise={s.paid_amount} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Sales
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {totalItems} {totalItems === 1 ? "sale" : "sales"}
+            {search ? ` matching "${search}"` : ""}
+          </p>
         </div>
-      )}
+        <Button
+          type="button"
+          variant="primary"
+          size="md"
+          icon={Plus}
+          onClick={onCreate}
+        >
+          New Sale
+        </Button>
+      </header>
+
+      <Card>
+        <Card.Body className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search by invoice, customer, status…"
+              ariaLabel="Search sales"
+              className="min-w-[220px] flex-1"
+            />
+            <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              From
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="input px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              To
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="input px-2 py-1 text-sm"
+              />
+            </label>
+          </div>
+
+          <DataTable
+            data={rows}
+            columns={columns}
+            keyExtractor={(s) => s.id}
+            loading={isLoading || isFetching}
+            error={error}
+            onRetry={refetch}
+            emptyState={
+              <EmptyState
+                icon={Receipt}
+                title={search ? "No matches" : "No sales yet"}
+                description={
+                  search
+                    ? `Nothing matches "${search}". Try a different search.`
+                    : "No sales found for the selected range. Create the first sale to get started."
+                }
+                primary={
+                  <Button type="button" onClick={onCreate} icon={Plus}>
+                    New Sale
+                  </Button>
+                }
+              />
+            }
+          />
+
+          {!isLoading && allData.length > 0 ? (
+            <PaginationControls
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              onPageChange={setPage}
+            />
+          ) : null}
+        </Card.Body>
+      </Card>
     </div>
   );
 }
