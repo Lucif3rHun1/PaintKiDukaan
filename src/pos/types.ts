@@ -234,17 +234,17 @@ export interface DailySalesReport {
 
 export interface StockRow {
   item_id: number;
-  sku: string;
+  sku_code: string;
   name: string;
   location_id: number;
   location_name: string;
-  qty_base: number;
-  low_stock_threshold: number;
+  qty: number;
+  reorder_level: number;
 }
 
 export interface StockGroupRow {
   group: string;
-  total_qty_base: number;
+  total_qty: number;
   total_retail_value: number;
 }
 

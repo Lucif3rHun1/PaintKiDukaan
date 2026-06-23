@@ -265,7 +265,7 @@ export default function SalesReportPage({ user }: Props) {
                       className="flex justify-between border-b border-border py-1"
                     >
                       <span>{c.name}</span>
-                      <Money paise={c.outstanding_paise} />
+                      <Money paise={c.outstanding} />
                     </li>
                   ))}
                   {out && out.customers.length === 0 && (
@@ -285,7 +285,7 @@ export default function SalesReportPage({ user }: Props) {
                       className="flex justify-between border-b border-border py-1"
                     >
                       <span>{v.name}</span>
-                      <Money paise={v.outstanding_paise} />
+                      <Money paise={v.outstanding} />
                     </li>
                   ))}
                   {out && out.vendors.length === 0 && (
