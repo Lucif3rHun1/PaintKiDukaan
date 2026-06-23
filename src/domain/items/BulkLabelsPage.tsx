@@ -581,7 +581,7 @@ export function BulkLabelsPage() {
               type="button"
               onClick={handlePreview}
               disabled={batch.length === 0 || busy}
-              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40"
+              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               Preview
             </button>
@@ -589,7 +589,7 @@ export function BulkLabelsPage() {
               type="button"
               onClick={handleDownload}
               disabled={batch.length === 0 || busy}
-              className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+              className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Download PDF
             </button>
@@ -597,7 +597,7 @@ export function BulkLabelsPage() {
               type="button"
               onClick={handlePrint}
               disabled={batch.length === 0 || busy}
-              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40"
+              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               Print
             </button>
@@ -645,7 +645,7 @@ export function BulkLabelsPage() {
               type="button"
               onClick={() => void loadHistory()}
               disabled={historyLoading || busy}
-              className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted disabled:opacity-40"
+              className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               Refresh
             </button>
@@ -671,7 +671,7 @@ export function BulkLabelsPage() {
                       type="button"
                       onClick={() => void reprint(row)}
                       disabled={busy}
-                      className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/20 px-2 py-1 text-[10px] text-primary/80 hover:bg-primary/10 disabled:opacity-40"
+                      className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/20 px-2 py-1 text-[10px] text-primary/80 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Printer className="h-3 w-3" />
                       Reprint
