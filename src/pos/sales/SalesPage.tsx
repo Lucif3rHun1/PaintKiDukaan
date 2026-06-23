@@ -10,6 +10,7 @@ import {
 import {
   ArrowLeft,
   Save,
+  ShoppingCart,
   UserPlus,
   X,
 } from "lucide-react";
@@ -318,9 +319,11 @@ export default function SalesPage({ user, onExit }: Props) {
                 <ItemSearchInput onPick={handleItemPick} />
 
                 {lines.length === 0 ? (
-                  <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-8 text-center text-sm text-muted-foreground">
-                    Scan a barcode or search for an item to start a bill.
-                  </p>
+                  <EmptyState
+                    icon={ShoppingCart}
+                    title="Cart is empty"
+                    description="Scan a barcode or search for an item to start a bill."
+                  />
                 ) : (
                   <div className="overflow-x-auto rounded border border-border">
                     <table className="w-full text-sm">

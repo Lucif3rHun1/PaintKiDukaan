@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PackagePlus, Search, Truck, X } from "lucide-react";
+import { EmptyState } from "../../components/ui";
 
 import { Button, InlineDialog, Money, MoneyInput, ShortcutsHint } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
@@ -573,8 +574,12 @@ export default function InwardPage({ user: _user }: Props) {
               ))}
               {draft.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    Pick an item to start. New line appears automatically.
+                  <td colSpan={5} className="px-4 py-10">
+                    <EmptyState
+                      icon={PackagePlus}
+                      title="No items added"
+                      description="Pick an item to start. A new line appears automatically when you select one."
+                    />
                   </td>
                 </tr>
               )}

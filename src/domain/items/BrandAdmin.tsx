@@ -6,10 +6,12 @@
  * deactivate brands that have no items referencing them.
  */
 import { useEffect, useState } from "react";
+import { Tag } from "lucide-react";
 import { listBrands, createBrand, updateBrandCodePrefix, deactivateBrand } from "./api";
 import type { Brand } from "../types";
 import { extractError } from "../../lib/extractError";
 import { SkeletonRow } from "../../components/ui/SkeletonRow";
+import { EmptyState } from "../../components/ui";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
@@ -283,8 +285,12 @@ export function BrandAdmin({ role }: Props) {
             ))}
             {brands.length === 0 && !loading && (
               <tr>
-                <td colSpan={4} className="px-3 py-4 text-center text-xs text-muted-foreground">
-                  No brands configured.
+                <td colSpan={4} className="px-3 py-4">
+                  <EmptyState
+                    icon={Tag}
+                    title="No brands configured"
+                    description="Add a brand above to enable auto-generated barcodes."
+                  />
                 </td>
               </tr>
             )}
