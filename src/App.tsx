@@ -271,44 +271,56 @@ export default function App() {
     >
       {tab === "dashboard" && (
         <ErrorBoundary context="Dashboard">
-          <Dashboard />
+          <div className="animate-in fade-in duration-200">
+            <Dashboard />
+          </div>
         </ErrorBoundary>
       )}
       {tab === "sales" && salesRoute === "new" ? (
         <ErrorBoundary context="Sales — new">
-          <SalesPage
-            user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-            onExit={() => (window.location.hash = "#/sales")}
-          />
+          <div className="animate-in fade-in duration-200">
+            <SalesPage
+              user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+              onExit={() => (window.location.hash = "#/sales")}
+            />
+          </div>
         </ErrorBoundary>
       ) : null}
       {tab === "sales" && salesRoute === "return" ? (
         <ErrorBoundary context="Sales — return">
-          <ReturnPage
-            user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-            onBack={() => (window.location.hash = "#/sales")}
-          />
+          <div className="animate-in fade-in duration-200">
+            <ReturnPage
+              user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+              onBack={() => (window.location.hash = "#/sales")}
+            />
+          </div>
         </ErrorBoundary>
       ) : null}
       {tab === "sales" && salesRoute === "list" ? (
         <ErrorBoundary context="Sales — list">
-          <SalesListPage onCreate={() => (window.location.hash = "#/sales/new")} />
+          <div className="animate-in fade-in duration-200">
+            <SalesListPage onCreate={() => (window.location.hash = "#/sales/new")} />
+          </div>
         </ErrorBoundary>
       ) : null}
       {tab === "inward" && (
         <ErrorBoundary context="Inward">
-          <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+          <div className="animate-in fade-in duration-200">
+            <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+          </div>
         </ErrorBoundary>
       )}
       {tab === "sales-report" && (
         <RoleGuard minRole="stocker">
           <ErrorBoundary context="Sales Report">
-            <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+            <div className="animate-in fade-in duration-200">
+              <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+            </div>
           </ErrorBoundary>
         </RoleGuard>
       )}
       {tab === "items" && (
-        <div className="space-y-3">
+        <div className="animate-in fade-in space-y-3 duration-200">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
             <ItemSubNav active="items" />
@@ -319,7 +331,7 @@ export default function App() {
         </div>
       )}
       {tab === "barcodes" && (
-        <div className="space-y-3">
+        <div className="animate-in fade-in space-y-3 duration-200">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
             <ItemSubNav active="barcodes" />
@@ -331,44 +343,54 @@ export default function App() {
       )}
       {tab === "vendors" && (
         <ErrorBoundary context="Vendors">
-          <VendorList
-            role={role}
-            refreshKey={refreshKey}
-            onCreate={() => setVendorCreateOpen(true)}
-            onSelect={(v) => setVendorDetailTarget(v)}
-            onRecordPayment={(v) => setVendorPaymentTarget(v)}
-          />
+          <div className="animate-in fade-in duration-200">
+            <VendorList
+              role={role}
+              refreshKey={refreshKey}
+              onCreate={() => setVendorCreateOpen(true)}
+              onSelect={(v) => setVendorDetailTarget(v)}
+              onRecordPayment={(v) => setVendorPaymentTarget(v)}
+            />
+          </div>
         </ErrorBoundary>
       )}
       {tab === "customers" && (
         <ErrorBoundary context="Customers">
-          <CustomerList
-            role={role}
-            refreshKey={refreshKey}
-            onCreate={() => setCustomerCreateOpen(true)}
-            onSelect={(c) => setCustomerDetailTarget(c)}
-            onRecordPayment={(c) => setCustomerPaymentTarget(c)}
-          />
+          <div className="animate-in fade-in duration-200">
+            <CustomerList
+              role={role}
+              refreshKey={refreshKey}
+              onCreate={() => setCustomerCreateOpen(true)}
+              onSelect={(c) => setCustomerDetailTarget(c)}
+              onRecordPayment={(c) => setCustomerPaymentTarget(c)}
+            />
+          </div>
         </ErrorBoundary>
       )}
       {tab === "settings" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Settings">
-            <SettingsPage />
+            <div className="animate-in fade-in duration-200">
+              <SettingsPage />
+            </div>
           </ErrorBoundary>
         </RoleGuard>
       )}
       {tab === "health" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Health">
-            <MasterHealthPage />
+            <div className="animate-in fade-in duration-200">
+              <MasterHealthPage />
+            </div>
           </ErrorBoundary>
         </RoleGuard>
       )}
       {tab === "logs" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Logs">
-            <AdminLogs />
+            <div className="animate-in fade-in duration-200">
+              <AdminLogs />
+            </div>
           </ErrorBoundary>
         </RoleGuard>
       )}
