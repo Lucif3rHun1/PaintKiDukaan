@@ -187,7 +187,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
             alt="PaintKiDukaan"
             width={collapsed ? 32 : 64}
             height={collapsed ? 32 : 64}
-            className={cn("shrink-0 rounded-md object-contain", collapsed ? "h-8 w-8" : "h-10 w-10")}
+            className={cn("shrink-0 rounded-md object-contain ring-1 ring-inset ring-border/40", collapsed ? "h-8 w-8" : "h-10 w-10")}
           />
           {!collapsed ? (
             <span className="flex-1 truncate text-sm font-semibold tracking-tight text-sidebar-foreground">PaintKiDukaan</span>

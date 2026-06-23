@@ -242,7 +242,7 @@ export default function App() {
           <img
             src={logo}
             alt="PaintKiDukaan"
-            className="h-8 w-8 rounded-lg"
+            className="h-8 w-8 rounded-lg ring-1 ring-inset ring-border/40"
           />
           <Loader2 className="h-5 w-5 animate-spin text-indigo-400" aria-hidden="true" />
           <p className="text-sm text-zinc-400">Opening secure shop database…</p>
