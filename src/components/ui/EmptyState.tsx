@@ -1,8 +1,8 @@
-import { type ComponentType, type ReactNode } from "react";
+import { type ElementType, type ReactNode } from "react";
 import { cn } from "./cn";
 
 interface Props {
-  icon?: ComponentType<{ className?: string }> | ReactNode;
+  icon?: ElementType<{ className?: string }> | ReactNode;
   title: string;
   description?: string;
   primary?: ReactNode;
@@ -12,9 +12,9 @@ interface Props {
   className?: string;
 }
 
-function renderIcon(icon: ComponentType<{ className?: string }> | ReactNode) {
+function renderIcon(icon: ElementType<{ className?: string }> | ReactNode) {
   if (typeof icon === "function" || (typeof icon === "object" && icon !== null && !("props" in icon))) {
-    const Icon = icon as ComponentType<{ className?: string }>;
+    const Icon = icon as ElementType<{ className?: string }>;
     return <Icon className="h-8 w-8" />;
   }
   return icon;
