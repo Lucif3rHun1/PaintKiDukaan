@@ -22,7 +22,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
   }, [vendor.id]);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+    <div>
       <div className="mb-4 flex items-start justify-between">
         <div>
           <h2 className="text-xl font-semibold">{vendor.name}</h2>
@@ -61,7 +61,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
         <Row label="Total payments" value={outstanding ? <Money paise={outstanding.total_payments} /> : "…"} />
       </dl>
 
-      <div className="mb-4 rounded border border-border bg-card p-4">
+      <div className="mb-4 rounded-lg border border-border bg-muted p-4">
         <p className="text-xs uppercase text-muted-foreground">Outstanding</p>
           <p className="text-2xl font-semibold text-foreground">
           {outstanding ? <Money paise={outstanding.outstanding} /> : "…"}

@@ -26,7 +26,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
   }, [customer.id]);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+    <div>
       <div className="mb-4 flex items-start justify-between">
         <div>
           <h2 className="text-xl font-semibold">{customer.name}</h2>
@@ -88,7 +88,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
         />
       </dl>
 
-      <div className="mb-4 rounded border border-border bg-muted p-4">
+      <div className="mb-4 rounded-lg border border-border bg-muted p-4">
         <p className="text-xs uppercase text-muted-foreground">Outstanding</p>
         <p className="text-2xl font-semibold tabular-nums text-foreground">
           {outstanding ? formatRupeesFromPaise(outstanding.outstanding) : "…"}
