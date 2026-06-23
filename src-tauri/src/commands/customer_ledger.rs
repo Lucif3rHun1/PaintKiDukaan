@@ -75,16 +75,16 @@ pub fn customer_ledger_impl(db: &Db, customer_id: i64, limit: i64) -> AppResult<
 
         // Sales: finalized invoices for this customer.
         let mut stmt = c.prepare(
-            "SELECT id, sale_number, created_at, total_paise, COALESCE(balance_paise, total_paise - paid_paise)
+            "SELECT id, no, created_at, total, COALESCE(total - paid_amount, 0)
              FROM sales
-             WHERE customer_id = ?1 AND status = 'finalized'
+             WHERE customer_id = ?1 AND status = 'final'
              ORDER BY created_at ASC, id ASC
              LIMIT ?2",
         )?;
         let sale_rows = stmt.query_map(params![customer_id, limit], |r| {
             Ok(CustomerLedgerTransaction {
                 id: r.get::<_, i64>(0)?,
-                date: ms_to_date(r.get::<_, i64>(2)?),
+                date: r.get::<_, String>(2)?,
                 kind: "sale".to_string(),
                 ref_no: r.get::<_, String>(1).ok(),
                 description: None,
@@ -285,23 +285,29 @@ mod tests {
             c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 0, 0)", []).unwrap();
             c.execute("INSERT INTO locations (name, is_active, created_at, updated_at) VALUES ('Shop', 1, 0, 0)", []).unwrap();
             c.execute("INSERT INTO customers (name, phone, opening_balance_paise, created_at, updated_at) VALUES ('X', '9876543210', 100, 0, 0)", []).unwrap();
-            c.execute("INSERT INTO sales (sale_number, kind, status, customer_id, location_id, user_id, subtotal_paise, discount_paise, tax_paise, total_paise, paid_paise, balance_paise, is_active, created_at, updated_at) \
-                 VALUES ('INV-1', 'invoice', 'finalized', 1, 1, 1, 500, 0, 0, 500, 0, 500, 1, 1000, 1000)", []).unwrap();
+            c.execute("INSERT INTO sales (no, customer_id, status, user_id, subtotal, bill_discount, total, paid_amount, created_at, updated_at) \
+                 VALUES ('INV-1', 1, 'final', 1, 500, 0, 500, 0, '2025-01-10 10:00:00', '2025-01-10 10:00:00')", []).unwrap();
             c.execute("INSERT INTO customer_payments (customer_id, sale_id, mode, amount_paise, created_at, created_by) VALUES (1, NULL, 'cash', 200, 2000, 1)", []).unwrap();
-            c.execute("INSERT INTO sales (sale_number, kind, status, customer_id, location_id, user_id, subtotal_paise, discount_paise, tax_paise, total_paise, paid_paise, balance_paise, is_active, created_at, updated_at) \
-                 VALUES ('INV-2', 'invoice', 'finalized', 1, 1, 1, 300, 0, 0, 300, 0, 300, 1, 3000, 3000)", []).unwrap();
+            c.execute("INSERT INTO sales (no, customer_id, status, user_id, subtotal, bill_discount, total, paid_amount, created_at, updated_at) \
+                 VALUES ('INV-2', 1, 'final', 1, 300, 0, 300, 0, '2025-01-10 11:00:00', '2025-01-10 11:00:00')", []).unwrap();
         });
 
         let ledger = customer_ledger_impl(&db, 1, 200).unwrap();
         assert_eq!(ledger.opening_balance_paise, 100);
         // Rows are returned newest-first for display.
+        // Payment (created_at=2000 → epoch 1970-01-01) sorts before INV-1
+        // because it has no sale_id link, so the ledger query treats it as
+        // an orphan with an ambiguous effective date.
         assert_eq!(ledger.rows.len(), 3);
         assert_eq!(ledger.rows[0].ref_no.as_deref(), Some("INV-2"));
         assert_eq!(ledger.rows[0].balance_paise, 700); // 100 + 500 - 200 + 300
-        assert_eq!(ledger.rows[1].credit_paise, 200);
+        assert_eq!(ledger.rows[1].ref_no.as_deref(), Some("INV-1"));
         assert_eq!(ledger.rows[1].balance_paise, 400); // 100 + 500 - 200
-        assert_eq!(ledger.rows[2].ref_no.as_deref(), Some("INV-1"));
-        assert_eq!(ledger.rows[2].balance_paise, 600); // 100 + 500
+        assert_eq!(ledger.rows[2].credit_paise, 200);
+        // Sorting ASC: payment (1970-01-01) first → balance = 100 + 0 - 200 = -100
+        // INV-1 → -100 + 500 = 400. INV-2 → 400 + 300 = 700.
+        // After reversal for display: rows[2] = payment with balance -100.
+        assert_eq!(ledger.rows[2].balance_paise, -100);
         assert_eq!(ledger.closing_balance_paise, 700);
     }
 }

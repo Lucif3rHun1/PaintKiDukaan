@@ -381,7 +381,7 @@ pub fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<CustomerOutstand
             params![id], |r| r.get(0),
         )?;
         let total_payments: i64 = c.query_row(
-            "SELECT COALESCE(SUM(amount), 0) FROM customer_payments WHERE customer_id = ?1",
+            "SELECT COALESCE(SUM(amount_paise), 0) FROM customer_payments WHERE customer_id = ?1",
             params![id], |r| r.get(0),
         )?;
         // Per spec: outstanding = opening + Σ(sales.total - paid) - Σ(payments).
@@ -836,7 +836,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         // Seed a user for FK constraints
         db.with_raw(|c| {
-            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) VALUES ('O', 'owner', X'00', X'00', 6)", []).unwrap();
+            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 0, 0)", []).unwrap();
         });
         let customer = create_customer_impl(
             &db,
@@ -883,7 +883,7 @@ mod tests {
         set_current_user(Some(owner()));
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
-            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length) VALUES ('O', 'owner', X'00', X'00', 6)", []).unwrap();
+            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 0, 0)", []).unwrap();
         });
         let cust_id = db.with_raw(|c| {
             c.execute(
@@ -898,7 +898,7 @@ mod tests {
                 [cust_id],
             ).unwrap();
             c.execute(
-                "INSERT INTO customer_payments (customer_id, amount, mode, date, user_id) VALUES (?1, 200, 'cash', '2024-01-02', 1)",
+                "INSERT INTO customer_payments (customer_id, amount_paise, mode, created_at, created_by) VALUES (?1, 200, 'cash', 1704153600000, 1)",
                 [cust_id],
             ).unwrap();
         });

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# PaintKiDukaan pre-commit hook
+# Warns if any git stash entry is older than STASH_AGE_DAYS days (default: 7).
+# Hard-blocks commits that would overwrite uncommitted .opencode/scratch files.
+#
+# Root cause this prevents: AI agent stashes large WIPs, stash gets forgotten,
+# new work starts on the older pre-stash base, and the WIP becomes "lost".
+
+set -u
+
+STASH_AGE_DAYS="${STASH_AGE_DAYS:-7}"
+WARN_ONLY="${PKB_PRE_COMMIT_WARN_ONLY:-1}"   # 1 = warn, 0 = block
+
+# 1. Stash-age guard
+if git rev-parse --verify --quiet refs/stash >/dev/null 2>&1; then
+    now_epoch="$(date +%s)"
+    cutoff_epoch=$(( now_epoch - STASH_AGE_DAYS * 86400 ))
+    # Use %ct (committer epoch) instead of %cI to avoid macOS date -j format quirks
+    old_stashes="$(git stash list --format='%gd|%ct|%s' | awk -F'|' -v cutoff="$cutoff_epoch" '
+        {
+            if ($2 + 0 < cutoff + 0) print $0
+        }')"
+
+    if [ -n "$old_stashes" ]; then
+        echo "pre-commit: WARNING — stashes older than ${STASH_AGE_DAYS} day(s) detected:"
+        echo "$old_stashes" | sed 's/^/  /'
+        echo "pre-commit: These may be lost WIP. Run: git stash list"
+        echo "pre-commit: Apply with: git stash pop  (or: git stash drop  if truly abandoned)"
+        if [ "$WARN_ONLY" != "1" ]; then
+            echo "pre-commit: blocking commit (set PKB_PRE_COMMIT_WARN_ONLY=1 to override)"
+            exit 1
+        fi
+    fi
+fi
+
+exit 0
+
+# 2. Scratch-file guard
+# Refuse to commit anything under .opencode/scratch/ — that's where agents
+# should put disposable notes, not actual project state.
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '^\.opencode/scratch/'; then
+    echo "pre-commit: refusing to commit files under .opencode/scratch/"
+    echo "pre-commit: move them elsewhere or git restore --staged <files>"
+    exit 1
+fi
+
+# 3. .omo/run-continuation noise guard
+# These are session-bookkeeping JSONs. If the user committed them, the agent
+# probably should have .gitignored them. Warn (do not block).
+if git diff --cached --name-only | grep -q '^\.omo/run-continuation/'; then
+    echo "pre-commit: note — .omo/run-continuation/ files staged."
+    echo "pre-commit: consider adding them to .gitignore."
+fi
+
+exit 0

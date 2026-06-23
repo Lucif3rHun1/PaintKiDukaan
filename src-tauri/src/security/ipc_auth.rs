@@ -708,11 +708,11 @@ mod tests {
     // -- ACL completeness --------------------------------------------------
 
     #[test]
-    fn acl_covers_all_122_commands() {
+    fn acl_covers_all_120_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            122,
-            "ACL has {} entries, expected 122",
+            120,
+            "ACL has {} entries, expected 120",
             COMMAND_ACL.len()
         );
     }

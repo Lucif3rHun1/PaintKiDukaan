@@ -72,7 +72,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
               : "—"
           }
         />
-        <Row label="Opening" value={formatINR(customer.opening_balance)} />
+        <Row label="Opening" value={formatINR(customer.opening_balance_paise)} />
         <Row
           label="Total sales"
           value={outstanding ? formatINR(outstanding.total_sales) : "…"}

@@ -260,6 +260,15 @@ pub fn create_quotation(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sal
                 ],
             )?;
         }
+        // Normalize payment splits into sale_payments for cash-summary queries.
+        let now_epoch = chrono::Utc::now().timestamp_millis();
+        for pm in &sale.payment_modes {
+            c.execute(
+                "INSERT INTO sale_payments (sale_id, mode, amount_paise, created_at, created_by) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, pm.mode, pm.amount, now_epoch, user_id],
+            )?;
+        }
         Ok(id)
     })?;
     Ok(id)
@@ -356,8 +365,8 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
             )?;
             c.execute(
                 "INSERT INTO stock_movements
-                    (item_id,location_id,qty,type,ref_type,ref_id,user_id,created_at)
-                 VALUES (?1,?2,?3,'sale','sale',?4,?5,?6)",
+                    (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
+                 VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
                 params![
                     l.item_id,
                     default_location,
@@ -366,6 +375,15 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                     user_id,
                     now()
                 ],
+            )?;
+        }
+        // Normalize payment splits into sale_payments for cash-summary queries.
+        let now_epoch = chrono::Utc::now().timestamp_millis();
+        for pm in &sale.payment_modes {
+            c.execute(
+                "INSERT INTO sale_payments (sale_id, mode, amount_paise, created_at, created_by) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, pm.mode, pm.amount, now_epoch, user_id],
             )?;
         }
         Ok(id)
@@ -492,8 +510,8 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                 )?;
                 c.execute(
                     "INSERT INTO stock_movements
-                    (item_id,location_id,qty,type,ref_type,ref_id,user_id,created_at)
-                 VALUES (?1,?2,?3,'sale','sale',?4,?5,?6)",
+                    (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
+                 VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
                     params![item_id, default_location, -qty, new_id, user_id, now()],
                 )?;
             }
@@ -1038,12 +1056,13 @@ pub fn create_sale_return(
                 ],
             )?;
             // Positive stock movement (return restores stock).
+            let item_id = sale_item_id_to_item_id(c, l.sale_item_id)?;
             c.execute(
                 "INSERT INTO stock_movements
-                    (item_id,location_id,qty,type,ref_type,ref_id,user_id,created_at)
-                 VALUES (?1,?2,?3,'return','sale_return',?4,?5,?6)",
+                    (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
+                 VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='return'),(SELECT unit_id FROM items WHERE id=?1),'return',?4,?5,?6)",
                 params![
-                    sale_item_id_to_item_id(c, l.sale_item_id)?,
+                    item_id,
                     default_location,
                     l.qty,
                     return_id,
@@ -1467,6 +1486,21 @@ mod tests {
     #[test]
     fn sale_return_rejects_non_final_sale() {
         let db = Db::open_in_memory().unwrap();
+        // Seed user and item so FKs are satisfied.
+        db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) \
+                 VALUES ('test', 'owner', X'00', X'00', 6, 0, 0)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO items (sku_code, name, unit_id, unit_code, unit_label, retail_price_paise, cost_paise, created_at, updated_at) \
+                 VALUES ('SK001', 'Test Item', (SELECT id FROM units WHERE code='L' LIMIT 1), 'L', 'Liter', 100, 50, 0, 0)",
+                [],
+            )
+            .unwrap();
+        });
         // Seed a quotation (not a final sale) at id=1.
         db.with_raw(|c| {
             c.execute(
@@ -1482,7 +1516,7 @@ mod tests {
             reason: None,
             payment_modes: vec![],
             owner_pin: String::new(),
-            lines: vec![],
+            lines: vec![ret_line(1, 1, 100)],
         };
         let err = create_sale_return(&db, 1, payload).unwrap_err();
         assert!(matches!(err, ReturnError::NotAFinalSale(1, s) if s == "quotation"));
@@ -1491,6 +1525,21 @@ mod tests {
     #[test]
     fn sale_return_rejects_modes_sum_mismatch() {
         let db = Db::open_in_memory().unwrap();
+        // Seed user and item so FKs are satisfied.
+        db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) \
+                 VALUES ('test', 'owner', X'00', X'00', 6, 0, 0)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO items (sku_code, name, unit_id, unit_code, unit_label, retail_price_paise, cost_paise, created_at, updated_at) \
+                 VALUES ('SK001', 'Test Item', (SELECT id FROM units WHERE code='L' LIMIT 1), 'L', 'Liter', 100, 50, 0, 0)",
+                [],
+            )
+            .unwrap();
+        });
         // Seed a final sale with one item.
         db.with_raw(|c| {
             c.execute(

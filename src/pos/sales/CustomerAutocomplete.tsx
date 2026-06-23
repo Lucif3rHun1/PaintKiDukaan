@@ -77,7 +77,8 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, onChange, o
                 <span className="font-medium text-foreground">{c.name}</span>
                 <span className="ml-2 text-xs text-muted-foreground">{c.phone}</span>
               </span>
-              {c.is_active && <Badge variant="danger" size="sm">Flagged</Badge>}
+              {!c.is_active && <Badge variant="danger" size="sm">Inactive</Badge>}
+              {c.is_flagged && <Badge variant="warning" size="sm">Flagged</Badge>}
             </button>
           ))}
         </div>

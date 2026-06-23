@@ -52,12 +52,12 @@ pub fn daily_sales(
 ) -> Result<DailySalesReport, ReportsError> {
     db.with_conn(|c| -> Result<DailySalesReport, ReportsError> {
         let mut stmt = c.prepare(
-            "SELECT date(created_at/1000, 'unixepoch') AS day,
+            "SELECT date(s.date) AS day,
                     COUNT(*) AS bills,
-                    SUM(total_paise) AS grand_total,
-                    SUM(discount_paise) AS total_discount
-             FROM sales
-             WHERE status = 'finalized' AND day BETWEEN ?1 AND ?2
+                    SUM(total) AS grand_total,
+                    SUM(bill_discount) AS total_discount
+             FROM sales s
+             WHERE status = 'final' AND date(s.date) BETWEEN ?1 AND ?2
              GROUP BY day ORDER BY day ASC",
         )?;
         let agg_rows = stmt.query_map(params![from_date, to_date], |r| {
@@ -76,10 +76,10 @@ pub fn daily_sales(
         }
 
         let mut stmt2 = c.prepare(
-            "SELECT date(s.created_at/1000, 'unixepoch') AS day, sp.mode, sp.amount_paise
+            "SELECT date(s.date) AS day, sp.mode, sp.amount_paise
              FROM sales s
              JOIN sale_payments sp ON sp.sale_id = s.id
-             WHERE s.status = 'finalized' AND day BETWEEN ?1 AND ?2",
+             WHERE s.status = 'final' AND date(s.date) BETWEEN ?1 AND ?2",
         )?;
         let mode_rows = stmt2.query_map(params![from_date, to_date], |r| {
             Ok((
@@ -258,8 +258,8 @@ pub fn outstanding_report(db: &Db) -> Result<OutstandingReport, ReportsError> {
                  FROM (
                      SELECT c.id, c.name, c.phone,
                             c.opening_balance_paise
-                            + COALESCE((SELECT SUM(s.total_paise - s.paid_paise) FROM sales s
-                                        WHERE s.customer_id = c.id AND s.status = 'finalized'), 0)
+                            + COALESCE((SELECT SUM(s.total - s.paid_amount) FROM sales s
+                                        WHERE s.customer_id = c.id AND s.status = 'final'), 0)
                             - COALESCE((SELECT SUM(p.amount_paise) FROM customer_payments p
                                         WHERE p.customer_id = c.id), 0)
                             AS outstanding
@@ -503,8 +503,8 @@ mod tests {
         seed(&db);
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(
-                "INSERT INTO sales (sale_number, kind, status, customer_id, location_id, user_id, subtotal_paise, discount_paise, tax_paise, total_paise, paid_paise, balance_paise, created_at, updated_at)
-                 VALUES ('INV-TEST-0001','invoice','finalized',2,1,1,7500,0,0,7500,0,7500,0,0)",
+                "INSERT INTO sales (no, customer_id, status, user_id, subtotal, bill_discount, total, paid_amount, created_at, updated_at)
+                 VALUES ('INV-TEST-0001',2,'final',1,7500,0,7500,0,'2025-01-10 10:00:00','2025-01-10 10:00:00')",
                 [],
             )?;
             c.execute(
@@ -513,8 +513,8 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO sales (sale_number, kind, status, customer_id, location_id, user_id, subtotal_paise, discount_paise, tax_paise, total_paise, paid_paise, balance_paise, created_at, updated_at)
-                 VALUES ('INV-TEST-0002','invoice','finalized',4,1,1,12000,0,0,12000,0,12000,0,0)",
+                "INSERT INTO sales (no, customer_id, status, user_id, subtotal, bill_discount, total, paid_amount, created_at, updated_at)
+                 VALUES ('INV-TEST-0002',4,'final',1,12000,0,12000,0,'2025-01-10 11:00:00','2025-01-10 11:00:00')",
                 [],
             )?;
             c.execute(

@@ -2,7 +2,11 @@
 
 pub mod keywrap;
 pub mod migrations;
-pub mod queries;
+
+/// Canonical final schema for a fresh database — absorbs every table, index,
+/// and seed row from schema.sql plus migrations 001–009 so that a new DB
+/// needs zero migrations.
+pub(crate) const SCHEMA_FINAL: &str = include_str!("schema_final.sql");
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -38,7 +42,8 @@ impl Db {
     ///   1. `key`                — set the encryption key
     ///   2. `cipher_compatibility=4` — SQLCipher 4 compat
     ///   3. `cipher_page_size=4096`  — before any schema work
-    ///   4. Run migrations
+    ///   4. Schema bootstrap: fresh DBs get the complete final schema
+    ///      directly (no migrations); existing DBs run the migration chain.
     ///   5. `journal_mode=WAL`
     ///   6. `busy_timeout=5000`
     ///   7. `foreign_keys=ON`
@@ -55,12 +60,25 @@ impl Db {
              PRAGMA cipher_page_size = 4096;",
         )?;
 
-        // -- Run schema migrations ----------------------------------------
-        migrations::run(&mut conn).map_err(|e| {
-            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
-        })?;
+        // -- Schema bootstrap ---------------------------------------------
+        // Fresh DB: apply the complete final schema (absorbs all migrations).
+        // Existing DB: run the migration chain (hash-compatible).
+        if Self::is_fresh_database(&conn)? {
+            conn.execute_batch(SCHEMA_FINAL)?;
+            // Mark the DB as bootstrapped so that subsequent opens (e.g. after
+            // recovery setup → drop → reopen) recognise the final schema and
+            // skip the migration chain (which uses plain CREATE TABLE and would
+            // fail on existing tables).
+            conn.execute_batch("CREATE TABLE IF NOT EXISTS _schema_final_applied (dummy INTEGER)")?;
+        } else if !Self::has_final_schema(&conn)? {
+            migrations::run(&mut conn).map_err(|e| {
+                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
+                    e.to_string(),
+                )))
+            })?;
+        }
 
-        // -- Performance / safety (AFTER migrations, outside txn) ---------
+        // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\
              PRAGMA busy_timeout = 5000;\
@@ -71,6 +89,47 @@ impl Db {
             conn: Mutex::new(conn),
             dek: Zeroizing::new(*dek),
         })
+    }
+
+    /// Return `true` when the database at `conn` has never been initialised.
+    ///
+    /// "Fresh" means: neither `_rusqlite_migrations` nor any user table
+    /// exists.  This is safe to call after the SQLCipher key + cipher
+    /// PRAGMAs have been applied.
+    fn is_fresh_database(conn: &Connection) -> Result<bool, rusqlite::Error> {
+        // Check if the rusqlite_migration tracking table exists.
+        let has_migrations: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM sqlite_master \
+             WHERE type='table' AND name='_rusqlite_migrations'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_migrations {
+            return Ok(false);
+        }
+
+        // No migration table — check for any user table.
+        let has_user_tables: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM sqlite_master \
+             WHERE type='table' \
+               AND name NOT LIKE 'sqlite_%' \
+               AND name != '_rusqlite_migrations'",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(!has_user_tables)
+    }
+
+    /// Return `true` when the database was bootstrapped with `schema_final.sql`
+    /// (indicated by the `_schema_final_applied` marker table).  Such databases
+    /// already have the final schema and must not run the migration chain.
+    fn has_final_schema(conn: &Connection) -> Result<bool, rusqlite::Error> {
+        conn.query_row(
+            "SELECT COUNT(*) > 0 FROM sqlite_master \
+             WHERE type='table' AND name='_schema_final_applied'",
+            [],
+            |r| r.get(0),
+        )
     }
 
     /// Open an in-memory SQLCipher database for unit tests.
@@ -84,9 +143,20 @@ impl Db {
             "PRAGMA cipher_compatibility = 4;\
              PRAGMA cipher_page_size = 4096;",
         )?;
-        migrations::run(&mut conn).map_err(|e| {
-            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
-        })?;
+        if Self::is_fresh_database(&conn)? {
+            conn.execute_batch(SCHEMA_FINAL)?;
+            // Mark the DB as bootstrapped so that subsequent opens (e.g. after
+            // recovery setup → drop → reopen) recognise the final schema and
+            // skip the migration chain (which uses plain CREATE TABLE and would
+            // fail on existing tables).
+            conn.execute_batch("CREATE TABLE IF NOT EXISTS _schema_final_applied (dummy INTEGER)")?;
+        } else if !Self::has_final_schema(&conn)? {
+            migrations::run(&mut conn).map_err(|e| {
+                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
+                    e.to_string(),
+                )))
+            })?;
+        }
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\
              PRAGMA busy_timeout = 5000;\

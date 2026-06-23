@@ -29,6 +29,7 @@ const BARCODE_OPTIONS = {
   height: 36,
   width: 2,
   background: "transparent",
+  scale: 3,
 } as const;
 
 export interface LabelSpec {
@@ -113,7 +114,7 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   y += 4;
   for (const it of spec.sale.items) {
     doc.text(it.item_name.slice(0, 50), margin, y);
-    doc.text(`${it.qty}${it.unit_code ? " " + it.unit_code : ""}`, 120, y, { align: "right" });
+    doc.text(`${it.qty}${it.unit_type ? " " + it.unit_type : ""}`, 120, y, { align: "right" });
     doc.text(paiseToRupees(it.price), 145, y, { align: "right" });
     doc.text(paiseToRupees(it.line_discount), 165, y, { align: "right" });
     const lineValue = it.qty * it.price - it.line_discount;
@@ -206,13 +207,12 @@ export async function makeBarcodePng(value: string): Promise<string> {
     canvas.height = 300;
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    JsBarcode(canvas, value, {
-      ...BARCODE_OPTIONS,
-      format: "EAN13",
-      scale: 3,
-      width: 2,
-      background: "transparent",
-    });
+      JsBarcode(canvas, value, {
+        ...BARCODE_OPTIONS,
+        format: "EAN13",
+        width: 2,
+        background: "transparent",
+      });
     return canvas.toDataURL("image/png");
   } catch (eanErr) {
     console.warn(
@@ -228,7 +228,6 @@ export async function makeBarcodePng(value: string): Promise<string> {
       JsBarcode(canvas, value, {
         ...BARCODE_OPTIONS,
         format: "CODE128",
-        scale: 3,
         width: 2,
         background: "transparent",
       });

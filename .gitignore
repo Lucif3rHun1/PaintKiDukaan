@@ -32,6 +32,7 @@ Desktop.ini
 
 # TypeScript build info / emitted config files
 *.tsbuildinfo
+.tsbuild-node/
 vite.config.d.ts
 vite.config.js
 

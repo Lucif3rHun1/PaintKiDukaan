@@ -283,7 +283,7 @@ export default function InwardPage({ user: _user }: Props) {
       setStatus("Draft lines cleared");
     },
   });
-  useShortcut({ key: "K", ctrl: true, meta: true, description: "Add vendor", onMatch: () => undefined });
+  useShortcut({ key: "K", ctrl: true, meta: true, description: "Add vendor", onMatch: () => setAddVendorOpen(true) });
 
   return (
     <div className="space-y-4">

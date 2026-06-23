@@ -268,18 +268,14 @@ export default function App() {
     >
       {tab === "dashboard" && (
         <ErrorBoundary context="Dashboard">
-          <Dashboard
-            user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-            onNavigate={navigate}
-            onLock={lockNow}
-          />
+          <Dashboard />
         </ErrorBoundary>
       )}
       {tab === "sales" && salesRoute === "new" ? (
         <ErrorBoundary context="Sales — new">
           <SalesPage
             user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-            onBack={() => (window.location.hash = "#/sales")}
+            onExit={() => (window.location.hash = "#/sales")}
           />
         </ErrorBoundary>
       ) : null}

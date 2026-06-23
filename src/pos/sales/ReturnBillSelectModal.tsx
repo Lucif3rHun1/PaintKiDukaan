@@ -28,9 +28,8 @@ function buildDraftLine(item: SaleItem, saleId: number): ReturnCartLine {
     item_id: item.item_id,
     item_name: item.item_name,
     qty: item.qty,
-    price: item.unit_price_paise,
-    unit_id: item.unit_id,
-    unit_code: item.unit_code,
+    price: item.price,
+    unit_code: item.unit_type,
     sale_id: saleId,
     reason: null,
   };
@@ -56,7 +55,7 @@ export function ReturnBillSelectModal({ sale, onClose }: Props) {
   const [selected, setSelected] = useState<ReturnCartLine[]>(() => sale.items.map((item) => buildDraftLine(item, sale.id)));
 
   const returnTotal = useMemo(
-    () => selected.reduce((sum, line) => sum + Math.max(0, line.qty * line.unit_price_paise), 0),
+    () => selected.reduce((sum, line) => sum + Math.max(0, line.qty * line.price), 0),
     [selected],
   );
 
@@ -74,19 +73,19 @@ export function ReturnBillSelectModal({ sale, onClose }: Props) {
     const lines = selected.filter((line) => line.qty > 0);
     if (lines.length === 0) return;
 
-    const total = lines.reduce((sum, line) => sum + line.qty * line.unit_price_paise, 0);
-    const wasFullyPaid = sale.paid_paise >= sale.total_paise && sale.total_paise > 0;
-    const paymentModes = wasFullyPaid ? scalePayments(sale.payment_modes, total, sale.total_paise) : [];
+    const total = lines.reduce((sum, line) => sum + line.qty * line.price, 0);
+    const wasFullyPaid = sale.paid_amount >= sale.total && sale.total > 0;
+    const paymentModes = wasFullyPaid ? scalePayments(sale.payment_modes, total, sale.total) : [];
 
     const draft: ReturnDraft = {
-      source_no: sale.sale_number,
+      source_no: sale.no,
       customer_id: sale.customer_id,
       customer_name: sale.customer_name,
       customer_phone: null,
       location_id: 0,
       lines,
       payment_modes: paymentModes,
-      reason: `Return against ${sale.sale_number}`,
+      reason: `Return against ${sale.no}`,
     };
 
     try {
@@ -103,7 +102,7 @@ export function ReturnBillSelectModal({ sale, onClose }: Props) {
       open
       onClose={onClose}
       title="Select items to return"
-      description={`From ${sale.sale_number} · ${sale.customer_name ?? "Walk-in"}`}
+      description={`From ${sale.no} · ${sale.customer_name ?? "Walk-in"}`}
       size="lg"
     >
       <div className="space-y-4">
@@ -139,13 +138,13 @@ export function ReturnBillSelectModal({ sale, onClose }: Props) {
                   </td>
                   <td className="py-2">
                     <MoneyInput
-                      value={selected[index]?.unit_price_paise ?? item.unit_price_paise}
+                      value={selected[index]?.price ?? item.price}
                       onChange={(price) => updatePrice(index, price)}
                       className="w-28"
                     />
                   </td>
                   <td className="py-2 text-right font-medium text-foreground">
-                    <Money paise={Math.max(0, (selected[index]?.qty ?? 0) * (selected[index]?.unit_price_paise ?? item.unit_price_paise))} />
+                    <Money paise={Math.max(0, (selected[index]?.qty ?? 0) * (selected[index]?.price ?? item.price))} />
                   </td>
                 </tr>
               ))}

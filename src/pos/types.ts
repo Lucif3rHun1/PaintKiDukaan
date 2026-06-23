@@ -56,6 +56,17 @@ export interface Sale {
   items: SaleItem[];
 }
 
+export interface ReturnCartLine {
+  item_id: number;
+  item_name: string;
+  qty: number;
+  price: number;          // paise per unit
+  unit_code: string;      // e.g. "unit" | "box" (SaleItem.unit_type) or "L"/"pc" (ItemSearchHit.unit_code)
+  sale_id: number | null; // original sale id (for grouped per-sale returns)
+  reason: string | null;  // per-line override; falls back to header reason on submit
+  original_qty?: number;  // max returnable (the original invoice line qty)
+}
+
 export interface CartLine {
   item_id: number;
   item_name?: string;      // UI convenience

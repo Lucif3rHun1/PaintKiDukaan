@@ -131,8 +131,8 @@ pub fn cash_sales_for(
              FROM sale_payments sp
              JOIN sales s ON s.id = sp.sale_id
              WHERE s.user_id = ?1
-               AND date(s.created_at / 1000, 'unixepoch') = ?2
-               AND s.status = 'finalized'",
+               AND s.date = ?2
+               AND s.status = 'final'",
         )?;
         let rows = stmt.query_map(params![user_id, date], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))

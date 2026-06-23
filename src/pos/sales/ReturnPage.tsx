@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, RotateCcw, Save, Search, UserMinus, UserPlus } from "lucide-react";
+import { ArrowLeft, FileSearch, RotateCcw, Save, Search, UserMinus, UserPlus } from "lucide-react";
 
 import { Alert, Badge, Button, Card, InlineDialog, Money, MoneyInput } from "../../components/ui";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
 import { listLocations } from "../../domain/locations/api";
 import { createSalesReturn, getSaleByInvoiceNumber } from "../../domain/ipc";
-import type { Customer, CustomerType, Location, CreateSalesReturnPayload } from "../../domain/types";
+import type { Customer, CustomerType, Location, CreateSaleReturnPayload } from "../../domain/types";
 import { toast } from "../../lib/feedback/toast";
 import { useShortcut } from "../../lib/shortcuts";
 import type { ItemSearchHit, PaymentSplit, ReturnCartLine, Sale, SaleItem } from "../types";
@@ -30,10 +30,8 @@ function buildReturnLine(item: SaleItem, saleId: number): ReturnCartLine {
     item_id: item.item_id,
     item_name: item.item_name,
     qty: 0,
-    price: item.unit_price_paise,
-    unit_id: item.unit_id,
-    unit_code: item.unit_code,
-    unit_label: item.unit_label,
+    price: item.price,
+    unit_code: item.unit_type,
     sale_id: saleId,
     reason: null,
     original_qty: item.qty,
@@ -66,6 +64,7 @@ export default function ReturnPage({ user, onBack }: Props) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplit[]>([]);
   const [reason, setReason] = useState("");
+  const [reasonTouched, setReasonTouched] = useState(false);
   const [ownerPin, setOwnerPin] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -87,7 +86,7 @@ export default function ReturnPage({ user, onBack }: Props) {
         return;
       }
       setOriginalSale(sale);
-      setInvoiceNumber(sale.sale_number);
+      setInvoiceNumber(sale.no);
       setCustomerId(sale.customer_id);
       if (sale.customer_id != null && sale.customer_name) {
         setCustomer({
@@ -106,7 +105,6 @@ export default function ReturnPage({ user, onBack }: Props) {
       } else {
         setCustomer(null);
       }
-      setLocationId(sale.location_id);
       const returnLines = sale.items.map((item) => buildReturnLine(item, sale.id));
       setLines((current) => {
         if (current.length === 0) return returnLines;
@@ -117,12 +115,12 @@ export default function ReturnPage({ user, onBack }: Props) {
           return existing ? { ...line, qty: Math.min(existing.qty, max) } : line;
         });
       });
-      if (!reason.trim()) {
-        setReason(`Return against ${sale.sale_number}`);
+      if (!reasonTouched && !reason.trim()) {
+        setReason(`Return against ${sale.no}`);
       }
-      const fullReturnTotal = sale.items.reduce((sum, item) => sum + item.qty * item.unit_price_paise, 0);
-      if (sale.paid_paise >= sale.total_paise && sale.total_paise > 0 && paymentSplits.length === 0) {
-        setPaymentSplits(scalePayments(sale.payment_modes, fullReturnTotal, sale.total_paise));
+      const fullReturnTotal = sale.items.reduce((sum, item) => sum + item.qty * item.price, 0);
+      if (sale.paid_amount >= sale.total && sale.total > 0 && paymentSplits.length === 0) {
+        setPaymentSplits(scalePayments(sale.payment_modes, fullReturnTotal, sale.total));
       }
     } catch (e) {
       setFormError(extractError(e));
@@ -134,52 +132,72 @@ export default function ReturnPage({ user, onBack }: Props) {
 
   useEffect(() => {
     listCustomerTypes().then(setCustomerTypes).catch((err: unknown) => console.error("Failed to load customer types:", err));
+  }, []);
+
+  useEffect(() => {
     listLocations(false)
       .then((rows) => {
         const active = rows.filter((location) => location.is_active);
         setLocations(active);
-        const defaultLocationId = active[0]?.id || 0;
-        setLocationId((current) => current || defaultLocationId);
-
-        try {
-          const raw = localStorage.getItem(RETURN_DRAFT_KEY);
-          if (raw) {
-            const draft = JSON.parse(raw) as ReturnDraft;
-            localStorage.removeItem(RETURN_DRAFT_KEY);
-            if (draft.lines.length > 0) {
-              if (draft.customer_id != null && draft.customer_name != null) {
-                setCustomerId(draft.customer_id);
-                setCustomer({
-                  id: draft.customer_id,
-                  name: draft.customer_name,
-                  phone: draft.customer_phone ?? null,
-                  email: null,
-                  address: null,
-                  customer_type_id: null,
-                  type_name: null,
-                  opening_balance_paise: 0,
-                  is_active: true,
-                  created_at: "",
-                  updated_at: "",
-                });
-              }
-              setLines(draft.lines);
-              setReason(draft.reason);
-              setLocationId(draft.location_id || defaultLocationId);
-              if (draft.payment_modes.length > 0) {
-                setPaymentSplits(draft.payment_modes);
-              }
-              if (draft.source_no) {
-                setInvoiceNumber(draft.source_no);
-                void loadSaleByInvoiceNumber(draft.source_no);
-              }
-            }
-          }
-        } catch {
-          // ignore malformed or missing draft
-        }
+        setLocationId((current) => current || active[0]?.id || 0);
       })
       .catch(() => setLocations([]));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(RETURN_DRAFT_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+    let draft: ReturnDraft;
+    try {
+      draft = JSON.parse(raw) as ReturnDraft;
+    } catch {
+      return;
+    }
+    try {
+      localStorage.removeItem(RETURN_DRAFT_KEY);
+    } catch {
+      // ignore
+    }
+    if (draft.lines.length === 0) return;
+
+    (async () => {
+      if (draft.customer_id != null && draft.customer_name != null) {
+        if (cancelled) return;
+        setCustomerId(draft.customer_id);
+        setCustomer({
+          id: draft.customer_id,
+          name: draft.customer_name,
+          phone: draft.customer_phone ?? null,
+          email: null,
+          address: null,
+          customer_type_id: null,
+          type_name: null,
+          opening_balance_paise: 0,
+          is_active: true,
+          created_at: "",
+          updated_at: "",
+        });
+      }
+      if (cancelled) return;
+      setLines(draft.lines);
+      setReason(draft.reason);
+      setReasonTouched(true);
+      if (draft.location_id > 0) setLocationId(draft.location_id);
+      if (draft.payment_modes.length > 0) setPaymentSplits(draft.payment_modes);
+      if (draft.source_no) {
+        setInvoiceNumber(draft.source_no);
+        void loadSaleByInvoiceNumber(draft.source_no);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const total = useMemo(
@@ -220,6 +238,7 @@ export default function ReturnPage({ user, onBack }: Props) {
           line.item_id === item.id ? { ...line, qty: Math.min(line.qty + 1, max) } : line,
         );
       }
+      const originalItem = originalSale?.items.find((saleItem) => saleItem.item_id === item.id);
       return [
         ...prev,
         {
@@ -227,11 +246,10 @@ export default function ReturnPage({ user, onBack }: Props) {
           item_name: item.name,
           qty: 1,
           price: item.retail_price_paise,
-          unit_id: item.unit_id,
           unit_code: item.unit_code,
-          unit_label: item.unit_label,
           sale_id: originalSale?.id ?? null,
           reason: null,
+          original_qty: originalItem?.qty,
         },
       ];
     });
@@ -299,33 +317,38 @@ export default function ReturnPage({ user, onBack }: Props) {
       setFormError("One or more return quantities exceed the original invoice quantity.");
       return;
     }
+    if (total > 0 && paymentSplits.length === 0) {
+      setFormError("Add at least one refund tender to record how the customer was paid back.");
+      return;
+    }
     const returnLines = lines.filter((line) => line.qty > 0);
     if (returnLines.length === 0) {
       setFormError("Select at least one item to return.");
       return;
     }
-    const payload: CreateSalesReturnPayload = {
-      invoice_number: invoiceNumber.trim(),
-      items: returnLines.map((line) => ({
-        item_id: line.item_id,
-        quantity: line.qty,
-        unit: line.unit_code,
+    const payload: CreateSaleReturnPayload = {
+      sale_id: originalSale?.id ?? 0,
+      lines: returnLines.map((line) => ({
+        sale_item_id: line.item_id,
+        qty: line.qty,
+        refund_paise: Math.round(line.qty * line.price),
+        shade_note: line.reason ?? undefined,
       })),
       payment_modes: paymentSplits.map((split) => ({
         mode: split.mode,
-        amount_paise: split.amount,
+        amount: split.amount,
       })),
-      reason: reason.trim(),
+      reason: reason.trim() || undefined,
       owner_pin: ownerPin,
     };
     try {
       const saved = await toast.promise(createSalesReturn(payload), {
         loading: "Saving return…",
-        success: (saleReturn) => `Return ${saleReturn.return_number ?? String(saleReturn.id)} saved`,
+        success: (returnId) => `Return #${returnId} saved`,
         error: (e) => (e as Error)?.message ?? "Return save failed",
       });
       clearAll();
-      setStatus(`Return ${saved.return_number ?? saved.id} saved`);
+      setStatus(`Return #${saved} saved`);
     } catch (e) {
       setStatus(`Error: ${extractError(e)}`);
     }
@@ -342,8 +365,19 @@ export default function ReturnPage({ user, onBack }: Props) {
     preventDefault: false,
     description: "Clear return or close dialog",
     onMatch: () => {
-      if (addCustomerOpen) setAddCustomerOpen(false);
-      else if (lines.length > 0) clearAll();
+      if (addCustomerOpen) {
+        setAddCustomerOpen(false);
+        return;
+      }
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        const tag = active.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+          active.blur();
+          return;
+        }
+      }
+      if (lines.length > 0) clearAll();
     },
   });
 
@@ -403,7 +437,7 @@ export default function ReturnPage({ user, onBack }: Props) {
             <Button
               type="button"
               variant="secondary"
-              icon={Search}
+              icon={FileSearch}
               onClick={() => void loadSaleByInvoiceNumber(invoiceNumber)}
               loading={loadingSale}
               disabled={!invoiceNumber.trim()}
@@ -416,7 +450,7 @@ export default function ReturnPage({ user, onBack }: Props) {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <span>
                   <span className="text-muted-foreground">Invoice</span>{" "}
-                  <span className="font-medium text-foreground">{originalSale.sale_number}</span>
+                  <span className="font-medium text-foreground">{originalSale.no}</span>
                 </span>
                 <span>
                   <span className="text-muted-foreground">Customer</span>{" "}
@@ -424,11 +458,11 @@ export default function ReturnPage({ user, onBack }: Props) {
                 </span>
                 <span>
                   <span className="text-muted-foreground">Total</span>{" "}
-                  <Money paise={originalSale.total_paise} className="font-medium text-foreground" />
+                  <Money paise={originalSale.total} className="font-medium text-foreground" />
                 </span>
                 <span>
                   <span className="text-muted-foreground">Paid</span>{" "}
-                  <Money paise={originalSale.paid_paise} className="font-medium text-foreground" />
+                  <Money paise={originalSale.paid_amount} className="font-medium text-foreground" />
                 </span>
               </div>
             </div>
@@ -477,7 +511,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                         <div className="font-mono text-[10px] text-muted-foreground">#{line.item_id}</div>
                       </td>
                       <td className="py-2 text-muted-foreground">
-                        {line.original_qty ?? "—"} {line.unit_label || line.unit_code}
+                        {line.original_qty ?? "—"} {line.unit_code}
                       </td>
                       <td className="py-2">
                         <div className="flex flex-col gap-1">
@@ -491,8 +525,8 @@ export default function ReturnPage({ user, onBack }: Props) {
                               onChange={(event) => updateLineQty(index, Number(event.target.value))}
                               className="input h-9 w-20 px-2 text-sm"
                             />
-                            {line.unit_label || line.unit_code ? (
-                              <span className="text-[11px] text-muted-foreground">{line.unit_label || line.unit_code}</span>
+                            {line.unit_code ? (
+                              <span className="text-[11px] text-muted-foreground">{line.unit_code}</span>
                             ) : null}
                           </div>
                           {qtyErrors[line.item_id] ? (
@@ -557,7 +591,8 @@ export default function ReturnPage({ user, onBack }: Props) {
                     <span className="text-muted-foreground">Customer</span>
                     <div className="truncate font-medium text-foreground">{customer.name}</div>
                     {customer.phone ? <div className="truncate text-xs text-muted-foreground">{customer.phone}</div> : null}
-                    {customer.is_active ? <Badge variant="danger" size="sm">Flagged</Badge> : null}
+                    {!customer.is_active ? <Badge variant="danger" size="sm">Inactive</Badge> : null}
+                    {customer.is_flagged ? <Badge variant="warning" size="sm">Flagged</Badge> : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Button
@@ -608,7 +643,10 @@ export default function ReturnPage({ user, onBack }: Props) {
                 <span className="font-medium text-foreground">Return reason</span>
                 <textarea
                   value={reason}
-                  onChange={(event) => setReason(event.target.value)}
+                  onChange={(event) => {
+                    setReason(event.target.value);
+                    setReasonTouched(true);
+                  }}
                   rows={3}
                   placeholder="Damaged tin, wrong shade, customer exchange…"
                   className="input min-h-24 w-full px-3 py-2"

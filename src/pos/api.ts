@@ -3,7 +3,7 @@
 // UI can still be exercised during development.
 
 import { tauriInvoke } from "../lib/security/tauri";
-import type { HeldBill } from "../domain/types";
+import type { HeldBill, ImportResult } from "../domain/types";
 import type {
   BackupGate,
   CashSalesSummary,
@@ -50,12 +50,10 @@ export const lastCost = (itemId: number): Promise<number | null> =>
   isTauri() ? tauriInvoke<number | null>("cmd_last_cost", { item_id: itemId }) : Promise.resolve(null);
 export const lastRetail = (itemId: number): Promise<number | null> =>
   isTauri() ? tauriInvoke<number | null>("cmd_last_retail", { item_id: itemId }) : Promise.resolve(null);
-export const importInwardCsv = (
-  csvText: string,
-): Promise<{ imported: number; skipped: number; errors: string[] }> =>
+export const importInwardCsv = (csvText: string): Promise<ImportResult> =>
   isTauri()
-    ? tauriInvoke<{ imported: number; skipped: number; errors: string[] }>("cmd_import_inward_csv", { csv_text: csvText })
-    : Promise.resolve({ imported: 0, skipped: 0, errors: ["not in Tauri context"] });
+    ? tauriInvoke<ImportResult>("cmd_import_inward_csv", { csv_text: csvText })
+    : Promise.resolve({ total_rows: 0, created: 0, skipped: 0, errors: [] });
 export const listPurchases = (fromDate?: string, toDate?: string, limit = 100): Promise<Purchase[]> =>
   isTauri()
     ? tauriInvoke<Purchase[]>("cmd_list_purchases", { from_date: fromDate, to_date: toDate, limit })
