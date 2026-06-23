@@ -227,24 +227,24 @@ export function ItemList({ role }: Props) {
   const pageIds = useMemo(() => items.map((item) => item.id), [items]);
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setEditing(null);
     setMode("create");
-  };
+  }, []);
 
-  const openEdit = (item: Item) => {
+  const openEdit = useCallback((item: Item) => {
     setEditing(item);
     setMode("edit");
-  };
+  }, []);
 
-  const handleSaved = (saved: Item) => {
+  const handleSaved = useCallback((saved: Item) => {
     toast.success(`Saved ${saved.name}`);
     setMode("list");
     setEditing(null);
     refetch();
-  };
+  }, [refetch]);
 
-  const handleArchive = async (item: Item) => {
+  const handleArchive = useCallback(async (item: Item) => {
     try {
       await updateItem(item.id, { is_active: !item.is_active });
       toast.success(item.is_active ? "Archived" : "Restored");
@@ -257,9 +257,9 @@ export function ItemList({ role }: Props) {
     } catch (e) {
       toast.error(extractError(e));
     }
-  };
+  }, [queryClient]);
 
-  const handlePrint = async (item: Item) => {
+  const handlePrint = useCallback(async (item: Item) => {
     if (!item.barcode) {
       toast.error("Item has no barcode.");
       return;
@@ -277,9 +277,9 @@ export function ItemList({ role }: Props) {
       console.warn("printLabel failed", e);
       toast.error("Failed to generate label");
     }
-  };
+  }, []);
 
-  const handleBulkArchive = async () => {
+  const handleBulkArchive = useCallback(async () => {
     const selected = allItems.filter((item) => selectedIds.has(item.id));
     if (selected.length === 0) return;
     try {
@@ -290,25 +290,25 @@ export function ItemList({ role }: Props) {
     } catch (e) {
       toast.error(extractError(e));
     }
-  };
+  }, [allItems, selectedIds, queryClient]);
 
-  const toggleSelected = (id: number) => {
+  const toggleSelected = useCallback((id: number) => {
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const togglePageSelected = () => {
+  const togglePageSelected = useCallback(() => {
     setSelectedIds((current) => {
       const next = new Set(current);
       if (allPageSelected) pageIds.forEach((id) => next.delete(id));
       else pageIds.forEach((id) => next.add(id));
       return next;
     });
-  };
+  }, [allPageSelected, pageIds]);
 
   if (mode === "create") {
     return (

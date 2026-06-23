@@ -131,20 +131,23 @@ export default function ReturnPage({ user, onBack }: Props) {
   }
 
   useEffect(() => {
-    listCustomerTypes().then((d) => setCustomerTypes(d ?? [])).catch((err: unknown) => console.error("Failed to load customer types:", err));
-  }, []);
-
-  useEffect(() => {
-    listLocations(false)
-      .then((rows) => {
+    // Independent dropdown data — fire in parallel; allSettled isolates failures.
+    Promise.allSettled([
+      listCustomerTypes().then((d) => setCustomerTypes(d ?? [])),
+      listLocations(false).then((rows) => {
         const active = rows.filter((location) => location.is_active);
         setLocations(active);
         setLocationId((current) => current || active[0]?.id || 0);
-      })
-      .catch((e) => {
-        console.error("[ReturnPage] failed to load locations", e);
+      }),
+    ]).then(([typesResult, locationsResult]) => {
+      if (typesResult.status === "rejected") {
+        console.error("[ReturnPage] failed to load customer types", typesResult.reason);
+      }
+      if (locationsResult.status === "rejected") {
+        console.error("[ReturnPage] failed to load locations", locationsResult.reason);
         setLocations([]);
-      });
+      }
+    });
   }, []);
 
   useEffect(() => {

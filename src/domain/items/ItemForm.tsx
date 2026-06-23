@@ -68,41 +68,36 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   const [openingStock, setOpeningStock] = useState("0");
 
   useEffect(() => {
-    listLocations(false)
-      .then((locs) => {
+    // Independent catalogue fetches run in parallel; allSettled isolates
+    // failures so one bad query doesn't blank the other dropdowns.
+    Promise.allSettled([
+      listLocations(false).then((locs) => {
         setLocations(locs);
         if (primaryLocationId === 0 && locs.length > 0) {
           setPrimaryLocationId(locs[0].id);
         }
-      })
-      .catch((e) => {
-        console.error("[ItemForm] failed to load locations", e);
-        setLocations([]);
-      });
-    listBrands()
-      .then((b) => setBrands(b))
-      .catch((e) => {
-        console.error("[ItemForm] failed to load brands", e);
-        setBrands([]);
-      });
-    listCategories()
-      .then((c) => setCategories(c))
-      .catch((e) => {
-        console.error("[ItemForm] failed to load categories", e);
-        setCategories([]);
-      });
-    listUnits()
-      .then((u) => {
+      }),
+      listBrands().then((b) => setBrands(b)),
+      listCategories().then((c) => setCategories(c)),
+      listUnits().then((u) => {
         setUnits(u);
         const firstActive = u.find((x) => x.is_active);
         if (firstActive && mode === "create") {
           setUnitId((current) => current ?? firstActive.id);
         }
-      })
-      .catch((e) => {
-        console.error("[ItemForm] failed to load units", e);
-        setUnits([]);
+      }),
+    ]).then((results) => {
+      results.forEach((r, i) => {
+        if (r.status === "rejected") {
+          const label = ["locations", "brands", "categories", "units"][i];
+          console.error(`[ItemForm] failed to load ${label}`, r.reason);
+          if (label === "locations") setLocations([]);
+          if (label === "brands") setBrands([]);
+          if (label === "categories") setCategories([]);
+          if (label === "units") setUnits([]);
+        }
       });
+    });
   }, [mode]);
 
   useEffect(() => {

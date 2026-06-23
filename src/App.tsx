@@ -2,7 +2,7 @@ import { tauriInvoke as invoke } from "./lib/security/tauri";
 import { initSessionLog } from "./lib/security/sessionLog";
 import logo from "./assets/logo-64.png";
 import { Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 /* ── Security UI ─────────────────────────────────────────── */
 import { FirstLaunch } from "./lib/security/firstLaunch";
@@ -13,39 +13,73 @@ import { UserManagement } from "./lib/security/userManagement";
 import { RoleGuard } from "./lib/security/roleGuard";
 
 /* ── Domain UI (Slice B) ─────────────────────────────────── */
-import { ItemList } from "./domain/items/ItemList";
-import { BulkLabelsPage } from "./domain/items/BulkLabelsPage";
-import { BrandAdmin } from "./domain/items/BrandAdmin";
-import { CustomerList } from "./domain/customers/CustomerList";
 import { CustomerForm } from "./domain/customers/CustomerForm";
 import { CustomerDetail } from "./domain/customers/CustomerDetail";
 import { CustomerPaymentForm } from "./domain/customers/CustomerPaymentForm";
-import { VendorList } from "./domain/vendors/VendorList";
 import { VendorForm } from "./domain/vendors/VendorForm";
 import { VendorPaymentForm } from "./domain/vendors/VendorPaymentForm";
 import { VendorDetail } from "./domain/vendors/VendorDetail";
-import { customerOutstanding } from "./domain/customers/api";
 import { listCustomerTypes } from "./domain/customerTypes/api";
 /* ── POS UI (Slice C) ────────────────────────────────────── */
-import SalesPage from "./pos/sales/SalesPage";
-import { SalesListPage } from "./pos/sales/SalesListPage";
-import ReturnPage from "./pos/sales/ReturnPage";
-import InwardPage from "./pos/purchases/InwardPage";
-import SalesReportPage from "./pos/salesReport/SalesReportPage";
-
-/* ── Shell UI (Slice D) ──────────────────────────────────── */
-import { Dashboard } from "./shell/routes/Dashboard";
-import { Settings as SettingsPage } from "./shell/routes/Settings";
-import { AdminLogs } from "./shell/routes/AdminLogs";
-import { MasterHealthPage } from "./shell/health/MasterHealthPage";
 import { AppShell, type AppShellTab } from "./shell/AppShell";
 import { InlineDialog } from "./components/ui/InlineDialog";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import type { Customer, CustomerType, Vendor } from "./domain/types";
 
+/* Route pages are split into per-route Vite chunks via React.lazy so the
+ * initial bundle ships only the shell + Dashboard. The `.then(m => ({ default: m.X }))`
+ * wrapper is required because most pages use named exports. */
+const ItemList = lazy(() =>
+  import("./domain/items/ItemList").then((m) => ({ default: m.ItemList })),
+);
+const BulkLabelsPage = lazy(() =>
+  import("./domain/items/BulkLabelsPage").then((m) => ({ default: m.BulkLabelsPage })),
+);
+const BrandAdmin = lazy(() =>
+  import("./domain/items/BrandAdmin").then((m) => ({ default: m.BrandAdmin })),
+);
+const CustomerList = lazy(() =>
+  import("./domain/customers/CustomerList").then((m) => ({ default: m.CustomerList })),
+);
+const VendorList = lazy(() =>
+  import("./domain/vendors/VendorList").then((m) => ({ default: m.VendorList })),
+);
+const SalesPage = lazy(() => import("./pos/sales/SalesPage"));
+const SalesListPage = lazy(() =>
+  import("./pos/sales/SalesListPage").then((m) => ({ default: m.SalesListPage })),
+);
+const ReturnPage = lazy(() => import("./pos/sales/ReturnPage"));
+const InwardPage = lazy(() => import("./pos/purchases/InwardPage"));
+const SalesReportPage = lazy(() => import("./pos/salesReport/SalesReportPage"));
+const Dashboard = lazy(() =>
+  import("./shell/routes/Dashboard").then((m) => ({ default: m.Dashboard })),
+);
+const SettingsPage = lazy(() =>
+  import("./shell/routes/Settings").then((m) => ({ default: m.Settings })),
+);
+const AdminLogs = lazy(() =>
+  import("./shell/routes/AdminLogs").then((m) => ({ default: m.AdminLogs })),
+);
+const MasterHealthPage = lazy(() =>
+  import("./shell/health/MasterHealthPage").then((m) => ({ default: m.MasterHealthPage })),
+);
+
 const THIRTY_SECONDS = 30_000;
 const FIFTEEN_MINUTES = 15 * 60 * 1_000;
 const LOCKED_SESSION = { user: null, locked: true, pinRole: "real" as const };
+
+function RouteFallback() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex h-64 items-center justify-center text-sm text-muted-foreground"
+    >
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+      Loading…
+    </div>
+  );
+}
 
 /* ── Hash routing ───────────────────────────────────────── */
 const HASH_REDIRECTS: Record<string, string> = {
@@ -271,51 +305,63 @@ export default function App() {
     >
       {tab === "dashboard" && (
         <ErrorBoundary context="Dashboard">
-          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-            <Dashboard />
-          </div>
+          <Suspense fallback={<RouteFallback />}>
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <Dashboard />
+            </div>
+          </Suspense>
         </ErrorBoundary>
       )}
       {tab === "sales" && salesRoute === "new" ? (
         <ErrorBoundary context="Sales — new">
-          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-            <SalesPage
-              user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-              onExit={() => (window.location.hash = "#/sales")}
-            />
-          </div>
+          <Suspense fallback={<RouteFallback />}>
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <SalesPage
+                user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+                onExit={() => (window.location.hash = "#/sales")}
+              />
+            </div>
+          </Suspense>
         </ErrorBoundary>
       ) : null}
       {tab === "sales" && salesRoute === "return" ? (
         <ErrorBoundary context="Sales — return">
-          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-            <ReturnPage
-              user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-              onBack={() => (window.location.hash = "#/sales")}
-            />
-          </div>
+          <Suspense fallback={<RouteFallback />}>
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <ReturnPage
+                user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+                onBack={() => (window.location.hash = "#/sales")}
+              />
+            </div>
+          </Suspense>
         </ErrorBoundary>
       ) : null}
       {tab === "sales" && salesRoute === "list" ? (
         <ErrorBoundary context="Sales — list">
-          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-            <SalesListPage onCreate={() => (window.location.hash = "#/sales/new")} />
-          </div>
+          <Suspense fallback={<RouteFallback />}>
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <SalesListPage onCreate={() => (window.location.hash = "#/sales/new")} />
+            </div>
+          </Suspense>
         </ErrorBoundary>
       ) : null}
       {tab === "inward" && (
         <ErrorBoundary context="Inward">
-          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-            <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
-          </div>
+          <Suspense fallback={<RouteFallback />}>
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+            </div>
+          </Suspense>
         </ErrorBoundary>
       )}
       {tab === "sales-report" && (
         <RoleGuard minRole="stocker">
           <ErrorBoundary context="Sales Report">
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-              <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
-            </div>
+            <Suspense fallback={<RouteFallback />}>
+              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+                <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+              </div>
+            </Suspense>
           </ErrorBoundary>
         </RoleGuard>
       )}
@@ -326,7 +372,9 @@ export default function App() {
             <ItemSubNav active="items" />
           </div>
           <ErrorBoundary context="Inventory">
-            <ItemList role={role} />
+            <Suspense fallback={<RouteFallback />}>
+              <ItemList role={role} />
+            </Suspense>
           </ErrorBoundary>
         </div>
       )}
@@ -337,60 +385,72 @@ export default function App() {
             <ItemSubNav active="barcodes" />
           </div>
           <ErrorBoundary context="Barcode Labels">
-            <BulkLabelsPage />
+            <Suspense fallback={<RouteFallback />}>
+              <BulkLabelsPage />
+            </Suspense>
           </ErrorBoundary>
         </div>
       )}
       {tab === "vendors" && (
         <ErrorBoundary context="Vendors">
-          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-            <VendorList
-              role={role}
-              refreshKey={refreshKey}
-              onCreate={() => setVendorCreateOpen(true)}
-              onSelect={(v) => setVendorDetailTarget(v)}
-              onRecordPayment={(v) => setVendorPaymentTarget(v)}
-            />
-          </div>
+          <Suspense fallback={<RouteFallback />}>
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <VendorList
+                role={role}
+                refreshKey={refreshKey}
+                onCreate={() => setVendorCreateOpen(true)}
+                onSelect={(v) => setVendorDetailTarget(v)}
+                onRecordPayment={(v) => setVendorPaymentTarget(v)}
+              />
+            </div>
+          </Suspense>
         </ErrorBoundary>
       )}
       {tab === "customers" && (
         <ErrorBoundary context="Customers">
-          <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-            <CustomerList
-              role={role}
-              refreshKey={refreshKey}
-              onCreate={() => setCustomerCreateOpen(true)}
-              onSelect={(c) => setCustomerDetailTarget(c)}
-              onRecordPayment={(c) => setCustomerPaymentTarget(c)}
-            />
-          </div>
+          <Suspense fallback={<RouteFallback />}>
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <CustomerList
+                role={role}
+                refreshKey={refreshKey}
+                onCreate={() => setCustomerCreateOpen(true)}
+                onSelect={(c) => setCustomerDetailTarget(c)}
+                onRecordPayment={(c) => setCustomerPaymentTarget(c)}
+              />
+            </div>
+          </Suspense>
         </ErrorBoundary>
       )}
       {tab === "settings" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Settings">
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-              <SettingsPage />
-            </div>
+            <Suspense fallback={<RouteFallback />}>
+              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+                <SettingsPage />
+              </div>
+            </Suspense>
           </ErrorBoundary>
         </RoleGuard>
       )}
       {tab === "health" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Health">
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-              <MasterHealthPage />
-            </div>
+            <Suspense fallback={<RouteFallback />}>
+              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+                <MasterHealthPage />
+              </div>
+            </Suspense>
           </ErrorBoundary>
         </RoleGuard>
       )}
       {tab === "logs" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Logs">
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-              <AdminLogs />
-            </div>
+            <Suspense fallback={<RouteFallback />}>
+              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+                <AdminLogs />
+              </div>
+            </Suspense>
           </ErrorBoundary>
         </RoleGuard>
       )}

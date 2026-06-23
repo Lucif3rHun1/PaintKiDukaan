@@ -13,7 +13,8 @@ import { ItemForm } from "../../domain/items/ItemForm";
 import { listItems, updateItem } from "../../domain/items/api";
 import { listLocations } from "../../domain/locations/api";
 import { InlineVendorForm } from "../../domain/vendors/InlineVendorForm";
-import { createVendor, listVendors, vendorOutstanding } from "../../domain/vendors/api";
+import { createVendor, listVendors } from "../../domain/vendors/api";
+import { outstandingReport } from "../api";
 import type { Item, Location, Vendor } from "../../domain/types";
 import { createInward, lastCost, lastRetail, listPurchases } from "../api";
 import { formatRupeesFromPaise } from "../../lib/money";
@@ -116,17 +117,17 @@ export default function InwardPage({ user: _user }: Props) {
 
   useEffect(() => {
     if (vendors.length === 0) return;
-    Promise.all(
-      vendors.map((v) =>
-        vendorOutstanding(v.id)
-          .then((r) => [v.id, r.outstanding] as const)
-          .catch(() => [v.id, 0] as const),
-      ),
-    ).then((rows) => {
-      const map: Record<number, number> = {};
-      for (const [id, amt] of rows) map[id] = amt;
-      setVendorOutstandings(map);
-    });
+    // Batch: one round-trip instead of N vendorOutstanding() calls.
+    outstandingReport()
+      .then((report) => {
+        const map: Record<number, number> = {};
+        for (const v of report.vendors) map[v.vendor_id] = v.outstanding;
+        setVendorOutstandings(map);
+      })
+      .catch((e: unknown) => {
+        console.error("[InwardPage] failed to load outstanding report", e);
+        setVendorOutstandings({});
+      });
   }, [vendors]);
 
   const filteredVendors = useMemo(() => {

@@ -41,7 +41,7 @@ function CategoryTable({
           type="button"
           onClick={() => onDeactivate(c.id)}
           disabled={busy}
-          className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+          className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive outline-none transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           Deactivate
         </button>
@@ -170,7 +170,7 @@ export function CategoryAdmin({ role }: Props) {
           type="button"
           onClick={addCategory}
           disabled={addDisabled}
-          className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           Add category
         </button>
