@@ -168,6 +168,12 @@ export function BrandAdmin({ role }: Props) {
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void addBrand();
+              }
+            }}
             placeholder="Asian Paints"
             maxLength={60}
             className="rounded border border-border bg-card px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
@@ -179,6 +185,12 @@ export function BrandAdmin({ role }: Props) {
             type="text"
             value={newPrefix}
             onChange={(e) => setNewPrefix(e.target.value.toUpperCase())}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void addBrand();
+              }
+            }}
             placeholder="AP"
             maxLength={4}
             className="w-20 rounded border border-border bg-card px-2 py-1.5 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"

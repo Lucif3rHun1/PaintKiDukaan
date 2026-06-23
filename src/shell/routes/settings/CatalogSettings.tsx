@@ -112,7 +112,9 @@ export function LocationsSettings() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = () => {
-    tauriInvoke<LocationItem[]>("list_locations").then(setLocations).catch((e: unknown) => setError(extractError(e)));
+    tauriInvoke<LocationItem[]>("list_locations")
+      .then((d) => setLocations(d ?? []))
+      .catch((e: unknown) => setError(extractError(e)));
   };
 
   useEffect(refresh, []);
@@ -298,7 +300,7 @@ export function CatalogUnitsSettings() {
     setError(null);
     listUnits(true)
       .then((data) => {
-        setUnits(data.filter((u) => u.is_active));
+        setUnits((data ?? []).filter((u) => u.is_active));
       })
       .catch((e: unknown) => {
         const msg = extractError(e);
