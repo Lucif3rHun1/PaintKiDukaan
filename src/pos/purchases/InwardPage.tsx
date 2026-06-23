@@ -22,6 +22,7 @@ interface Props {
 }
 
 interface DraftLine {
+  row_id: string;
   item_id: number;
   qty: number;
   unit_id: number;
@@ -32,6 +33,10 @@ interface DraftLine {
   retail_overridden: boolean;
   location_id: number;
   item_query: string;
+}
+
+function newRowId(): string {
+  return `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export default function InwardPage({ user: _user }: Props) {
@@ -76,6 +81,7 @@ export default function InwardPage({ user: _user }: Props) {
           seededRef.current = true;
           setDraft([
             {
+              row_id: newRowId(),
               item_id: 0,
               qty: 1,
               unit_id: 0,
@@ -127,6 +133,7 @@ export default function InwardPage({ user: _user }: Props) {
       setDraft((prev) => [
         ...prev,
         {
+          row_id: newRowId(),
           item_id: 0,
           qty: 1,
           unit_id: 0,
@@ -152,6 +159,7 @@ export default function InwardPage({ user: _user }: Props) {
     const unitId = item?.unit_id ?? 0;
     const unitCode = item?.unit_code ?? "";
     return {
+      row_id: newRowId(),
       item_id: itemId ?? 0,
       qty: 1,
       unit_id: unitId,
@@ -268,6 +276,7 @@ export default function InwardPage({ user: _user }: Props) {
       if (draft.length === 0) return;
       setDraft([
         {
+          row_id: newRowId(),
           item_id: 0,
           qty: 1,
           unit_id: 0,
@@ -288,10 +297,10 @@ export default function InwardPage({ user: _user }: Props) {
   return (
     <div className="space-y-4">
       {/* ── Sticky toolbar: meta + save ─────────────────────── */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-raised/95 px-4 py-2.5 backdrop-blur">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card/95 px-4 py-2.5 backdrop-blur">
         {/* Vendor typeahead — search + add combined into one input */}
         <div className="relative min-w-[200px] flex-1 sm:flex-none sm:w-64">
-          <Truck className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
+          <Truck className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             value={vendorId != null ? vendors.find((v) => v.id === vendorId)?.name ?? vendorQuery : vendorQuery}
@@ -330,14 +339,14 @@ export default function InwardPage({ user: _user }: Props) {
                 setVendorId(null);
                 setVendorQuery("");
               }}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-subtle hover:bg-surface-sunken hover:text-ink"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
               aria-label="Clear vendor"
             >
               <X className="h-3 w-3" />
             </button>
           ) : (
             <svg
-              className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle"
+              className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
               viewBox="0 0 20 20"
               fill="currentColor"
               aria-hidden="true"
@@ -346,7 +355,7 @@ export default function InwardPage({ user: _user }: Props) {
             </svg>
           )}
           {vendorMenuOpen && filteredVendors.length > 0 ? (
-            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-surface-raised shadow-lg">
+            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-card shadow-lg">
               {filteredVendors.slice(0, 8).map((v) => {
                 const outstanding = vendorOutstandings[v.id] ?? 0;
                 const parts = [v.name];
@@ -363,9 +372,9 @@ export default function InwardPage({ user: _user }: Props) {
                       setVendorQuery("");
                       setVendorMenuOpen(false);
                     }}
-                    className="flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5 text-left text-xs hover:bg-surface-sunken"
+                    className="flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5 text-left text-xs hover:bg-muted"
                   >
-                    <span className="text-ink">{parts.join(" · ")}</span>
+                    <span className="text-foreground">{parts.join(" · ")}</span>
                   </button>
                 );
               })}
@@ -385,7 +394,7 @@ export default function InwardPage({ user: _user }: Props) {
         />
 
         {/* Auto-print */}
-        <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
             checked={autoPrint}
@@ -399,7 +408,7 @@ export default function InwardPage({ user: _user }: Props) {
         <div className="h-5 w-px bg-border" />
 
         {/* Total */}
-        <span className="text-sm font-semibold text-ink" data-testid="inward-total">
+        <span className="text-sm font-semibold text-foreground" data-testid="inward-total">
           <Money paise={total} />
         </span>
 
@@ -408,28 +417,28 @@ export default function InwardPage({ user: _user }: Props) {
           type="button"
           onClick={() => void submit()}
           disabled={draft.length === 0}
-          className="!h-8 !bg-emerald-600 !px-3 !text-xs hover:!bg-emerald-700 focus-visible:ring-emerald-500/30"
+          className="!h-8 !bg-primary !px-3 !text-xs hover:!bg-primary/90 focus-visible:ring-primary/30"
           data-testid="inward-submit"
         >
-          Save <kbd className="ml-1 rounded bg-emerald-500/30 px-1 py-0.5 font-mono text-[10px]">F9</kbd>
+          Save <kbd className="ml-1 rounded bg-primary/20 px-1 py-0.5 font-mono text-[10px]">F9</kbd>
         </Button>
       </div>
 
       {status && (
-        <p className="rounded-md bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-400">{status}</p>
+        <p className="rounded-md bg-primary/10 px-3 py-1.5 text-xs text-primary">{status}</p>
       )}
 
       {/* ── Items table ──────────────────────────────────────── */}
-      <section className="rounded-lg border border-border bg-surface-raised">
+      <section className="rounded-lg border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-ink">
-            Items {draft.length > 0 && <span className="text-ink-subtle">· {draft.length} line{draft.length !== 1 ? "s" : ""}</span>}
+          <h2 className="text-sm font-semibold text-foreground">
+            Items {draft.length > 0 && <span className="text-muted-foreground">· {draft.length} line{draft.length !== 1 ? "s" : ""}</span>}
           </h2>
 
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-ink-subtle">
+            <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr className="border-b border-border">
                 <th className="px-4 py-2 font-medium">Item</th>
                 <th className="px-3 py-2 font-medium">Qty</th>
@@ -440,12 +449,12 @@ export default function InwardPage({ user: _user }: Props) {
             </thead>
             <tbody>
               {draft.map((l, i) => (
-                <tr key={i} className="border-b border-border align-top hover:bg-surface-sunken">
+                <tr key={l.row_id} className="border-b border-border align-top hover:bg-muted">
                   {/* Item cell — prominent name + search */}
                   <td className="px-4 py-2">
                     <div className="flex gap-1.5">
                       <div className="relative flex-1">
-                        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
+                        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                         <input
                           type="text"
                           list={`inward-items-${i}`}
@@ -494,14 +503,14 @@ export default function InwardPage({ user: _user }: Props) {
                         onClick={() => setAddItemForRow(i)}
                         title="Add new item"
                         aria-label="Add new item"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink-muted hover:bg-surface-sunken hover:text-ink"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
                       >
                         <PackagePlus className="h-4 w-4" />
                       </button>
                     </div>
                     {/* Show item name + SKU below search when selected */}
                     {l.item_id > 0 && !l.item_query && (
-                      <p className="mt-0.5 text-xs text-ink-subtle">
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         {items.find((it) => it.id === l.item_id)?.name ?? `#${l.item_id}`}
                       </p>
                     )}
@@ -550,7 +559,7 @@ export default function InwardPage({ user: _user }: Props) {
                       type="button"
                       onClick={() => setDraft((p) => p.filter((_, j) => j !== i))}
                       aria-label={`Remove line ${i + 1}`}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-subtle hover:bg-red-500/10 hover:text-red-400"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     >
                       ×
                     </button>
@@ -559,7 +568,7 @@ export default function InwardPage({ user: _user }: Props) {
               ))}
               {draft.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-ink-subtle">
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted-foreground">
                     Pick an item to start. New line appears automatically.
                   </td>
                 </tr>
@@ -571,13 +580,13 @@ export default function InwardPage({ user: _user }: Props) {
 
       {/* ── Recent inwards ──────────────────────────────────── */}
       {recent.length > 0 && (
-        <section className="rounded-lg border border-border bg-surface-raised">
+        <section className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-2.5">
-            <h2 className="text-sm font-semibold text-ink-muted">Recent inwards</h2>
+            <h2 className="text-sm font-semibold text-muted-foreground">Recent inwards</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-ink-subtle">
+              <thead className="text-left text-xs uppercase text-muted-foreground">
                 <tr className="border-b border-border">
                   <th className="px-4 py-2 font-medium">#</th>
                   <th className="px-3 py-2 font-medium">Date</th>
@@ -588,12 +597,12 @@ export default function InwardPage({ user: _user }: Props) {
               </thead>
               <tbody>
                 {recent.map((p) => (
-                  <tr key={p.id} className="border-b border-border hover:bg-surface-sunken">
-                    <td className="px-4 py-1.5 text-ink">{p.id}</td>
-                    <td className="px-3 py-1.5 text-ink-muted">{p.date}</td>
-                    <td className="px-3 py-1.5 text-ink">{p.vendor_name ?? <span className="text-ink-subtle">—</span>}</td>
-                    <td className="px-3 py-1.5 text-right text-ink-muted">{p.items.length}</td>
-                    <td className="px-3 py-1.5 text-right text-ink"><Money paise={p.total} /></td>
+                  <tr key={p.id} className="border-b border-border hover:bg-muted">
+                    <td className="px-4 py-1.5 text-foreground">{p.id}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{p.date}</td>
+                    <td className="px-3 py-1.5 text-foreground">{p.vendor_name ?? <span className="text-muted-foreground">—</span>}</td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground">{p.items.length}</td>
+                    <td className="px-3 py-1.5 text-right text-foreground"><Money paise={p.total} /></td>
                   </tr>
                 ))}
               </tbody>
