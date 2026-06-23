@@ -12,7 +12,7 @@ function CardRoot({ as: Tag = "div", bare, className, children }: CardProps) {
   return (
     <Tag
         className={cn(
-        "rounded-xl border border-border bg-card text-card-foreground",
+        "rounded-xl bg-card text-card-foreground shadow-md shadow-foreground/5 ring-1 ring-border/30",
         bare ? "" : "p-5",
         className,
       )}
