@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import {
   Activity,
   AlertTriangle,
   Archive,
+  ArrowDownRight,
   ArrowDownToLine,
+  ArrowUpRight,
   Banknote,
   BarChart3,
-  Bell,
   CalendarCheck,
   CalendarClock,
   ChevronRight,
+  Clock,
   PackageOpen,
   PlusCircle,
   Receipt,
@@ -17,48 +19,58 @@ import {
   ShoppingCart,
   TrendingUp,
   UserPlus,
+  Users,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { Card } from "../../components/ui";
-import { Money } from "../../components/ui";
-import { Button } from "../../components/ui";
-import { Badge } from "../../components/ui";
-import { Skeleton } from "../../components/ui";
-import { Alert } from "../../components/ui";
-import { EmptyState } from "../../components/ui";
+import {
+  Card,
+  Money,
+  Button,
+  Badge,
+  Skeleton,
+  Alert,
+  EmptyState,
+} from "../../components/ui";
+import { SkeletonRow } from "../../components/ui/SkeletonRow";
 import { useSecurity } from "../../lib/security/state";
 import { formatDateForDisplay } from "../../lib/date";
-import { ipc, type BackupStatus } from "../lib/ipc";
-import { listSales, dailySales, listDayClose } from "../../pos/api";
+import { ipc } from "../lib/ipc";
+import {
+  listSales,
+  dailySales,
+  listDayClose,
+  outstandingReport,
+} from "../../pos/api";
 import { listItems } from "../../domain/items/api";
-import { fetchAlertsWithCount, Severity } from "../../domain/alerts";
+import { listCustomers } from "../../domain/customers/api";
+import {
+  listAlerts,
+  markAlertRead,
+  type Alert as DomainAlert,
+  type Severity,
+} from "../../domain/alerts";
 import type { Sale, DailySalesReport } from "../../pos/types";
-import type { Item } from "../../domain/types";
 
-type LoadState = "loading" | "ready" | "partial" | "error";
-
-const ALERTS_QUERY_KEY = ["alerts"] as const;
-const SEVERITY_RANK: Record<Severity, number> = {
-  error: 0,
-  warning: 1,
-  info: 2,
-};
-
-function severityToAlertVariant(severity: Severity): "destructive" | "warning" | "info" {
-  switch (severity) {
-    case "error":
-      return "destructive";
-    case "warning":
-      return "warning";
-    case "info":
-    default:
-      return "info";
-  }
-}
+const REFETCH_INTERVAL = 30_000;
+const ONE_DAY_MS = 86_400_000;
 
 function startOfTodayIso(): string {
   const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
+
+function startOfYesterdayIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
+
+function startOfWeekIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 6);
   d.setHours(0, 0, 0, 0);
   return d.toISOString().slice(0, 10);
 }
@@ -82,37 +94,481 @@ function safeText(node: React.ReactNode, fallback = "0"): string {
   return fallback;
 }
 
-const REFETCH_INTERVAL = 30_000;
+const severityToAlertVariant: Record<Severity, "destructive" | "warning" | "info"> = {
+  error: "destructive",
+  warning: "warning",
+  info: "info",
+};
 
-function startOfYesterdayIso(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
-}
+const severityRank: Record<Severity, number> = {
+  error: 0,
+  warning: 1,
+  info: 2,
+};
 
-function startOfWeekIso(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 6);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
-}
+export function Dashboard() {
+  const session = useSecurity((s) => s.session);
+  const userName = session.user?.name ?? "Owner";
+  const role = session.user?.role ?? "owner";
+  const queryClient = useQueryClient();
 
-function useDayCloseOverdue() {
-  return useQuery({
-    queryKey: ["dashboard", "dayCloseLatest"],
+  const today = startOfTodayIso();
+  const yesterday = startOfYesterdayIso();
+  const weekStart = startOfWeekIso();
+
+  const weeklySales = useQuery({
+    queryKey: ["dashboard", "sales", "weekly", today],
+    queryFn: () => dailySales(weekStart, today),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+
+  const todayBills = useQuery({
+    queryKey: ["dashboard", "sales", "today", today],
+    queryFn: () => listSales(today, today, 200),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+
+  const customers = useQuery({
+    queryKey: ["dashboard", "customers"],
+    queryFn: () => listCustomers(),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+
+  const lowStock = useQuery({
+    queryKey: ["dashboard", "lowStock"],
+    queryFn: () => listItems({ low_stock_only: true, limit: 5 }),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+
+  const outstanding = useQuery({
+    queryKey: ["dashboard", "outstanding"],
+    queryFn: () => outstandingReport(),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+
+  const backup = useQuery({
+    queryKey: ["dashboard", "backup"],
+    queryFn: () => ipc.backupStatus(),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+
+  const dayClose = useQuery({
+    queryKey: ["dashboard", "dayClose", "latest"],
     queryFn: async () => {
       const list = await listDayClose(1);
       const latest = list[0]?.date ?? null;
-      const today = startOfTodayIso();
       return { latest, overdue: !latest || latest < today };
     },
     refetchInterval: REFETCH_INTERVAL,
   });
+
+  const alerts = useQuery({
+    queryKey: ["dashboard", "alerts"],
+    queryFn: () => listAlerts(),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+
+  const isLoading =
+    weeklySales.isLoading ||
+    todayBills.isLoading ||
+    customers.isLoading ||
+    lowStock.isLoading ||
+    outstanding.isLoading ||
+    backup.isLoading;
+
+  const anyError =
+    weeklySales.error ||
+    todayBills.error ||
+    customers.error ||
+    lowStock.error ||
+    outstanding.error ||
+    backup.error;
+
+  const errorMsg = anyError
+    ? [
+        weeklySales.error,
+        todayBills.error,
+        customers.error,
+        lowStock.error,
+        outstanding.error,
+        backup.error,
+      ]
+        .map((e) => (e instanceof Error ? e.message : String(e)))
+        .filter(Boolean)
+        .join(" • ")
+    : null;
+
+  const todayRow = useMemo(
+    () => weeklySales.data?.rows.find((r) => r.date === today),
+    [weeklySales.data, today],
+  );
+  const yesterdayRow = useMemo(
+    () => weeklySales.data?.rows.find((r) => r.date === yesterday),
+    [weeklySales.data, yesterday],
+  );
+
+  const todaySalesPaise = todayRow?.grand_total ?? 0;
+  const yesterdaySalesPaise = yesterdayRow?.grand_total ?? 0;
+  const salesDeltaPaise = todaySalesPaise - yesterdaySalesPaise;
+  const salesSparkline = useMemo(
+    () => (weeklySales.data?.rows ?? []).map((r) => r.grand_total),
+    [weeklySales.data],
+  );
+
+  const itemsSoldToday = useMemo(() => {
+    const totals = new Map<string, number>();
+    (todayBills.data ?? []).forEach((sale) => {
+      sale.items.forEach((line) => {
+        totals.set(line.item_name, (totals.get(line.item_name) ?? 0) + line.qty);
+      });
+    });
+    return Array.from(totals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+  }, [todayBills.data]);
+
+  const totalItemsSoldToday = useMemo(
+    () => itemsSoldToday.reduce((sum, [, qty]) => sum + qty, 0),
+    [itemsSoldToday],
+  );
+
+  const activeCustomers = useMemo(
+    () => (customers.data ?? []).filter((c) => c.is_active),
+    [customers.data],
+  );
+  const newThisWeek = useMemo(
+    () => activeCustomers.filter((c) => c.created_at.slice(0, 10) >= weekStart).length,
+    [activeCustomers, weekStart],
+  );
+
+  const topDebtors = useMemo(
+    () =>
+      (outstanding.data?.customers ?? [])
+        .sort((a, b) => b.outstanding - a.outstanding)
+        .slice(0, 3),
+    [outstanding.data],
+  );
+
+  const backupAge = backup.data?.backup_age_hours ?? null;
+  const backupStale = backupAge !== null && backupAge > 24;
+
+  const topAlerts = useMemo(
+    () =>
+      (alerts.data ?? [])
+        .filter((a) => !a.resolved_at)
+        .sort((a, b) => severityRank[a.severity] - severityRank[b.severity] || b.created_at - a.created_at)
+        .slice(0, 3),
+    [alerts.data],
+  );
+
+  const handleDismissAlert = async (id: number) => {
+    await markAlertRead(id);
+    void queryClient.invalidateQueries({ queryKey: ["dashboard", "alerts"] });
+  };
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
+          <p className="text-sm text-muted-foreground">
+            Welcome back, {userName}.{" "}
+            <span className="text-foreground/70">Today</span> · {role}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {backup.data ? (
+            <Badge variant={backupStale ? "warning" : "success"} size="sm">
+              <Activity className="h-3 w-3" />
+              {backupStale ? "Backup overdue" : "Backup healthy"}
+            </Badge>
+          ) : (
+            <Badge variant="muted" size="sm">
+              <Activity className="h-3 w-3" />
+              Checking backup
+            </Badge>
+          )}
+        </div>
+      </header>
+
+      <QuickActions dayCloseOverdue={dayClose.data?.overdue ?? false} />
+
+      {errorMsg && (
+        <Alert title="Some dashboard data is unavailable" variant="warning">
+          {errorMsg}
+        </Alert>
+      )}
+
+      {topAlerts.length > 0 && (
+        <section aria-label="Alerts" className="space-y-3">
+          {topAlerts.map((alert) => (
+            <Alert
+              key={alert.id}
+              title={alert.title}
+              variant={severityToAlertVariant[alert.severity]}
+              onDismiss={() => handleDismissAlert(alert.id)}
+            >
+              {alert.message}
+            </Alert>
+          ))}
+        </section>
+      )}
+
+      <section
+        aria-label="Key metrics"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+      >
+        <MetricCard
+          icon={Banknote}
+          label="Today's Sales"
+          loading={isLoading}
+          tone="primary"
+          footer={
+            <Delta
+              value={salesDeltaPaise}
+              prefix="vs yesterday"
+              loading={weeklySales.isLoading}
+            />
+          }
+        >
+          <div className="flex items-end justify-between">
+            <Money paise={todaySalesPaise} className="text-2xl font-semibold" />
+            {salesSparkline.length > 1 && (
+              <Sparkline data={salesSparkline} tone="text-primary" />
+            )}
+          </div>
+        </MetricCard>
+
+        <MetricCard
+          icon={ShoppingCart}
+          label="Items Sold Today"
+          loading={isLoading}
+          tone="info"
+          footer={
+            todayBills.isLoading ? null : itemsSoldToday.length === 0 ? (
+              <span className="text-xs text-muted-foreground">No sales yet today</span>
+            ) : (
+              <ul className="space-y-0.5 text-xs text-muted-foreground">
+                {itemsSoldToday.map(([name, qty]) => (
+                  <li key={name} className="truncate">
+                    {qty} × {name}
+                  </li>
+                ))}
+              </ul>
+            )
+          }
+        >
+          <span className="text-2xl font-semibold tabular-nums">{totalItemsSoldToday}</span>
+        </MetricCard>
+
+        <MetricCard
+          icon={Users}
+          label="Active Customers"
+          loading={isLoading}
+          tone="success"
+          footer={
+            <Delta
+              value={newThisWeek}
+              prefix="new this week"
+              absolute
+              loading={customers.isLoading}
+            />
+          }
+        >
+          <span className="text-2xl font-semibold tabular-nums">{activeCustomers.length}</span>
+        </MetricCard>
+
+        <MetricCard
+          icon={PackageOpen}
+          label="Low Stock"
+          loading={isLoading}
+          tone={lowStock.data?.length ? "warning" : "success"}
+          footer={
+            lowStock.isLoading ? null : (lowStock.data ?? []).length === 0 ? (
+              <span className="text-xs text-muted-foreground">All items above threshold</span>
+            ) : (
+              <ul className="space-y-0.5 text-xs text-muted-foreground">
+                {(lowStock.data ?? []).slice(0, 5).map((item) => (
+                  <li key={item.id} className="flex justify-between gap-2">
+                    <span className="truncate">{item.name}</span>
+                    <span className="tabular-nums text-warning">{item.current_qty}</span>
+                  </li>
+                ))}
+              </ul>
+            )
+          }
+        >
+          <span className="text-2xl font-semibold tabular-nums">{lowStock.data?.length ?? 0}</span>
+        </MetricCard>
+
+        <MetricCard
+          icon={Receipt}
+          label="Pending Credit"
+          loading={isLoading}
+          tone="destructive"
+          footer={
+            outstanding.isLoading ? null : topDebtors.length === 0 ? (
+              <span className="text-xs text-muted-foreground">No outstanding credit</span>
+            ) : (
+              <ul className="space-y-0.5 text-xs text-muted-foreground">
+                {topDebtors.map((c) => (
+                  <li key={c.customer_id} className="flex justify-between gap-2">
+                    <span className="truncate">{c.name}</span>
+                    <Money paise={c.outstanding} compact muted />
+                  </li>
+                ))}
+              </ul>
+            )
+          }
+        >
+          <Money
+            paise={outstanding.data?.customer_total ?? 0}
+            className="text-2xl font-semibold"
+          />
+        </MetricCard>
+
+        <MetricCard
+          icon={Archive}
+          label="Backup Health"
+          loading={isLoading}
+          tone={backupStale ? "warning" : backupAge === null ? "info" : "success"}
+          footer={
+            backup.isLoading ? null : (
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  {formatRelative(backup.data?.last_backup_unix_ms ?? null)}
+                </span>
+                <a
+                  href="#/settings/system"
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Backup now
+                </a>
+              </div>
+            )
+          }
+        >
+          <div className="flex items-center gap-2">
+            {backupStale ? (
+              <>
+                <AlertTriangle className="h-5 w-5 text-warning" />
+                <span className="text-lg font-semibold text-warning">Stale</span>
+              </>
+            ) : backupAge === null ? (
+              <>
+                <Activity className="h-5 w-5 text-info" />
+                <span className="text-lg font-semibold text-info">Unknown</span>
+              </>
+            ) : (
+              <>
+                <Activity className="h-5 w-5 text-success" />
+                <span className="text-lg font-semibold text-success">Healthy</span>
+              </>
+            )}
+          </div>
+        </MetricCard>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <Card.Header className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Recent bills</h3>
+            <a
+              href="#/sales"
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              View all
+            </a>
+          </Card.Header>
+          <Card.Body className="p-0">
+            {todayBills.isLoading ? (
+              <div className="space-y-2 p-4">
+                <SkeletonRow count={3} />
+              </div>
+            ) : (todayBills.data ?? []).length === 0 ? (
+              <div className="p-6">
+                <EmptyState
+                  icon={ShoppingCart}
+                  title="No bills yet"
+                  description="Finalised sales will show up here. Start a new bill from the Sales tab."
+                />
+              </div>
+            ) : (
+              <ul className="divide-y divide-border">
+                {(todayBills.data ?? []).slice(0, 8).map((s, i) => (
+                  <li
+                    key={s.id}
+                    className="flex animate-in fade-in slide-in-from-bottom-2 items-center justify-between gap-3 px-4 py-3 text-sm duration-200"
+                    style={{ animationDelay: `${i * 50}ms` }}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate font-medium">{s.no}</span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {s.customer_name || "Walk-in"}
+                        {s.status === "quotation" ? " · Quotation" : ""}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatDateForDisplay(s.date)}
+                      </span>
+                      <Money paise={s.total} compact />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card.Body>
+        </Card>
+
+        <Card>
+          <Card.Header className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Day close</h3>
+            <a
+              href="#/sales-report"
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Reports
+            </a>
+          </Card.Header>
+          <Card.Body className="space-y-3 text-sm">
+            <Row
+              icon={CalendarClock}
+              label="Last closed"
+              value={
+                dayClose.isLoading
+                  ? "—"
+                  : dayClose.data?.latest
+                    ? formatDateForDisplay(dayClose.data.latest)
+                    : "never"
+              }
+            />
+            <Row
+              icon={TrendingUp}
+              label="Bills today"
+              value={todayRow?.bill_count ?? 0}
+            />
+            <Row
+              icon={Receipt}
+              label="Discount today"
+              value={<Money paise={todayRow?.total_discount ?? 0} compact />}
+            />
+            {dayClose.data?.overdue && (
+              <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
+                Day close is overdue. Close today’s books from Reports → Day
+                Close.
+              </div>
+            )}
+          </Card.Body>
+        </Card>
+      </section>
+    </div>
+  );
 }
 
 interface QuickActionProps {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ElementType<{ className?: string }>;
   title: string;
   subtitle: string;
   href: string;
@@ -140,8 +596,7 @@ function QuickAction({ icon: Icon, title, subtitle, href, badge }: QuickActionPr
   );
 }
 
-function QuickActions() {
-  const { data: dayClose } = useDayCloseOverdue();
+function QuickActions({ dayCloseOverdue }: { dayCloseOverdue: boolean }) {
   return (
     <section aria-label="Quick actions" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       <QuickAction
@@ -162,7 +617,7 @@ function QuickActions() {
         subtitle="Close today’s books"
         href="#/sales-report"
         badge={
-          dayClose?.overdue ? (
+          dayCloseOverdue ? (
             <Badge variant="warning" size="sm">Overdue</Badge>
           ) : null
         }
@@ -189,366 +644,114 @@ function QuickActions() {
   );
 }
 
-export function Dashboard() {
-  const session = useSecurity((s) => s.session);
-  const userName = session.user?.name ?? "Owner";
-  const role = session.user?.role ?? "owner";
-
-  const [state, setState] = useState<LoadState>("loading");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [backup, setBackup] = useState<BackupStatus | null>(null);
-  const [today, setToday] = useState<DailySalesReport | null>(null);
-  const [recent, setRecent] = useState<Sale[]>([]);
-  const [lowStock, setLowStock] = useState<Item[]>([]);
-  const [activeItemCount, setActiveItemCount] = useState<number | null>(null);
-
-  const { data: alertsData, isLoading: alertsLoading } = useQuery({
-    queryKey: ALERTS_QUERY_KEY,
-    queryFn: fetchAlertsWithCount,
-    refetchInterval: REFETCH_INTERVAL,
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: false,
-    staleTime: 15_000,
-  });
-
-  const topAlerts = (alertsData?.alerts ?? [])
-    .filter((a) => a.severity !== "info")
-    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])
-    .slice(0, 3);
-
-  const openAlertBell = () => {
-    window.dispatchEvent(new CustomEvent("open-alert-bell"));
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      const todayDate = startOfTodayIso();
-      const errors: string[] = [];
-      const setErr = (e: unknown) => {
-        const msg = e instanceof Error ? e.message : String(e);
-        errors.push(msg);
-      };
-      try {
-        const [b, t, s, low, total] = await Promise.allSettled([
-          ipc.backupStatus(),
-          dailySales(todayDate, todayDate),
-          listSales(undefined, undefined, 8),
-          listItems({ low_stock_only: true, limit: 8 }),
-          listItems({ limit: 1 }),
-        ]);
-        if (cancelled) return;
-        if (b.status === "fulfilled") setBackup(b.value);
-        else setErr(b.reason);
-        if (t.status === "fulfilled") setToday(t.value);
-        else setErr(t.reason);
-        if (s.status === "fulfilled") setRecent(s.value);
-        else setErr(s.reason);
-        if (low.status === "fulfilled") setLowStock(low.value);
-        else setErr(low.reason);
-        if (total.status === "fulfilled") setActiveItemCount(total.value.length);
-        setErrorMsg(errors.length ? errors.join(" • ") : null);
-        setState(errors.length === 0 ? "ready" : errors.length < 6 ? "partial" : "error");
-      } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : String(e));
-        setState("error");
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const todayTotal = today?.grand_total ?? 0;
-  const billCount = today?.bill_count ?? 0;
-  const totalDiscount = today?.total_discount ?? 0;
-  const lowStockCount = lowStock.length;
-  const backupAge = backup?.backup_age_hours ?? null;
-  const backupStale = backupAge !== null && backupAge > 24;
-
-  return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
-          <p className="text-sm text-muted-foreground">
-            Welcome back, {userName}.{" "}
-            <span className="text-foreground/70">Today</span> · {role}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {backup ? (
-            <Badge variant={backupStale ? "warning" : "success"} size="sm">
-              <Activity className="h-3 w-3" />
-              {backupStale ? "Backup overdue" : "Backup healthy"}
-            </Badge>
-          ) : (
-            <Badge variant="muted" size="sm">
-              <Activity className="h-3 w-3" />
-              Checking backup
-            </Badge>
-          )}
-        </div>
-      </header>
-
-      <QuickActions />
-
-      {!alertsLoading && topAlerts.length > 0 && (
-        <section aria-label="High severity alerts" className="space-y-3">
-          {topAlerts.map((alert) => (
-            <Alert
-              key={alert.id}
-              title={alert.title}
-              variant={severityToAlertVariant(alert.severity)}
-            >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span>{alert.message}</span>
-                <button
-                  type="button"
-                  onClick={openAlertBell}
-                  className="inline-flex items-center gap-1 text-xs font-medium underline-offset-2 hover:underline"
-                >
-                  <Bell className="h-3 w-3" />
-                  View all
-                </button>
-              </div>
-            </Alert>
-          ))}
-        </section>
-      )}
-
-      {errorMsg && state !== "ready" && (
-        <Alert
-          title={state === "partial" ? "Some data unavailable" : "Could not load dashboard"}
-          variant={state === "partial" ? "warning" : "destructive"}
-        >
-          {errorMsg}
-        </Alert>
-      )}
-
-      <section
-        aria-label="Key metrics"
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-      >
-        <Kpi
-          icon={Banknote}
-          label="Sales today"
-          loading={state === "loading"}
-          tone="primary"
-        >
-          <Money paise={todayTotal} />
-        </Kpi>
-        <Kpi
-          icon={Receipt}
-          label="Bills today"
-          loading={state === "loading"}
-        >
-          <span className="text-2xl font-semibold tabular-nums">
-            {state === "loading" ? "—" : billCount}
-          </span>
-        </Kpi>
-        <Kpi
-          icon={PackageOpen}
-          label="Items low stock"
-          loading={state === "loading"}
-          tone={lowStockCount > 0 ? "warning" : undefined}
-        >
-          <span className="text-2xl font-semibold tabular-nums">
-            {state === "loading" ? "—" : lowStockCount}
-          </span>
-        </Kpi>
-      </section>
-
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <Card.Header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Recent bills</h3>
-            <a
-              href="#/sales"
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              View all
-            </a>
-          </Card.Header>
-          <Card.Body className="p-0">
-            {state === "loading" ? (
-              <div className="space-y-2 p-4">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            ) : recent.length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  icon={ShoppingCart}
-                  title="No bills yet"
-                  description="Finalised sales will show up here. Start a new bill from the Sales tab."
-                />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {recent.map((s, i) => (
-                  <li
-                    key={s.id}
-                    className="flex animate-in fade-in slide-in-from-bottom-2 items-center justify-between gap-3 px-4 py-3 text-sm duration-200"
-                    style={{ animationDelay: `${i * 50}ms` }}
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate font-medium">{s.no}</span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {s.customer_name || "Walk-in"}
-                        {s.status === "quotation" ? " · Quotation" : ""}
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {formatDateForDisplay(s.date)}
-                      </span>
-                      <Money paise={s.total} compact />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card.Body>
-        </Card>
-
-        <div className="space-y-4">
-          <Card>
-            <Card.Header className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Backup health</h3>
-              <a
-                href="#/settings/system"
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Settings
-              </a>
-            </Card.Header>
-            <Card.Body className="space-y-3 text-sm">
-              <Row
-                icon={CalendarClock}
-                label="Last backup"
-                value={
-                  state === "loading"
-                    ? "—"
-                    : formatRelative(backup?.last_backup_unix_ms ?? null)
-                }
-              />
-              <Row
-                icon={Archive}
-                label="Targets"
-                value={safeText(backup?.targets.length, "—")}
-              />
-              <Row
-                icon={TrendingUp}
-                label="Test restore"
-                value={
-                  state === "loading"
-                    ? "—"
-                    : formatRelative(backup?.last_test_restore_unix_ms ?? null)
-                }
-              />
-              <Row
-                icon={Receipt}
-                label="Discount today"
-                value={<Money paise={totalDiscount} compact />}
-              />
-              {backupStale && (
-                <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
-                  Last backup is {backupAge?.toFixed(1)}h old. Run a backup
-                  from Settings → System.
-                </div>
-              )}
-            </Card.Body>
-          </Card>
-
-          <Card>
-            <Card.Header className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Low stock</h3>
-              <a
-                href="#/items"
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                View items
-              </a>
-            </Card.Header>
-            <Card.Body className="p-0">
-              {state === "loading" ? (
-                <div className="space-y-2 p-4">
-                  <Skeleton className="h-8 w-full" />
-                  <Skeleton className="h-8 w-full" />
-                </div>
-              ) : lowStock.length === 0 ? (
-                <div className="p-6">
-                  <EmptyState
-                    icon={PackageOpen}
-                    title="All items above threshold"
-                    description="Nothing to reorder right now."
-                  />
-                </div>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {lowStock.slice(0, 6).map((it, i) => (
-                    <li
-                      key={it.id}
-                      className="flex animate-in fade-in slide-in-from-bottom-2 items-center justify-between gap-3 px-4 py-2.5 text-sm duration-200"
-                      style={{ animationDelay: `${i * 50}ms` }}
-                    >
-                      <div className="flex min-w-0 flex-col">
-                        <span className="truncate font-medium">{it.name}</span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {it.sku_code}
-                        </span>
-                      </div>
-                      <Badge variant="warning" size="sm">
-                        <AlertTriangle className="h-3 w-3" />
-                        {it.min_qty}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card.Body>
-          </Card>
-        </div>
-      </section>
-
-    </div>
-  );
-}
-
-interface KpiProps {
-  icon: React.ComponentType<{ className?: string }>;
+interface MetricCardProps {
+  icon: React.ElementType<{ className?: string }>;
   label: string;
   children: React.ReactNode;
   loading?: boolean;
-  tone?: "primary" | "warning" | "info";
+  tone?: "primary" | "success" | "warning" | "info" | "destructive";
+  footer?: React.ReactNode;
 }
 
-function Kpi({ icon: Icon, label, children, loading, tone }: KpiProps) {
-  const toneClasses =
-    tone === "primary"
-      ? "text-primary"
-      : tone === "warning"
-        ? "text-warning"
-        : tone === "info"
-          ? "text-info"
-          : "text-foreground";
+const toneTextClasses: Record<NonNullable<MetricCardProps["tone"]>, string> = {
+  primary: "text-primary",
+  success: "text-success",
+  warning: "text-warning",
+  info: "text-info",
+  destructive: "text-destructive",
+};
+
+const toneIconBgClasses: Record<NonNullable<MetricCardProps["tone"]>, string> = {
+  primary: "bg-primary/10 text-primary",
+  success: "bg-success/10 text-success",
+  warning: "bg-warning/10 text-warning",
+  info: "bg-info/10 text-info",
+  destructive: "bg-destructive/10 text-destructive",
+};
+
+function MetricCard({
+  icon: Icon,
+  label,
+  children,
+  loading,
+  tone = "primary",
+  footer,
+}: MetricCardProps) {
   return (
-    <Card>
-      <Card.Body className="space-y-2">
+    <Card className="flex flex-col">
+      <Card.Body className="flex flex-1 flex-col gap-2">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{label}</span>
-          <Icon className={cnTone(toneClasses, "h-4 w-4")} />
+          <div className={cnTone("flex h-6 w-6 items-center justify-center rounded-md", toneIconBgClasses[tone])}>
+            <Icon className="h-3.5 w-3.5" />
+          </div>
         </div>
         {loading ? (
-          <Skeleton className="h-7 w-24" />
+          <Skeleton className="h-8 w-28" />
         ) : (
-          <div className={cnTone(toneClasses, "tabular-nums")}>{children}</div>
+          <div className={cnTone(toneTextClasses[tone])}>{children}</div>
         )}
+        {footer && <div className="mt-auto pt-2">{footer}</div>}
       </Card.Body>
     </Card>
+  );
+}
+
+function Delta({
+  value,
+  prefix,
+  absolute,
+  loading,
+}: {
+  value: number;
+  prefix: string;
+  absolute?: boolean;
+  loading?: boolean;
+}) {
+  if (loading) return <Skeleton className="h-4 w-24" />;
+  const isPositive = value >= 0;
+  const display = absolute ? Math.abs(value) : value;
+  const Icon = isPositive ? ArrowUpRight : ArrowDownRight;
+  const tone = isPositive ? "text-success" : "text-destructive";
+  return (
+    <span className={cnTone("flex items-center gap-1 text-xs", tone)}>
+      <Icon className="h-3 w-3" />
+      {absolute ? display : <Money paise={display} compact />}
+      <span className="text-muted-foreground">{prefix}</span>
+    </span>
+  );
+}
+
+function Sparkline({ data, tone }: { data: number[]; tone: string }) {
+  if (data.length < 2) return null;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const width = 96;
+  const height = 28;
+  const points = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * width;
+      const y = height - ((v - min) / range) * height;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className={cnTone("h-7 w-24", tone)}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <polyline
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+      />
+    </svg>
   );
 }
 
@@ -561,7 +764,7 @@ function Row({
   label,
   value,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ElementType<{ className?: string }>;
   label: string;
   value: React.ReactNode;
 }) {
