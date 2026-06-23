@@ -75,7 +75,10 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false }: Props) {
           }));
           setResults(hits);
         })
-        .catch(() => setResults([]));
+        .catch((e) => {
+          console.error("[ItemSearchInput] failed to search items", e);
+          setResults([]);
+        });
     }, 200);
     return () => clearTimeout(timer);
   }, [query]);

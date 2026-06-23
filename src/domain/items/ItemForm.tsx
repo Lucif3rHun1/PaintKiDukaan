@@ -75,13 +75,22 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           setPrimaryLocationId(locs[0].id);
         }
       })
-      .catch(() => setLocations([]));
+      .catch((e) => {
+        console.error("[ItemForm] failed to load locations", e);
+        setLocations([]);
+      });
     listBrands()
       .then((b) => setBrands(b))
-      .catch(() => setBrands([]));
+      .catch((e) => {
+        console.error("[ItemForm] failed to load brands", e);
+        setBrands([]);
+      });
     listCategories()
       .then((c) => setCategories(c))
-      .catch(() => setCategories([]));
+      .catch((e) => {
+        console.error("[ItemForm] failed to load categories", e);
+        setCategories([]);
+      });
     listUnits()
       .then((u) => {
         setUnits(u);
@@ -90,14 +99,20 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           setUnitId((current) => current ?? firstActive.id);
         }
       })
-      .catch(() => setUnits([]));
+      .catch((e) => {
+        console.error("[ItemForm] failed to load units", e);
+        setUnits([]);
+      });
   }, [mode]);
 
   useEffect(() => {
     if (primaryLocationId > 0) {
       listSubLocations(primaryLocationId)
         .then((d) => setSubLocations(d ?? []))
-        .catch(() => setSubLocations([]));
+        .catch((e) => {
+          console.error("[ItemForm] failed to load sub-locations", e);
+          setSubLocations([]);
+        });
     } else {
       setSubLocations([]);
     }
@@ -112,7 +127,10 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     setBarcodeLoading(true);
     previewNextBarcode(brandId, name.trim())
       .then((bc) => setPredictedBarcode(bc))
-      .catch(() => setPredictedBarcode(""))
+      .catch((e) => {
+        console.error("[ItemForm] failed to predict barcode", e);
+        setPredictedBarcode("");
+      })
       .finally(() => setBarcodeLoading(false));
   }, [brandId, name, mode]);
 

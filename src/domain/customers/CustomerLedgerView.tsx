@@ -152,7 +152,10 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
   useEffect(() => {
     listItems({ limit: 500 })
       .then((d) => setItems(d ?? []))
-      .catch(() => setItems([]));
+      .catch((e) => {
+        console.error("[CustomerLedgerView] failed to load items", e);
+        setItems([]);
+      });
   }, []);
 
   const total = useMemo(

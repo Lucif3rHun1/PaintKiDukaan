@@ -113,10 +113,16 @@ export function ItemList({ role }: Props) {
   useEffect(() => {
     listLocations(false)
       .then((d) => setLocations(d ?? []))
-      .catch(() => setLocations([]));
+      .catch((e) => {
+        console.error("[ItemList] failed to load locations", e);
+        setLocations([]);
+      });
     listBrands()
       .then((d) => setBrands(d ?? []))
-      .catch(() => setBrands([]));
+      .catch((e) => {
+        console.error("[ItemList] failed to load brands", e);
+        setBrands([]);
+      });
   }, []);
 
   const locationNameById = useMemo(() => {

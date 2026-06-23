@@ -141,7 +141,10 @@ export default function ReturnPage({ user, onBack }: Props) {
         setLocations(active);
         setLocationId((current) => current || active[0]?.id || 0);
       })
-      .catch(() => setLocations([]));
+      .catch((e) => {
+        console.error("[ReturnPage] failed to load locations", e);
+        setLocations([]);
+      });
   }, []);
 
   useEffect(() => {

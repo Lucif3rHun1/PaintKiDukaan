@@ -23,7 +23,12 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, onChange, o
       return;
     }
     const timer = setTimeout(() => {
-      listCustomers(query, false).then((d) => setResults(d ?? [])).catch(() => setResults([]));
+      listCustomers(query, false)
+        .then((d) => setResults(d ?? []))
+        .catch((e) => {
+          console.error("[CustomerAutocomplete] failed to load customers", e);
+          setResults([]);
+        });
     }, 200);
     return () => clearTimeout(timer);
   }, [query]);

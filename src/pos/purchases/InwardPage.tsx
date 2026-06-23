@@ -73,10 +73,16 @@ export default function InwardPage({ user: _user }: Props) {
         setItems(rows);
         if (rows.length > 0) setDefaultItemId((current) => current ?? rows[0].id);
       })
-      .catch(() => setItems([]));
+      .catch((e) => {
+        console.error("[InwardPage] failed to load items", e);
+        setItems([]);
+      });
     listVendors()
       .then((d) => setVendors(d ?? []))
-      .catch(() => setVendors([]));
+      .catch((e) => {
+        console.error("[InwardPage] failed to load vendors", e);
+        setVendors([]);
+      });
     listLocations(false)
       .then((locs) => {
         setLocations(locs);
@@ -102,7 +108,10 @@ export default function InwardPage({ user: _user }: Props) {
           ]);
         }
       })
-      .catch(() => setLocations([]));
+      .catch((e) => {
+        console.error("[InwardPage] failed to load locations", e);
+        setLocations([]);
+      });
   }, []);
 
   useEffect(() => {
