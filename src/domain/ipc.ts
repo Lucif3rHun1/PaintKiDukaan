@@ -121,7 +121,7 @@ export async function createCustomerInline(
 export async function createSalesReturn(
   payload: CreateSaleReturnPayload,
 ): Promise<number> {
-  return invoke<number>("create_sale_return", payload as unknown as Record<string, unknown>);
+  return invoke<number>("cmd_create_sale_return", payload as unknown as Record<string, unknown>);
 }
 
 export async function getSaleByInvoiceNumber(
@@ -131,7 +131,7 @@ export async function getSaleByInvoiceNumber(
 }
 
 export async function getSaleReturn(id: number): Promise<SaleReturn | null> {
-  return invoke<SaleReturn | null>("get_sale_return", { id });
+  return invoke<SaleReturn | null>("cmd_get_sale_return", { id });
 }
 
 export async function listSaleReturns(
@@ -142,7 +142,7 @@ export async function listSaleReturns(
     limit?: number;
   } = {},
 ): Promise<SaleReturn[]> {
-  return invoke<SaleReturn[]>("list_sale_returns", opts);
+  return invoke<SaleReturn[]>("cmd_list_sale_returns", opts);
 }
 
 export async function getNextReturnNumber(): Promise<string> {
