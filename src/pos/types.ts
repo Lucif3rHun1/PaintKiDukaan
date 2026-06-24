@@ -103,10 +103,8 @@ export interface ConvertQuotation {
 export interface InwardLine {
   item_id: number;
   qty: number;
-  unit_id: number;
-  unit_code: string;
-  cost_price: number;
-  retail_price: number;
+  unit_type: "unit" | "box";
+  unit_price_paise: number;
   location_id: number;
 }
 
@@ -136,6 +134,7 @@ export interface PurchaseItem {
 
 export interface Purchase {
   id: number;
+  purchase_number: string;
   vendor_id: number | null;
   vendor_name: string | null;
   date: string;
