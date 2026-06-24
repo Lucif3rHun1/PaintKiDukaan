@@ -231,7 +231,7 @@ export default function ReturnPage({ user, onBack }: Props) {
     lines.some((line) => line.qty > 0) &&
     locationId > 0 &&
     reason.trim().length > 0 &&
-    ownerPin.trim().length > 0 &&
+    (user.role === "owner" || ownerPin.trim().length > 0) &&
     refundAmount <= total &&
     Object.keys(qtyErrors).length === 0;
 
@@ -659,16 +659,22 @@ export default function ReturnPage({ user, onBack }: Props) {
                 />
               </label>
 
-              <label className="block space-y-1 text-sm">
-                <span className="font-medium text-foreground">Owner PIN</span>
-                <input
-                  type="password"
-                  value={ownerPin}
-                  onChange={(event) => setOwnerPin(event.target.value)}
-                  className="input h-10 w-full px-3"
-                  placeholder="Required to save return"
-                />
-              </label>
+              {user.role === "owner" ? (
+                <p className="rounded-md border border-success/30 bg-success/5 px-3 py-2 text-xs text-success">
+                  Logged in as owner — return will be saved without PIN confirmation.
+                </p>
+              ) : (
+                <label className="block space-y-1 text-sm">
+                  <span className="font-medium text-foreground">Owner PIN</span>
+                  <input
+                    type="password"
+                    value={ownerPin}
+                    onChange={(event) => setOwnerPin(event.target.value)}
+                    className="input h-10 w-full px-3"
+                    placeholder="Required to save return"
+                  />
+                </label>
+              )}
             </Card>
 
             <Card as="section" className="space-y-4 p-4">
