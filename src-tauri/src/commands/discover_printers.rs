@@ -108,6 +108,130 @@ struct RawPrinter {
     printer_type: Option<serde_json::Value>,
 }
 
+// ── WMIC fallback (wmic printer get ...) ────────────────────────────────
+
+#[cfg(target_os = "windows")]
+fn try_wmic_discover() -> Vec<DiscoveredPrinter> {
+    use std::process::Command;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    const WMIC_TIMEOUT_SECS: u64 = 5;
+
+    let mut child = match Command::new("wmic")
+        .args(["printer", "get", "Name,PortName,DriverName", "/format:list"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("try_wmic_discover: failed to run wmic: {e}");
+            return vec![];
+        }
+    };
+
+    let timeout = Duration::from_secs(WMIC_TIMEOUT_SECS);
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    log::warn!("try_wmic_discover: wmic timed out after {WMIC_TIMEOUT_SECS}s");
+                    return vec![];
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => {
+                log::warn!("try_wmic_discover: error waiting for wmic: {e}");
+                let _ = child.kill();
+                return vec![];
+            }
+        }
+    };
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            log::warn!("try_wmic_discover: failed to collect wmic output: {e}");
+            return vec![];
+        }
+    };
+
+    if !status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!("try_wmic_discover: wmic exited with {status}: {}", stderr);
+        return vec![];
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_wmic_output(&stdout)
+}
+
+#[cfg(target_os = "windows")]
+fn parse_wmic_output(stdout: &str) -> Vec<DiscoveredPrinter> {
+    let mut printers = Vec::new();
+    let mut current_name: Option<String> = None;
+    let mut current_port: Option<String> = None;
+    let mut current_driver: Option<String> = None;
+
+    fn flush(
+        printers: &mut Vec<DiscoveredPrinter>,
+        name: &mut Option<String>,
+        port: &mut Option<String>,
+        driver: &mut Option<String>,
+    ) {
+        if let Some(n) = name.take() {
+            if !n.is_empty() {
+                let connection_type = classify_connection(port, driver);
+                printers.push(DiscoveredPrinter {
+                    name: mask_printer_name(&n),
+                    driver_name: driver.take(),
+                    port_name: port.take(),
+                    connection_type,
+                });
+                return;
+            }
+        }
+        name.take();
+        port.take();
+        driver.take();
+    }
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            flush(
+                &mut printers,
+                &mut current_name,
+                &mut current_port,
+                &mut current_driver,
+            );
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            let key = key.trim();
+            let value = value.trim();
+            match key {
+                "Name" => current_name = Some(value.to_string()),
+                "PortName" => current_port = Some(value.to_string()),
+                "DriverName" => current_driver = Some(value.to_string()),
+                _ => {}
+            }
+        }
+    }
+
+    flush(
+        &mut printers,
+        &mut current_name,
+        &mut current_port,
+        &mut current_driver,
+    );
+    printers
+}
+
 // ── WMI fallback (Get-CimInstance Win32_Printer) ────────────────────────
 
 #[cfg(target_os = "windows")]
@@ -275,26 +399,38 @@ pub fn discover_system_printers() -> AppResult<Vec<DiscoveredPrinter>> {
         {
             Ok(o) => o,
             Err(e) => {
-                log::warn!("discover_system_printers: failed to run PowerShell, trying WMI: {e}");
-                return Ok(try_wmi_discover());
+                log::warn!("discover_system_printers: failed to run PowerShell, trying wmic: {e}");
+                let mut printers = try_wmic_discover();
+                if printers.is_empty() {
+                    printers = try_wmi_discover();
+                }
+                return Ok(printers);
             }
         };
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             log::warn!(
-                "discover_system_printers: Get-Printer exited with {}, falling back to WMI: {}",
+                "discover_system_printers: Get-Printer exited with {}, falling back to wmic: {}",
                 output.status,
                 stderr
             );
-            return Ok(try_wmi_discover());
+            let mut printers = try_wmic_discover();
+            if printers.is_empty() {
+                printers = try_wmi_discover();
+            }
+            return Ok(printers);
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stdout = stdout.trim();
         if stdout.is_empty() || stdout == "[]" {
-            log::info!("discover_system_printers: Get-Printer returned empty, trying WMI");
-            return Ok(try_wmi_discover());
+            log::info!("discover_system_printers: Get-Printer returned empty, trying wmic");
+            let mut printers = try_wmic_discover();
+            if printers.is_empty() {
+                printers = try_wmi_discover();
+            }
+            return Ok(printers);
         }
 
         let raw_printers: Vec<RawPrinter> = if stdout.starts_with('[') {
@@ -304,15 +440,23 @@ pub fn discover_system_printers() -> AppResult<Vec<DiscoveredPrinter>> {
                 .map(|p| vec![p])
                 .unwrap_or_default()
         } else {
-            log::warn!("discover_system_printers: unexpected JSON, trying WMI");
-            return Ok(try_wmi_discover());
+            log::warn!("discover_system_printers: unexpected JSON, trying wmic");
+            let mut printers = try_wmic_discover();
+            if printers.is_empty() {
+                printers = try_wmi_discover();
+            }
+            return Ok(printers);
         };
 
         if raw_printers.is_empty() {
             log::info!(
-                "discover_system_printers: parsed zero printers from Get-Printer, trying WMI"
+                "discover_system_printers: parsed zero printers from Get-Printer, trying wmic"
             );
-            return Ok(try_wmi_discover());
+            let mut printers = try_wmic_discover();
+            if printers.is_empty() {
+                printers = try_wmi_discover();
+            }
+            return Ok(printers);
         }
 
         let printers: Vec<DiscoveredPrinter> = raw_printers

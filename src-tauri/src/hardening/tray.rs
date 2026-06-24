@@ -23,8 +23,17 @@ pub fn init<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Erro
 
     let menu = Menu::with_items(&handle, &[&show_item, &lock_item, &sep, &quit_item])?;
 
+    let icon = match app.default_window_icon() {
+        Some(icon) => icon.clone(),
+        None => {
+            log::warn!("tray: no default window icon found, using 1x1 placeholder");
+            tauri::image::Image::new_owned(vec![0u8; 4], 1, 1)
+        }
+    };
+
     TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("PaintKiDukaan Master")
+        .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id().as_ref() {

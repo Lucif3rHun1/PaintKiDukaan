@@ -21,13 +21,35 @@ pub fn is_prevented() -> bool {
 /// failure (e.g. user not admin) is logged but not propagated so the app
 /// can still start.
 pub fn apply_on_launch<R: Runtime>(_app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "windows")]
+    {
+        match Command::new("net").args(["session"]).output() {
+            Ok(out) if out.status.success() => {}
+            Ok(out) => {
+                log::warn!(
+                    "apply_on_launch: not running as admin, skipping prevent-sleep: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                PREVENTED.store(false, Ordering::Relaxed);
+                return Ok(());
+            }
+            Err(e) => {
+                log::warn!(
+                    "apply_on_launch: could not verify admin rights, skipping prevent-sleep: {e}"
+                );
+                PREVENTED.store(false, Ordering::Relaxed);
+                return Ok(());
+            }
+        }
+    }
+
     let prevented = apply_policy(true);
     PREVENTED.store(prevented, Ordering::Relaxed);
     Ok(())
 }
 
 /// Tauri command to toggle prevent-sleep at runtime.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_prevent_sleep(enabled: bool) -> Result<bool, String> {
     let ok = apply_policy(enabled);
     PREVENTED.store(ok, Ordering::Relaxed);
