@@ -100,18 +100,11 @@ const mobileLinks: SidebarLink[] = [
 
 const groups: SidebarGroup[] = [
   {
-    id: "sales",
-    label: "Sales",
+    id: "transactions",
+    label: "Transactions",
     icon: ShoppingCart,
     items: [
       { id: "sales", label: "Sales", icon: ShoppingCart, tab: "sales", hash: "#/sales" },
-    ],
-  },
-  {
-    id: "sales-return",
-    label: "Sales Return",
-    icon: RotateCcw,
-    items: [
       { id: "sales-return", label: "Returns", icon: RotateCcw, tab: "sales", hash: "#/sales/return" },
     ],
   },
@@ -157,7 +150,7 @@ const groups: SidebarGroup[] = [
   },
 ];
 
-const sectionLabels = ["Main", "Sales", "Sales Return", "Inventory", "Parties", "Reports", "Settings"] as const;
+const sectionLabels = ["Main", "Transactions", "Inventory", "Parties", "Reports", "Settings"] as const;
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => {
@@ -209,7 +202,14 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           <SidebarSectionLabel collapsed={collapsed}>{sectionLabels[0]}</SidebarSectionLabel>
           <SidebarLinkButton link={dashboardLink} active={activeTab === "dashboard"} collapsed={collapsed} onNavigate={onNavigate} />
 
-          {groups.map((group, index) => {
+          {(() => {
+            // Flatten every sidebar link across all groups so isLinkActive can
+            // detect cross-group yield (e.g. "Sales" at #/sales must yield to
+            // "Returns" at #/sales/return even though they live in different
+            // groups). Without this both entries would light up simultaneously
+            // when the user is on a Returns sub-route.
+            const allLinks: SidebarLink[] = groups.flatMap((g) => g.items);
+            return groups.map((group, index) => {
             const singleItem = group.items.length === 1;
             if (singleItem && collapsed) {
               return (
@@ -257,7 +257,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
                       <SidebarLinkButton
                         key={item.id}
                         link={item}
-                        active={isLinkActive(item, activeTab, group.items)}
+                        active={isLinkActive(item, activeTab, allLinks)}
                         collapsed={collapsed}
                         onNavigate={onNavigate}
                         nested
@@ -267,7 +267,8 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
                 ) : null}
               </div>
             );
-          })}
+            });
+          })()}
         </nav>
 
         <AccountMenu user={user} collapsed={collapsed} onLock={onLock} onLogout={onLogout ?? onLock} />
