@@ -11,6 +11,7 @@ import {
   LogOut,
   Package,
   Printer,
+  RotateCcw,
   Settings,
   ShoppingCart,
   Truck,
@@ -104,6 +105,7 @@ const groups: SidebarGroup[] = [
     icon: ShoppingCart,
     items: [
       { id: "sales", label: "Sales", icon: ShoppingCart, tab: "sales", hash: "#/sales" },
+      { id: "sales-return", label: "Returns", icon: RotateCcw, tab: "sales", hash: "#/sales/return" },
     ],
   },
   {
@@ -248,7 +250,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
                       <SidebarLinkButton
                         key={item.id}
                         link={item}
-                        active={isLinkActive(item, activeTab)}
+                        active={isLinkActive(item, activeTab, group.items)}
                         collapsed={collapsed}
                         onNavigate={onNavigate}
                         nested
