@@ -9,7 +9,6 @@ pub mod session;
 
 // Slice D — shell modules
 pub mod backup;
-pub mod cg_scanner;
 pub mod hardening;
 pub mod hid_scanner;
 pub mod scan;
@@ -132,15 +131,9 @@ pub fn run() {
                 if let Err(e) = scan::init(app) {
                     log::warn!("Scan init failed (non-fatal): {}", e);
                 }
-            } else {
-                match cg_scanner::try_init(app.handle()) {
-                    Ok(()) => log::info!("macOS CGEventTap scanner hook initialized"),
-                    Err(e) => log::warn!(
-                        "CGEventTap scanner init failed (non-fatal): {e}. \
-                         Scanner requires Accessibility permissions."
-                    ),
-                }
             }
+            // macOS: no scanner hook — Accessibility-prompting CGEventTap path was
+            // dropped after consuming keyboard events through the React tree.
 
             // M4.2: USB HID scanner runs alongside keyboard-wedge hooks.
             match hid_scanner::try_init(app.handle().clone()) {
@@ -302,6 +295,7 @@ pub fn run() {
             commands::backup::backup_status,
             // Printer discovery (Slice D)
             commands::discover_printers::discover_system_printers,
+            commands::discover_printers::get_printer_status,
             // Printer CRUD (Slice D)
             commands::printers::cmd_list_printers,
             commands::printers::cmd_create_printer,
@@ -313,6 +307,8 @@ pub fn run() {
             commands::printing::cmd_print_receipt,
             // Dev receipt PDF fallback (Slice D, macOS/Linux only)
             commands::printing::cmd_print_receipt_dev,
+            // Raw print passthrough (Slice D — ZPL, custom data)
+            commands::printing::cmd_print_raw,
             // Bulk imports (Slice C)
             commands::import::cmd_import_items_csv,
             commands::import::cmd_import_inward_csv,

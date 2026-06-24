@@ -448,10 +448,10 @@ pub fn cmd_import_inward_csv(
                 sku_code: r.get(2)?,
                 barcode: r.get(3)?,
                 unit_id: r.get(4)?,
-                unit_code: r.get(5)?,
+                _unit_code: r.get(5)?,
                 units_per_pack: r.get(6)?,
                 cost_paise: r.get(7)?,
-                retail_price_paise: r.get(8)?,
+                _retail_price_paise: r.get(8)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -635,10 +635,10 @@ struct ItemLookupRow {
     sku_code: String,
     barcode: Option<String>,
     unit_id: i64,
-    unit_code: String,
+    _unit_code: String,
     units_per_pack: i64,
     cost_paise: i64,
-    retail_price_paise: i64,
+    _retail_price_paise: i64,
 }
 
 /// Resolve an item by name (case-insensitive), then SKU, then barcode.
