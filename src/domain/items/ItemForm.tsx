@@ -177,10 +177,8 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             lines: [{
               item_id: item.id,
               qty: openingQty,
-              unit_id: item.unit_id ?? 0,
-              unit_code: unit?.code ?? "pc",
-              cost_price: item.cost_paise,
-              retail_price: item.retail_price_paise,
+              unit_type: "unit",
+              unit_price_paise: item.cost_paise,
               location_id: item.primary_location_id,
             }],
           };

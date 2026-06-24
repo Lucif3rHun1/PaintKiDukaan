@@ -29,6 +29,7 @@ interface DraftLine {
   row_id: string;
   item_id: number;
   qty: number;
+  unit_type: "unit" | "box";
   unit_id: number;
   unit_code: string;
   cost_price: number;
@@ -87,6 +88,7 @@ export default function InwardPage({ user: _user }: Props) {
               item_id: 0,
               qty: 1,
               unit_id: 0,
+              unit_type: "unit",
               unit_code: "",
               cost_price: 0,
               retail_price: 0,
@@ -156,6 +158,7 @@ export default function InwardPage({ user: _user }: Props) {
           item_id: 0,
           qty: 1,
           unit_id: 0,
+          unit_type: "unit",
           unit_code: "",
           cost_price: 0,
           retail_price: 0,
@@ -182,6 +185,7 @@ export default function InwardPage({ user: _user }: Props) {
       item_id: itemId ?? 0,
       qty: 1,
       unit_id: unitId,
+      unit_type: "unit",
       unit_code: unitCode,
       cost_price: 0,
       retail_price: 0,
@@ -240,10 +244,8 @@ export default function InwardPage({ user: _user }: Props) {
     const lines: InwardLine[] = filled.map((l) => ({
       item_id: l.item_id,
       qty: l.qty,
-      unit_id: l.unit_id,
-      unit_code: l.unit_code,
-      cost_price: l.cost_price,
-      retail_price: l.retail_price,
+      unit_type: l.unit_type,
+      unit_price_paise: Math.round(l.cost_price * 100),
       location_id: l.location_id,
     }));
     if (lines.length === 0) {
@@ -299,6 +301,7 @@ export default function InwardPage({ user: _user }: Props) {
           item_id: 0,
           qty: 1,
           unit_id: 0,
+          unit_type: "unit",
           unit_code: "",
           cost_price: 0,
           retail_price: 0,
