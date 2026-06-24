@@ -212,7 +212,7 @@ export default function ReturnPage({ user, onBack }: Props) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Button type="button" variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>
-              Sales
+              Returns
             </Button>
             <h1 className="text-base font-semibold text-foreground">New return</h1>
           </div>
