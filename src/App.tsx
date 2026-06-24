@@ -55,6 +55,12 @@ const ReturnDetailPage = lazy(() =>
   import("./pos/sales/ReturnDetailPage").then((m) => ({ default: m.ReturnDetailPage })),
 );
 const InwardPage = lazy(() => import("./pos/purchases/InwardPage"));
+const InwardListPage = lazy(() =>
+  import("./pos/purchases/InwardListPage").then((m) => ({ default: m.InwardListPage })),
+);
+const InwardDetailPage = lazy(() =>
+  import("./pos/purchases/InwardDetailPage").then((m) => ({ default: m.InwardDetailPage })),
+);
 const SalesReportPage = lazy(() => import("./pos/salesReport/SalesReportPage"));
 const Dashboard = lazy(() =>
   import("./shell/routes/Dashboard").then((m) => ({ default: m.Dashboard })),
@@ -129,6 +135,14 @@ function readSalesSubRoute(): "list" | "new" | "return" | "return-list" | "retur
   return "list";
 }
 
+function readInwardSubRoute(): "list" | "new" | "detail" {
+  const h = window.location.hash;
+  if (h === "#/inward/new") return "new";
+  const detailMatch = h.match(/^#\/inward\/(\d+)$/);
+  if (detailMatch) return "detail";
+  return "list";
+}
+
 function applyHashRedirect(): boolean {
   if (typeof window === "undefined") return false;
   const target = HASH_REDIRECTS[window.location.hash];
@@ -148,6 +162,7 @@ export default function App() {
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [tab, setTab] = useState<AppShellTab>(readTab);
   const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list" | "return-detail">(readSalesSubRoute);
+  const [inwardRoute, setInwardRoute] = useState<"list" | "new" | "detail">(readInwardSubRoute);
 
   /* ── Vendor modal state ───────────────────────────────── */
   const [vendorCreateOpen, setVendorCreateOpen] = useState(false);
@@ -223,6 +238,7 @@ export default function App() {
     const onHash = () => {
       setTab(readTab());
       setSalesRoute(readSalesSubRoute());
+      setInwardRoute(readInwardSubRoute());
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -351,21 +367,21 @@ export default function App() {
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <ReturnListPage
                 onCreate={() => (window.location.hash = "#/sales/return/new")}
-                onSelect={(no) => (window.location.hash = `#/sales/return/${encodeURIComponent(no)}`)}
+                onSelect={(id) => (window.location.hash = `#/sales/return/${id}`)}
               />
             </div>
           </Suspense>
         </ErrorBoundary>
       ) : null}
       {tab === "sales" && salesRoute === "return-detail" ? (() => {
-        const match = window.location.hash.match(/^#\/sales\/return\/(.+)$/);
-        const no = match ? decodeURIComponent(match[1]) : "";
+        const match = window.location.hash.match(/^#\/sales\/return\/(\d+)$/);
+        const id = match ? Number(match[1]) : 0;
         return (
           <ErrorBoundary context="Sales — return detail">
             <Suspense fallback={<RouteFallback />}>
               <div className="animate-in fade-in motion-reduce:animate-none duration-200">
                 <ReturnDetailPage
-                  no={no}
+                  id={id}
                   onBack={() => (window.location.hash = "#/sales/return")}
                 />
               </div>
@@ -382,15 +398,43 @@ export default function App() {
           </Suspense>
         </ErrorBoundary>
       ) : null}
-      {tab === "inward" && (
-        <ErrorBoundary context="Inward">
+      {tab === "inward" && inwardRoute === "new" ? (
+        <ErrorBoundary context="Inward — new">
           <Suspense fallback={<RouteFallback />}>
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
             </div>
           </Suspense>
         </ErrorBoundary>
-      )}
+      ) : null}
+      {tab === "inward" && inwardRoute === "list" ? (
+        <ErrorBoundary context="Inward — list">
+          <Suspense fallback={<RouteFallback />}>
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <InwardListPage
+                onCreate={() => (window.location.hash = "#/inward/new")}
+                onSelect={(id) => (window.location.hash = `#/inward/${id}`)}
+              />
+            </div>
+          </Suspense>
+        </ErrorBoundary>
+      ) : null}
+      {tab === "inward" && inwardRoute === "detail" ? (() => {
+        const match = window.location.hash.match(/^#\/inward\/(\d+)$/);
+        const id = match ? Number(match[1]) : 0;
+        return (
+          <ErrorBoundary context="Inward — detail">
+            <Suspense fallback={<RouteFallback />}>
+              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+                <InwardDetailPage
+                  id={id}
+                  onBack={() => (window.location.hash = "#/inward")}
+                />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
+        );
+      })() : null}
       {tab === "sales-report" && (
         <RoleGuard minRole="stocker">
           <ErrorBoundary context="Sales Report">
