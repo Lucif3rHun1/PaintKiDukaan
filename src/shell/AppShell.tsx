@@ -105,6 +105,13 @@ const groups: SidebarGroup[] = [
     icon: ShoppingCart,
     items: [
       { id: "sales", label: "Sales", icon: ShoppingCart, tab: "sales", hash: "#/sales" },
+    ],
+  },
+  {
+    id: "sales-return",
+    label: "Sales Return",
+    icon: RotateCcw,
+    items: [
       { id: "sales-return", label: "Returns", icon: RotateCcw, tab: "sales", hash: "#/sales/return" },
     ],
   },
@@ -150,7 +157,7 @@ const groups: SidebarGroup[] = [
   },
 ];
 
-const sectionLabels = ["Main", "Sales", "Inventory", "Parties", "Reports", "Settings"] as const;
+const sectionLabels = ["Main", "Sales", "Sales Return", "Inventory", "Parties", "Reports", "Settings"] as const;
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => {
