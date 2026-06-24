@@ -64,6 +64,7 @@ impl EscPosBuilder {
     fn new(width: usize) -> Self {
         let mut buf = Vec::new();
         buf.extend_from_slice(&[ESC, b'@']); // initialize
+        buf.extend_from_slice(&[ESC, b't', 0x00]); // ESC t 0 = Code page 437
         Self { width, buf }
     }
 
@@ -253,75 +254,109 @@ fn print_raw(printer_name: &str, data: &[u8]) -> AppResult<()> {
         StartPagePrinter, WritePrinter, DOC_INFO_1,
     };
 
-    let name = HSTRING::from(printer_name);
-    let mut hprinter = HANDLE::default();
+    if printer_name.trim().is_empty() {
+        return Err(AppError::Validation("printer name is required".into()));
+    }
 
-    unsafe {
-        if !OpenPrinterW(
-            PWSTR(name.as_wide().as_ptr() as *mut _),
-            &mut hprinter,
-            None,
-        )
-        .as_bool()
-        {
-            return Err(AppError::Io(std::io::Error::last_os_error()));
+    let max_attempts = 3u32;
+    let mut last_err: Option<std::io::Error> = None;
+
+    for attempt in 1..=max_attempts {
+        let name = HSTRING::from(printer_name);
+        let mut hprinter = HANDLE::default();
+
+        if attempt > 1 {
+            log::warn!("print_raw: retry attempt {attempt}/{max_attempts}");
         }
-    }
 
-    if hprinter.is_invalid() {
-        return Err(AppError::Io(std::io::Error::last_os_error()));
-    }
+        let opened = unsafe {
+            OpenPrinterW(
+                PWSTR(name.as_wide().as_ptr() as *mut _),
+                &mut hprinter,
+                None,
+            )
+            .as_bool()
+        };
 
-    let doc_name = HSTRING::from("PaintKiDukaan Receipt");
-    let datatype = HSTRING::from("RAW");
-    let doc_info = DOC_INFO_1 {
-        pDocName: PWSTR(doc_name.as_wide().as_ptr() as *mut _),
-        pOutputFile: PWSTR::null(),
-        pDatatype: PWSTR(datatype.as_wide().as_ptr() as *mut _),
-    };
-
-    let job_id = unsafe { StartDocPrinterW(hprinter, 1, &doc_info) };
-    if job_id <= 0 {
-        unsafe {
-            let _ = ClosePrinter(hprinter);
+        if !opened || hprinter.is_invalid() {
+            last_err = Some(std::io::Error::last_os_error());
+            log::error!("print_raw: OpenPrinterW failed on attempt {attempt}");
+            if attempt < max_attempts {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            continue;
         }
-        return Err(AppError::Io(std::io::Error::last_os_error()));
-    }
 
-    unsafe {
-        if !StartPagePrinter(hprinter).as_bool() {
-            let _ = EndDocPrinter(hprinter);
-            let _ = ClosePrinter(hprinter);
-            return Err(AppError::Io(std::io::Error::last_os_error()));
+        let doc_name = HSTRING::from("PaintKiDukaan Receipt");
+        let datatype = HSTRING::from("RAW");
+        let doc_info = DOC_INFO_1 {
+            pDocName: PWSTR(doc_name.as_wide().as_ptr() as *mut _),
+            pOutputFile: PWSTR::null(),
+            pDatatype: PWSTR(datatype.as_wide().as_ptr() as *mut _),
+        };
+
+        let job_id = unsafe { StartDocPrinterW(hprinter, 1, &doc_info) };
+        if job_id <= 0 {
+            last_err = Some(std::io::Error::last_os_error());
+            unsafe {
+                let _ = ClosePrinter(hprinter);
+            }
+            log::error!("print_raw: StartDocPrinterW failed on attempt {attempt}");
+            if attempt < max_attempts {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            continue;
         }
-    }
 
-    let mut written = 0u32;
-    let ok = unsafe {
-        WritePrinter(
-            hprinter,
-            data.as_ptr() as *const c_void,
-            data.len() as u32,
-            &mut written,
-        )
-    };
+        if !unsafe { StartPagePrinter(hprinter).as_bool() } {
+            last_err = Some(std::io::Error::last_os_error());
+            unsafe {
+                let _ = EndDocPrinter(hprinter);
+                let _ = ClosePrinter(hprinter);
+            }
+            log::error!("print_raw: StartPagePrinter failed on attempt {attempt}");
+            if attempt < max_attempts {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            continue;
+        }
 
-    if !ok.as_bool() || written != data.len() as u32 {
+        let mut written = 0u32;
+        let ok = unsafe {
+            WritePrinter(
+                hprinter,
+                data.as_ptr() as *const c_void,
+                data.len() as u32,
+                &mut written,
+            )
+        };
+
+        if !ok.as_bool() || written != data.len() as u32 {
+            last_err = Some(std::io::Error::last_os_error());
+            unsafe {
+                let _ = EndPagePrinter(hprinter);
+                let _ = EndDocPrinter(hprinter);
+                let _ = ClosePrinter(hprinter);
+            }
+            log::error!("print_raw: WritePrinter failed on attempt {attempt}");
+            if attempt < max_attempts {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            continue;
+        }
+
+        // success path
         unsafe {
             let _ = EndPagePrinter(hprinter);
             let _ = EndDocPrinter(hprinter);
             let _ = ClosePrinter(hprinter);
         }
-        return Err(AppError::Io(std::io::Error::last_os_error()));
+        return Ok(());
     }
 
-    unsafe {
-        let _ = EndPagePrinter(hprinter);
-        let _ = EndDocPrinter(hprinter);
-        let _ = ClosePrinter(hprinter);
-    }
-
-    Ok(())
+    Err(AppError::Io(last_err.unwrap_or_else(|| {
+        std::io::Error::other("WritePrinter failed after all retries")
+    })))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -368,6 +403,27 @@ pub fn cmd_print_receipt_dev(sale_id: i64, pdf_base64: String) -> AppResult<Stri
         f.write_all(&bytes).map_err(AppError::Io)?;
         Ok(path.to_string_lossy().into_owned())
     }
+}
+
+/// Send raw byte data to a printer (ZPL, custom ESC/POS, etc.).
+/// Reuses the same Win32 print pipeline as `cmd_print_receipt`.
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_print_raw(printer_name: String, data: Vec<u8>) -> AppResult<()> {
+    if printer_name.trim().is_empty() {
+        return Err(AppError::Validation("printer name is required".into()));
+    }
+    if data.is_empty() {
+        return Err(AppError::Validation("print data must not be empty".into()));
+    }
+    if data.len() > 1024 * 1024 {
+        return Err(AppError::Validation("print data exceeds 1 MB limit".into()));
+    }
+    log::info!(
+        "cmd_print_raw: sending {} bytes to printer '{}'",
+        data.len(),
+        printer_name
+    );
+    print_raw(&printer_name, &data)
 }
 
 #[cfg(test)]
@@ -435,6 +491,77 @@ mod tests {
         };
         let err = validate_input("", &data).unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    fn minimal_receipt_data() -> ReceiptData {
+        ReceiptData {
+            shop_name: "Test Shop".into(),
+            shop_address: None,
+            shop_phone: None,
+            shop_gstin: None,
+            header: None,
+            footer: None,
+            terms: None,
+            paper_size: Some("thermal-80mm".into()),
+            sale_number: "INV-0001".into(),
+            created_at: "2026-06-23".into(),
+            customer_name: None,
+            items: vec![ReceiptItem {
+                name: "Paint".into(),
+                qty: "1".into(),
+                unit: "L".into(),
+                unit_price: "Rs.100.00".into(),
+                line_total: "Rs.100.00".into(),
+            }],
+            subtotal: "Rs.100.00".into(),
+            discount: "Rs.0.00".into(),
+            total: "Rs.100.00".into(),
+            paid: "Rs.100.00".into(),
+            due: "Rs.0.00".into(),
+            payments: vec![ReceiptPayment {
+                mode: "CASH".into(),
+                amount: "Rs.100.00".into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn receipt_begins_with_init_and_codepage() {
+        let data = minimal_receipt_data();
+        let bytes = build_receipt(data);
+        assert!(
+            bytes.starts_with(&[ESC, b'@', ESC, b't', 0x00]),
+            "receipt must start with init + codepage"
+        );
+    }
+
+    #[test]
+    fn print_raw_validates_non_empty_printer() {
+        let result = print_raw("", b"test");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cmd_print_raw_validates_empty_data() {
+        let result = cmd_print_raw("XP-80".into(), vec![]);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must not be empty"));
+    }
+
+    #[test]
+    fn cmd_print_raw_validates_oversized_data() {
+        let result = cmd_print_raw("XP-80".into(), vec![0u8; 1024 * 1024 + 1]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("1 MB"));
+    }
+
+    #[test]
+    fn cmd_print_raw_validates_empty_printer_name() {
+        let result = cmd_print_raw("".into(), vec![0x1B, 0x40]);
+        assert!(result.is_err());
     }
 
     #[cfg(not(target_os = "windows"))]
