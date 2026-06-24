@@ -1,5 +1,4 @@
 import { tauriInvoke as invoke } from "./lib/security/tauri";
-import { initSessionLog } from "./lib/security/sessionLog";
 import logo from "./assets/logo-64.png";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -49,6 +48,9 @@ const SalesListPage = lazy(() =>
   import("./pos/sales/SalesListPage").then((m) => ({ default: m.SalesListPage })),
 );
 const ReturnPage = lazy(() => import("./pos/sales/ReturnPage"));
+const ReturnListPage = lazy(() =>
+  import("./pos/sales/ReturnListPage").then((m) => ({ default: m.ReturnListPage })),
+);
 const InwardPage = lazy(() => import("./pos/purchases/InwardPage"));
 const SalesReportPage = lazy(() => import("./pos/salesReport/SalesReportPage"));
 const Dashboard = lazy(() =>
@@ -66,6 +68,7 @@ const MasterHealthPage = lazy(() =>
 
 const THIRTY_SECONDS = 30_000;
 const FIFTEEN_MINUTES = 15 * 60 * 1_000;
+const BOOTSTRAP_TIMEOUT_MS = 30_000;
 const LOCKED_SESSION = { user: null, locked: true, pinRole: "real" as const };
 
 function RouteFallback() {
@@ -113,10 +116,11 @@ function readItemsSubRoute(): "list" | "barcodes" {
   return "list";
 }
 
-function readSalesSubRoute(): "list" | "new" | "return" {
+function readSalesSubRoute(): "list" | "new" | "return" | "return-list" {
   const h = window.location.hash;
   if (h === "#/sales/new") return "new";
-  if (h === "#/sales/return") return "return";
+  if (h === "#/sales/return/new") return "return";
+  if (h === "#/sales/return") return "return-list";
   return "list";
 }
 
@@ -131,7 +135,6 @@ function applyHashRedirect(): boolean {
 }
 
 export default function App() {
-  initSessionLog();
   const phase = useSecurity((s) => s.phase);
   const session = useSecurity((s) => s.session);
   const setPhase = useSecurity((s) => s.setPhase);
@@ -139,7 +142,7 @@ export default function App() {
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [tab, setTab] = useState<AppShellTab>(readTab);
-  const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return">(readSalesSubRoute);
+  const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list">(readSalesSubRoute);
 
   /* ── Vendor modal state ───────────────────────────────── */
   const [vendorCreateOpen, setVendorCreateOpen] = useState(false);
@@ -170,7 +173,17 @@ export default function App() {
     let cancelled = false;
     if (applyHashRedirect()) return;
     console.log("[BOOT] Calling app_bootstrap...");
-    invoke<Bootstrap>("app_bootstrap")
+
+    // Race the bootstrap against a timeout so the UI never hangs forever if
+    // the backend is stuck on argon2 key derivation or DB contention.
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(
+        `Bootstrap timed out after ${BOOTSTRAP_TIMEOUT_MS / 1000}s. ` +
+        "The database may be locked or the key derivation is taking too long."
+      )), BOOTSTRAP_TIMEOUT_MS);
+    });
+
+    Promise.race([invoke<Bootstrap>("app_bootstrap"), timeout])
       .then((b) => {
         if (cancelled) return;
         console.log("[BOOT] Bootstrap result:", JSON.stringify(b));
@@ -210,45 +223,36 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  /* ── Activity tracking ─────────────────────────────────── */
+  /* ── Activity tracking + idle auto-lock ───────────────── */
+  // Single combined effect: the previous split added 6 window listeners
+  // (3 for activity, 3 for idle-lock) on every phase change. Each mousemove
+  // fired 6 callbacks. Consolidated to 3 callbacks per event.
   useEffect(() => {
     if (phase !== "unlocked") return;
-    const touch = () => {
-      const now = Date.now();
-      if (now - lastTouchAt.current < THIRTY_SECONDS) return;
-      lastTouchAt.current = now;
-      void invoke("touch_activity").catch(() => undefined);
-    };
-    window.addEventListener("mousemove", touch);
-    window.addEventListener("keydown", touch);
-    window.addEventListener("click", touch);
-    return () => {
-      window.removeEventListener("mousemove", touch);
-      window.removeEventListener("keydown", touch);
-      window.removeEventListener("click", touch);
-    };
-  }, [phase]);
-
-  /* ── Idle auto-lock ────────────────────────────────────── */
-  useEffect(() => {
-    if (phase !== "unlocked") return;
-    let timer: ReturnType<typeof setTimeout>;
-    const reset = () => {
-      clearTimeout(timer);
-      timer = setTimeout(async () => {
+    let idleTimer: ReturnType<typeof setTimeout>;
+    const resetIdle = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(async () => {
         try { await invoke("lock"); } finally {
           setSession(LOCKED_SESSION);
           setPhase("locked");
         }
       }, FIFTEEN_MINUTES);
     };
-    const onActivity = () => reset();
-    window.addEventListener("mousemove", onActivity);
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastTouchAt.current >= THIRTY_SECONDS) {
+        lastTouchAt.current = now;
+        void invoke("touch_activity").catch(() => undefined);
+      }
+      resetIdle();
+    };
+    window.addEventListener("mousemove", onActivity, { passive: true });
     window.addEventListener("keydown", onActivity);
     window.addEventListener("click", onActivity);
-    reset();
+    resetIdle();
     return () => {
-      clearTimeout(timer);
+      clearTimeout(idleTimer);
       window.removeEventListener("mousemove", onActivity);
       window.removeEventListener("keydown", onActivity);
       window.removeEventListener("click", onActivity);
@@ -330,8 +334,17 @@ export default function App() {
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <ReturnPage
                 user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-                onBack={() => (window.location.hash = "#/sales")}
+                onBack={() => (window.location.hash = "#/sales/return")}
               />
+            </div>
+          </Suspense>
+        </ErrorBoundary>
+      ) : null}
+      {tab === "sales" && salesRoute === "return-list" ? (
+        <ErrorBoundary context="Sales — return list">
+          <Suspense fallback={<RouteFallback />}>
+            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <ReturnListPage onCreate={() => (window.location.hash = "#/sales/return/new")} />
             </div>
           </Suspense>
         </ErrorBoundary>
