@@ -1181,7 +1181,6 @@ pub fn cmd_create_sale_return(
     payload: CreateSaleReturnPayload,
 ) -> AppResult<i64> {
     ipc_auth::authorize_err("cmd_create_sale_return", state.inner())?;
-    crate::commands::auth::verify_owner_pin(state.inner(), &payload.owner_pin)?;
     let guard = state
         .db
         .lock()
@@ -1192,6 +1191,11 @@ pub fn cmd_create_sale_return(
         .lock()
         .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
+    // Owner PIN re-verification is only required for non-owner operators; the
+    // owner has already authenticated at unlock time.
+    if user.role != "owner" {
+        crate::commands::auth::verify_owner_pin(state.inner(), &payload.owner_pin)?;
+    }
     let user_id = user.id;
     create_sale_return(db, user_id, payload).map_err(|e| AppError::Internal(e.to_string()))
 }
