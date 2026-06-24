@@ -21,11 +21,12 @@ import { formatDateForDisplay } from "../../lib/date";
 
 interface Props {
   onCreate: () => void;
+  onSelect?: (no: string) => void;
 }
 
 const PAGE_SIZE = 25;
 
-export function ReturnListPage({ onCreate }: Props) {
+export function ReturnListPage({ onCreate, onSelect }: Props) {
   const [from, setFrom] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -165,6 +166,10 @@ export function ReturnListPage({ onCreate }: Props) {
             data={rows}
             columns={columns}
             keyExtractor={(r) => r.id}
+            onRowClick={(r) => {
+              if (onSelect) onSelect(r.no);
+              else window.location.hash = `#/sales/return/${encodeURIComponent(r.no)}`;
+            }}
             loading={isLoading || isFetching}
             error={error}
             onRetry={refetch}

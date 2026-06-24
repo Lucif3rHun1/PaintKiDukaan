@@ -51,6 +51,9 @@ const ReturnPage = lazy(() => import("./pos/sales/ReturnPage"));
 const ReturnListPage = lazy(() =>
   import("./pos/sales/ReturnListPage").then((m) => ({ default: m.ReturnListPage })),
 );
+const ReturnDetailPage = lazy(() =>
+  import("./pos/sales/ReturnDetailPage").then((m) => ({ default: m.ReturnDetailPage })),
+);
 const InwardPage = lazy(() => import("./pos/purchases/InwardPage"));
 const SalesReportPage = lazy(() => import("./pos/salesReport/SalesReportPage"));
 const Dashboard = lazy(() =>
@@ -116,11 +119,13 @@ function readItemsSubRoute(): "list" | "barcodes" {
   return "list";
 }
 
-function readSalesSubRoute(): "list" | "new" | "return" | "return-list" {
+function readSalesSubRoute(): "list" | "new" | "return" | "return-list" | "return-detail" {
   const h = window.location.hash;
   if (h === "#/sales/new") return "new";
   if (h === "#/sales/return/new") return "return";
+  const detailMatch = h.match(/^#\/sales\/return\/(.+)$/);
   if (h === "#/sales/return") return "return-list";
+  if (detailMatch) return "return-detail";
   return "list";
 }
 
@@ -142,7 +147,7 @@ export default function App() {
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [tab, setTab] = useState<AppShellTab>(readTab);
-  const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list">(readSalesSubRoute);
+  const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list" | "return-detail">(readSalesSubRoute);
 
   /* ── Vendor modal state ───────────────────────────────── */
   const [vendorCreateOpen, setVendorCreateOpen] = useState(false);
@@ -344,11 +349,30 @@ export default function App() {
         <ErrorBoundary context="Sales — return list">
           <Suspense fallback={<RouteFallback />}>
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-              <ReturnListPage onCreate={() => (window.location.hash = "#/sales/return/new")} />
+              <ReturnListPage
+                onCreate={() => (window.location.hash = "#/sales/return/new")}
+                onSelect={(no) => (window.location.hash = `#/sales/return/${encodeURIComponent(no)}`)}
+              />
             </div>
           </Suspense>
         </ErrorBoundary>
       ) : null}
+      {tab === "sales" && salesRoute === "return-detail" ? (() => {
+        const match = window.location.hash.match(/^#\/sales\/return\/(.+)$/);
+        const no = match ? decodeURIComponent(match[1]) : "";
+        return (
+          <ErrorBoundary context="Sales — return detail">
+            <Suspense fallback={<RouteFallback />}>
+              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+                <ReturnDetailPage
+                  no={no}
+                  onBack={() => (window.location.hash = "#/sales/return")}
+                />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
+        );
+      })() : null}
       {tab === "sales" && salesRoute === "list" ? (
         <ErrorBoundary context="Sales — list">
           <Suspense fallback={<RouteFallback />}>
