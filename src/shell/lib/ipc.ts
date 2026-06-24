@@ -198,6 +198,9 @@ export const ipc = {
   discoverSystemPrinters: () => invoke<DiscoveredPrinter[]>("discover_system_printers"),
   printEscPosReceipt: (printerName: string, receiptData: Record<string, unknown>) =>
     invoke<void>("cmd_print_receipt", { printer_name: printerName, receipt_data: receiptData }),
+  /** Send raw bytes (ZPL, custom ESC/POS) to any printer. */
+  printRaw: (printerName: string, data: number[]) =>
+    invoke<void>("cmd_print_raw", { printer_name: printerName, data }),
   printReceiptDev: (saleId: number, pdfBase64: string) =>
     invoke<string>("cmd_print_receipt_dev", { sale_id: saleId, pdf_base64: pdfBase64 }),
   listPrinters: (useCase?: "receipt" | "label") =>

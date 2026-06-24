@@ -22,14 +22,14 @@ import { formatRupeesFromPaise } from "../lib/money";
 export const LOCKED_FORMAT = "EAN13" as const;
 const BARCODE_OPTIONS = {
   format: LOCKED_FORMAT,
-  displayValue: true,
+  displayValue: false,
   fontSize: 10,
   textMargin: 2,
   margin: 1,
   height: 36,
   width: 2,
   background: "transparent",
-  scale: 3,
+  scale: 4,
 } as const;
 
 export interface LabelSpec {
@@ -201,18 +201,20 @@ export const THERMAL_SIZES: Record<ThermalSize, { w: number; h: number; label: s
  * 1×1 transparent PNG so downstream PDF assembly does not crash mid-batch.
  */
 export async function makeBarcodePng(value: string): Promise<string> {
+  const canvas = document.createElement("canvas");
+  canvas.width = 900;
+  canvas.height = 300;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
   try {
-    const canvas = document.createElement("canvas");
-    canvas.width = 900;
-    canvas.height = 300;
-    const ctx = canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-      JsBarcode(canvas, value, {
-        ...BARCODE_OPTIONS,
-        format: "EAN13",
-        width: 2,
-        background: "transparent",
-      });
+    JsBarcode(canvas, value, {
+      ...BARCODE_OPTIONS,
+      format: "EAN13",
+      width: 2,
+      margin: 4,
+      background: "transparent",
+    });
     return canvas.toDataURL("image/png");
   } catch (eanErr) {
     console.warn(
@@ -220,10 +222,6 @@ export async function makeBarcodePng(value: string): Promise<string> {
       eanErr,
     );
     try {
-      const canvas = document.createElement("canvas");
-      canvas.width = 900;
-      canvas.height = 300;
-      const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       JsBarcode(canvas, value, {
         ...BARCODE_OPTIONS,

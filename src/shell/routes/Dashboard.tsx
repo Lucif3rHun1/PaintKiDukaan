@@ -53,6 +53,18 @@ import {
 import type { Sale, DailySalesReport } from "../../pos/types";
 
 const REFETCH_INTERVAL = 30_000;
+// Stagger the polling intervals so 7+ queries don't all fire at the same
+// moment and saturate the IPC channel. Each query gets a small offset.
+const STAGGER = {
+  sales: 30_000,
+  bills: 32_000,
+  customers: 28_000,
+  lowStock: 34_000,
+  outstanding: 36_000,
+  backup: 45_000,
+  dayClose: 60_000,
+  alerts: 26_000,
+};
 const ONE_DAY_MS = 86_400_000;
 
 function startOfTodayIso(): string {
@@ -119,37 +131,37 @@ export function Dashboard() {
   const weeklySales = useQuery({
     queryKey: ["dashboard", "sales", "weekly", today],
     queryFn: () => dailySales(weekStart, today),
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: STAGGER.sales,
   });
 
   const todayBills = useQuery({
     queryKey: ["dashboard", "sales", "today", today],
     queryFn: () => listSales(today, today, 200),
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: STAGGER.bills,
   });
 
   const customers = useQuery({
     queryKey: ["dashboard", "customers"],
     queryFn: () => listCustomers(),
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: STAGGER.customers,
   });
 
   const lowStock = useQuery({
     queryKey: ["dashboard", "lowStock"],
     queryFn: () => listItems({ low_stock_only: true, limit: 5 }),
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: STAGGER.lowStock,
   });
 
   const outstanding = useQuery({
     queryKey: ["dashboard", "outstanding"],
     queryFn: () => outstandingReport(),
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: STAGGER.outstanding,
   });
 
   const backup = useQuery({
     queryKey: ["dashboard", "backup"],
     queryFn: () => ipc.backupStatus(),
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: STAGGER.backup,
   });
 
   const dayClose = useQuery({
@@ -159,13 +171,13 @@ export function Dashboard() {
       const latest = list[0]?.date ?? null;
       return { latest, overdue: !latest || latest < today };
     },
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: STAGGER.dayClose,
   });
 
   const alerts = useQuery({
     queryKey: ["dashboard", "alerts"],
     queryFn: () => listAlerts(),
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: STAGGER.alerts,
   });
 
   const isLoading =
