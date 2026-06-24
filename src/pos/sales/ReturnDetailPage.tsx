@@ -4,17 +4,17 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 
 import { Badge, Button, Card, EmptyState, Money } from "../../components/ui";
-import { listSaleReturns } from "../../domain/ipc";
+import { getSaleReturn } from "../../domain/ipc";
 import type { SaleReturn } from "../../domain/types";
 import { formatDateForDisplay } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 
 interface Props {
-  no: string;
+  id: number;
   onBack: () => void;
 }
 
-export function ReturnDetailPage({ no, onBack }: Props) {
+export function ReturnDetailPage({ id, onBack }: Props) {
   const [ret, setRet] = useState<SaleReturn | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,12 +23,11 @@ export function ReturnDetailPage({ no, onBack }: Props) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    listSaleReturns({ limit: 1000 })
-      .then((rows) => {
+    getSaleReturn(id)
+      .then((match) => {
         if (cancelled) return;
-        const match = (rows ?? []).find((r) => r.no === no) ?? null;
         if (!match) {
-          setError(`Return ${no} not found.`);
+          setError(`Return #${id} not found.`);
         }
         setRet(match);
       })
@@ -42,7 +41,7 @@ export function ReturnDetailPage({ no, onBack }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [no]);
+  }, [id]);
 
   if (loading) {
     return (
@@ -63,7 +62,7 @@ export function ReturnDetailPage({ no, onBack }: Props) {
         <EmptyState
           icon={RotateCcw}
           title="Return not found"
-          description={error ?? `Return ${no} could not be loaded.`}
+          description={error ?? `Return #${id} could not be loaded.`}
           primary={
             <Button type="button" onClick={onBack}>
               Back to returns

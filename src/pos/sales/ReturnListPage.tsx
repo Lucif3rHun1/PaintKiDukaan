@@ -21,7 +21,7 @@ import { formatDateForDisplay } from "../../lib/date";
 
 interface Props {
   onCreate: () => void;
-  onSelect?: (no: string) => void;
+  onSelect?: (id: number) => void;
 }
 
 const PAGE_SIZE = 25;
@@ -69,7 +69,13 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
       {
         header: "No",
         cell: (r) => (
-          <span className="font-mono tabular-nums text-foreground">{r.no}</span>
+          <a
+            href={`#/sales/return/${r.id}`}
+            className="font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
+            aria-label={`Open return ${r.no}`}
+          >
+            {r.no}
+          </a>
         ),
       },
       {
@@ -167,8 +173,8 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
             columns={columns}
             keyExtractor={(r) => r.id}
             onRowClick={(r) => {
-              if (onSelect) onSelect(r.no);
-              else window.location.hash = `#/sales/return/${encodeURIComponent(r.no)}`;
+              if (onSelect) onSelect(r.id);
+              else window.location.hash = `#/sales/return/${r.id}`;
             }}
             loading={isLoading || isFetching}
             error={error}
