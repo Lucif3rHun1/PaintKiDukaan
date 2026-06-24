@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { BrandAdmin } from "./BrandAdmin";
+import { BrandAdmin } from "../../src/domain/items/BrandAdmin";
 
 /* ------------------------------------------------------------------ */
 /*  Mock the API module                                                */
 /* ------------------------------------------------------------------ */
-vi.mock("./api", () => ({
+vi.mock("../../src/domain/items/api", () => ({
   createBrand: vi.fn(),
   deactivateBrand: vi.fn(),
   listBrands: vi.fn(),
@@ -18,7 +18,7 @@ import {
   deactivateBrand,
   listBrands,
   updateBrandCodePrefix,
-} from "./api";
+} from "../../src/domain/items/api";
 
 const mockListBrands = vi.mocked(listBrands);
 const mockCreateBrand = vi.mocked(createBrand);

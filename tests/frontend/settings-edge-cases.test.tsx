@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Brand, Location, Unit } from "../../../domain/types";
+import type { Brand, Location, Unit } from "../../src/domain/types";
 
 /* ── mocks ─────────────────────────────────────────────────────────── */
 
@@ -46,18 +46,18 @@ const toastMocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../lib/ipc", () => ({ ipc: ipcMocks }));
-vi.mock("../../../domain/locations/api", () => locationsApiMocks);
-vi.mock("../../../domain/units/api", () => unitsApiMocks);
-vi.mock("../../../domain/items/api", () => apiMocks);
-vi.mock("../../../lib/feedback/toast", () => toastMocks);
+vi.mock("../../src/lib/ipc", () => ({ ipc: ipcMocks }));
+vi.mock("../../src/domain/locations/api", () => locationsApiMocks);
+vi.mock("../../src/domain/units/api", () => unitsApiMocks);
+vi.mock("../../src/domain/items/api", () => apiMocks);
+vi.mock("../../src/lib/feedback/toast", () => toastMocks);
 
 import {
   LocationsSettings,
   CustomerTypesSettings,
   CatalogUnitsSettings,
-} from "./CatalogSettings";
-import { BrandAdmin } from "../../../domain/items/BrandAdmin";
+} from "../../src/shell/routes/settings/CatalogSettings";
+import { BrandAdmin } from "../../src/domain/items/BrandAdmin";
 
 /* ── helpers ───────────────────────────────────────────────────────── */
 

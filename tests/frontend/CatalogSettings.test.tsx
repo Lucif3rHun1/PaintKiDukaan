@@ -3,12 +3,12 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi, type Mock } from "vitest";
 
-import { ipc } from "../../lib/ipc";
-import { usePaginatedQuery } from "../../../lib/query";
-import { listUnits, createUnit, updateUnit, deactivateUnit } from "../../../domain/units/api";
-import { LocationsSettings, CustomerTypesSettings, CatalogUnitsSettings } from "./CatalogSettings";
+import { ipc } from "../../src/lib/ipc";
+import { usePaginatedQuery } from "../../src/lib/query";
+import { listUnits, createUnit, updateUnit, deactivateUnit } from "../../src/domain/units/api";
+import { LocationsSettings, CustomerTypesSettings, CatalogUnitsSettings } from "../../src/shell/routes/settings/CatalogSettings";
 
-vi.mock("../../lib/ipc", () => ({
+vi.mock("../../src/lib/ipc", () => ({
   ipc: {
     addLocation: vi.fn(),
     removeLocation: vi.fn(),
@@ -21,23 +21,23 @@ vi.mock("../../lib/ipc", () => ({
   },
 }));
 
-vi.mock("../../../domain/locations/api", () => ({
+vi.mock("../../src/domain/locations/api", () => ({
   listLocations: vi.fn(),
   renameLocation: vi.fn(),
 }));
 
-vi.mock("../../../domain/units/api", () => ({
+vi.mock("../../src/domain/units/api", () => ({
   listUnits: vi.fn(),
   createUnit: vi.fn(),
   updateUnit: vi.fn(),
   deactivateUnit: vi.fn(),
 }));
 
-vi.mock("../../../lib/query", () => ({
+vi.mock("../../src/lib/query", () => ({
   usePaginatedQuery: vi.fn(),
 }));
 
-vi.mock("../../../lib/feedback/toast", () => ({
+vi.mock("../../src/lib/feedback/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
@@ -48,7 +48,7 @@ const mockCreateUnit = vi.mocked(createUnit);
 const mockUpdateUnit = vi.mocked(updateUnit);
 const mockDeactivateUnit = vi.mocked(deactivateUnit);
 
-const locationsApi = await import("../../../domain/locations/api");
+const locationsApi = await import("../../src/domain/locations/api");
 const mockListLocations = vi.mocked(locationsApi.listLocations);
 const mockRenameLocation = vi.mocked(locationsApi.renameLocation);
 
