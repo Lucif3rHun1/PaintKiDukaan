@@ -318,10 +318,15 @@ export function BulkLabelsPage() {
       const blob = await buildLabelPdfBlob(labels, cfg);
       const url = URL.createObjectURL(blob);
       const iframe = document.createElement("iframe");
-      iframe.style.display = "none";
-      iframe.src = url;
-      document.body.appendChild(iframe);
+      iframe.style.position = "fixed";
+      iframe.style.left = "-9999px";
+      iframe.style.top = "0";
+      iframe.style.width = "1px";
+      iframe.style.height = "1px";
       iframe.onload = () => {
+        // print() blocks the event loop while the dialog is open in
+        // desktop webviews, so the finally block runs after the user
+        // closes/clicks the dialog.
         try {
           iframe.contentWindow?.focus();
           iframe.contentWindow?.print();
@@ -330,6 +335,10 @@ export function BulkLabelsPage() {
           URL.revokeObjectURL(url);
         }
       };
+      // Set onload before src to avoid the load event firing before
+      // the handler is attached (a race that silently swallows print).
+      document.body.appendChild(iframe);
+      iframe.src = url;
       await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
       setActionMsg(`Sent ${batch.length} label(s) to printer.`);
     } catch (e) {
