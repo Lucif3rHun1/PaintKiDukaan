@@ -12,13 +12,8 @@ type Props = {
 };
 
 /**
- * Lightweight EAN-13 barcode thumbnail. Renders into an inline <svg>
- * that fills its container so it works in tables, previews, and cards.
- *
- * EAN-13 is a 13-digit numeric format used internationally for retail
- * products. JsBarcode auto-computes and appends the 13th check digit
- * when given 12 digits — we feed it the full 13-digit value the backend
- * generated (so the rendered digits match what's stored in the DB).
+ * Barcode thumbnail. Renders into an inline <svg> that fills its container.
+ * Uses CODE128 (supports alphanumeric SKUs like AP-WHT-001).
  */
 export function BarcodeThumb({
   value,
@@ -41,18 +36,10 @@ export function BarcodeThumb({
       lineColor: "#0f172a",
     };
     try {
-      JsBarcode(ref.current, value, { ...baseOpts, format: "EAN13" });
-    } catch (eanErr) {
-      console.warn(
-        `BarcodeThumb EAN-13 encode failed for '${value}', falling back to CODE128:`,
-        eanErr,
-      );
-      try {
-        JsBarcode(ref.current, value, { ...baseOpts, format: "CODE128" });
-      } catch (codeErr) {
-        console.warn(`BarcodeThumb CODE128 encode failed for '${value}':`, codeErr);
-        if (ref.current) ref.current.innerHTML = "";
-      }
+      JsBarcode(ref.current, value, { ...baseOpts, format: "CODE128" });
+    } catch (err) {
+      console.warn(`BarcodeThumb CODE128 encode failed for '${value}':`, err);
+      if (ref.current) ref.current.innerHTML = "";
     }
   }, [value, containerHeight]);
 

@@ -341,7 +341,7 @@ const TRANSPARENT_PNG =
  * Build a label PDF (jsPDF doc instance) and return its raw Blob.
  * Same layout rules as printLabelBatch, but no auto-save — caller decides
  * whether to download, embed in an <iframe>, or stream to a printer.
- * Locked to EAN-13, monochrome, fixed DPI (set in BARCODE_OPTIONS).
+ * Locked to CODE128, monochrome, fixed DPI (set in BARCODE_OPTIONS).
  */
 export async function buildLabelPdfBlob(
   batch: BatchLabel[],

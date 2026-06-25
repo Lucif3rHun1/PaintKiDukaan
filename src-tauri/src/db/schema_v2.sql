@@ -13,8 +13,8 @@ ALTER TABLE items RENAME COLUMN retail_price TO retail_price_paise;
 -- Q9: free items / promo price
 ALTER TABLE items ADD COLUMN promo_price_paise INTEGER;
 
--- Q2: barcode format pinned to EAN13
-ALTER TABLE items ADD COLUMN barcode_format TEXT NOT NULL DEFAULT 'EAN13';
+-- Q2: barcode format pinned to CODE128
+ALTER TABLE items ADD COLUMN barcode_format TEXT NOT NULL DEFAULT 'CODE128';
 
 -- Q12-Q13: primary_location_id (FK to locations) + free-text rack hint (already exists as location_text)
 -- Existing column location_text remains. Add the FK.
