@@ -42,8 +42,6 @@ pub struct HookReport {
 
 #[cfg(target_os = "windows")]
 mod win {
-    use std::ffi::c_void;
-
     // Minimal PE structures for inline parsing.
     #[repr(C)]
     pub struct IMAGE_DOS_HEADER {
@@ -365,8 +363,9 @@ unsafe fn find_text_section(base: *const u8) -> Result<(*const u8, u32), AppErro
     let dos = &*(base as *const win::IMAGE_DOS_HEADER);
     let nt = &*(base.offset(dos.e_lfanew as isize) as *const win::IMAGE_NT_HEADERS64);
     let section_count = nt.file_header.number_of_sections;
-    let section_base = (base.offset(dos.e_lfanew as isize)
-        + std::mem::size_of::<win::IMAGE_NT_HEADERS64>() as isize)
+    let section_base = base
+        .offset(dos.e_lfanew as isize)
+        .add(std::mem::size_of::<win::IMAGE_NT_HEADERS64>())
         as *const win::IMAGE_SECTION_HEADER;
 
     for i in 0..section_count {

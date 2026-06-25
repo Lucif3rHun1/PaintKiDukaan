@@ -183,7 +183,6 @@ pub fn resolve_ssn_with_fallback(function_name: &str) -> Option<u32> {
 /// Windows-only: PEB walk, PE export parsing, ntdll base resolution.
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub(crate) mod plat {
-    use super::*;
 
     // PEB access via gs:0x60
     unsafe fn peb() -> *const u8 {

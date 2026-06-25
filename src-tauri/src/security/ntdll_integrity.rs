@@ -325,7 +325,7 @@ fn check_ntdll_integrity_inner() -> NtdllReport {
     use std::ptr;
 
     // 1. Get in-memory ntdll base via PEB walk.
-    let mem_base = match super::syscall::get_ntdll_base() {
+    let mem_base = match super::syscall::plat::get_ntdll_base() {
         Some(b) => b,
         None => {
             return NtdllReport {
