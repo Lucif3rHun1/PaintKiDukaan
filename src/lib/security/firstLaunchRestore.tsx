@@ -2,15 +2,17 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import logo from "../../assets/logo-64.png";
 import {
   ArrowLeft,
+  Check,
   Eye,
   EyeOff,
   FileWarning,
+  FolderOpen,
   HardDrive,
   Loader2,
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import {
@@ -26,9 +28,9 @@ interface FirstLaunchRestoreProps {
 }
 
 const STEPS = [
-  { label: "Pick backup file", icon: HardDrive, description: "Point PaintKiDukaan at your .pkb1 backup envelope" },
-  { label: "Recovery passphrase", icon: ShieldCheck, description: "Unlock the encrypted backup with your recovery passphrase" },
-  { label: "Confirm restore", icon: FileWarning, description: "Replace the first-launch database with the restored backup" },
+  { key: "file", label: "File", icon: HardDrive, description: "Point PaintKiDukaan at your .pkb1 backup envelope" },
+  { key: "passphrase", label: "Passphrase", icon: ShieldCheck, description: "Unlock the encrypted backup with your recovery passphrase" },
+  { key: "confirm", label: "Confirm", icon: FileWarning, description: "Replace the first-launch database with the restored backup" },
 ] as const;
 
 const inputClass =
@@ -65,10 +67,13 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [visible, setVisible] = useState(true);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const {
     register,
     control,
+    setValue,
     formState: { errors },
     handleSubmit,
     trigger,
@@ -86,16 +91,35 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
   const passphrase = values.passphrase ?? "";
   const pathValid = envelopePath.trim().length > 0;
   const passphraseValid = recoveryPassphraseSchema.safeParse(passphrase).success;
-  const CurrentStepIcon = STEPS[step].icon;
+
+  const animateToStep = useCallback((next: 0 | 1 | 2) => {
+    clearTimeout(timerRef.current);
+    setVisible(false);
+    timerRef.current = setTimeout(() => {
+      setStep(next);
+      setVisible(true);
+    }, 150);
+  }, []);
+
+  const pickFile = useCallback(async () => {
+    try {
+      const path = await ipc.pickBackupFile();
+      if (path) {
+        setValue("envelopePath", path, { shouldValidate: true });
+      }
+    } catch {
+      // noop
+    }
+  }, [setValue]);
 
   async function goToPassphrase() {
     const ok = await trigger("envelopePath");
-    if (ok && pathValid) setStep(1);
+    if (ok && pathValid) animateToStep(1);
   }
 
   async function goToConfirm() {
     const ok = await trigger("passphrase");
-    if (ok) setStep(2);
+    if (ok) animateToStep(2);
   }
 
   async function onSubmit(input: FirstLaunchRestoreInput) {
@@ -159,46 +183,50 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
             />
           </div>
 
-          <div className="mb-6" aria-label="Restore progress">
-            <div className="mb-2 flex items-center gap-2">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <div
-                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-200 ${
-                      i < step
-                        ? "bg-success text-success-foreground"
-                        : i === step
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {i < step ? "✓" : i + 1}
+          <div className="flex items-center justify-between px-2" aria-label="Restore progress">
+            {STEPS.map((s, i) => {
+              const done = i < step;
+              const active = i === step;
+              return (
+                <div key={i} className="flex items-center">
+                  {i > 0 && (
+                    <div className="mx-1 h-px w-6 sm:w-10">
+                      <div
+                        className={`h-full transition-colors duration-200 ${i <= step ? "bg-success" : "bg-border"}`}
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-col items-center gap-1">
+                    <div
+                      className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition-all duration-200 ${
+                        done
+                          ? "bg-success text-success-foreground"
+                          : active
+                            ? "bg-primary text-primary-foreground ring-2 ring-primary/30"
+                            : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                    </div>
+                    <span
+                      className={`text-[10px] font-medium leading-none ${active ? "text-foreground" : "text-muted-foreground"}`}
+                    >
+                      {s.label}
+                    </span>
                   </div>
-                  <span
-                    className={`hidden text-xs font-medium sm:inline ${
-                      i === step ? "text-foreground" : "text-muted-foreground"
-                    }`}
-                  >
-                    {STEPS[i].label}
-                  </span>
                 </div>
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5">
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${
-                    i < step ? "bg-success" : i === step ? "bg-primary" : "bg-muted"
-                  }`}
-                />
-              ))}
-            </div>
+              );
+            })}
           </div>
 
-          <div className="mb-5 flex items-center gap-3 rounded-xl border border-border bg-background/60 p-3">
-            <CurrentStepIcon className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
-            <div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-3.5 py-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              {(() => {
+                const Icon = STEPS[step].icon;
+                return <Icon className="h-4 w-4" aria-hidden="true" />;
+              })()}
+            </div>
+            <div className="min-w-0">
               <p className="text-sm font-medium text-foreground">{STEPS[step].label}</p>
               <p className="text-xs text-muted-foreground">{STEPS[step].description}</p>
             </div>
@@ -206,29 +234,41 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
 
           {backendError ? (
             <div
-              className="mb-5 flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+              className="flex gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-sm text-destructive"
               role="alert"
             >
               <FileWarning className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{backendError}</span>
+              <span className="leading-snug">{backendError}</span>
             </div>
           ) : null}
 
+          <div className={`transition-all duration-200 ease-in-out ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"}`}>
           {step === 0 ? (
             <div>
               <label className={labelClass} htmlFor="envelopePath">
                 Backup file path *
               </label>
-              <input
-                id="envelopePath"
-                className={inputClass}
-                aria-label="Backup file path"
-                aria-invalid={Boolean(errors.envelopePath)}
-                autoComplete="off"
-                placeholder="/abs/path/to/backup.pkb1"
-                type="text"
-                {...register("envelopePath")}
-              />
+              <div className="flex gap-2">
+                <input
+                  id="envelopePath"
+                  className={inputClass}
+                  aria-label="Backup file path"
+                  aria-invalid={Boolean(errors.envelopePath)}
+                  autoComplete="off"
+                  placeholder="/abs/path/to/backup.pkb1"
+                  type="text"
+                  {...register("envelopePath")}
+                />
+                <button
+                  className={ghostButtonClass}
+                  type="button"
+                  onClick={pickFile}
+                  aria-label="Browse for backup file"
+                >
+                  <FolderOpen className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                  Browse
+                </button>
+              </div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 Absolute path to a .pkb1 backup file. E.g. /Users/me/backups/shop-2025-01-15.pkb1
               </p>
@@ -255,7 +295,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                 <button
                   className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   type="button"
-                  onClick={() => setShowPassphrase((visible) => !visible)}
+                  onClick={() => setShowPassphrase((v) => !v)}
                   aria-label={showPassphrase ? "Hide recovery passphrase" : "Show recovery passphrase"}
                 >
                   {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -282,13 +322,14 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
               </div>
             </div>
           ) : null}
+          </div>
 
           <div className="mt-6 flex gap-3">
             {step > 0 ? (
               <button
                 className={ghostButtonClass}
                 type="button"
-                onClick={() => setStep(step === 2 ? 1 : 0)}
+                onClick={() => animateToStep(step === 2 ? 1 : 0)}
                 disabled={loading}
               >
                 <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />

@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tauriInvoke as invoke } from "./tauri";
 import logo from "../../assets/logo-64.png";
-import { AlertCircle, KeyRound, Loader2, Lock, Timer } from "lucide-react";
+import { AlertCircle, KeyRound, Loader2, Timer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
@@ -19,11 +19,6 @@ interface UnlockResponse {
   pin_role?: PinRole;
   wipe_triggered?: boolean;
 }
-
-const inputClass =
-  "h-14 w-full rounded-xl border-2 border-border bg-background px-4 text-center text-2xl font-semibold tracking-[0.5em] text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/20 focus-visible:ring-4 focus-visible:ring-primary/30 disabled:opacity-50";
-const buttonClass =
-  "inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground transition-all duration-150 hover:bg-primary/90 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: UnlockResponse): Session {
   const role: Role = result.user?.role ?? result.role ?? "stocker";
@@ -76,7 +71,6 @@ export function LockScreen() {
   const pin = useWatch({ control, name: "pin" });
   const canSubmit = unlockSchema.safeParse({ pin }).success && !lockedUntil;
 
-  // Live countdown when locked out
   const timeDisplay = useMemo(() => {
     if (!lockedUntil) return null;
     return formatTimeRemaining(lockedUntil);
@@ -97,18 +91,13 @@ export function LockScreen() {
   async function onSubmit(input: UnlockInput) {
     setBackendError(null);
     try {
-      console.log("[LOCK-SCREEN] Attempting unlock...");
       const session = normalizeSession(await invoke<UnlockResponse>("unlock", input));
-      console.log("[LOCK-SCREEN] Unlock success:", JSON.stringify(session));
       const security = useSecurity.getState();
       security.setSession(session);
       security.setPhase("unlocked");
       setFailedAttempts(0);
       setLockedUntil(null);
     } catch (error) {
-      console.error("[LOCK-SCREEN] Unlock error:", error);
-
-      // Check if wiped — typed error from backend
       if (isAppError(error) && error.code === "wiped") {
         setIsWiped(true);
         setBackendError(null);
@@ -116,8 +105,6 @@ export function LockScreen() {
       }
 
       const message = error instanceof Error ? error.message : String(error);
-
-      // Check for lockout with timestamp
       const until = extractLockedUntil(message);
       if (until) {
         setLockedUntil(until);
@@ -134,87 +121,88 @@ export function LockScreen() {
   // Wiped state — must use recovery
   if (isWiped) {
     return (
-      <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
-        <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
-          <div className="w-full rounded-2xl border border-border bg-card p-8 shadow-2xl">
-            <div className="mb-8 flex flex-col items-center text-center">
-              <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-destructive/10">
-                <img src={logo} alt="" className="h-14 w-14 rounded-xl" />
-              </div>
-              <p className="text-sm font-semibold uppercase tracking-[3px] text-destructive">Data wiped</p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight">Recovery required</h1>
+      <main className="flex h-screen w-screen items-center justify-center bg-background px-6 text-foreground">
+        <div className="w-full max-w-lg space-y-6">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-destructive/10">
+              <img src={logo} alt="" className="h-14 w-14 rounded-xl" />
             </div>
-
-            <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-5 text-sm leading-6 text-destructive">
-              <p className="font-medium">Too many failed attempts — data has been wiped.</p>
-              <p className="mt-1.5 text-destructive/80">
-                You must use your recovery passphrase to restore your data and set a new PIN.
-              </p>
-            </div>
-
-            <button
-              className={`${buttonClass} mt-6`}
-              type="button"
-              onClick={() => setPhase("restore-recovery")}
-            >
-              Use recovery passphrase
-            </button>
+            <p className="text-sm font-semibold uppercase tracking-[3px] text-destructive">Data wiped</p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight">Recovery required</h1>
           </div>
-        </section>
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-5 text-sm leading-6 text-destructive">
+            <p className="font-medium">Too many failed attempts — data has been wiped.</p>
+            <p className="mt-1.5 text-destructive/80">
+              You must use your recovery passphrase to restore your data and set a new PIN.
+            </p>
+          </div>
+          <button
+            className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            type="button"
+            onClick={() => setPhase("restore-recovery")}
+          >
+            Use recovery passphrase
+          </button>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(#27272a_0.5px,transparent_1px)] bg-[length:3px_3px] px-4 py-8 text-foreground sm:px-6">
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
-        <form
-          className="w-full rounded-3xl border border-border bg-card p-8 shadow-2xl"
-          onSubmit={handleSubmit(onSubmit)}
-        >
-          {/* Branding */}
-          <div className="mb-8 flex flex-col items-center text-center">
-            <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
-              <img src={logo} alt="PaintKiDukaan" className="h-14 w-14 rounded-xl" />
-            </div>
-            <div className="text-2xl font-semibold tracking-[-0.02em]">PaintKiDukaan</div>
-            <div className="mt-1 text-xs font-medium uppercase tracking-[3px] text-muted-foreground">Paint Shop</div>
+    <main className="flex h-screen w-screen bg-background text-foreground">
+      {/* Left: branding panel */}
+      <div className="relative hidden w-1/2 items-center justify-center bg-zinc-900 lg:flex">
+        <div className="absolute inset-0 bg-[radial-gradient(#3f3f46_1px,transparent_1px)] bg-[length:4px_4px] opacity-30" />
+        <div className="relative z-10 flex flex-col items-center text-center">
+          <img src={logo} alt="PaintKiDukaan" className="mb-6 h-24 w-24 rounded-2xl shadow-2xl" />
+          <h1 className="text-4xl font-bold tracking-tight text-white">PaintKiDukaan</h1>
+          <p className="mt-2 text-sm font-medium uppercase tracking-[4px] text-zinc-400">Paint Shop Manager</p>
+          <div className="mt-8 flex items-center gap-2 text-xs text-zinc-500">
+            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Secure &amp; Encrypted
+          </div>
+        </div>
+      </div>
+
+      {/* Right: PIN form */}
+      <div className="flex w-full items-center justify-center px-6 lg:w-1/2">
+        <form className="w-full max-w-md space-y-6" onSubmit={handleSubmit(onSubmit)}>
+          {/* Mobile branding */}
+          <div className="flex flex-col items-center text-center lg:hidden">
+            <img src={logo} alt="PaintKiDukaan" className="mb-3 h-16 w-16 rounded-xl" />
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">PaintKiDukaan</h1>
           </div>
 
-          {/* Welcome / Title */}
-          <div className="mb-6 text-center">
+          {/* Welcome */}
+          <div>
             {lastUser ? (
               <>
-                <div className="text-xl font-semibold tracking-tight">Welcome back, {lastUser.name}</div>
-                <div className="mt-1.5 inline-flex items-center rounded-full bg-primary/10 px-3 py-0.5 text-xs font-medium text-primary ring-1 ring-primary/20">
+                <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+                  Welcome back, {lastUser.name}
+                </h2>
+                <div className="mt-2 inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary ring-1 ring-primary/20">
                   {lastUser.role}
                 </div>
               </>
             ) : (
               <>
-                <div className="text-xl font-semibold tracking-tight">Enter your PIN</div>
+                <h2 className="text-2xl font-semibold tracking-tight text-foreground">Enter your PIN</h2>
                 <p className="mt-1.5 text-sm text-muted-foreground">Unlock the shop database</p>
               </>
             )}
           </div>
 
-          {/* Error display */}
+          {/* Error */}
           {backendError ? (
-            <div
-              className="mb-5 flex gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
-              role="alert"
-            >
+            <div className="flex gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
               <span className="leading-snug">{backendError}</span>
             </div>
           ) : null}
 
-          {/* Lockout timer */}
+          {/* Lockout */}
           {lockedUntil ? (
-            <div
-              className="mb-5 flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-4"
-              role="alert"
-            >
+            <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4" role="alert">
               <Timer className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
               <div>
                 <p className="text-sm font-semibold text-warning">Account locked</p>
@@ -231,7 +219,7 @@ export function LockScreen() {
             <div className="relative">
               <input
                 id="pin"
-                className={inputClass}
+                className="h-14 w-full rounded-xl border-2 border-border bg-background px-4 text-center text-2xl font-semibold tracking-[0.5em] text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/20 disabled:opacity-50"
                 aria-label="Six digit PIN"
                 aria-invalid={Boolean(errors.pin)}
                 autoComplete="off"
@@ -252,10 +240,10 @@ export function LockScreen() {
             ) : null}
           </div>
 
-          {/* Attempt counter / hint */}
-          <div className="mt-5 min-h-[52px] text-sm text-muted-foreground">
+          {/* Attempt counter */}
+          <div className="min-h-[48px] text-sm text-muted-foreground">
             {failedAttempts > 0 && !lockedUntil ? (
-              <p role="alert" className="rounded-xl bg-muted/50 px-4 py-3">
+              <p role="alert" className="rounded-lg bg-muted/50 px-4 py-3">
                 Failed attempts: <span className="font-semibold text-foreground">{failedAttempts}</span>/5
                 {failedAttempts >= 3 && (
                   <span className="ml-2 text-warning">— more failures will lock you out</span>
@@ -266,8 +254,9 @@ export function LockScreen() {
             )}
           </div>
 
+          {/* Submit */}
           <button
-            className={`${buttonClass} mt-2`}
+            className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground transition-all duration-150 hover:bg-primary/90 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
             type="submit"
             disabled={!canSubmit || isSubmitting}
           >
@@ -278,14 +267,14 @@ export function LockScreen() {
           </button>
 
           <button
-            className="mt-4 w-full text-center text-sm font-medium text-primary transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="w-full text-center text-sm font-medium text-primary transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             type="button"
             onClick={() => setPhase("restore-recovery")}
           >
             Forgot PIN? Use recovery passphrase
           </button>
         </form>
-      </section>
+      </div>
     </main>
   );
 }

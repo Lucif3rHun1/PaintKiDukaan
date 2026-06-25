@@ -170,9 +170,10 @@ impl KeystoreConn {
 
     fn seal(&self) -> Result<(), AppError> {
         let plaintext = std::fs::read(&self.keystore_path)?;
-        // Per-DB keyring entry — SHA-256(db_path) → 16 hex chars.
-        let db_id = self.original_path.to_string_lossy();
-        let encrypted = dpapi_keystore::encrypt_keystore(&plaintext, &db_id)?;
+        let encrypted = dpapi_keystore::encrypt_keystore(
+            &plaintext,
+            &self.original_path.to_string_lossy(),
+        )?;
         std::fs::write(&self.original_path, encrypted)?;
         Ok(())
     }
@@ -204,14 +205,17 @@ impl Drop for KeystoreConn {
 
 /// Open (or create) the keystore and ensure the keywrap table exists.
 ///
-/// Reads the (possibly encrypted) keystore blob from disk, decrypts it via
+/// Reads the encrypted keystore blob from disk, decrypts it via
 /// [`dpapi_keystore::decrypt_keystore`], and opens a SQLite connection on the
 /// plaintext tempfile. On close/drop the plaintext is re-encrypted and written
 /// back to the original path.
 ///
-/// Migration: if the on-disk bytes start with SQLite magic (plaintext legacy),
-/// decryption is skipped with a one-time warning. The next close encrypts the
-/// file in place.
+/// Plaintext legacy keystores are REFUSED outright (CWE-345/20: an attacker
+/// who can write the sidecar file could otherwise pre-place a SQLite file
+/// with a chosen `pin_verifier` and unlock the real DB). First-launch
+/// installs always create an encrypted keystore, so existing plaintext
+/// sidecars only appear on hand-edited installs — those must wipe + restore
+/// from recovery.
 pub(crate) fn open_keystore(path: &Path) -> Result<KeystoreConn, AppError> {
     let temp_dir = tempfile::TempDir::new()?;
     lock_dir_perms(temp_dir.path())?;
@@ -219,15 +223,12 @@ pub(crate) fn open_keystore(path: &Path) -> Result<KeystoreConn, AppError> {
 
     if path.exists() {
         let raw = std::fs::read(path)?;
-        let plaintext = if dpapi_keystore::is_sqlite_plaintext(&raw) {
-            log::warn!(
-                "[KEYSTORE] {} is plaintext legacy — will encrypt on close",
-                path.display()
-            );
-            raw
-        } else {
-            dpapi_keystore::decrypt_keystore(&raw, "")?
-        };
+        if dpapi_keystore::is_sqlite_plaintext(&raw) {
+            return Err(AppError::Crypto(
+                "keystore is not encrypted — refusing to open. Restore from recovery.".into(),
+            ));
+        }
+        let plaintext = dpapi_keystore::decrypt_keystore(&raw, &path.to_string_lossy())?;
         std::fs::write(&keystore_path, &plaintext)?;
     }
 

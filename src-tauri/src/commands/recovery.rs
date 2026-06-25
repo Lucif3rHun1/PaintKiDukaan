@@ -322,6 +322,14 @@ pub fn restore_from_recovery(
     })
 }
 
+#[tauri::command]
+pub async fn cmd_pick_backup_file() -> Result<Option<String>, AppError> {
+    let file = rfd::FileDialog::new()
+        .add_filter("PaintKiDukaan Backup", &["pkb1"])
+        .pick_file();
+    Ok(file.map(|p| p.to_string_lossy().to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

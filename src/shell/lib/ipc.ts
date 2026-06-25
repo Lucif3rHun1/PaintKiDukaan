@@ -195,6 +195,7 @@ export const ipc = {
   backupStatus: () => invoke<BackupStatus>("backup_status"),
   restoreIntoFirstLaunch: (envelopePath: string, passphrase: string) =>
     invoke<void>("restore_into_first_launch", { envelopePath, passphrase }),
+  pickBackupFile: () => invoke<string | null>("cmd_pick_backup_file"),
   discoverSystemPrinters: () => invoke<DiscoveredPrinter[]>("discover_system_printers"),
   printEscPosReceipt: (printerName: string, receiptData: Record<string, unknown>) =>
     invoke<void>("cmd_print_receipt", { printer_name: printerName, receipt_data: receiptData }),

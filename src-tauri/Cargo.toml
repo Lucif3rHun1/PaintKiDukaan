@@ -84,6 +84,9 @@ keyring = "3"
 rand = "0.8"
 getrandom = "0.2"
 
+# Native file picker dialog (backup restore wizard)
+rfd = "0.17"
+
 # Temp paths used at runtime by backup test_restore and snapshot flows
 tempfile = "3"
 

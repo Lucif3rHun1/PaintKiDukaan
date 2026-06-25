@@ -181,6 +181,7 @@ pub fn run() {
             commands::recovery::first_launch_setup,
             commands::recovery::set_recovery_passphrase,
             commands::recovery::restore_from_recovery,
+            commands::recovery::cmd_pick_backup_file,
             // Customer types (Slice B)
             commands::customer_types::list_customer_types,
             commands::customer_types::add_customer_type,
