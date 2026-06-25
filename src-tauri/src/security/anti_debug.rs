@@ -755,7 +755,7 @@ fn get_parent_pid(pid: usize) -> Option<usize> {
         } else {
             let open_ssn = syscall::resolve_ssn_with_fallback("NtOpenProcess").unwrap_or(0x26);
             let mut handle: usize = 0;
-            let mut obj_attr = [0u8; 48];
+            let obj_attr = [0u8; 48];
             let mut client_id = [0usize; 2];
             client_id[0] = pid;
             let status = syscall::direct_syscall_4(
@@ -805,7 +805,7 @@ fn get_process_name_by_pid(pid: usize) -> Option<String> {
         } else {
             let open_ssn = syscall::resolve_ssn_with_fallback("NtOpenProcess").unwrap_or(0x26);
             let mut handle: usize = 0;
-            let mut obj_attr = [0u8; 48];
+            let obj_attr = [0u8; 48];
             let mut client_id = [0usize; 2];
             client_id[0] = pid;
             let status = syscall::direct_syscall_4(
@@ -930,9 +930,12 @@ fn cpuid(leaf: u32, subleaf: u32) -> [u32; 4] {
     let mut edx: u32;
     unsafe {
         std::arch::asm!(
+            "push rbx",
             "cpuid",
+            "mov {0:e}, ebx",
+            "pop rbx",
+            out(reg) ebx,
             inlateout("eax") leaf => eax,
-            lateout("ebx") ebx,
             inlateout("ecx") subleaf => ecx,
             lateout("edx") edx,
         );

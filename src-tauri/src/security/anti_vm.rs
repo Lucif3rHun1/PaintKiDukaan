@@ -115,9 +115,12 @@ fn real_cpuid(leaf: u32, subleaf: u32) -> [u32; 4] {
     let mut edx: u32;
     unsafe {
         std::arch::asm!(
+            "push rbx",
             "cpuid",
+            "mov {0:e}, ebx",
+            "pop rbx",
+            out(reg) ebx,
             inlateout("eax") leaf => eax,
-            lateout("ebx") ebx,
             inlateout("ecx") subleaf => ecx,
             lateout("edx") edx,
         );
