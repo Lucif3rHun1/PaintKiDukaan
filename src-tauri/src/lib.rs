@@ -79,6 +79,11 @@ pub fn run() {
                     },
                 ))
                 .level(log::LevelFilter::Trace)
+                .level_for("keyring", log::LevelFilter::Warn)
+                .level_for("tao", log::LevelFilter::Warn)
+                .level_for("paintkiduakan_lib::security::mitigation_policy", log::LevelFilter::Warn)
+                .level_for("paintkiduakan_lib::security::priv_strip", log::LevelFilter::Warn)
+                .level_for("paintkiduakan_lib::security::anti_dump", log::LevelFilter::Warn)
                 .build(),
         )
         .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {
@@ -207,6 +212,13 @@ pub fn run() {
             commands::items::get_item,
             commands::items::lookup_item,
             commands::items::cmd_search_items,
+            // Formulas (Slice B) — custom shade mixes (ADR-011)
+            commands::formulas::cmd_list_formulas,
+            commands::formulas::cmd_get_formula,
+            commands::formulas::cmd_create_formula,
+            commands::formulas::cmd_update_formula,
+            commands::formulas::cmd_deactivate_formula,
+            commands::formulas::cmd_list_formula_sales,
             // Brands (Slice B)
             commands::brands::list_brands,
             commands::brands::get_brand,
