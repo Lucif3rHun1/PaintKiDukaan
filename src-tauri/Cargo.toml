@@ -101,8 +101,13 @@ windows = { version = "0.58", features = [
     "Win32_NetworkManagement_WindowsFirewall",
     "Win32_System_Com",
     "Win32_Graphics_Printing",
+    "Win32_Graphics_Gdi",
     "Win32_System_Power",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_Security",
+    "Win32_System_SystemServices",
+    "Win32_Storage_FileSystem",
 ] }
 
 # macOS CGEventTap for barcode scanner hook (M4.1)
