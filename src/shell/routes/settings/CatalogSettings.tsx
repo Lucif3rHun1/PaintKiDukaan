@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { toast } from "../../../lib/feedback/toast";
-import { Alert, Button, Card, DataTable, EmptyState, Section } from "../../../components/ui";
+import { Alert, Button, Card, DataTable, EmptyState, Section, Select } from "../../../components/ui";
 import type { ColumnDef } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import { ipc } from "../../lib/ipc";
@@ -460,16 +460,17 @@ export function CatalogUnitsSettings() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1">Dimension</label>
-                  <select
+                  <Select
                     value={newDimension}
                     onChange={(e) => setNewDimension(e.target.value as UnitDimension)}
-                    className="input w-full"
-                  >
-                    <option value="volume">Volume</option>
-                    <option value="mass">Mass</option>
-                    <option value="area">Area</option>
-                    <option value="count">Count</option>
-                  </select>
+                    options={[
+                      { value: "volume", label: "Volume" },
+                      { value: "mass", label: "Mass" },
+                      { value: "area", label: "Area" },
+                      { value: "count", label: "Count" },
+                    ]}
+                    size="md"
+                  />
                 </div>
               </div>
               <div className="flex justify-end gap-2">

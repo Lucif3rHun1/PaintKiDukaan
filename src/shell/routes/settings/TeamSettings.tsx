@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useEffect, useState } from "react";
 import { toast } from "../../../lib/feedback/toast";
-import { Button, Card, DataTable, Section, Skeleton, Badge } from "../../../components/ui";
+import { Button, Card, DataTable, Section, Skeleton, Badge, Select } from "../../../components/ui";
 import type { ColumnDef } from "../../../components/ui";
 import { formatDateForDisplay } from "../../../lib/date";
 import { ipc, type Device } from "../../lib/ipc";
@@ -177,14 +177,15 @@ export function UsersSettings() {
               />
             </Field>
             <Field label="Role">
-              <select
+              <Select
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value)}
-                className={inputCls}
-              >
-                <option value="cashier">cashier</option>
-                <option value="stocker">stocker</option>
-              </select>
+                options={[
+                  { value: "cashier", label: "Cashier" },
+                  { value: "stocker", label: "Stocker" },
+                ]}
+                size="md"
+              />
             </Field>
             <Field label="PIN (6 digits)">
               <input
@@ -296,17 +297,12 @@ export function DevicesSettings() {
               />
             </Field>
             <Field label="Role">
-              <select
+              <Select
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value)}
-                className={inputCls}
-              >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+                options={ROLES.map((r) => ({ value: r, label: r }))}
+                size="md"
+              />
             </Field>
             <Button
               onClick={enroll}

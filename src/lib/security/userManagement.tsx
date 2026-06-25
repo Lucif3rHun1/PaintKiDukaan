@@ -15,6 +15,7 @@ import { useForm } from "react-hook-form";
 
 import { createUserSchema, type CreateUserInput, pinSchema } from "./pin";
 import { type Role, useSecurity } from "./state";
+import { Select } from "../../components/ui/Select";
 
 interface ListedUser {
   id: number;
@@ -177,15 +178,17 @@ export function UserManagement() {
                 <label className={labelClass} htmlFor="staffRole">
                   Role *
                 </label>
-                <select
+                <Select
                   id="staffRole"
                   className={inputClass}
+                  placeholder="Select role"
+                  options={[
+                    { value: "cashier", label: "Cashier — handles sales and billing" },
+                    { value: "stocker", label: "Stocker — manages inventory and purchases" },
+                  ]}
+                  size="md"
                   {...register("role")}
-                >
-                  <option value="">Select role</option>
-                  <option value="cashier">Cashier — handles sales and billing</option>
-                  <option value="stocker">Stocker — manages inventory and purchases</option>
-                </select>
+                />
                 <p className="mt-1 text-xs text-muted-foreground">
                   Cashiers can process sales. Stockers can manage stock and purchases.
                 </p>

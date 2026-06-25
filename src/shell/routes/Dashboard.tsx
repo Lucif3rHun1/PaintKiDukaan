@@ -36,6 +36,7 @@ import { AlertBell } from "../components/AlertBell";
 import { SkeletonRow } from "../../components/ui/SkeletonRow";
 import { useSecurity } from "../../lib/security/state";
 import { formatDateForDisplay } from "../../lib/date";
+import { extractError } from "../../lib/extractError";
 import { ipc } from "../lib/ipc";
 import {
   listSales,
@@ -207,7 +208,7 @@ export function Dashboard() {
         outstanding.error,
         backup.error,
       ]
-        .map((e) => (e instanceof Error ? e.message : String(e)))
+        .map((e) => extractError(e))
         .filter(Boolean)
         .join(" • ")
     : null;

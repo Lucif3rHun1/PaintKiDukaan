@@ -7,7 +7,7 @@ import {
   Shield,
 } from "lucide-react";
 
-import { Card, Section, Button, Badge } from "../../../components/ui";
+import { Card, Section, Button, Badge, Select } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import { getPdeStatus, changeDecoyPin, changeDuressPin } from "../../../domain/ipc";
 import { changePin, setRecoveryPassphrase } from "../../../lib/security/pin";
@@ -549,9 +549,8 @@ function SecurityPolicyCard() {
             <label className="text-sm font-medium text-foreground" htmlFor="hostileResponse">
               Hostile environment response
             </label>
-            <select
+            <Select
               id="hostileResponse"
-              className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               value={policy.hostile_response}
               onChange={(e) =>
                 setPolicy((p) => ({
@@ -559,11 +558,13 @@ function SecurityPolicyCard() {
                   hostile_response: e.target.value as "warn" | "lock" | "wipe",
                 }))
               }
-            >
-              <option value="warn">Warn — show alert to user</option>
-              <option value="lock">Lock — auto-lock the app immediately</option>
-              <option value="wipe">Wipe — secure-erase real data</option>
-            </select>
+              options={[
+                { value: "warn", label: "Warn — show alert to user" },
+                { value: "lock", label: "Lock — auto-lock the app immediately" },
+                { value: "wipe", label: "Wipe — secure-erase real data" },
+              ]}
+              size="md"
+            />
             <p className="text-xs text-muted-foreground">
               What to do when hostile environment indicators are detected (e.g., USB debugging, screen recording).
             </p>

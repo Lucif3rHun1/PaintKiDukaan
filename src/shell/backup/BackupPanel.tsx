@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { backupNow, listTargets, status } from "./api";
 import type { BackupStatus, BackupTarget } from "../lib/ipc";
 import { RestoreDialog } from "./RestoreDialog";
+import { extractError } from "../../lib/extractError";
 
 export function BackupPanel() {
   const [targets, setTargets] = useState<BackupTarget[]>([]);
@@ -18,7 +19,7 @@ export function BackupPanel() {
         setTargets(t);
         setSt(s);
       })
-      .catch((e: unknown) => setError(String(e)));
+      .catch((e: unknown) => setError(extractError(e)));
   };
 
   useEffect(refresh, []);
@@ -34,7 +35,7 @@ export function BackupPanel() {
       await backupNow(passphrase);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(extractError(e));
     } finally {
       setBusy(false);
     }

@@ -48,6 +48,9 @@ const SalesPage = lazy(() => import("./pos/sales/SalesPage"));
 const SalesListPage = lazy(() =>
   import("./pos/sales/SalesListPage").then((m) => ({ default: m.SalesListPage })),
 );
+const SaleDetailPage = lazy(() =>
+  import("./pos/sales/SaleDetailPage").then((m) => ({ default: m.SaleDetailPage })),
+);
 const ReturnPage = lazy(() => import("./pos/sales/ReturnPage"));
 const ReturnListPage = lazy(() =>
   import("./pos/sales/ReturnListPage").then((m) => ({ default: m.ReturnListPage })),
@@ -133,13 +136,15 @@ function readItemsSubRoute(): "list" | "barcodes" {
   return "list";
 }
 
-function readSalesSubRoute(): "list" | "new" | "return" | "return-list" | "return-detail" {
+function readSalesSubRoute(): "list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail" {
   const h = window.location.hash;
   if (h === "#/sales/new") return "new";
   if (h === "#/sales/return/new") return "return";
   const detailMatch = h.match(/^#\/sales\/return\/(.+)$/);
   if (h === "#/sales/return") return "return-list";
   if (detailMatch) return "return-detail";
+  const saleDetail = h.match(/^#\/sales\/(\d+)$/);
+  if (saleDetail) return "sale-detail";
   return "list";
 }
 
@@ -169,7 +174,7 @@ export default function App() {
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [tab, setTab] = useState<AppShellTab>(readTab);
-  const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list" | "return-detail">(readSalesSubRoute);
+  const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail">(readSalesSubRoute);
   const [inwardRoute, setInwardRoute] = useState<"list" | "new" | "detail">(readInwardSubRoute);
 
   /* ── Vendor modal state ───────────────────────────────── */
@@ -428,6 +433,22 @@ export default function App() {
           </Suspense>
         </ErrorBoundary>
       ) : null}
+      {tab === "sales" && salesRoute === "sale-detail" ? (() => {
+        const match = window.location.hash.match(/^#\/sales\/(\d+)$/);
+        const id = match ? Number(match[1]) : 0;
+        return (
+          <ErrorBoundary context="Sales — detail">
+            <Suspense fallback={<RouteFallback />}>
+              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+                <SaleDetailPage
+                  id={id}
+                  onBack={() => (window.location.hash = "#/sales")}
+                />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
+        );
+      })() : null}
       {tab === "inward" && inwardRoute === "new" ? (
         <ErrorBoundary context="Inward — new">
           <Suspense fallback={<RouteFallback />}>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button, InlineDialog } from "../../components/ui";
 import { restore, testRestore } from "./api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { extractError } from "../../lib/extractError";
 
 export interface RestoreDialogProps {
   open: boolean;
@@ -45,7 +46,7 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
         setError("Test restore OK. Confirm to apply the restore.");
       }
     } catch (e) {
-      setError(String(e));
+      setError(extractError(e));
     } finally {
       setBusy(false);
     }
@@ -59,7 +60,7 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
       onDone();
       close();
     } catch (e) {
-      setError(String(e));
+      setError(extractError(e));
     } finally {
       setBusy(false);
     }

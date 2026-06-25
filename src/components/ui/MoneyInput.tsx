@@ -52,10 +52,10 @@ export function MoneyInput({
   }
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("flex items-center justify-end gap-1.5", className)}>
       <span
         className={cn(
-          "pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm",
+          "shrink-0 text-sm tabular-nums",
           tone === "dark" ? "text-muted-foreground" : "text-muted-foreground",
         )}
       >
@@ -81,7 +81,7 @@ export function MoneyInput({
         required={required}
         min={min}
         className={cn(
-          "w-full rounded border px-2 py-1.5 pl-6 text-sm tabular-nums outline-none transition-colors disabled:cursor-not-allowed",
+          "w-full rounded border px-2 py-1.5 text-right text-sm tabular-nums outline-none transition-colors disabled:cursor-not-allowed",
           tone === "dark"
             ? "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
             : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-muted disabled:text-muted-foreground",
