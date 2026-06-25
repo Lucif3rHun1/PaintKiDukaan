@@ -90,7 +90,7 @@ export function BulkLabelsPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [shopName, setShopName] = useState("");
-  const [defaultMapping, setDefaultMapping] = useState<{ name: string; width_mm: number; height_mm: number } | null>(null);
+  const [defaultPrinterName, setDefaultPrinterName] = useState<string | null>(null);
 
   // Items query — refetches on every mount + on window focus so the
   // barcode picker always reflects the latest items.barcode values
@@ -124,14 +124,14 @@ export function BulkLabelsPage() {
             /* ignore corrupt JSON */
           }
         }
-        if (defaultPrinter && defaultPrinter.use_case === "label" && defaultPrinter.label_width_mm && defaultPrinter.label_height_mm) {
-          const w = defaultPrinter.label_width_mm;
-          const h = defaultPrinter.label_height_mm;
-          setDefaultMapping({ name: defaultPrinter.name, width_mm: w, height_mm: h });
-          const key = `${w}x${h}`;
-          if (THERMAL_SIZES[key as keyof typeof THERMAL_SIZES]) {
-            setPrinter("thermal");
-            setSizeChoice(key as typeof sizeChoice);
+        if (defaultPrinter && defaultPrinter.use_case === "label") {
+          setDefaultPrinterName(defaultPrinter.name);
+          if (defaultPrinter.label_width_mm && defaultPrinter.label_height_mm) {
+            const key = `${defaultPrinter.label_width_mm}x${defaultPrinter.label_height_mm}`;
+            if (THERMAL_SIZES[key as keyof typeof THERMAL_SIZES]) {
+              setPrinter("thermal");
+              setSizeChoice(key as typeof sizeChoice);
+            }
           }
         }
       }).catch((err: unknown) => console.error("Silent catch replaced:", err));
@@ -257,6 +257,27 @@ export function BulkLabelsPage() {
     setBusy(true);
     setActionMsg(null);
     try {
+      const isTauriApp =
+        typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      if (isTauriApp && defaultPrinterName) {
+        try {
+          const selectedSize = THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES];
+          if (!selectedSize) throw new Error(`Unknown label size: ${sizeChoice}`);
+          const { w: widthMm, h: heightMm } = selectedSize;
+          const bytes = buildTsplBytes(
+            { barcode: record.barcode, line1: record.line1 ?? undefined, line2: record.line2 ?? undefined },
+            widthMm, heightMm,
+            Math.max(1, record.qty),
+          );
+          await ipc.printRaw(defaultPrinterName, bytes);
+          setActionMsg(`Reprinted ${record.qty} label${record.qty === 1 ? "" : "s"} for ${record.itemName}.`);
+          return;
+        } catch (rawErr) {
+          console.warn("TSPL reprint failed, falling back to PDF:", rawErr);
+        }
+      }
+
+      // Fallback — PDF download.
       const labels = Array.from({ length: Math.max(1, record.qty) }, () => ({
         barcode: record.barcode,
         line1: record.line1 ?? undefined,
@@ -317,12 +338,14 @@ export function BulkLabelsPage() {
       const isTauriApp =
         typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-      // TSPL raw-print path — works on Windows via Win32 WritePrinter.
-      if (isTauriApp && defaultMapping) {
+      // TSPL raw-print path — send TSPL bytes via Win32 WritePrinter.
+      // Dimensions come from the page's sizeChoice dropdown, not from
+      // the printer record (the user selects the label size on this page).
+      if (isTauriApp && defaultPrinterName) {
         try {
-          const printerName = defaultMapping.name;
-          const widthMm = defaultMapping.width_mm;
-          const heightMm = defaultMapping.height_mm;
+          const selectedSize = THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES];
+          if (!selectedSize) throw new Error(`Unknown label size: ${sizeChoice}`);
+          const { w: widthMm, h: heightMm } = selectedSize;
 
           // Group identical labels so we send one PRINT command per
           // unique barcode+text combination (qty encoded in TSPL).
@@ -340,11 +363,11 @@ export function BulkLabelsPage() {
 
           for (const { label, qty } of grouped.values()) {
             const bytes = buildTsplBytes(label, widthMm, heightMm, qty);
-            await ipc.printRaw(printerName, bytes);
+            await ipc.printRaw(defaultPrinterName, bytes);
           }
 
           await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
-          setActionMsg(`Sent ${batch.length} label(s) to ${printerName}.`);
+          setActionMsg(`Sent ${batch.length} label(s) to ${defaultPrinterName}.`);
           return;
         } catch (rawErr) {
           console.warn("TSPL raw print failed, falling back to PDF:", rawErr);
@@ -356,7 +379,7 @@ export function BulkLabelsPage() {
       await printLabelBatch(batch.map((r) => r.label), cfg);
       await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
       setActionMsg(
-        defaultMapping
+        defaultPrinterName
           ? "Direct thermal print unavailable on this platform — PDF downloaded instead."
           : "No default label printer configured — PDF downloaded.",
       );
