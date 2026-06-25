@@ -147,12 +147,18 @@ fn sanitize(s: &str, max: usize) -> String {
 /// Validate printer name: alphanumeric + space _ . - only, 1-64 chars, no path separators.
 fn validate_printer_name(name: &str) -> AppResult<()> {
     if name.contains('\\') || name.contains('/') || name.contains('\0') || name.contains("..") {
-        return Err(AppError::Validation(format!("invalid printer_name: {name}")));
+        return Err(AppError::Validation(format!(
+            "invalid printer_name: {name}"
+        )));
     }
-    let valid = name.chars().all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '_' || c == '.' || c == '-')
+    let valid = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '_' || c == '.' || c == '-')
         && (1..=64).contains(&name.len());
     if !valid {
-        return Err(AppError::Validation(format!("invalid printer_name: {name}")));
+        return Err(AppError::Validation(format!(
+            "invalid printer_name: {name}"
+        )));
     }
     Ok(())
 }
@@ -266,7 +272,7 @@ fn print_raw(printer_name: &str, data: &[u8]) -> AppResult<()> {
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::Graphics::Printing::{
         ClosePrinter, EndDocPrinter, EndPagePrinter, OpenPrinterW, StartDocPrinterW,
-        StartPagePrinter, WritePrinter, DOC_INFO_1,
+        StartPagePrinter, WritePrinter, DOC_INFO_1W,
     };
 
     if printer_name.trim().is_empty() {
@@ -290,7 +296,7 @@ fn print_raw(printer_name: &str, data: &[u8]) -> AppResult<()> {
                 &mut hprinter,
                 None,
             )
-            .as_bool()
+            .is_ok()
         };
 
         if !opened || hprinter.is_invalid() {
@@ -304,7 +310,7 @@ fn print_raw(printer_name: &str, data: &[u8]) -> AppResult<()> {
 
         let doc_name = HSTRING::from("PaintKiDukaan Receipt");
         let datatype = HSTRING::from("RAW");
-        let doc_info = DOC_INFO_1 {
+        let doc_info = DOC_INFO_1W {
             pDocName: PWSTR(doc_name.as_wide().as_ptr() as *mut _),
             pOutputFile: PWSTR::null(),
             pDatatype: PWSTR(datatype.as_wide().as_ptr() as *mut _),
@@ -406,11 +412,10 @@ pub fn cmd_print_receipt_dev(
     pdf_base64: String,
 ) -> AppResult<String> {
     ipc_auth::authorize("cmd_print_receipt_dev", state.inner())?;
-    use base64::{engine::general_purpose, Engine as _};
-    use std::io::Write;
 
     #[cfg(target_os = "windows")]
     {
+        let _ = (sale_id, pdf_base64);
         return Err(AppError::Internal(
             "cmd_print_receipt_dev is a macOS/Linux dev fallback; on Windows use cmd_print_receipt"
                 .into(),
@@ -419,6 +424,8 @@ pub fn cmd_print_receipt_dev(
 
     #[cfg(not(target_os = "windows"))]
     {
+        use base64::{engine::general_purpose, Engine as _};
+        use std::io::Write;
         let bytes = general_purpose::STANDARD
             .decode(pdf_base64.as_bytes())
             .map_err(|e| AppError::Validation(format!("invalid base64: {e}")))?;

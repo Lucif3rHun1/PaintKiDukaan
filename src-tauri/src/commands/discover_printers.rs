@@ -239,7 +239,6 @@ fn parse_wmic_output(stdout: &str) -> Vec<DiscoveredPrinter> {
 #[cfg(target_os = "windows")]
 fn try_wmi_discover() -> Vec<DiscoveredPrinter> {
     use std::process::Command;
-    use std::time::Duration;
 
     let wmi_script = format!(
         "$job = Start-Job {{ Get-CimInstance -Class Win32_Printer | \
@@ -311,7 +310,10 @@ fn try_wmi_discover() -> Vec<DiscoveredPrinter> {
 fn discover_macos_printers() -> AppResult<Vec<DiscoveredPrinter>> {
     use std::process::Command;
 
-    let output = match Command::new(crate::sys_tool::resolve("lpstat")).arg("-p").output() {
+    let output = match Command::new(crate::sys_tool::resolve("lpstat"))
+        .arg("-p")
+        .output()
+    {
         Ok(o) => o,
         Err(e) => {
             log::warn!("discover_macos_printers: lpstat failed: {e}");
@@ -390,7 +392,6 @@ pub fn discover_system_printers(
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
-        use std::time::Duration;
 
         let ps_script = format!(
             "$job = Start-Job {{ Get-Printer | Select-Object Name, DriverName, PortName, Type }}; \
