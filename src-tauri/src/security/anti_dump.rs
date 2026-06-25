@@ -151,12 +151,46 @@ mod win {
         pub fn SetErrorMode(u_mode: u32) -> u32;
     }
 
-    #[link(name = "wer")]
+    // WerRegisterExcludedApplication isn't exported by every Windows SDK import
+    // library on disk, so resolve it at runtime via LoadLibraryW + GetProcAddress.
+    // Falls back to a no-op if wer.dll or the symbol is unavailable.
+    type WerRegisterExcludedApplicationFn = unsafe extern "system" fn(*const u16, u32) -> i32;
+
+    pub unsafe fn wer_register_excluded_application(
+        pwz_exe_name: *const u16,
+        dw_registration_type: u32,
+    ) -> Option<i32> {
+        const WER_DLL: &[u16] = &[
+            b'w' as u16,
+            b'e' as u16,
+            b'r' as u16,
+            b'.' as u16,
+            b'd' as u16,
+            b'l' as u16,
+            b'l' as u16,
+            0,
+        ];
+        let module = LoadLibraryW(WER_DLL.as_ptr());
+        if module.is_null() {
+            return None;
+        }
+        let name = b"WerRegisterExcludedApplication\0";
+        let wide_name: Vec<u16> = name.iter().map(|&b| b as u16).collect();
+        let proc = GetProcAddress(module, wide_name.as_ptr());
+        if proc.is_none() {
+            return None;
+        }
+        let func: WerRegisterExcludedApplicationFn = std::mem::transmute(proc.unwrap());
+        Some(func(pwz_exe_name, dw_registration_type))
+    }
+
+    #[link(name = "kernel32")]
     extern "system" {
-        pub fn WerRegisterExcludedApplication(
-            pwz_exe_name: *const u16,
-            dw_registration_type: u32,
-        ) -> i32;
+        pub fn LoadLibraryW(lp_lib_file_name: *const u16) -> *mut c_void;
+        pub fn GetProcAddress(
+            h_module: *mut c_void,
+            lp_proc_name: *const u16,
+        ) -> Option<unsafe extern "system" fn() -> isize>;
     }
 }
 
@@ -242,9 +276,10 @@ fn exclude_wer_inner() -> Result<(), AppError> {
             .collect();
 
         // WerRegisterExcludedApplication — best-effort, log on failure.
-        let hr = win::WerRegisterExcludedApplication(wide_name.as_ptr(), win::WER_EXE_64BIT);
-        if hr != 0 {
-            log::warn!("WerRegisterExcludedApplication returned 0x{hr:08x}");
+        match win::wer_register_excluded_application(wide_name.as_ptr(), win::WER_EXE_64BIT) {
+            Some(hr) if hr != 0 => log::warn!("WerRegisterExcludedApplication returned 0x{hr:08x}"),
+            None => log::debug!("WerRegisterExcludedApplication unavailable on this Windows SDK"),
+            _ => {}
         }
 
         // SetErrorMode — suppress GP fault dialogs.
