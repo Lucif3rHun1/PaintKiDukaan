@@ -154,10 +154,9 @@ pub fn run() {
             }
 
             if let Err(e) = security::install_cleanup::register_uninstall_hook(&handle) {
-                return Err(format!(
+                log::warn!(
                     "Uninstall hook registration failed (data will NOT be wiped on uninstall): {e}"
-                )
-                .into());
+                );
             }
 
             security::run_security_init(&handle, &app_state);
