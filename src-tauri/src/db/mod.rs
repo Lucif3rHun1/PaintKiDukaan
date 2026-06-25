@@ -89,8 +89,41 @@ impl Db {
                 )
                 .unwrap_or(0);
             if notnull == 1 {
+                conn.execute_batch("ALTER TABLE purchases ALTER COLUMN vendor_id DROP NOT NULL")?;
+            }
+        }
+
+        // M-INLINE-002: relax printer_mappings CHECK constraint to allow
+        // label printers without explicit dimensions (per-item stock size
+        // is authoritative).
+        {
+            let has_strict: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_schema WHERE name = 'printer_mappings' AND sql NOT LIKE '%label_width_mm IS NULL AND label_height_mm IS NULL AND paper_size IS NULL%'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if has_strict {
                 conn.execute_batch(
-                    "ALTER TABLE purchases ALTER COLUMN vendor_id DROP NOT NULL",
+                    "CREATE TABLE printer_mappings_new (\
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                       printer_id INTEGER NOT NULL UNIQUE REFERENCES printers(id) ON DELETE CASCADE,\
+                       label_width_mm INTEGER,\
+                       label_height_mm INTEGER,\
+                       paper_size TEXT \
+                         CHECK(paper_size IN ('thermal-58mm','thermal-80mm','A4','A5') OR paper_size IS NULL),\
+                       created_at INTEGER NOT NULL,\
+                       updated_at INTEGER NOT NULL,\
+                       CHECK (\
+                         (label_width_mm IS NOT NULL AND label_height_mm IS NOT NULL AND paper_size IS NULL) OR\
+                         (paper_size IS NOT NULL AND label_width_mm IS NULL AND label_height_mm IS NULL) OR\
+                         (label_width_mm IS NULL AND label_height_mm IS NULL AND paper_size IS NULL)\
+                       )\
+                     );\
+                     INSERT INTO printer_mappings_new SELECT * FROM printer_mappings;\
+                     DROP TABLE printer_mappings;\
+                     ALTER TABLE printer_mappings_new RENAME TO printer_mappings;",
                 )?;
             }
         }

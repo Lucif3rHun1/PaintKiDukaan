@@ -1,7 +1,7 @@
 // Sales list page — recent sales with search, date filter, and pagination.
 
 import { useMemo, useState } from "react";
-import { Download, Eye, Plus, Printer, Receipt } from "lucide-react";
+import { Download, Eye, Plus, Printer, Receipt, Share2 } from "lucide-react";
 import { DatePicker } from "../../components/ui/DatePicker";
 
 import { ActionMenu, Badge, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
@@ -15,6 +15,7 @@ import type { Sale } from "../types";
 import {
   safeDownloadSalePdfById,
   safePrintSaleById,
+  safeShareSalePdfById,
 } from "./printOrDownload";
 
 interface Props {
@@ -136,6 +137,11 @@ export function SalesListPage({ onCreate }: Props) {
                 label: "Download PDF",
                 icon: Download,
                 onSelect: () => void safeDownloadSalePdfById(s.id),
+              },
+              {
+                label: "Share",
+                icon: Share2,
+                onSelect: () => void safeShareSalePdfById(s.id),
               },
             ]}
           />

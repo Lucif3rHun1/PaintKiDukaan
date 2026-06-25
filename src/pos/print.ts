@@ -7,6 +7,7 @@ import { jsPDF } from "jspdf";
 import JsBarcode from "jsbarcode";
 import type { Sale } from "./types";
 import { formatRupeesFromPaise } from "../lib/money";
+import { amountInWords } from "../lib/amountInWords";
 
 export const LOCKED_FORMAT = "CODE128" as const;
 const BARCODE_OPTIONS = {
@@ -244,7 +245,7 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...MUTED);
-  doc.text("Total Amount in Words: INR Only", margin, y + 1);
+  doc.text("Total Amount in Words: " + amountInWords(spec.sale.total), margin, y + 1);
   y += 12;
 
   doc.setDrawColor(...BORDER);

@@ -782,7 +782,8 @@ CREATE TABLE printer_mappings (
   updated_at INTEGER NOT NULL,
   CHECK (
     (label_width_mm IS NOT NULL AND label_height_mm IS NOT NULL AND paper_size IS NULL) OR
-    (paper_size IS NOT NULL AND label_width_mm IS NULL AND label_height_mm IS NULL)
+    (paper_size IS NOT NULL AND label_width_mm IS NULL AND label_height_mm IS NULL) OR
+    (label_width_mm IS NULL AND label_height_mm IS NULL AND paper_size IS NULL)
   )
 );
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Download, Printer } from "lucide-react";
+import { ArrowLeft, Download, Printer, Share2 } from "lucide-react";
 
 import { Badge, Button, Card, EmptyState, Money } from "../../components/ui";
 import { formatRupeesFromPaise } from "../../lib/money";
@@ -12,6 +12,7 @@ import {
   type ReceiptPrintSettings,
 } from "./printReceipt";
 import { buildReceiptPdfBlob } from "../print";
+import { safeShareSalePdfById } from "./printOrDownload";
 import { toast } from "../../lib/feedback/toast";
 import { formatDateForDisplay } from "../../lib/date";
 import type { Sale } from "../types";
@@ -117,6 +118,16 @@ export function SaleDetailPage({ id, onBack, onConvert }: Props) {
     }
   }
 
+  async function handleShare() {
+    if (!sale) return;
+    setBusy(true);
+    try {
+      await safeShareSalePdfById(sale.id);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
@@ -195,6 +206,16 @@ export function SaleDetailPage({ id, onBack, onConvert }: Props) {
             onClick={handleDownload}
           >
             Download PDF
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            icon={Share2}
+            disabled={busy}
+            onClick={handleShare}
+          >
+            Share
           </Button>
         </div>
       </header>
