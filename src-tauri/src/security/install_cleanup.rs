@@ -35,43 +35,42 @@ fn to_long_path(path: &str) -> String {
 /// Read a REG_SZ value from the registry, returning None on any failure.
 #[cfg(target_os = "windows")]
 fn read_reg_string(
-    hkey_root: windows::Win32::Foundation::HKEY,
+    hkey_root: windows::Win32::System::Registry::HKEY,
     subkey: &str,
     value: &str,
 ) -> Option<String> {
     use std::ffi::CString;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegOpenKeyExA, RegQueryValueExA, KEY_READ, REG_SZ,
+        RegCloseKey, RegOpenKeyExA, RegQueryValueExA, HKEY, KEY_READ,
     };
 
     let subkey_c = CString::new(subkey).ok()?;
     let value_c = CString::new(value).ok()?;
 
     unsafe {
-        let mut hkey = std::ptr::null_mut();
+        let hkey = HKEY(std::ptr::null_mut());
         let status = RegOpenKeyExA(
             hkey_root,
             windows::core::PCSTR(subkey_c.as_ptr() as *const u8),
             0,
             KEY_READ,
-            &mut hkey,
+            hkey.0 as *mut HKEY,
         );
         if status != windows::Win32::Foundation::ERROR_SUCCESS {
             return None;
         }
 
         // Query size first.
-        let mut buf_len: u32 = 0;
         let mut pc_data: u32 = 0;
         let status = RegQueryValueExA(
             hkey,
             windows::core::PCSTR(value_c.as_ptr() as *const u8),
             None,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            &mut pc_data,
+            None,
+            None,
+            Some(&mut pc_data),
         );
-        buf_len = pc_data;
+        let buf_len = pc_data;
         if status != windows::Win32::Foundation::ERROR_SUCCESS || buf_len == 0 {
             let _ = RegCloseKey(hkey);
             return None;
@@ -82,9 +81,9 @@ fn read_reg_string(
             hkey,
             windows::core::PCSTR(value_c.as_ptr() as *const u8),
             None,
-            std::ptr::null_mut(),
-            buf.as_mut_ptr(),
-            &mut pc_data,
+            None,
+            Some(buf.as_mut_ptr()),
+            Some(&mut pc_data),
         );
         let _ = RegCloseKey(hkey);
         if status != windows::Win32::Foundation::ERROR_SUCCESS {
@@ -159,7 +158,7 @@ fn register_uninstall_inner() -> Result<(), AppError> {
             .unwrap();
 
     unsafe {
-        let mut hkey = std::ptr::null_mut();
+        let hkey = windows::Win32::System::Registry::HKEY(std::ptr::null_mut());
         let status = RegCreateKeyExA(
             HKEY_CURRENT_USER,
             windows::core::PCSTR(key_path.as_ptr() as *const u8),
@@ -168,7 +167,7 @@ fn register_uninstall_inner() -> Result<(), AppError> {
             REG_OPTION_NON_VOLATILE,
             KEY_WRITE,
             None,
-            &mut hkey,
+            hkey.0 as *mut windows::Win32::System::Registry::HKEY,
             None,
         );
         if status != ERROR_SUCCESS {
@@ -183,7 +182,7 @@ fn register_uninstall_inner() -> Result<(), AppError> {
             windows::core::PCSTR(value_name.as_ptr() as *const u8),
             0,
             REG_SZ,
-            Some(cmd_cstr.as_ptr() as *const u8),
+            Some(cmd_cstr.as_bytes()),
         );
         let _ = RegCloseKey(hkey);
         if status != ERROR_SUCCESS {
