@@ -137,7 +137,6 @@ mod win {
     #[repr(C)]
     pub struct ControlFlowGuardPolicy {
         pub flags: u32,
-        pub reserved: u32,
     }
 }
 
@@ -191,7 +190,6 @@ fn apply_policy_inner(policy: super::MitigationPolicy) -> Result<(), AppError> {
             MitigationPolicy::ControlFlowGuard => {
                 let p = win::ControlFlowGuardPolicy {
                     flags: 0b11, // EnableControlFlowGuard | EnableExportSuppression
-                    reserved: 0,
                 };
                 (
                     win::PROCESS_MITIGATION_CONTROL_FLOW_GUARD_POLICY,

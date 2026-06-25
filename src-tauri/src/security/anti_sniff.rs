@@ -244,7 +244,12 @@ fn check_pcap_driver() -> bool {
             return false;
         }
 
-        let count = (bytes_needed / std::mem::size_of::<win::ENUM_SERVICE_STATUSW>() as u32) + 10;
+        // Compute total bytes needed (original + headroom) and round UP to
+        // whole structs so the Vec allocation is never smaller than what we
+        // hand to EnumServicesStatusW.
+        let struct_size = std::mem::size_of::<win::ENUM_SERVICE_STATUSW>() as u32;
+        let total_bytes = bytes_needed + 10 * struct_size;
+        let count = (total_bytes + struct_size - 1) / struct_size;
         let mut buffer: Vec<win::ENUM_SERVICE_STATUSW> = Vec::with_capacity(count as usize);
         buffer.set_len(count as usize);
 
@@ -254,7 +259,7 @@ fn check_pcap_driver() -> bool {
             win::SERVICE_WIN32,
             win::SERVICE_ACTIVE,
             buffer.as_mut_ptr(),
-            bytes_needed + (10 * std::mem::size_of::<win::ENUM_SERVICE_STATUSW>() as u32),
+            total_bytes,
             &mut bytes_needed,
             &mut services_returned,
             &mut resume_handle,
