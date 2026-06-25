@@ -4,7 +4,7 @@
  */
 import { useState } from "react";
 import { recordVendorPayment } from "./api";
-import { Button, Money } from "../../components/ui";
+import { Button, Money, DatePicker } from "../../components/ui";
 import { type AppError, type Vendor, type VendorOutstanding } from "../types";
 
 interface Props {
@@ -99,13 +99,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
           </select>
         </Field>
         <Field label="Date" required>
-          <input
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            type="date"
-            required
-            className="input"
-          />
+          <DatePicker value={date} onChange={setDate} />
         </Field>
       </div>
 

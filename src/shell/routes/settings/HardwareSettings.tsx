@@ -4,9 +4,11 @@ import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { Section } from "../../../components/ui/Section";
+import { Radio } from "../../../components/ui/Radio";
 import { emit } from "@tauri-apps/api/event";
 import { ipc } from "../../lib/ipc";
 import { extractError } from "../../../lib/extractError";
+import { loadNumber, loadString, saveSetting } from "./components/SettingsFields";
 import type {
   DiscoveredPrinter,
   NewPrinterInput,
@@ -152,7 +154,7 @@ function PrintersPanel() {
             <Button size="sm" variant="secondary" onClick={discover} disabled={busy}>
               <ScanLine className="h-4 w-4" /> Discover
             </Button>
-            <Button size="sm" onClick={() => setEditing(blankPrinter())}>
+            <Button size="sm" onClick={() => setEditing(blankPrinter())} shortcut="F6">
               <Plus className="h-4 w-4" /> Add printer
             </Button>
           </div>
@@ -318,12 +320,15 @@ function PrinterForm({
           />
         </Field>
         <Field label="Use case">
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-4 pt-2">
             {(["receipt", "label"] as const).map((u) => (
-              <label key={u} className="flex items-center gap-2 text-sm">
-                <input type="radio" name="usecase" checked={input.use_case === u} onChange={() => changeUseCase(u)} />
-                {u === "receipt" ? "Receipt" : "Label"}
-              </label>
+              <Radio
+                key={u}
+                name="usecase"
+                checked={input.use_case === u}
+                onChange={() => changeUseCase(u)}
+                label={u === "receipt" ? "Receipt" : "Label"}
+              />
             ))}
           </div>
         </Field>
@@ -427,17 +432,19 @@ function ScannerPanel() {
     let cancelled = false;
     (async () => {
       try {
-        const min = await ipc.getSetting("scanner_min_length");
-        const avg = await ipc.getSetting("scanner_avg_ms_per_char");
-        const term = await ipc.getSetting("scanner_terminator");
-        const tms = await ipc.getSetting("scanner_timeout_ms");
-        const sd = await ipc.getSetting("scanner_max_sd_ms");
+        const [min, avg, term, tms, sd] = await Promise.all([
+          loadNumber(ipc.getSetting, "scanner_min_length", 4),
+          loadNumber(ipc.getSetting, "scanner_avg_ms_per_char", 25),
+          loadString(ipc.getSetting, "scanner_terminator", "enter"),
+          loadNumber(ipc.getSetting, "scanner_timeout_ms", 200),
+          loadNumber(ipc.getSetting, "scanner_max_sd_ms", 8),
+        ]);
         if (cancelled) return;
-        if (typeof min === "number") setMinLength(min);
-        if (typeof avg === "number") setAvgMs(avg);
-        if (typeof term === "string") setTerminator(term);
-        if (typeof tms === "number") setTimeoutMs(tms);
-        if (typeof sd === "number") setMaxSdMs(sd);
+        setMinLength(min);
+        setAvgMs(avg);
+        setTerminator(term);
+        setTimeoutMs(tms);
+        setMaxSdMs(sd);
         setLoaded(true);
       } catch (e) {
         setError(extractError(e));
@@ -452,11 +459,11 @@ function ScannerPanel() {
     setSaving(true);
     setError(null);
     try {
-      await ipc.setSetting("scanner_min_length", minLength);
-      await ipc.setSetting("scanner_avg_ms_per_char", avgMs);
-      await ipc.setSetting("scanner_terminator", terminator);
-      await ipc.setSetting("scanner_timeout_ms", timeoutMs);
-      await ipc.setSetting("scanner_max_sd_ms", maxSdMs);
+      await saveSetting(ipc.setSetting, "scanner_min_length", minLength);
+      await saveSetting(ipc.setSetting, "scanner_avg_ms_per_char", avgMs);
+      await saveSetting(ipc.setSetting, "scanner_terminator", terminator);
+      await saveSetting(ipc.setSetting, "scanner_timeout_ms", timeoutMs);
+      await saveSetting(ipc.setSetting, "scanner_max_sd_ms", maxSdMs);
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -539,7 +546,7 @@ function ScannerPanel() {
           </Field>
         </div>
         <div className="flex justify-end">
-          <Button onClick={save} disabled={!loaded || saving}>
+          <Button onClick={save} disabled={!loaded || saving} shortcut="F9">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Save
           </Button>
@@ -563,7 +570,7 @@ function ScannerPanel() {
               }
             }}
           />
-          <Button onClick={fireScan} disabled={testInput.trim().length === 0}>
+          <Button onClick={fireScan} disabled={testInput.trim().length === 0} shortcut="F6">
             <Barcode className="h-4 w-4" /> Fire scan
           </Button>
         </div>

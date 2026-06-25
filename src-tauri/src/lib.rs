@@ -12,6 +12,7 @@ pub mod backup;
 pub mod hardening;
 pub mod hid_scanner;
 pub mod scan;
+pub mod sys_tool;
 
 pub use error::AppError;
 
@@ -29,7 +30,7 @@ fn sanitize_log_input(level: &str, message: &str) -> Result<String, String> {
     }
     let sanitized: String = message
         .chars()
-        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .filter(|c| !c.is_control())
         .take(MAX_LOG_MSG_LEN)
         .collect();
     if sanitized.is_empty() {
@@ -61,7 +62,8 @@ pub fn run() {
     let log_dir = dirs::data_local_dir()
         .unwrap_or_default()
         .join(crate::obs!("in.paintkiduakan.master"));
-    let _ = std::fs::create_dir_all(&log_dir);
+    std::fs::create_dir_all(&log_dir)
+        .unwrap_or_else(|e| panic!("failed to create log dir {:?}: {}", log_dir, e));
 
     let log_file = log_dir.join(crate::obs!("session.log"));
     let prev_log = log_dir.join(crate::obs!("session.prev.log"));
@@ -152,8 +154,13 @@ pub fn run() {
             }
 
             if let Err(e) = security::install_cleanup::register_uninstall_hook(&handle) {
-                log::warn!("Uninstall hook registration failed (non-fatal): {e}");
+                return Err(format!(
+                    "Uninstall hook registration failed (data will NOT be wiped on uninstall): {e}"
+                )
+                .into());
             }
+
+            security::run_security_init(&handle, &app_state);
 
             log::info!("Setup complete");
             Ok(())
@@ -378,16 +385,20 @@ mod poc_tests {
         let reader = BufReader::new(File::open(tmp.path()).unwrap());
         let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
 
-        // The newline injection is preserved (sanitize only strips control chars
-        // except \n and \t) — but the log output is a single formatted entry,
-        // so the injected text appears on the SAME log line, not as a separate
-        // spoofed line. This is acceptable behavior.
+        // Newlines are stripped — the injected text appears on the SAME log line
+        // with the newline removed, so no spoofed line is created.
         assert!(
             lines
                 .iter()
                 .any(|l| l.contains("[INFO] forged admin event")),
             "sanitized payload should still be present: {:?}",
             lines
+        );
+        // Verify no raw newline survived in the logged content
+        let log_content = lines.join("\n");
+        assert!(
+            !log_content.contains("user action\n[INFO]"),
+            "newline should be stripped from payload"
         );
     }
 
@@ -425,14 +436,29 @@ mod poc_tests {
     }
 
     #[test]
-    fn sanitize_log_input_preserves_newline_and_tab() {
+    fn sanitize_log_input_strips_newline_and_tab() {
         let result = super::sanitize_log_input("info", "hello\nworld\ttab");
-        assert_eq!(result.unwrap(), "hello\nworld\ttab");
+        assert_eq!(result.unwrap(), "helloworldtab");
+    }
+
+    #[test]
+    fn sanitize_strips_all_control_chars() {
+        let input = "user action\n[INFO] forged admin event\there";
+        let out = super::sanitize_log_input("info", input).unwrap();
+        assert!(!out.contains('\n'));
+        assert!(!out.contains('\t'));
+        assert_eq!(out, "user action[INFO] forged admin eventhere");
     }
 
     #[test]
     fn sanitize_log_input_rejects_only_control_chars() {
         let result = super::sanitize_log_input("info", "\x00\x01\x02");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn sanitize_log_input_rejects_only_whitespace_control() {
+        let result = super::sanitize_log_input("info", "\n\t\r");
         assert!(result.is_err());
     }
 }

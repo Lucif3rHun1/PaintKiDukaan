@@ -48,7 +48,37 @@ export function toCsvText(headers: string[], rows: string[][]): string {
 /** Build column definitions for template download. */
 export interface TemplateColumn {
   name: string;
+  required?: boolean;
   example?: string;
+}
+
+const REQUIRED_NOTE = "# * = required column";
+
+export type ColumnType = "string" | "number" | "date";
+
+/**
+ * Validate a single cell value against a column definition.
+ * Returns an error message, or null if the value is acceptable.
+ */
+export function validateCell(
+  value: string,
+  col: { type?: ColumnType; required?: boolean } | undefined,
+): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return col?.required ? "Required" : null;
+  }
+  if (col?.type === "number") {
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) return "Must be a number";
+    return null;
+  }
+  if (col?.type === "date") {
+    const d = new Date(trimmed);
+    if (Number.isNaN(d.getTime())) return "Invalid date";
+    return null;
+  }
+  return null;
 }
 
 /** Download a blank template file (CSV or XLSX). */
@@ -57,18 +87,17 @@ export function downloadTemplate(
   filename: string,
   format: "csv" | "xlsx",
 ): void {
+  const header = columns.map((c) => `${c.name}${c.required ? "*" : ""}`);
+  const example = columns.map((c) => c.example ?? "");
   if (format === "csv") {
-    const header = columns.map((c) => c.name).join(",");
-    const example = columns.map((c) => c.example ?? "").join(",");
     downloadBlob(
-      new Blob([header + "\n" + example + "\n"], { type: "text/csv" }),
+      new Blob([header.join(",") + "\n" + example.join(",") + "\n" + REQUIRED_NOTE + "\n"], {
+        type: "text/csv",
+      }),
       `${filename}.csv`,
     );
   } else {
-    const ws = XLSX.utils.aoa_to_sheet([
-      columns.map((c) => c.name),
-      columns.map((c) => c.example ?? ""),
-    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, example, [REQUIRED_NOTE]]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });

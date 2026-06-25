@@ -734,21 +734,126 @@ fn get_current_pid() -> usize {
 
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 fn get_parent_pid(pid: usize) -> Option<usize> {
-    // Use NtQueryInformationProcess(ProcessBasicInformation) to get parent PID
-    // for an arbitrary PID. For current process, we already have it.
-    // For simplicity, use the PEB approach for current process only.
-    // Full implementation would open the parent process and query it.
-    let _ = pid;
-    None
+    use super::syscall;
+
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const NT_CURRENT_PROCESS: usize = 0xFFFFFFFFFFFFFFFF;
+
+    #[repr(C)]
+    struct ProcessBasicInformation {
+        exit_status: i64,
+        peb_base_address: *mut u8,
+        affinity_mask: usize,
+        base_priority: i32,
+        unique_process_id: usize,
+        inherited_from_unique_process_id: usize,
+    }
+
+    unsafe {
+        let handle = if pid == get_current_pid() {
+            NT_CURRENT_PROCESS
+        } else {
+            let open_ssn = syscall::resolve_ssn_with_fallback("NtOpenProcess").unwrap_or(0x26);
+            let mut handle: usize = 0;
+            let mut obj_attr = [0u8; 48];
+            let mut client_id = [0usize; 2];
+            client_id[0] = pid;
+            let status = syscall::direct_syscall_4(
+                open_ssn,
+                &mut handle as *mut _ as usize,
+                PROCESS_QUERY_LIMITED_INFORMATION as usize,
+                obj_attr.as_ptr() as usize,
+                client_id.as_ptr() as usize,
+            );
+            if status != 0 || handle == 0 {
+                return None;
+            }
+            handle
+        };
+
+        let mut pbi: ProcessBasicInformation = std::mem::zeroed();
+        let status = syscall::nt_query_information_process(
+            handle,
+            0,
+            &mut pbi as *mut _ as *mut u8,
+            std::mem::size_of::<ProcessBasicInformation>() as u32,
+            std::ptr::null_mut(),
+        );
+
+        if pid != get_current_pid() && handle != NT_CURRENT_PROCESS {
+            syscall::nt_close(handle);
+        }
+
+        if status == 0 && pbi.inherited_from_unique_process_id != 0 {
+            Some(pbi.inherited_from_unique_process_id)
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-fn get_process_name_by_pid(_pid: usize) -> Option<String> {
-    // Full implementation would use NtQueryInformationProcess or
-    // CreateToolhelp32Snapshot. Stub for now — the parent check via
-    // ProcessBasicInformation in sota_ntqip_checks handles the most
-    // critical case.
-    None
+fn get_process_name_by_pid(pid: usize) -> Option<String> {
+    use super::syscall;
+
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const NT_CURRENT_PROCESS: usize = 0xFFFFFFFFFFFFFFFF;
+
+    unsafe {
+        let handle = if pid == get_current_pid() {
+            NT_CURRENT_PROCESS
+        } else {
+            let open_ssn = syscall::resolve_ssn_with_fallback("NtOpenProcess").unwrap_or(0x26);
+            let mut handle: usize = 0;
+            let mut obj_attr = [0u8; 48];
+            let mut client_id = [0usize; 2];
+            client_id[0] = pid;
+            let status = syscall::direct_syscall_4(
+                open_ssn,
+                &mut handle as *mut _ as usize,
+                PROCESS_QUERY_LIMITED_INFORMATION as usize,
+                obj_attr.as_ptr() as usize,
+                client_id.as_ptr() as usize,
+            );
+            if status != 0 || handle == 0 {
+                return None;
+            }
+            handle
+        };
+
+        // ProcessImageFileName = class 27, returns UNICODE_STRING
+        #[repr(C)]
+        struct UnicodeString {
+            length: u16,
+            maximum_length: u16,
+            _pad: [u8; 4],
+            buffer: *const u16,
+        }
+
+        let mut us: UnicodeString = std::mem::zeroed();
+        let status = syscall::nt_query_information_process(
+            handle,
+            27,
+            &mut us as *mut _ as *mut u8,
+            std::mem::size_of::<UnicodeString>() as u32,
+            std::ptr::null_mut(),
+        );
+
+        if pid != get_current_pid() && handle != NT_CURRENT_PROCESS {
+            syscall::nt_close(handle);
+        }
+
+        if status == 0 && !us.buffer.is_null() && us.length > 0 {
+            let len = us.length as usize / 2;
+            let slice = std::slice::from_raw_parts(us.buffer, len);
+            let full_path = String::from_utf16_lossy(slice);
+            return std::path::Path::new(&full_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string());
+        }
+
+        None
+    }
 }
 
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]

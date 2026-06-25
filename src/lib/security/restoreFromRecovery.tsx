@@ -30,7 +30,7 @@ const ghostButtonClass =
   "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: RestoreResponse): Session {
-  const role: Role = result.user?.role ?? result.role ?? "owner";
+  const role: Role = result.user?.role ?? result.role ?? "stocker";
   const name = result.user?.name ?? result.user_name ?? "Owner";
   const id = result.user?.id ?? result.user_id ?? 0;
   const user: User | null = result.user === null ? null : { id, name, role };

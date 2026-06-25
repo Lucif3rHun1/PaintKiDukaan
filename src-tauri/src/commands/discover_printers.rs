@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::commands::auth::AppState;
 use crate::error::AppResult;
+use crate::security::ipc_auth;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DiscoveredPrinter {
@@ -118,7 +120,7 @@ fn try_wmic_discover() -> Vec<DiscoveredPrinter> {
 
     const WMIC_TIMEOUT_SECS: u64 = 5;
 
-    let mut child = match Command::new("wmic")
+    let mut child = match Command::new(crate::sys_tool::resolve("wmic"))
         .args(["printer", "get", "Name,PortName,DriverName", "/format:list"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -246,7 +248,7 @@ fn try_wmi_discover() -> Vec<DiscoveredPrinter> {
          if ($done) {{ Receive-Job $job | ConvertTo-Json }} else {{ Stop-Job $job; '[]' }}",
     );
 
-    let output = match Command::new("powershell")
+    let output = match Command::new(crate::sys_tool::resolve("powershell"))
         .args(["-NoProfile", "-NonInteractive", "-Command", &wmi_script])
         .output()
     {
@@ -309,7 +311,7 @@ fn try_wmi_discover() -> Vec<DiscoveredPrinter> {
 fn discover_macos_printers() -> AppResult<Vec<DiscoveredPrinter>> {
     use std::process::Command;
 
-    let output = match Command::new("lpstat").arg("-p").output() {
+    let output = match Command::new(crate::sys_tool::resolve("lpstat")).arg("-p").output() {
         Ok(o) => o,
         Err(e) => {
             log::warn!("discover_macos_printers: lpstat failed: {e}");
@@ -343,7 +345,7 @@ fn discover_macos_printers() -> AppResult<Vec<DiscoveredPrinter>> {
         }
 
         // Try to get driver info from lpoptions
-        let driver_name = Command::new("lpoptions")
+        let driver_name = Command::new(crate::sys_tool::resolve("lpoptions"))
             .args(["-p", &name, "-l"])
             .output()
             .ok()
@@ -370,7 +372,10 @@ fn discover_macos_printers() -> AppResult<Vec<DiscoveredPrinter>> {
 // ── Main discovery command ──────────────────────────────────────────────
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn discover_system_printers() -> AppResult<Vec<DiscoveredPrinter>> {
+pub fn discover_system_printers(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<DiscoveredPrinter>> {
+    ipc_auth::authorize("discover_system_printers", state.inner())?;
     #[cfg(target_os = "macos")]
     {
         return discover_macos_printers();
@@ -393,7 +398,7 @@ pub fn discover_system_printers() -> AppResult<Vec<DiscoveredPrinter>> {
              if ($done) {{ Receive-Job $job | ConvertTo-Json }} else {{ Stop-Job $job; '[]' }}",
         );
 
-        let output = match Command::new("powershell")
+        let output = match Command::new(crate::sys_tool::resolve("powershell"))
             .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
             .output()
         {
@@ -628,7 +633,11 @@ mod win32_printer_status {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn get_printer_status(printer_name: String) -> AppResult<String> {
+pub fn get_printer_status(
+    state: tauri::State<'_, AppState>,
+    printer_name: String,
+) -> AppResult<String> {
+    ipc_auth::authorize("get_printer_status", state.inner())?;
     #[cfg(not(target_os = "windows"))]
     {
         let _ = printer_name;

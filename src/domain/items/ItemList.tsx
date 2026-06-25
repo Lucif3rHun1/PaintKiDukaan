@@ -3,13 +3,14 @@
  *
  * Wires Add/Edit/Archive/Print-label + nav to Inward/Outward.
  * Dark zinc theme consistent with the rest of the app shell.
- * Keyboard:
- *   n — new item
- *   / — focus search
- *   e — edit first selected row (after a row click)
- *   Esc — close any open modal
+ * Keyboard (page scope, gated by mode === "list" + role):
+ *   F2 — focus search
+ *   F5 — refresh list
+ *   F6 — new item (canEdit only)
+ *   Esc — clear search
+ * While ItemForm is mounted (mode !== "list"), its own form shortcuts take over.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Archive,
   ArrowDownToLine,
@@ -35,6 +36,7 @@ import {
   Skeleton,
 } from "../../components/ui";
 import { formatRupeesFromPaise } from "../../lib/money";
+import { toTitleCase } from "../../lib/format/titleCase";
 import { toast } from "../../lib/feedback/toast";
 import { usePaginatedQuery } from "../../lib/query";
 import { listBrands, listItems, updateItem } from "./api";
@@ -46,6 +48,8 @@ import { printLabel } from "../../pos/print";
 import { listLocations } from "../locations/api";
 import type { Location } from "../types";
 import { extractError } from "../../lib/extractError";
+import { useShortcut } from "../../lib/shortcuts";
+import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
@@ -70,8 +74,6 @@ export function ItemList({ role }: Props) {
   const [mode, setMode] = useState<Mode>("list");
   const [editing, setEditing] = useState<Item | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-
-  const searchRef = useRef<HTMLInputElement>(null);
 
   const canEdit = role === "owner" || role === "stocker";
 
@@ -154,9 +156,9 @@ export function ItemList({ role }: Props) {
   function displayName(item: Item): string {
     if (item.brand_id != null) {
       const prefix = brandPrefixById.get(item.brand_id);
-      if (prefix) return `${prefix}-${item.name}`;
+      if (prefix) return `${prefix}-${toTitleCase(item.name)}`;
     }
-    return item.name;
+    return toTitleCase(item.name);
   }
 
   function brandGroupLabel(item: Item): string {
@@ -167,22 +169,32 @@ export function ItemList({ role }: Props) {
     return item.brand?.trim() || "No brand";
   }
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (mode !== "list") return;
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.key === "n" && canEdit) {
-        e.preventDefault();
-        setMode("create");
-      } else if (e.key === "/") {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [mode, canEdit]);
+  useFocusShortcut({ key: "F2", selector: '[data-shortcut="search"]', description: "Focus search" });
+  useShortcut({
+    key: "F5",
+    scope: "page",
+    description: "Refresh list",
+    onMatch: () => {
+      if (mode === "list") void refetch();
+    },
+  });
+  useShortcut({
+    key: "F6",
+    scope: "page",
+    description: "New item",
+    onMatch: () => {
+      if (mode === "list" && canEdit) openCreate();
+    },
+  });
+  useShortcut({
+    key: "Escape",
+    allowInInputs: true,
+    preventDefault: true,
+    description: "Clear search",
+    onMatch: () => {
+      if (mode === "list" && search) setSearch("");
+    },
+  });
 
   const metrics = useMemo(() => {
     let lowStock = 0;
@@ -376,11 +388,11 @@ export function ItemList({ role }: Props) {
       {/* ── Filter bar ───────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         <SearchInput
-          ref={searchRef}
           value={search}
           onChange={(v) => setSearch(v)}
           placeholder="Search by name, SKU, brand, category, barcode…"
           ariaLabel="Search inventory"
+          data-shortcut="search"
         />
         <label className="flex h-9 items-center gap-1.5 text-xs text-muted-foreground">
           <input
@@ -425,7 +437,7 @@ export function ItemList({ role }: Props) {
 
         {canEdit ? (
           <>
-            <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} className="!text-xs">
+            <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} shortcut="F6" className="!text-xs">
               Add Item
             </Button>
             <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">

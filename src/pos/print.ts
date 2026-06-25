@@ -1,25 +1,14 @@
 // jsPDF + JsBarcode helpers for Shelf Label and Receipt printing.
-// Per master plan §7.2 (E-IA1) and §7.3 (E71–E73):
-//  - Label: 50×25 mm landscape, JsBarcode EAN-13 + 2 text lines.
-//  - Receipt: A4 portrait, shop header from settings, sale details, payment
-//    breakdown, GST-style totals.
-//
-// Format is locked to EAN-13 (international retail barcode), monochrome,
-// rendered to PNG at canvas-default DPI then embedded into a PDF at fixed
-// mm dimensions — see LOCKED_FORMAT. All jsPDF/JsBarcode calls are wrapped
-// in try/catch with console.warn fallback so a runtime hiccup never
-// silently drops the user's batch.
-//
-// We import jsPDF and JsBarcode lazily inside the function so a missing
-// dependency (e.g. running in browser-only dev) doesn't blow up the whole
-// module graph.
+// Barcode format is locked to CODE128 (LOCKED_FORMAT). All barcode values
+// are alphanumeric strings (SKUs like AP-WHT-001). CODE128 supports
+// the full ASCII set so no encoding restrictions apply.
 
 import { jsPDF } from "jspdf";
 import JsBarcode from "jsbarcode";
 import type { Sale } from "./types";
 import { formatRupeesFromPaise } from "../lib/money";
 
-export const LOCKED_FORMAT = "EAN13" as const;
+export const LOCKED_FORMAT = "CODE128" as const;
 const BARCODE_OPTIONS = {
   format: LOCKED_FORMAT,
   displayValue: false,
@@ -195,10 +184,11 @@ export const THERMAL_SIZES: Record<ThermalSize, { w: number; h: number; label: s
 };
 
 /**
- * Render a single barcode to a PNG data URL. Tries EAN-13 first; on failure
- * (non-numeric values like legacy `SKU-000001` SKUs) falls back to CODE128
- * so the label still renders a scannable barcode. If both fail, returns a
- * 1×1 transparent PNG so downstream PDF assembly does not crash mid-batch.
+ * Render a single barcode to a PNG data URL. Format is locked to CODE128
+ * (international retail barcode), monochrome, rendered to PNG at canvas-default
+ * DPI then embedded into a PDF at fixed mm dimensions — see LOCKED_FORMAT.
+ * All jsPDF/JsBarcode calls are wrapped in try/catch with console.warn fallback
+ * so a runtime hiccup never silently drops the user's batch.
  */
 export async function makeBarcodePng(value: string): Promise<string> {
   const canvas = document.createElement("canvas");
@@ -210,30 +200,14 @@ export async function makeBarcodePng(value: string): Promise<string> {
   try {
     JsBarcode(canvas, value, {
       ...BARCODE_OPTIONS,
-      format: "EAN13",
+      format: LOCKED_FORMAT,
       width: 2,
-      margin: 4,
       background: "transparent",
     });
     return canvas.toDataURL("image/png");
-  } catch (eanErr) {
-    console.warn(
-      `EAN-13 encode failed for value='${value}', falling back to CODE128:`,
-      eanErr,
-    );
-    try {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      JsBarcode(canvas, value, {
-        ...BARCODE_OPTIONS,
-        format: "CODE128",
-        width: 2,
-        background: "transparent",
-      });
-      return canvas.toDataURL("image/png");
-    } catch (codeErr) {
-      console.warn(`CODE128 encode failed for value='${value}':`, codeErr);
-      return TRANSPARENT_PNG;
-    }
+  } catch (codeErr) {
+    console.warn(`CODE128 encode failed for value='${value}':`, codeErr);
+    return TRANSPARENT_PNG;
   }
 }
 

@@ -23,6 +23,9 @@ import logo32 from "../assets/logo-32.png";
 import logo64 from "../assets/logo-64.png";
 const LOGO_64 = logo64;
 import { cn, Toaster } from "../components/ui";
+import { KbdHint } from "../components/ui/KbdHint";
+import { useShortcut } from "../lib/shortcuts";
+import { toTitleCase } from "../lib/format/titleCase";
 import { AlertBell } from "./components/AlertBell";
 import type { Role } from "../lib/security/state";
 
@@ -51,6 +54,7 @@ interface AppShellProps {
   onNavigate: (tab: AppShellTab, hash?: string) => void;
   onLock: () => void;
   onLogout?: () => void;
+  onSwitchUser?: () => void;
   children: ReactNode;
 }
 
@@ -152,6 +156,15 @@ const groups: SidebarGroup[] = [
 
 const sectionLabels = ["Main", "Transactions", "Inventory", "Parties", "Reports", "Settings"] as const;
 
+const SIDEBAR_SHORTCUTS: Record<string, string> = {
+  dashboard: "Alt+1",
+  sales: "Alt+2",
+  inward: "Alt+3",
+  customers: "Alt+4",
+  "sales-report": "Alt+5",
+  "settings-shop": "Alt+6",
+};
+
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -166,16 +179,24 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, onLogout, children }: AppShellProps) {
+export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, onLogout, onSwitchUser, children }: AppShellProps) {
   const wide = useMediaQuery("(min-width: 1024px)");
   const collapsed = !wide;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    transactions: true,
     sales: true,
     inventory: true,
     parties: true,
     reports: true,
     settings: true,
   });
+
+  useShortcut({ key: "1", alt: true, scope: "global", description: "Dashboard", onMatch: () => onNavigate("dashboard") });
+  useShortcut({ key: "2", alt: true, scope: "global", description: "Sales", onMatch: () => onNavigate("sales", "#/sales") });
+  useShortcut({ key: "3", alt: true, scope: "global", description: "Inward", onMatch: () => onNavigate("inward", "#/inward") });
+  useShortcut({ key: "4", alt: true, scope: "global", description: "Customers", onMatch: () => onNavigate("customers", "#/customers") });
+  useShortcut({ key: "5", alt: true, scope: "global", description: "Sales Report", onMatch: () => onNavigate("sales-report", "#/sales-report") });
+  useShortcut({ key: "6", alt: true, scope: "global", description: "Settings (Shop)", onMatch: () => onNavigate("settings", "#/settings/shop") });
 
   return (
       <div className="flex h-screen overflow-hidden bg-sidebar text-sidebar-foreground">
@@ -271,7 +292,13 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           })()}
         </nav>
 
-        <AccountMenu user={user} collapsed={collapsed} onLock={onLock} onLogout={onLogout ?? onLock} />
+        <AccountMenu
+          user={user}
+          collapsed={collapsed}
+          onLock={onLock}
+          onLogout={onLogout ?? onLock}
+          onSwitchUser={onSwitchUser ?? onLock}
+        />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -293,17 +320,13 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           </div>
         </header>
 
-        <header className="hidden md:flex items-center justify-end border-b border-border bg-card px-4 py-2">
-          <AlertBell currentRole={user?.role as Role | undefined} />
-        </header>
-
         <nav className="flex overflow-x-auto border-b border-border bg-muted px-2 py-1 md:hidden">
           {mobileLinks.map((item) => (
             <SidebarLinkButton key={item.id} link={item} active={isLinkActive(item, activeTab)} collapsed={false} onNavigate={onNavigate} mobile />
           ))}
         </nav>
 
-        <main className="flex-1 overflow-y-auto bg-background p-4 text-foreground sm:p-6">
+        <main className="flex-1 overflow-y-auto bg-background px-4 pt-1 pb-4 text-foreground sm:px-6 sm:pt-2 sm:pb-6">
           {bootstrapError ? (
             <p className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
               {bootstrapError}
@@ -366,6 +389,7 @@ function SidebarLinkButton({
   onNavigate: (tab: AppShellTab, hash?: string) => void;
 }) {
   const Icon = link.icon;
+  const shortcut = SIDEBAR_SHORTCUTS[link.id];
   return (
     <button
       type="button"
@@ -381,11 +405,12 @@ function SidebarLinkButton({
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       {!collapsed || mobile ? <span className="truncate">{link.label}</span> : null}
+      {shortcut && !collapsed && !mobile ? <KbdHint keys={shortcut} /> : null}
     </button>
   );
 }
 
-function AccountMenu({ user, collapsed, onLock, onLogout }: { user: AppShellUser | null; collapsed: boolean; onLock: () => void; onLogout: () => void }) {
+function AccountMenu({ user, collapsed, onLock, onLogout, onSwitchUser }: { user: AppShellUser | null; collapsed: boolean; onLock: () => void; onLogout: () => void; onSwitchUser: () => void }) {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
@@ -406,8 +431,11 @@ function AccountMenu({ user, collapsed, onLock, onLogout }: { user: AppShellUser
     triggerRef.current?.focus();
   }
 
+  const displayName = toTitleCase(user?.name ?? "Owner");
+  const displayRole = user?.role ?? "stocker";
+
   return (
-      <div className="border-t border-sidebar-border pt-3">
+    <div className="border-t border-sidebar-border pt-3">
       <button
         ref={triggerRef}
         type="button"
@@ -418,13 +446,13 @@ function AccountMenu({ user, collapsed, onLock, onLogout }: { user: AppShellUser
         )}
       >
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground">
-          {(user?.name ?? "Owner").slice(0, 1).toUpperCase()}
+          {displayName.slice(0, 1)}
         </div>
         {!collapsed ? (
           <>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-sidebar-foreground">{user?.name ?? "Owner"}</div>
-              <div className="truncate text-xs text-sidebar-foreground/60">{user?.role ?? "owner"}</div>
+              <div className="truncate text-sm font-medium text-sidebar-foreground">{displayName}</div>
+              <div className="truncate text-xs text-sidebar-foreground/60">{displayRole}</div>
             </div>
             <ChevronDown className="h-4 w-4 text-sidebar-foreground/60" aria-hidden="true" />
           </>
@@ -441,13 +469,53 @@ function AccountMenu({ user, collapsed, onLock, onLogout }: { user: AppShellUser
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) close();
           }}
-          className="fixed bottom-16 left-3 m-0 w-52 rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground"
+          className="fixed bottom-20 left-3 m-0 w-56 rounded-xl border border-border bg-popover p-1.5 text-sm text-popover-foreground shadow-xl"
         >
-          <button ref={firstItemRef} type="button" onClick={() => { onLock(); close(); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted">
-            <Lock className="h-4 w-4" aria-hidden="true" />
+          {/* User header */}
+          <div className="flex items-center gap-3 px-3 py-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+              {displayName.slice(0, 1)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium text-foreground">{displayName}</div>
+              <div className="truncate text-xs text-muted-foreground">{displayRole}</div>
+            </div>
+          </div>
+
+          <div className="my-1 h-px bg-border" />
+
+          {/* Menu items */}
+          <button
+            ref={firstItemRef}
+            type="button"
+            onClick={() => {
+              onLock();
+              close();
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-foreground transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
+          >
+            <Lock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             Lock
           </button>
-          <button type="button" onClick={() => { onLogout(); close(); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-destructive hover:bg-destructive/10">
+          <button
+            type="button"
+            onClick={() => {
+              onSwitchUser();
+              close();
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-foreground transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
+          >
+            <UserCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Switch User
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onLogout();
+              close();
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-destructive transition-colors hover:bg-destructive/10 focus:bg-destructive/10 focus:outline-none"
+          >
             <LogOut className="h-4 w-4" aria-hidden="true" />
             Logout
           </button>

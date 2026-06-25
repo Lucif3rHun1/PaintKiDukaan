@@ -43,6 +43,8 @@ sha2 = "0.10"
 hex = "0.4"
 # Constant-time comparison (CWE-208 fix)
 subtle = "2"
+# HMAC-SHA256 for backup envelope integrity (R-11)
+hmac = "0.12"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -75,8 +77,12 @@ hidapi = { version = "2.6", features = ["windows-native"] }
 dirs = "5"
 fs2 = "0.4"
 
+# Cross-platform OS keystore (macOS Keychain, Linux secret-service, Windows cred)
+keyring = "3"
+
 # Anti-forensic (Track A — secure delete needs rand + libc)
 rand = "0.8"
+getrandom = "0.2"
 
 # Temp paths used at runtime by backup test_restore and snapshot flows
 tempfile = "3"
@@ -84,7 +90,7 @@ tempfile = "3"
 # Security: path canonicalization (Windows UTF-8 safe)
 dunce = "1"
 
-# Security: Windows APIs (registry, firewall COM, system)
+# Security: Windows APIs (registry, firewall COM, system, power)
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [
     "Win32_System_Registry",
@@ -92,6 +98,8 @@ windows = { version = "0.58", features = [
     "Win32_NetworkManagement_WindowsFirewall",
     "Win32_System_Com",
     "Win32_Graphics_Printing",
+    "Win32_System_Power",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 # macOS CGEventTap for barcode scanner hook (M4.1)

@@ -333,7 +333,7 @@ fn get_process_names() -> Vec<String> {
 #[cfg(not(target_os = "windows"))]
 fn get_process_names() -> Vec<String> {
     // On Unix, use /proc or ps. Simplified: use ps command.
-    let output = std::process::Command::new("ps")
+    let output = std::process::Command::new(crate::sys_tool::resolve("ps"))
         .args(["-eo", "comm="])
         .output();
     match output {
@@ -353,14 +353,16 @@ fn get_process_names() -> Vec<String> {
 // ─── Loopback listener detection ───────────────────────────────────────────
 
 fn get_loopback_listeners() -> Vec<LoopbackListener> {
-    let output = std::process::Command::new("netstat")
+    let output = std::process::Command::new(crate::sys_tool::resolve("netstat"))
         .args(["-ano"])
         .output();
     match output {
         Ok(out) => parse_netstat_output(&String::from_utf8_lossy(&out.stdout)),
         Err(_) => {
             // Try ss on Linux.
-            let output = std::process::Command::new("ss").args(["-tlnp"]).output();
+            let output = std::process::Command::new(crate::sys_tool::resolve("ss"))
+                .args(["-tlnp"])
+                .output();
             match output {
                 Ok(out) => parse_ss_output(&String::from_utf8_lossy(&out.stdout)),
                 Err(_) => Vec::new(),

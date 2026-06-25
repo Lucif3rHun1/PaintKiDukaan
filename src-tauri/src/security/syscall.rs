@@ -169,13 +169,13 @@ fn resolve_ssn_tartarus_inner(_function_name: &str) -> Option<u32> {
 
 // ─── Unified resolution with fallback chain ───────────────────────────────
 
-/// Try all three Gate techniques in order, then fall back to the hardcoded
-/// constant.  Returns `None` only if the function name is completely unknown.
+/// Try all three Gate techniques in order (Hell's Gate → Halo's Gate →
+/// Tartarus' Gate).  Returns `None` if none succeed — callers must handle
+/// the failure rather than relying on a hardcoded SSN.
 pub fn resolve_ssn_with_fallback(function_name: &str) -> Option<u32> {
     resolve_ssn(function_name)
         .or_else(|| resolve_ssn_halo(function_name))
         .or_else(|| resolve_ssn_tartarus(function_name))
-        .or_else(|| get_fallback_ssn(function_name))
 }
 
 // ─── Platform-specific internals ───────────────────────────────────────────
@@ -542,8 +542,10 @@ pub unsafe fn nt_query_information_process(
     info_len: u32,
     ret_len: *mut u32,
 ) -> i64 {
-    let ssn = resolve_ssn_with_fallback("NtQueryInformationProcess")
-        .unwrap_or(SSN_NT_QUERY_INFORMATION_PROCESS);
+    let ssn = match resolve_ssn_with_fallback("NtQueryInformationProcess") {
+        Some(v) => v,
+        None => return -1, // ponytail: SSN resolution failed, caller sees STATUS_UNSUCCESSFUL
+    };
     direct_syscall_5(
         ssn,
         handle,
@@ -564,8 +566,10 @@ pub unsafe fn nt_query_system_information(
     info_len: u32,
     ret_len: *mut u32,
 ) -> i64 {
-    let ssn = resolve_ssn_with_fallback("NtQuerySystemInformation")
-        .unwrap_or(SSN_NT_QUERY_SYSTEM_INFORMATION);
+    let ssn = match resolve_ssn_with_fallback("NtQuerySystemInformation") {
+        Some(v) => v,
+        None => return -1,
+    };
     direct_syscall_4(
         ssn,
         info_class as usize,
@@ -580,7 +584,10 @@ pub unsafe fn nt_query_system_information(
 /// # Safety
 /// `handle` must be a valid handle.
 pub unsafe fn nt_close(handle: usize) -> i64 {
-    let ssn = resolve_ssn_with_fallback("NtClose").unwrap_or(SSN_NT_CLOSE);
+    let ssn = match resolve_ssn_with_fallback("NtClose") {
+        Some(v) => v,
+        None => return -1,
+    };
     direct_syscall_4(ssn, handle, 0, 0, 0)
 }
 

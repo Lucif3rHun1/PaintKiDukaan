@@ -24,7 +24,6 @@
 //! true in the request the Rust side returns `print_label=true` in the result
 //! so the frontend can fire the JsBarcode label print.
 
-use anyhow::anyhow;
 use rusqlite::params;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
@@ -355,9 +354,7 @@ pub fn create_inward(
     }
     let date_str = req.date.unwrap_or_else(today);
     let bill_date = date_to_ms(&date_str);
-    let vendor_id = req
-        .vendor_id
-        .ok_or_else(|| PurchaseError::Other(anyhow!("vendor_id is required")))?;
+    let vendor_id = req.vendor_id;
     let location_id = req.lines[0].location_id;
 
     let created = db.with_conn_immediate(|c| -> Result<PurchaseCreated, PurchaseError> {
@@ -682,6 +679,58 @@ mod tests {
         let db = crate::db::Db::open_in_memory().expect("mem db");
         let v = last_cost_for_item(&db, 999).expect("query");
         assert!(v.is_none());
+    }
+
+    /// `vendor_id` must be optional — opening stock for a new app often
+    /// has no traceable vendor (legacy stock, mixed cash purchases).
+    #[test]
+    fn create_inward_accepts_null_vendor_for_opening_stock() {
+        let db = crate::db::Db::open_in_memory().expect("mem db");
+        crate::session::__test_set_role(&db, crate::session::Role::Owner);
+
+        db.with_conn(|c| -> anyhow::Result<()> {
+            c.execute(
+                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('Owner','owner',X'00',X'00',6,1,0,0)",
+                [],
+            )?;
+            c.execute(
+                "INSERT INTO items (sku_code, barcode, name, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, created_at, updated_at)
+                 VALUES ('TEST-001','1234567890','Red Paint 4L',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',4,25000,18000,1,0,0)",
+                [],
+            )?;
+            c.execute(
+                "INSERT INTO locations (name, zone, is_default, is_active, created_at, updated_at) VALUES ('Main',NULL,1,1,0,0)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        let res = create_inward(
+            &db,
+            1,
+            NewPurchase {
+                vendor_id: None,
+                date: Some("2026-06-19".into()),
+                notes: Some("opening stock".into()),
+                auto_print_label: false,
+                lines: vec![InwardLine {
+                    item_id: 1,
+                    qty: 5.0,
+                    unit_type: "unit".into(),
+                    unit_price_paise: 18000,
+                    location_id: 1,
+                }],
+            },
+        )
+        .expect("inward with null vendor should succeed (opening stock)");
+
+        assert_eq!(res.id, 1);
+
+        let p = get(&db, 1).expect("query").expect("exists");
+        assert_eq!(p.vendor_id, None);
+        assert_eq!(p.vendor_name, None);
+        assert_eq!(p.total, 5 * 18000);
     }
 }
 

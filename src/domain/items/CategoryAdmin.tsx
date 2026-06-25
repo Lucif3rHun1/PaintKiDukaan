@@ -10,6 +10,7 @@ import type { Category } from "../types";
 import { DataTable } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
+import { toTitleCase } from "../../lib/format/titleCase";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
@@ -31,7 +32,7 @@ function CategoryTable({
   const columns: ColumnDef<Category>[] = [
     {
       header: "Name",
-      cell: (c) => <span className="text-foreground">{c.name}</span>,
+      cell: (c) => <span className="text-foreground">{toTitleCase(c.name)}</span>,
     },
     {
       header: "Actions",

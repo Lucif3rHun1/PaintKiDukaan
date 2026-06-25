@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search, UserPlus } from "lucide-react";
 import { Button, Badge } from "../../components/ui";
+import { toTitleCase } from "../../lib/format/titleCase";
 import { listCustomers } from "../../domain/customers/api";
 import type { Customer } from "../../domain/types";
 
@@ -51,7 +52,7 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, onChange, o
           <input
             type="text"
             placeholder="Search customer by name or phone…"
-            value={selected ? `${selected.name} (${selected.phone})` : query}
+            value={selected ? `${toTitleCase(selected.name)} (${selected.phone})` : query}
             onChange={(e) => {
               setQuery(e.target.value);
               if (selectedId) onChange(null, null);
@@ -79,7 +80,7 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, onChange, o
               className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
             >
               <span>
-                <span className="font-medium text-foreground">{c.name}</span>
+                <span className="font-medium text-foreground">{toTitleCase(c.name)}</span>
                 <span className="ml-2 text-xs text-muted-foreground">{c.phone}</span>
               </span>
               {!c.is_active && <Badge variant="danger" size="sm">Inactive</Badge>}

@@ -9,9 +9,9 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  PackagePlus,
   Save,
   ShoppingCart,
-  UserPlus,
   X,
 } from "lucide-react";
 import {
@@ -31,14 +31,27 @@ import { ItemSearchInput } from "./ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
 import { toast } from "../../lib/feedback/toast";
 import { useSecurity } from "../../lib/security/state";
-import { createCustomerInline } from "../../domain/ipc";
+import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
+import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
+import { toTitleCase } from "../../lib/format/titleCase";
+import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
+import { CustomerForm } from "../../domain/customers/CustomerForm";
+import { ItemForm } from "../../domain/items/ItemForm";
+import { listCustomerTypes } from "../../domain/customerTypes/api";
 import {
   convertQuotation,
   createSale,
+  getSale,
   listSales,
 } from "../api";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay } from "../../lib/date";
+import { ipc } from "../../shell/lib/ipc";
+import {
+  printSaleReceipt,
+  type ReceiptPrintSettings,
+} from "./printReceipt";
+import { loadString } from "../../shell/routes/settings/components/SettingsFields";
 import type {
   CartLine,
   ItemSearchHit,
@@ -46,7 +59,7 @@ import type {
   PaymentSplit,
   Sale,
 } from "../types";
-import type { Customer, HeldBill } from "../../domain/types";
+import type { Customer, CustomerType } from "../../domain/types";
 
 type Kind = "quotation" | "final";
 
@@ -80,6 +93,8 @@ export default function SalesPage({ user, onExit }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [createItemOpen, setCreateItemOpen] = useState(false);
+  const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
 
   // ---- Computed totals ----
   const subtotal = useMemo(
@@ -130,23 +145,52 @@ export default function SalesPage({ user, onExit }: Props) {
     [lines, updateLine],
   );
 
-  // ---- Customer create (inline) ----
-  function handleCreateCustomer(payload: { name: string; phone: string }) {
-    setBusy(true);
-    createCustomerInline({
-      name: payload.name,
-      phone: payload.phone,
-      type_id: null,
-    })
-      .then((c) => {
-        setCustomer(c);
-        setCreateCustomerOpen(false);
-        toast.success(`Customer "${c.name}" created`);
-      })
-      .catch((e: unknown) =>
-        toast.error(e instanceof Error ? e.message : String(e)),
-      )
-      .finally(() => setBusy(false));
+  // ---- Draft reset (Esc / post-save) ----
+  const clearDraft = useCallback(() => {
+    setCustomer(null);
+    setLines([]);
+    setBillDiscount(0);
+    setSplits([]);
+    setAckFlag(false);
+    setError(null);
+  }, []);
+
+  // ---- Shortcuts ----
+  // Form already has native <form onSubmit>, so Enter is handled by the browser —
+  // we only wire F9 (save) and Esc (clear draft) here.
+  useFormShortcuts({
+    onSubmit: () => handleSubmit({ preventDefault: () => {} } as FormEvent),
+    onCancel: clearDraft,
+    submitOnEnter: false,
+  });
+  useFocusShortcut({
+    key: "F2",
+    selector: '[data-shortcut="scan"]',
+    description: "Focus scan input",
+  });
+  useGlobalShortcuts({
+    onSave: () => handleSubmit({ preventDefault: () => {} } as FormEvent),
+  });
+
+  // ---- Customer types (needed by inline <CustomerForm>) ----
+  useEffect(() => {
+    listCustomerTypes()
+      .then((rows) => setCustomerTypes(rows ?? []))
+      .catch((e: unknown) => {
+        console.error("[SalesPage] failed to load customer types", e);
+        setCustomerTypes([]);
+      });
+  }, []);
+
+  function handleCustomerCreated(c: Customer) {
+    setCustomer(c);
+    setCreateCustomerOpen(false);
+    toast.success(`Customer "${c.name}" created`);
+  }
+
+  function handleItemCreated(item: { id: number; name: string }) {
+    setCreateItemOpen(false);
+    toast.success(`Item "${item.name}" created`);
   }
 
   // ---- Save sale / quotation ----
@@ -184,6 +228,9 @@ export default function SalesPage({ user, onExit }: Props) {
           setSplits([]);
           setAckFlag(false);
           void refreshRecent();
+          // ponytail: best-effort print on bill save; never blocks the sale.
+          // Quotations aren't finalized — skip print until converted to a bill.
+          if (kind === "final") void tryPrintReceipt(id);
           return kind === "final" ? `Bill #${id} saved` : `Quotation #${id} saved`;
         },
         error: (e: unknown) =>
@@ -193,6 +240,47 @@ export default function SalesPage({ user, onExit }: Props) {
         /* toast already surfaces */
       })
       .finally(() => setBusy(false));
+  }
+
+  /**
+   * Build receipt settings from persisted shop info + default receipt printer,
+   * then route through `printSaleReceipt` (Windows thermal ESC/POS or PDF).
+   *
+   * Failures are warnings, not errors — the sale is already saved.
+   */
+  async function tryPrintReceipt(saleId: number) {
+    try {
+      const [shopName, shopAddress, shopPhone, shopGstin, printer] =
+        await Promise.all([
+          loadString(ipc.getSetting, "shop_name", ""),
+          loadString(ipc.getSetting, "address", ""),
+          loadString(ipc.getSetting, "phone", ""),
+          loadString(ipc.getSetting, "gstin", ""),
+          ipc.getDefaultPrinter("receipt").catch(() => null),
+        ]);
+      const sale = await getSale(saleId);
+      if (!sale) return;
+      const settings: ReceiptPrintSettings = {
+        receiptPrinter: printer?.name ?? null,
+        receiptPaperSize: printer?.paper_size ?? null,
+        receiptHeader: null,
+        receiptFooter: null,
+        receiptTerms: null,
+        shopName: shopName || "PaintKiDukaan",
+        shopAddress: shopAddress || undefined,
+        shopPhone: shopPhone || undefined,
+        shopGstin: shopGstin || undefined,
+      };
+      const result = await printSaleReceipt(sale, settings);
+      if (result.destination === "pdf" && result.devPdfPath) {
+        toast.success(`Receipt PDF saved: ${result.devPdfPath}`);
+      } else if (result.destination === "thermal") {
+        toast.success(`Receipt sent to ${printer?.name ?? "thermal printer"}`);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.warning(`Receipt not printed: ${msg}`);
+    }
   }
 
   // ---- Convert quotation ----
@@ -317,7 +405,10 @@ export default function SalesPage({ user, onExit }: Props) {
                 </span>
               </Card.Header>
               <Card.Body className="space-y-3">
-                <ItemSearchInput onPick={handleItemPick} />
+                <ItemSearchInput
+                  onPick={handleItemPick}
+                  onCreateItem={canOwner ? () => setCreateItemOpen(true) : undefined}
+                />
 
                 {lines.length === 0 ? (
                   <EmptyState
@@ -346,7 +437,7 @@ export default function SalesPage({ user, onExit }: Props) {
                           >
                             <td className="px-3 py-2">
                               <div className="font-medium text-foreground">
-                                {l.item_name ?? `#${l.item_id}`}
+                                {l.item_name ? toTitleCase(l.item_name) : `#${l.item_id}`}
                               </div>
                               {l.shade_note ? (
                                 <div className="mt-0.5 text-xs text-muted-foreground">
@@ -492,6 +583,7 @@ export default function SalesPage({ user, onExit }: Props) {
                   loading={busy}
                   disabled={!canSave}
                   className="w-full"
+                  shortcut="F9"
                 >
                   {kind === "final" ? "Save bill" : "Save quotation"}
                 </Button>
@@ -556,7 +648,7 @@ export default function SalesPage({ user, onExit }: Props) {
                             </Badge>
                           </div>
                           <div className="truncate text-xs text-muted-foreground">
-                            {s.customer_name ?? "Walk-in"} · {formatDateForDisplay(s.date)}
+                            {s.customer_name ? toTitleCase(s.customer_name) : "Walk-in"} · {formatDateForDisplay(s.date)}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
@@ -581,96 +673,36 @@ export default function SalesPage({ user, onExit }: Props) {
         </div>
       </form>
 
-      {/* Create customer dialog */}
-      <CreateCustomerDialog
+      {/* Create customer dialog — uses the same full CustomerForm as CustomerDetail */}
+      <InlineDialog
         open={createCustomerOpen}
-        busy={busy}
         onClose={() => setCreateCustomerOpen(false)}
-        onCreate={handleCreateCustomer}
-      />
+        title="New customer"
+        description="Capture walk-in customers without leaving the bill."
+        size="md"
+      >
+        <CustomerForm
+          mode="create"
+          types={customerTypes}
+          onSaved={handleCustomerCreated}
+          onCancel={() => setCreateCustomerOpen(false)}
+        />
+      </InlineDialog>
 
+      {/* Create item dialog — owner-only, uses the same full ItemForm as ItemDetail */}
+      <InlineDialog
+        open={createItemOpen}
+        onClose={() => setCreateItemOpen(false)}
+        title="New item"
+        description="Add a SKU with full fields."
+        size="lg"
+      >
+        <ItemForm
+          mode="create"
+          onSaved={handleItemCreated}
+          onCancel={() => setCreateItemOpen(false)}
+        />
+      </InlineDialog>
     </div>
-  );
-}
-
-function CreateCustomerDialog({
-  open,
-  busy,
-  onClose,
-  onCreate,
-}: {
-  open: boolean;
-  busy: boolean;
-  onClose: () => void;
-  onCreate: (payload: { name: string; phone: string }) => void;
-}) {
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-
-  useEffect(() => {
-    if (!open) {
-      setName("");
-      setPhone("");
-    }
-  }, [open]);
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
-    onCreate({ name: name.trim(), phone: phone.trim() });
-  }
-
-  return (
-    <InlineDialog
-      open={open}
-      onClose={onClose}
-      title="New customer"
-      description="A walk-in customer is created on save."
-      size="sm"
-    >
-      <form onSubmit={submit} className="space-y-3">
-        <label className="block text-sm">
-          <span className="mb-1 block text-foreground">Name</span>
-          <input
-            type="text"
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="input h-9 w-full"
-            autoFocus
-          />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1 block text-foreground">Phone</span>
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="input h-9 w-full"
-          />
-        </label>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={onClose}
-            disabled={busy}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            size="sm"
-            icon={UserPlus}
-            loading={busy}
-            disabled={!name.trim() || busy}
-          >
-            Create
-          </Button>
-        </div>
-      </form>
-    </InlineDialog>
   );
 }

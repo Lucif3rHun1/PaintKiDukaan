@@ -119,7 +119,7 @@ pub fn list_vendors(
             sql.push_str(&format!(" AND (name LIKE ?{} OR phone LIKE ?{})", args.len() + 1, args.len() + 1));
             args.push(Box::new(format!("%{}%", q)));
         }
-        sql.push_str(" ORDER BY name");
+        sql.push_str(" ORDER BY name COLLATE NOCASE");
         let mut stmt = c.prepare(&sql)?;
         let dyn_args: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(dyn_args.as_slice(), |r| {

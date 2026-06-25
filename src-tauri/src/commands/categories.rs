@@ -4,6 +4,7 @@ use tauri::State;
 
 use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
+use crate::security::ipc_auth;
 use crate::session::{current_user, require_role, Role};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +16,7 @@ pub struct Category {
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_categories(state: State<'_, AppState>) -> AppResult<Vec<Category>> {
+    ipc_auth::authorize("list_categories", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -23,7 +25,7 @@ pub fn list_categories(state: State<'_, AppState>) -> AppResult<Vec<Category>> {
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT id, name, is_active FROM categories WHERE is_active = 1 ORDER BY name",
+            "SELECT id, name, is_active FROM categories WHERE is_active = 1 ORDER BY name COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(Category {
@@ -42,6 +44,7 @@ pub fn list_categories(state: State<'_, AppState>) -> AppResult<Vec<Category>> {
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn create_category(state: State<'_, AppState>, name: String) -> AppResult<Category> {
+    ipc_auth::authorize("create_category", state.inner())?;
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::Validation("category name is required".into()));
@@ -79,6 +82,7 @@ pub fn create_category(state: State<'_, AppState>, name: String) -> AppResult<Ca
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn deactivate_category(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    ipc_auth::authorize("deactivate_category", state.inner())?;
     let guard = state
         .db
         .lock()

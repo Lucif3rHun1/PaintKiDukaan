@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Save, Search, Trash2, UserMinus, UserPlus } from "lucide-react";
 
-import { Alert, Badge, Button, Card, InlineDialog, Money, MoneyInput } from "../../components/ui";
+import { Alert, Badge, Button, Card, InlineDialog, KbdHint, Money, MoneyInput } from "../../components/ui";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
 import { listLocations } from "../../domain/locations/api";
 import { createSalesReturn } from "../../domain/ipc";
 import type { Customer, CustomerType, Location, CreateSaleReturnPayload } from "../../domain/types";
 import { toast } from "../../lib/feedback/toast";
-import { useShortcut } from "../../lib/shortcuts";
+import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
+import { toTitleCase } from "../../lib/format/titleCase";
+import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
+import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import type { ItemSearchHit, PaymentSplit, ReturnCartLine } from "../types";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
@@ -18,10 +21,6 @@ import { extractError } from "../../lib/extractError";
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
   onBack: () => void;
-}
-
-function shortcutChip(label: string) {
-  return <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">{label}</kbd>;
 }
 
 export default function ReturnPage({ user, onBack }: Props) {
@@ -178,26 +177,17 @@ export default function ReturnPage({ user, onBack }: Props) {
     }
   }
 
-  useShortcut({ key: "F9", description: "Submit return", onMatch: () => void submit() });
-  useShortcut({
-    key: "Escape",
-    preventDefault: false,
-    description: "Clear return or close dialog",
-    onMatch: () => {
-      if (addCustomerOpen) {
-        setAddCustomerOpen(false);
-        return;
-      }
-      const active = document.activeElement;
-      if (active instanceof HTMLElement) {
-        const tag = active.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-          active.blur();
-          return;
-        }
-      }
-      if (lines.length > 0) clearAll();
-    },
+  useFormShortcuts({
+    onSubmit: () => void submit(),
+    onCancel: clearAll,
+  });
+  useFocusShortcut({
+    key: "F2",
+    selector: '[data-shortcut="scan"]',
+    description: "Focus scan input",
+  });
+  useGlobalShortcuts({
+    onSave: () => void submit(),
   });
 
   useEffect(() => {
@@ -216,9 +206,13 @@ export default function ReturnPage({ user, onBack }: Props) {
             </Button>
             <h1 className="text-base font-semibold text-foreground">New return</h1>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            {shortcutChip("F9 Save")}
-            {shortcutChip("Esc Clear")}
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <KbdHint keys="F9" /> Save
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <KbdHint keys="Esc" /> Clear
+            </span>
           </div>
         </div>
 
@@ -296,7 +290,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                           />
                         </td>
                         <td className="py-2">
-                          <div className="text-sm font-medium text-foreground">{line.item_name}</div>
+                          <div className="text-sm font-medium text-foreground">{toTitleCase(line.item_name)}</div>
                           <div className="font-mono text-[10px] text-muted-foreground">#{line.item_id}</div>
                         </td>
                         <td className="py-2">
@@ -462,9 +456,10 @@ export default function ReturnPage({ user, onBack }: Props) {
             disabled={!canSave}
             icon={Save}
             size="lg"
+            shortcut="F9"
             className="bg-success hover:bg-success/90 focus-visible:ring-success/30"
           >
-            Save return {shortcutChip("F9")}
+            Save return
           </Button>
         </div>
       </div>

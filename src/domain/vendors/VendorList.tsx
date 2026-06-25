@@ -5,16 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Banknote, Phone, Truck } from "lucide-react";
 
-import {
-  Alert,
-  Button,
-  Card,
-  DataTable,
-  EmptyState,
-  Money,
-  PaginationControls,
-  SearchInput,
-} from "../../components/ui";
+import { Alert, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { listVendors } from "./api";
@@ -22,6 +13,9 @@ import { outstandingReport } from "../../pos/api";
 import { usePaginatedQuery } from "../../lib/query";
 import { type Vendor } from "../types";
 import { extractError } from "../../lib/extractError";
+import { useShortcut } from "../../lib/shortcuts";
+import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
+import { toTitleCase } from "../../lib/format/titleCase";
 
 interface Props {
   onSelect?: (v: Vendor) => void;
@@ -106,7 +100,7 @@ export function VendorList({
       {
         header: "Name",
         cell: (v) => (
-          <span className="font-medium text-foreground">{v.name}</span>
+          <span className="font-medium text-foreground">{toTitleCase(v.name)}</span>
         ),
       },
       {
@@ -164,9 +158,29 @@ export function VendorList({
 
   const rowClassName = (v: Vendor) => (v.is_active ? "" : "opacity-60");
 
+  useFocusShortcut({ key: "F2", selector: '[data-shortcut="search"]', description: "Focus search" });
+  useShortcut({ key: "F5", scope: "page", description: "Refresh list", onMatch: () => { void refetch(); } });
+  useShortcut({
+    key: "F6",
+    scope: "page",
+    description: "New vendor",
+    onMatch: () => {
+      if (canCreate && onCreate) onCreate();
+    },
+  });
+  useShortcut({
+    key: "Escape",
+    allowInInputs: true,
+    preventDefault: true,
+    description: "Clear search",
+    onMatch: () => {
+      if (search) setSearch("");
+    },
+  });
+
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold tracking-tight">Vendors</h2>
           <p className="text-sm text-muted-foreground">
@@ -181,67 +195,67 @@ export function VendorList({
             size="md"
             icon={Truck}
             onClick={onCreate}
+            shortcut="F6"
           >
             New Vendor
           </Button>
         ) : null}
       </header>
 
-      <Card>
-        <Card.Body className="space-y-3">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search by name or phone…"
-            ariaLabel="Search vendors"
-          />
+      <div className="space-y-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by name or phone…"
+          ariaLabel="Search vendors"
+          data-shortcut="search"
+        />
 
-          {error ? (
-            <Alert title="Could not load vendors" variant="destructive">
-              {extractError(error)}
-            </Alert>
-          ) : null}
+        {error ? (
+          <Alert title="Could not load vendors" variant="destructive">
+            {extractError(error)}
+          </Alert>
+        ) : null}
 
-          <DataTable
-            data={items}
-            columns={columns}
-            keyExtractor={(v) => v.id}
-            loading={isLoading || isFetching}
-            emptyState={
-              <EmptyState
-                icon={Truck}
-                title={search ? "No matches" : "No vendors yet"}
-                description={
-                  search
-                    ? `Nothing matches "${search}". Try a different search.`
-                    : "Add the first vendor to start receiving stock and tracking payables."
-                }
-                primary={
-                  canCreate ? (
-                    <Button type="button" onClick={onCreate} icon={Truck}>
-                      Add Vendor
-                    </Button>
-                  ) : undefined
-                }
-              />
-            }
-            error={error}
-            onRetry={refetch}
-            onRowClick={onSelect ? (v) => onSelect(v) : undefined}
-            rowClassName={rowClassName}
-          />
-
-          {!isLoading && allData.length > 0 ? (
-            <PaginationControls
-              page={page}
-              totalPages={totalPages}
-              totalItems={totalItems}
-              pageSize={pageSize}
-              onPageChange={setPage}
+        <DataTable
+          data={items}
+          columns={columns}
+          keyExtractor={(v) => v.id}
+          loading={isLoading || isFetching}
+          emptyState={
+            <EmptyState
+              icon={Truck}
+              title={search ? "No matches" : "No vendors yet"}
+              description={
+                search
+                  ? `Nothing matches "${search}". Try a different search.`
+                  : "Add the first vendor to start receiving stock and tracking payables."
+              }
+              primary={
+                canCreate ? (
+                  <Button type="button" onClick={onCreate} icon={Truck}>
+                    Add Vendor
+                  </Button>
+                ) : undefined
+              }
             />
-          ) : null}
-        </Card.Body>
-      </Card>
+          }
+          error={error}
+          onRetry={refetch}
+          onRowClick={onSelect ? (v) => onSelect(v) : undefined}
+          rowClassName={rowClassName}
+        />
+
+        {!isLoading && allData.length > 0 ? (
+          <PaginationControls
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -59,15 +59,15 @@ const PREVIOUS_STEP: Record<FreshStep, Step> = {
 };
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  "h-11 w-full rounded-lg border border-border bg-background px-3.5 text-sm text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/40 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 const labelClass = "text-sm font-medium text-foreground";
 const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition-all duration-150 hover:bg-primary/90 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 items-center justify-center rounded-lg border border-border bg-background px-5 text-sm font-medium text-foreground shadow-sm transition-all duration-150 hover:bg-muted active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: SetupResponse): Session {
-  const role: Role = result.user?.role ?? result.role ?? "owner";
+  const role: Role = result.user?.role ?? result.role ?? "stocker";
   const name = result.user?.name ?? result.user_name ?? "Owner";
   const id = result.user?.id ?? result.user_id ?? 0;
   const user: User | null = result.user === null ? null : { id, name, role };
@@ -197,56 +197,42 @@ export function FirstLaunch() {
             />
           </div>
 
-          {/* Step indicator with labels */}
+          {/* Step indicator */}
           <div className="mb-6" aria-label="Setup progress">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-1.5">
               {[0, 1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2"
-                >
+                <div key={i} className="flex flex-1 items-center gap-1.5">
                   <div
-                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-200 ${
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-all duration-200 ${
                       i < stepNumber
                         ? "bg-success text-success-foreground"
                         : i === stepNumber
-                          ? "bg-primary text-primary-foreground"
+                          ? "bg-primary text-primary-foreground ring-2 ring-primary/30"
                           : "bg-muted text-muted-foreground"
                     }`}
                   >
                     {i < stepNumber ? "✓" : i + 1}
                   </div>
-                  <span
-                    className={`text-xs font-medium hidden sm:inline ${
-                      i === stepNumber ? "text-foreground" : "text-muted-foreground"
-                    }`}
-                  >
-                    {STEPS[i].label}
-                  </span>
+                  {i < 3 && (
+                    <div className={`h-0.5 flex-1 rounded-full transition-all duration-200 ${i < stepNumber - 1 ? "bg-success" : "bg-muted"}`} />
+                  )}
                 </div>
               ))}
             </div>
-            <div className="flex items-center gap-1.5">
-              {[0, 1, 2, 3].map((i) => (
-                <span
-                  key={i}
-                  className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${
-                    i < stepNumber
-                      ? "bg-success"
-                      : i === stepNumber
-                        ? "bg-primary"
-                        : "bg-muted"
-                  }`}
-                />
+            <div className="mt-2 flex justify-between text-[10px] font-medium text-muted-foreground">
+              {STEPS.map((s, i) => (
+                <span key={i} className={i === stepNumber ? "text-foreground" : ""}>{s.label}</span>
               ))}
             </div>
           </div>
 
           {/* Step description */}
-          <div className="mb-5 flex items-center gap-3 rounded-xl border border-border bg-background/60 p-3">
-            <CurrentStepIcon className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+          <div className="mb-5 flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-3.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <CurrentStepIcon className="h-4.5 w-4.5" aria-hidden="true" />
+            </div>
             <div>
-              <p className="text-sm font-medium text-foreground">{currentStepMeta.label}</p>
+              <p className="text-sm font-semibold text-foreground">{currentStepMeta.label}</p>
               <p className="text-xs text-muted-foreground">{currentStepMeta.description}</p>
             </div>
           </div>
@@ -254,22 +240,22 @@ export function FirstLaunch() {
           {/* Backend error */}
           {backendError ? (
             <div
-              className="mb-5 flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+              className="mb-5 flex gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-sm text-destructive"
               role="alert"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{backendError}</span>
+              <span className="leading-snug">{backendError}</span>
             </div>
           ) : null}
 
           {step === "path" ? (
             <div className="space-y-3">
               <button
-                className="group flex w-full items-start gap-4 rounded-xl border border-border bg-background/60 p-4 text-left transition-colors duration-150 hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="group flex w-full items-start gap-4 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-all duration-150 hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 type="button"
                 onClick={() => setStep("shop")}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-all duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
                   <ShoppingBag className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <span>
@@ -280,11 +266,11 @@ export function FirstLaunch() {
                 </span>
               </button>
               <button
-                className="group flex w-full items-start gap-4 rounded-xl border border-border bg-background/60 p-4 text-left transition-colors duration-150 hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="group flex w-full items-start gap-4 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-all duration-150 hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 type="button"
                 onClick={() => setShowRestore(true)}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-all duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
                   <HardDrive className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <span>
@@ -396,9 +382,9 @@ export function FirstLaunch() {
 
           {step === "passphrase" ? (
             <div className="space-y-4">
-              <div className="rounded-xl border border-warning/30 bg-warning/10 p-3">
-                <p className="text-sm font-medium text-warning">Important — read this first</p>
-                <p className="mt-1 text-xs leading-5 text-warning/80">
+              <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
+                <p className="text-sm font-semibold text-warning">Important — read this first</p>
+                <p className="mt-1.5 text-xs leading-5 text-warning/90">
                   Your recovery passphrase is the <strong>only way</strong> to regain access if you
                   forget your PIN. Write it down and store it somewhere safe (not on this device).
                   We cannot recover it for you.

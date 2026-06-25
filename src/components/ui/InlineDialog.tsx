@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { cn } from "./cn";
+import { pushModalScope, popModalScope } from "../../lib/shortcuts";
 
 export interface InlineDialogProps {
   open: boolean;
@@ -28,6 +29,12 @@ export function InlineDialog({
     if (!el) return;
     if (open && !el.open) el.showModal();
     if (!open && el.open) el.close();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    pushModalScope();
+    return () => popModalScope();
   }, [open]);
 
   return (

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { useSessionStore } from "../store/session";
+import { useSecurity } from "../../lib/security/state";
 
 const DEFAULT_IDLE_MS = 5 * 60 * 1000;
 
@@ -16,7 +16,8 @@ export interface UseIdleLockOptions {
  *
  * The hook listens for mouse, keyboard and touch events and resets a
  * debounce timer on every interaction. When the timer fires it locks
- * the session via the Zustand store and (optionally) calls `onLock`.
+ * the session via the canonical `useSecurity` store and (optionally)
+ * calls `onLock`.
  */
 export function useIdleLock(opts: UseIdleLockOptions = {}): void {
   const { idleMs = DEFAULT_IDLE_MS, onLock } = opts;
@@ -30,9 +31,9 @@ export function useIdleLock(opts: UseIdleLockOptions = {}): void {
         window.clearTimeout(timer.current);
       }
       timer.current = window.setTimeout(() => {
-        const { session, setLocked } = useSessionStore.getState();
+        const { session, setSession } = useSecurity.getState();
         if (session.user !== null) {
-          setLocked(true);
+          setSession({ ...session, locked: true });
           onLockRef.current?.();
         }
       }, idleMs);

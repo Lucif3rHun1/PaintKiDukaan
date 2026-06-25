@@ -3,11 +3,11 @@ import type { ImportColumn } from "../../components/SpreadsheetImportDialog";
 import { importInwardCsv } from "../api";
 
 const COLUMNS: ImportColumn[] = [
-  { name: "item", required: true, example: "AP-APEX-20L or SKU" },
-  { name: "qty", required: true, example: "10" },
-  { name: "vendor", required: true, example: "Sharma Traders" },
-  { name: "cost_price", required: false, example: "1200" },
-  { name: "date", required: false, example: "2025-01-15" },
+  { name: "item", required: true, example: "AP-APEX-20L" },
+  { name: "qty", required: true, example: "10", type: "number" },
+  { name: "vendor", required: false, example: "Sharma Traders" },
+  { name: "cost_price", required: false, example: "1200", type: "number" },
+  { name: "date", required: false, example: "2025-01-15", type: "date" },
   { name: "notes", required: false, example: "Bulk order" },
 ];
 

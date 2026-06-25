@@ -19,13 +19,15 @@ pub struct UnlockResult {
 ///   2. Attempt AES-GCM unwrap of row's wrapped_dek
 ///   3. If success: this is the matching PIN
 ///
-/// On duress match: schedules background secure-delete of real DB.
+/// On duress match: schedules background secure-delete of real DB (if `wipe_enabled`).
 /// On real/decoy match: returns the corresponding DEK and DB path.
 pub fn try_unlock(
     db_path: &Path,
     pin: &str,
     real_db_path: &Path,
     decoy_db_path: &Path,
+    wipe_enabled: bool,
+    wipe_timeout_minutes: u64,
 ) -> Result<UnlockResult, AppError> {
     let kp = crate::commands::auth::keystore_path(db_path);
     let conn = crate::commands::auth::open_keystore(&kp)?;
@@ -44,7 +46,12 @@ pub fn try_unlock(
                     PinRole::Real => (real_db_path.to_path_buf(), false),
                     PinRole::Decoy => (decoy_db_path.to_path_buf(), false),
                     PinRole::Duress => {
-                        spawn_duress_wipe(real_db_path, db_path);
+                        spawn_duress_wipe(
+                            real_db_path,
+                            db_path,
+                            wipe_enabled,
+                            wipe_timeout_minutes,
+                        );
                         (decoy_db_path.to_path_buf(), true)
                     }
                 };
@@ -64,32 +71,41 @@ pub fn try_unlock(
     Err(last_err.unwrap_or(AppError::WrongPin))
 }
 
-/// Spawn a background thread to secure-delete the real DB and its keywrap row.
-/// Best-effort: if the attacker pulls power, partial wipe may have occurred.
-fn spawn_duress_wipe(real_db_path: &Path, keystore_db_path: &Path) {
+pub(crate) fn spawn_duress_wipe(
+    real_db_path: &Path,
+    keystore_db_path: &Path,
+    wipe_enabled: bool,
+    wipe_timeout_minutes: u64,
+) {
+    if !wipe_enabled {
+        return;
+    }
+
     let real = real_db_path.to_path_buf();
     let ks = keystore_db_path.to_path_buf();
+    let delay_secs = wipe_timeout_minutes * 60;
 
     std::thread::Builder::new()
         .name("pkb-duress-wipe".into())
         .spawn(move || {
-            // Secure-delete the real DB + WAL + SHM.
+            if delay_secs > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(delay_secs));
+            }
+
             for ext in ["", "-wal", "-shm"] {
-                let mut p = real.clone();
-                if ext.is_empty() {
-                    // keep original path
+                let p = if ext.is_empty() {
+                    real.clone()
                 } else {
-                    p = real.with_extension(format!("db{ext}"));
-                }
+                    real.with_extension(format!("db{ext}"))
+                };
                 let _ = crate::security::anti_forensic::secure_delete(&p);
             }
 
-            // Remove the real keywrap row from the keystore.
             if let Ok(conn) = crate::commands::auth::open_keystore(&ks) {
                 let _ = keywrap::delete_by_role(&conn, PinRole::Real);
+                let _ = conn.close();
             }
 
-            // Trigger anti-forensic scrub if available.
             let _ = crate::security::anti_forensic::clear_shellbags_and_recent();
             let _ = crate::security::anti_forensic::clear_thumbnail_cache();
         })
@@ -164,7 +180,7 @@ mod tests {
         let ks = setup_pde_keystore(dir.path(), "111111", "222222", "333333");
         let db_path = ks.with_extension("db");
 
-        let result = try_unlock(&db_path, "111111", &real_db, &decoy_db).unwrap();
+        let result = try_unlock(&db_path, "111111", &real_db, &decoy_db, true, 1).unwrap();
         assert_eq!(result.role, PinRole::Real);
         assert!(!result.wipe_triggered);
         assert_eq!(result.db_path, real_db);
@@ -178,7 +194,7 @@ mod tests {
         let ks = setup_pde_keystore(dir.path(), "111111", "222222", "333333");
         let db_path = ks.with_extension("db");
 
-        let result = try_unlock(&db_path, "222222", &real_db, &decoy_db).unwrap();
+        let result = try_unlock(&db_path, "222222", &real_db, &decoy_db, true, 1).unwrap();
         assert_eq!(result.role, PinRole::Decoy);
         assert!(!result.wipe_triggered);
         assert_eq!(result.db_path, decoy_db);
@@ -192,8 +208,8 @@ mod tests {
         let ks = setup_pde_keystore(dir.path(), "111111", "222222", "333333");
         let db_path = ks.with_extension("db");
 
-        let err =
-            try_unlock(&db_path, "999999", &real_db, &decoy_db).expect_err("wrong pin should fail");
+        let err = try_unlock(&db_path, "999999", &real_db, &decoy_db, true, 1)
+            .expect_err("wrong pin should fail");
         assert!(matches!(err, AppError::WrongPin));
     }
 }

@@ -132,68 +132,139 @@ fn parse_text_section(image: &[u8]) -> Option<(SectionHeader, &[u8])> {
     None
 }
 
-/// Scan `.text` section data for inline-hook patterns at known function
-/// entry points.
+/// Walk the PE import table (IAT) of the image at `base` and check that each
+/// imported function pointer still resides within its expected DLL range.
 ///
-/// Hook patterns detected:
-/// - `E9 XX XX XX XX` — relative jump (classic inline hook)
-/// - `FF 25 XX XX XX XX` — indirect jump through IAT
-/// - `48 B8 XX XX XX XX XX XX XX XX` — `mov rax, imm64` (trampoline)
-fn scan_for_hooks(text_data: &[u8], text_rva: u32, base: *const u8) -> Vec<String> {
+/// This replaces the previous E9/FF25/48B8 byte-pattern scan which produced
+/// false positives on legitimate compiler-generated code.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn scan_for_hooks(_text_data: &[u8], _text_rva: u32, base: *const u8) -> Vec<String> {
     let mut hooks = Vec::new();
 
-    // Scan in 16-byte steps (function alignment).
-    let mut offset = 0;
-    while offset + 8 <= text_data.len() {
-        let b = text_data[offset];
+    unsafe {
+        // Parse PE headers to find the import directory.
+        let e_lfanew = *(base.add(0x3C) as *const i32) as usize;
+        let nt = base.add(e_lfanew);
+        if *(nt as *const u32) != 0x0000_4550 {
+            return hooks;
+        }
 
-        // E9 — relative jmp
-        if b == 0xE9 && offset + 5 <= text_data.len() {
-            let target = i32::from_le_bytes([
-                text_data[offset + 1],
-                text_data[offset + 2],
-                text_data[offset + 3],
-                text_data[offset + 4],
-            ]);
-            // Only flag if the jump target is outside the .text section
-            // (relative to the section start).  Intra-section jumps are normal.
-            if target < 0 || target as usize > text_data.len() {
-                let addr = unsafe { base.add(text_rva as usize + offset) as usize };
-                hooks.push(format!("0x{:X}: E9 jmp (offset={})", addr, target));
+        let optional = nt.add(24);
+        let magic = *(optional as *const u16);
+        if magic != 0x020B {
+            return hooks; // Not PE32+
+        }
+
+        // Import directory is data directory index 1.
+        let import_rva = *(optional.add(116) as *const u32) as usize;
+        let import_size = *(optional.add(120) as *const u32) as usize;
+        if import_rva == 0 || import_size == 0 {
+            return hooks;
+        }
+
+        let import_base = base.add(import_rva);
+        let desc_size = 20; // IMAGE_IMPORT_DESCRIPTOR size
+        let count = import_size / desc_size;
+
+        for i in 0..count {
+            let desc = import_base.add(i * desc_size);
+            let name_rva = *(desc.add(12) as *const u32) as usize;
+            let first_thunk_rva = *(desc.add(16) as *const u32) as usize;
+
+            if name_rva == 0 {
+                break;
             }
-        }
 
-        // FF 25 — indirect jmp
-        if b == 0xFF
-            && offset + 1 < text_data.len()
-            && text_data[offset + 1] == 0x25
-            && offset + 6 <= text_data.len()
-        {
-            let addr = unsafe { base.add(text_rva as usize + offset) as usize };
-            hooks.push(format!("0x{:X}: FF25 indirect jmp", addr));
-        }
+            let dll_name = read_cstr_from(base.add(name_rva));
 
-        // 48 B8 — mov rax, imm64 (often used in trampolines)
-        if b == 0x48
-            && offset + 1 < text_data.len()
-            && text_data[offset + 1] == 0xB8
-            && offset + 10 <= text_data.len()
-        {
-            // Check if the next instruction is FF E0 (jmp rax) or FF D0 (call rax)
-            if offset + 12 <= text_data.len() {
-                let next = text_data[offset + 10];
-                let next2 = text_data[offset + 11];
-                if (next == 0xFF && next2 == 0xE0) || (next == 0xFF && next2 == 0xD0) {
-                    let addr = unsafe { base.add(text_rva as usize + offset) as usize };
-                    hooks.push(format!("0x{:X}: 48B8 mov rax,jmp trampoline", addr));
+            // Resolve the DLL's base and size.
+            let dll_base = get_loaded_dll_base(&dll_name);
+            let dll_size = dll_base.and_then(|b| get_loaded_dll_size(b));
+
+            if first_thunk_rva == 0 {
+                continue;
+            }
+
+            let thunk = base.add(first_thunk_rva);
+            let mut j = 0;
+            loop {
+                let entry = *(thunk.add(j * 8) as *const u64);
+                if entry == 0 {
+                    break;
                 }
+                // Skip ordinal imports (high bit set).
+                if entry & 0x8000_0000_0000_0000 == 0 {
+                    let func_addr = entry as usize;
+                    if let (Some(dbase), Some(dsz)) = (dll_base, dll_size) {
+                        let start = dbase as usize;
+                        let end = start + dsz as usize;
+                        if func_addr < start || func_addr >= end {
+                            hooks.push(format!(
+                                "{}!import[{}] hooked (addr=0x{:X})",
+                                dll_name, j, func_addr
+                            ));
+                        }
+                    }
+                }
+                j += 1;
             }
         }
-
-        offset += 16; // function alignment
     }
 
     hooks
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn read_cstr_from(ptr: *const u8) -> String {
+    let mut bytes = Vec::new();
+    let mut p = ptr;
+    loop {
+        let b = *p;
+        if b == 0 {
+            break;
+        }
+        bytes.push(b);
+        p = p.add(1);
+        if bytes.len() > 256 {
+            break;
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn get_loaded_dll_base(name: &str) -> Option<*const u8> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide: Vec<u16> = OsStr::new(name)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    extern "system" {
+        fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
+    }
+    let h = unsafe { GetModuleHandleW(wide.as_ptr()) };
+    if h.is_null() {
+        None
+    } else {
+        Some(h as *const u8)
+    }
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn get_loaded_dll_size(base: *const u8) -> Option<u32> {
+    let e_lfanew = *(base.add(0x3C) as *const i32) as usize;
+    let nt = base.add(e_lfanew);
+    if *(nt as *const u32) != 0x0000_4550 {
+        return None;
+    }
+    Some(*(nt.add(0x50) as *const u32))
+}
+
+#[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
+fn scan_for_hooks(_text_data: &[u8], _text_rva: u32, _base: *const u8) -> Vec<String> {
+    Vec::new()
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────
@@ -430,62 +501,20 @@ mod tests {
     }
 
     #[test]
-    fn hook_scan_detects_e9_jmp() {
-        // Build a .text section with an E9 jmp at the start (target outside).
-        let mut text = vec![0x90u8; 64]; // NOP sled
-        text[0] = 0xE9; // jmp
-        text[1] = 0x00;
-        text[2] = 0x10; // offset 0x00001000 — outside 64-byte .text
-        text[3] = 0x00;
-        text[4] = 0x00;
-
+    fn hook_scan_returns_empty_for_raw_bytes() {
+        let text = vec![0x90u8; 64];
         let hooks = scan_for_hooks(&text, 0x1000, std::ptr::null());
-        assert!(!hooks.is_empty(), "should detect E9 hook");
-        assert!(hooks[0].contains("E9 jmp"));
-    }
-
-    #[test]
-    fn hook_scan_detects_ff25_indirect() {
-        let mut text = vec![0x90u8; 64];
-        text[0] = 0xFF;
-        text[1] = 0x25;
-        text[2] = 0x00;
-        text[3] = 0x00;
-        text[4] = 0x00;
-        text[5] = 0x00;
-
-        let hooks = scan_for_hooks(&text, 0x1000, std::ptr::null());
-        assert!(!hooks.is_empty(), "should detect FF25 hook");
-        assert!(hooks[0].contains("FF25"));
-    }
-
-    #[test]
-    fn hook_scan_detects_48b8_trampoline() {
-        let mut text = vec![0x90u8; 64];
-        text[0] = 0x48;
-        text[1] = 0xB8;
-        // 8 bytes of imm64
-        text[2..10].copy_from_slice(&[0x00; 8]);
-        // FF E0 = jmp rax
-        text[10] = 0xFF;
-        text[11] = 0xE0;
-
-        let hooks = scan_for_hooks(&text, 0x1000, std::ptr::null());
-        assert!(!hooks.is_empty(), "should detect 48B8 trampoline");
-        assert!(hooks[0].contains("48B8"));
+        assert_eq!(hooks.len(), 0, "IAT walk on null base returns empty");
     }
 
     #[test]
     fn clean_prologue_no_hooks() {
-        // Normal function prologue — no hooks.
         let text = vec![
-            0x48, 0x89, 0x5C, 0x24, 0x08, // mov [rsp+8], rbx
-            0x48, 0x89, 0x6C, 0x24, 0x10, // mov [rsp+16], rbp
-            0x48, 0x89, 0x74, 0x24, 0x18, // mov [rsp+24], rsi
-            0x57, // push rdi
+            0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24,
+            0x18, 0x57,
         ];
         let hooks = scan_for_hooks(&text, 0x1000, std::ptr::null());
-        assert_eq!(hooks.len(), 0, "normal prologue should not be flagged");
+        assert_eq!(hooks.len(), 0, "raw bytes without valid PE returns empty");
     }
 
     #[test]

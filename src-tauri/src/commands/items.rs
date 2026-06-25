@@ -258,13 +258,17 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
         let sku = mint_next_sku(tx, &payload.name, brand_prefix.as_deref())?;
         // Barcode resolution order:
         // 1. caller-provided value
-        // 2. auto-generated via brands::generate_brand_barcode (when ON + brand_id set)
+        // 2. auto-generated: SKU as barcode (CODE128 supports alphanumeric)
         // 3. fallback to SKU
         let barcode = if let Some(b) = payload.barcode.clone() {
             b
         } else if auto_generate {
-            if let Some(brand_id) = payload.brand_id {
-                crate::commands::brands::generate_brand_barcode(tx, brand_id, &payload.name)?
+            if let Some(_brand_id) = payload.brand_id {
+                // Still bump brand_sequences so the counter stays in sync
+                // even though we don't use the EAN-13 value anymore.
+                #[allow(deprecated)]
+                let _ = crate::commands::brands::generate_brand_barcode(tx, _brand_id, &payload.name);
+                sku.clone()
             } else {
                 sku.clone()
             }
@@ -461,7 +465,7 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
              HAVING SUM(qty) <= (SELECT min_qty FROM items i2 WHERE i2.id = item_id))",
         );
     }
-    sql.push_str(" ORDER BY i.name");
+    sql.push_str(" ORDER BY i.name COLLATE NOCASE");
     let limit = filter.limit.unwrap_or(500);
     sql.push_str(&format!(" LIMIT {}", limit));
     db.with_raw(|c| {

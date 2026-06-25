@@ -10,6 +10,7 @@ import { Tag } from "lucide-react";
 import { listBrands, createBrand, updateBrandCodePrefix, deactivateBrand } from "./api";
 import type { Brand } from "../types";
 import { extractError } from "../../lib/extractError";
+import { toTitleCase } from "../../lib/format/titleCase";
 import { DataTable, SkeletonRow, EmptyState } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 
@@ -45,7 +46,7 @@ function BrandTable({
   const columns: ColumnDef<Brand>[] = [
     {
       header: "Name",
-      cell: (b) => <span className="text-foreground">{b.name}</span>,
+      cell: (b) => <span className="text-foreground">{toTitleCase(b.name)}</span>,
     },
     {
       header: "Code prefix",

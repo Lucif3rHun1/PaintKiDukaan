@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   FileUp,
   Loader2,
   CheckCircle,
   AlertTriangle,
+  AlertCircle,
   Download,
   Pencil,
   X,
@@ -16,6 +17,8 @@ import {
   parseSpreadsheet,
   toCsvText,
   downloadTemplate,
+  validateCell,
+  type ColumnType,
   type TemplateColumn,
 } from "../lib/spreadsheet";
 import { extractError } from "../lib/extractError";
@@ -27,6 +30,8 @@ export interface ImportColumn {
   name: string;
   /** If true, empty cells in this column are flagged. */
   required: boolean;
+  /** Type used for per-cell validation; defaults to "string". */
+  type?: ColumnType;
   /** Example value shown in the template row. */
   example?: string;
 }
@@ -179,6 +184,7 @@ export function SpreadsheetImportDialog({
     (fmt: "csv" | "xlsx") => {
       const tplCols: TemplateColumn[] = columns.map((c) => ({
         name: c.name,
+        required: c.required,
         example: c.example,
       }));
       downloadTemplate(tplCols, templateFilename, fmt);
@@ -202,6 +208,30 @@ export function SpreadsheetImportDialog({
   /* ── counts ────────────────────────────────────────────────── */
 
   const activeCount = rows.length - skipped.size;
+
+  const colDefByHeader = useMemo(() => {
+    const map = new Map<string, (typeof columns)[number]>();
+    for (const c of columns) {
+      map.set(c.name.toLowerCase().replace(/\s+/g, "_"), c);
+    }
+    return map;
+  }, [columns]);
+
+  const cellErrors = useMemo(() => {
+    return rows.map((row) =>
+      headers.map((h) => {
+        const normalized = h.toLowerCase().replace(/\s+/g, "_");
+        const col = colDefByHeader.get(normalized);
+        const value = row[headers.indexOf(h)] ?? "";
+        return validateCell(value, col);
+      }),
+    );
+  }, [rows, headers, colDefByHeader]);
+
+  const issueCount = useMemo(
+    () => cellErrors.filter((row, ri) => !skipped.has(ri) && row.some(Boolean)).length,
+    [cellErrors, skipped],
+  );
 
   if (!open) return null;
 
@@ -330,6 +360,11 @@ export function SpreadsheetImportDialog({
                   {rows.length !== 1 ? "s" : ""} found.{" "}
                   <span className="text-muted-foreground">
                     {activeCount} to import
+                    {issueCount > 0 && (
+                      <>
+                        , <span className="text-destructive">{issueCount} with issues</span>
+                      </>
+                    )}
                     {skipped.size > 0 && `, ${skipped.size} skipped`}
                   </span>
                 </p>
@@ -337,7 +372,7 @@ export function SpreadsheetImportDialog({
                   {requiredCols.length > 0 && (
                     <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
                       <span className="inline-block h-2 w-2 rounded-full bg-destructive/40" />
-                      = missing required
+                      = has issue
                     </span>
                   )}
                 </div>
@@ -417,6 +452,8 @@ export function SpreadsheetImportDialog({
                               headers[ci],
                               val,
                             );
+                            const errMsg = cellErrors[ri]?.[ci] ?? null;
+                            const hasError = !!(missing || errMsg);
                             const isEdit =
                               editing?.row === ri &&
                               editing?.col === ci;
@@ -426,7 +463,7 @@ export function SpreadsheetImportDialog({
                                 key={ci}
                                 className={cn(
                                   "px-3 py-1.5",
-                                  missing
+                                  hasError
                                     ? "bg-destructive/10"
                                     : "",
                                   isSkipped
@@ -474,7 +511,15 @@ export function SpreadsheetImportDialog({
                                         </span>
                                       )}
                                     </span>
-                                    <Pencil className="h-3 w-3 flex-shrink-0 text-muted-foreground/30" />
+                                    {errMsg ? (
+                                      <span title={errMsg} className="inline-flex">
+                                        <AlertCircle
+                                          className="h-3 w-3 flex-shrink-0 text-destructive"
+                                        />
+                                      </span>
+                                    ) : (
+                                      <Pencil className="h-3 w-3 flex-shrink-0 text-muted-foreground/30" />
+                                    )}
                                   </span>
                                 )}
                               </td>
@@ -495,7 +540,7 @@ export function SpreadsheetImportDialog({
                 <Button
                   size="sm"
                   onClick={() => void handleImport()}
-                  disabled={activeCount === 0}
+                  disabled={activeCount === 0 || issueCount > 0}
                 >
                   Import {activeCount} item
                   {activeCount !== 1 ? "s" : ""}

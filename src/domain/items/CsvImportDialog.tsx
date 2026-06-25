@@ -8,9 +8,9 @@ const COLUMNS: ImportColumn[] = [
   { name: "barcode", required: false, example: "8901234567890" },
   { name: "brand", required: false, example: "Asian Paints" },
   { name: "category", required: false, example: "Exterior" },
-  { name: "retail_price", required: false, example: "1500" },
-  { name: "cost_price", required: false, example: "1200" },
-  { name: "min_qty", required: false, example: "5" },
+  { name: "retail_price", required: false, example: "1500 (only if changing)", type: "number" },
+  { name: "cost_price", required: false, example: "1200", type: "number" },
+  { name: "min_qty", required: false, example: "5", type: "number" },
 ];
 
 interface Props {

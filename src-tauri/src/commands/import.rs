@@ -18,6 +18,7 @@ use serde::Serialize;
 
 use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
+use crate::security::ipc_auth;
 use crate::session::{current_user, require_role, Role};
 
 // ── Public result types ────────────────────────────────────────────────────
@@ -157,6 +158,7 @@ pub fn cmd_import_items_csv(
     state: tauri::State<'_, AppState>,
     csv_data: String,
 ) -> AppResult<ImportResult> {
+    ipc_auth::authorize("cmd_import_items_csv", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -390,6 +392,7 @@ pub fn cmd_import_inward_csv(
     state: tauri::State<'_, AppState>,
     csv_text: String,
 ) -> AppResult<ImportResult> {
+    ipc_auth::authorize("cmd_import_inward_csv", state.inner())?;
     let guard = state
         .db
         .lock()

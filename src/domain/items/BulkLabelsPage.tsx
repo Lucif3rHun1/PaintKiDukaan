@@ -27,7 +27,9 @@ import {
   type ThermalSize,
   THERMAL_SIZES,
 } from "../../pos/print";
-import { Skeleton } from "../../components/ui";
+import { Button, Skeleton } from "../../components/ui";
+import { useShortcut } from "../../lib/shortcuts";
+import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { extractError } from "../../lib/extractError";
 
 type PrinterType = "thermal" | "laser-a4";
@@ -151,6 +153,17 @@ export function BulkLabelsPage() {
   useEffect(() => {
     void loadHistory();
   }, []);
+
+  useFocusShortcut({ key: "F2", selector: '[data-shortcut="item-picker"]', description: "Focus item picker" });
+  useShortcut({ key: "F5", scope: "page", description: "Refresh history", onMatch: () => { void loadHistory(); } });
+  useShortcut({
+    key: "F6",
+    scope: "page",
+    description: "Add to batch",
+    onMatch: () => {
+      if (selectedItem?.barcode) addToList();
+    },
+  });
 
   const selectedItem = useMemo(
     () => items.find((i) => i.id === selectedItemId) ?? null,
@@ -340,6 +353,7 @@ export function BulkLabelsPage() {
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">Item</label>
           <select
+            data-shortcut="item-picker"
             value={selectedItemId}
             onChange={(e) =>
               setSelectedItemId(e.target.value ? Number(e.target.value) : "")
@@ -499,14 +513,16 @@ export function BulkLabelsPage() {
         </div>
 
         {/* Add to batch */}
-        <button
+        <Button
           type="button"
+          variant="primary"
           onClick={addToList}
           disabled={!selectedItem?.barcode}
-          className="btn-primary w-full"
+          shortcut="F6"
+          className="w-full"
         >
           + Add {count} label{count === 1 ? "" : "s"} to batch
-        </button>
+        </Button>
 
         {actionMsg && (
           <p className="rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{actionMsg}</p>
@@ -642,14 +658,17 @@ export function BulkLabelsPage() {
         <div className="rounded-lg border border-border bg-card/60 p-4">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-foreground">Recent prints</h3>
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant="secondary"
               onClick={() => void loadHistory()}
               disabled={historyLoading || busy}
-              className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+              shortcut="F5"
+              className="!text-[10px] !h-7"
             >
               Refresh
-            </button>
+            </Button>
           </div>
           <div className="max-h-[200px] overflow-y-auto rounded-md border border-border bg-background">
             {historyLoading ? (

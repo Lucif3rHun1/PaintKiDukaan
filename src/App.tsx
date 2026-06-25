@@ -2,6 +2,7 @@ import { tauriInvoke as invoke } from "./lib/security/tauri";
 import logo from "./assets/logo-64.png";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 
 /* ── Security UI ─────────────────────────────────────────── */
 import { FirstLaunch } from "./lib/security/firstLaunch";
@@ -79,6 +80,13 @@ const THIRTY_SECONDS = 30_000;
 const FIFTEEN_MINUTES = 15 * 60 * 1_000;
 const BOOTSTRAP_TIMEOUT_MS = 30_000;
 const LOCKED_SESSION = { user: null, locked: true, pinRole: "real" as const };
+
+const BootstrapUnlockedSchema = z.object({
+  kind: z.literal("unlocked"),
+  user: z.string().min(1).max(64),
+  role: z.enum(["owner", "cashier", "stocker"]),
+  pin_role: z.enum(["real", "decoy", "duress"]).optional(),
+});
 
 function RouteFallback() {
   return (
@@ -214,7 +222,15 @@ export default function App() {
           setSession(LOCKED_SESSION);
           setPhase("locked");
         } else {
-          setSession({ user: { id: 0, name: b.user, role: b.role }, locked: false, pinRole: b.pin_role ?? "real" });
+          const parsed = BootstrapUnlockedSchema.safeParse(b);
+          if (!parsed.success) {
+            console.error("[BOOT] Bootstrap validation failed:", parsed.error.format());
+            setSession(LOCKED_SESSION);
+            setPhase("locked");
+            return;
+          }
+          const v = parsed.data;
+          setSession({ user: { id: 0, name: v.user, role: v.role }, locked: false, pinRole: v.pin_role ?? "real" });
           setPhase("unlocked");
         }
       })
@@ -271,12 +287,20 @@ export default function App() {
     window.addEventListener("mousemove", onActivity, { passive: true });
     window.addEventListener("keydown", onActivity);
     window.addEventListener("click", onActivity);
+    window.addEventListener("touchstart", onActivity, { passive: true });
+    window.addEventListener("touchend", onActivity, { passive: true });
+    window.addEventListener("scroll", onActivity, { passive: true });
+    window.addEventListener("wheel", onActivity, { passive: true });
     resetIdle();
     return () => {
       clearTimeout(idleTimer);
       window.removeEventListener("mousemove", onActivity);
       window.removeEventListener("keydown", onActivity);
       window.removeEventListener("click", onActivity);
+      window.removeEventListener("touchstart", onActivity);
+      window.removeEventListener("touchend", onActivity);
+      window.removeEventListener("scroll", onActivity);
+      window.removeEventListener("wheel", onActivity);
     };
   }, [phase, setPhase, setSession]);
 
@@ -313,11 +337,17 @@ export default function App() {
   if (phase === "first-launch") return <FirstLaunch />;
   if (phase === "locked") return <LockScreen />;
   if (phase === "restore-recovery") return <RestoreFromRecovery />;
-  if (phase === "user-management") return <UserManagement />;
+  if (phase === "user-management") {
+    return (
+      <RoleGuard minRole="owner">
+        <UserManagement />
+      </RoleGuard>
+    );
+  }
 
   /* ── Unlocked: full app shell ──────────────────────────── */
   const user = session.user;
-  const role = user?.role ?? "owner";
+  const role = user?.role ?? "stocker";
 
   return (
     <AppShell
@@ -462,7 +492,7 @@ export default function App() {
       {tab === "barcodes" && (
         <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
           <div className="flex items-center gap-4">
-            <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Barcode Labels</h2>
             <ItemSubNav active="barcodes" />
           </div>
           <ErrorBoundary context="Barcode Labels">
@@ -540,7 +570,7 @@ export default function App() {
       <InlineDialog
         open={vendorCreateOpen}
         onClose={() => setVendorCreateOpen(false)}
-        title="Add Vendor"
+        title="Add vendor"
       >
         <VendorForm
           mode="create"
@@ -552,7 +582,7 @@ export default function App() {
       <InlineDialog
         open={!!vendorEditTarget}
         onClose={() => setVendorEditTarget(null)}
-        title="Edit Vendor"
+        title="Edit vendor"
       >
         {vendorEditTarget && (
           <VendorForm
@@ -567,7 +597,7 @@ export default function App() {
       <InlineDialog
         open={!!vendorPaymentTarget}
         onClose={() => setVendorPaymentTarget(null)}
-        title="Record vendor payment"
+        title="Record Vendor payment"
       >
         {vendorPaymentTarget && (
           <VendorPaymentForm
@@ -581,7 +611,7 @@ export default function App() {
       <InlineDialog
         open={!!vendorDetailTarget}
         onClose={() => setVendorDetailTarget(null)}
-        title="Vendor Details"
+        title="Vendor details"
         size="lg"
       >
         {vendorDetailTarget && (
@@ -597,7 +627,7 @@ export default function App() {
       <InlineDialog
         open={customerCreateOpen}
         onClose={() => setCustomerCreateOpen(false)}
-        title="Add Customer"
+        title="Add customer"
       >
         <CustomerForm
           mode="create"
@@ -610,7 +640,7 @@ export default function App() {
       <InlineDialog
         open={!!customerEditTarget}
         onClose={() => setCustomerEditTarget(null)}
-        title="Edit Customer"
+        title="Edit customer"
       >
         {customerEditTarget && (
           <CustomerForm
@@ -626,7 +656,7 @@ export default function App() {
       <InlineDialog
         open={!!customerDetailTarget}
         onClose={() => setCustomerDetailTarget(null)}
-        title="Customer Details"
+        title="Customer details"
         size="lg"
       >
         {customerDetailTarget && (
@@ -641,7 +671,7 @@ export default function App() {
       <InlineDialog
         open={!!customerPaymentTarget}
         onClose={() => setCustomerPaymentTarget(null)}
-        title="Record customer payment"
+        title="Record Customer payment"
       >
         {customerPaymentTarget && (
           <CustomerPaymentForm

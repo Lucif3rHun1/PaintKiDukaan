@@ -158,7 +158,7 @@ function SubLocationList({ locationId, onError }: { locationId: number; onError:
           placeholder="New sub-location"
           className="input text-xs"
         />
-        <Button type="button" size="sm" onClick={() => void add()} disabled={!newName.trim()}>
+        <Button type="button" size="sm" onClick={() => void add()} disabled={!newName.trim()} shortcut="F6">
           Add
         </Button>
       </div>
@@ -223,7 +223,7 @@ export function LocationsSettings() {
               placeholder="New location name"
               className="input"
             />
-            <Button type="button" onClick={() => void add()} disabled={!newLocation.trim()}>
+            <Button type="button" onClick={() => void add()} disabled={!newLocation.trim()} shortcut="F6">
               Add
             </Button>
           </div>
@@ -306,7 +306,7 @@ export function CustomerTypesSettings() {
               placeholder="New customer type"
               className="input"
             />
-            <Button type="button" onClick={() => void add()} disabled={!newType.trim()}>
+            <Button type="button" onClick={() => void add()} disabled={!newType.trim()} shortcut="F6">
               Add
             </Button>
           </div>
@@ -420,6 +420,7 @@ export function CatalogUnitsSettings() {
               type="button"
               onClick={() => setShowCreate(!showCreate)}
               variant={showCreate ? "ghost" : "primary"}
+              shortcut="F6"
             >
               {showCreate ? "Cancel" : "Add Unit"}
             </Button>

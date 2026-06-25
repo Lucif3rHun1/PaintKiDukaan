@@ -1,19 +1,23 @@
 // Inward (purchase) page — single-column layout with sticky toolbar.
-// Item names prominent, vendor/notes compact, totals inline.
+// Entry pad at top (search → qty → cost → retail → Enter) pushes a read-only
+// line into the draft. Save finalizes all accumulated lines.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PackagePlus, Search, Truck, X } from "lucide-react";
 import { EmptyState, Skeleton } from "../../components/ui";
 
-import { Button, InlineDialog, Money, MoneyInput, ShortcutsHint } from "../../components/ui";
+import { Button, InlineDialog, Money, MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
+import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
+import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
+import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { ItemForm } from "../../domain/items/ItemForm";
 import { listItems, updateItem } from "../../domain/items/api";
 import { listLocations } from "../../domain/locations/api";
-import { InlineVendorForm } from "../../domain/vendors/InlineVendorForm";
-import { createVendor, listVendors } from "../../domain/vendors/api";
+import { VendorForm } from "../../domain/vendors/VendorForm";
+import { listVendors } from "../../domain/vendors/api";
 import { outstandingReport } from "../api";
 import type { Item, Location, Vendor } from "../../domain/types";
 import { createInward, lastCost, lastRetail, listPurchases } from "../api";
@@ -44,8 +48,26 @@ function newRowId(): string {
   return `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function emptyEntry(locationId: number): DraftLine {
+  return {
+    row_id: newRowId(),
+    item_id: 0,
+    qty: 1,
+    unit_type: "unit",
+    unit_id: 0,
+    unit_code: "",
+    cost_price: 0,
+    retail_price: 0,
+    last_retail: null,
+    retail_overridden: false,
+    location_id: locationId,
+    item_query: "",
+  };
+}
+
 export default function InwardPage({ user: _user }: Props) {
   const [draft, setDraft] = useState<DraftLine[]>([]);
+  const [entry, setEntry] = useState<DraftLine>(() => emptyEntry(0));
   const [vendorId, setVendorId] = useState<number | null>(null);
   const [vendorQuery, setVendorQuery] = useState("");
   const [vendorMenuOpen, setVendorMenuOpen] = useState(false);
@@ -57,48 +79,25 @@ export default function InwardPage({ user: _user }: Props) {
   const [items, setItems] = useState<Item[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [defaultItemId, setDefaultItemId] = useState<number | null>(null);
   const [defaultLocationId, setDefaultLocationId] = useState<number>(0);
   const [addVendorOpen, setAddVendorOpen] = useState(false);
-  const [addItemForRow, setAddItemForRow] = useState<number | null>(null);
+  const [addItemOpen, setAddItemOpen] = useState(false);
   const [vendorOutstandings, setVendorOutstandings] = useState<Record<number, number>>({});
   const [initialLoading, setInitialLoading] = useState(true);
 
-  const seededRef = useRef(false);
+  const entrySearchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Four independent fetches in parallel; allSettled isolates failures.
     Promise.allSettled([
       listPurchases().then((d) => setRecent(d ?? [])),
-      listItems({ limit: 200 }).then((rows) => {
-        setItems(rows);
-        if (rows.length > 0) setDefaultItemId((current) => current ?? rows[0].id);
-      }),
+      listItems({ limit: 200 }).then((rows) => setItems(rows)),
       listVendors().then((d) => setVendors(d ?? [])),
       listLocations(false).then((locs) => {
         setLocations(locs);
         const firstLoc = locs[0]?.id ?? 0;
-        setDefaultLocationId((current) => (current > 0 ? current : firstLoc));
-        // Seed one blank line so the operator has somewhere to type immediately.
-        if (!seededRef.current) {
-          seededRef.current = true;
-          setDraft([
-            {
-              row_id: newRowId(),
-              item_id: 0,
-              qty: 1,
-              unit_id: 0,
-              unit_type: "unit",
-              unit_code: "",
-              cost_price: 0,
-              retail_price: 0,
-              last_retail: null,
-              retail_overridden: false,
-              location_id: firstLoc,
-              item_query: "",
-            },
-          ]);
-        }
+        setDefaultLocationId(firstLoc);
+        setEntry(emptyEntry(firstLoc));
       }),
     ]).then(([purchases, itemsResult, vendorsResult, locationsResult]) => {
       setInitialLoading(false);
@@ -135,6 +134,11 @@ export default function InwardPage({ user: _user }: Props) {
       });
   }, [vendors]);
 
+  const total = useMemo(
+    () => draft.reduce((s, l) => s + l.qty * l.cost_price, 0),
+    [draft],
+  );
+
   const filteredVendors = useMemo(() => {
     const q = vendorQuery.trim().toLowerCase();
     if (!q) return vendors;
@@ -143,99 +147,62 @@ export default function InwardPage({ user: _user }: Props) {
     );
   }, [vendors, vendorQuery]);
 
-  // Auto-add a blank line when the LAST line transitions from item_id=0 to
-  // item_id>0. Operator fills current line → fresh blank line appears below.
-  // Already-present blank lines are NOT removed (so once a line is filled,
-  // the next blank stays even if the operator clears the item).
-  const lastLine = draft[draft.length - 1];
-  const lastLineHasItem = lastLine && lastLine.item_id > 0;
-  useEffect(() => {
-    if (lastLineHasItem && defaultLocationId > 0) {
-      setDraft((prev) => [
-        ...prev,
-        {
-          row_id: newRowId(),
-          item_id: 0,
-          qty: 1,
-          unit_id: 0,
-          unit_type: "unit",
-          unit_code: "",
-          cost_price: 0,
-          retail_price: 0,
-          last_retail: null,
-          retail_overridden: false,
-          location_id: defaultLocationId,
-          item_query: "",
-        },
-      ]);
-    }
-  }, [lastLineHasItem, defaultLocationId]);
-
-  const total = useMemo(
-    () => draft.reduce((s, l) => s + l.qty * l.cost_price, 0),
-    [draft],
-  );
-
-  function blankLine(itemId: number | null, locationId: number): DraftLine {
+  async function selectItemForEntry(itemId: number) {
+    if (itemId <= 0) return;
     const item = items.find((i) => i.id === itemId);
     const unitId = item?.unit_id ?? 0;
     const unitCode = item?.unit_code ?? "";
-    return {
-      row_id: newRowId(),
-      item_id: itemId ?? 0,
-      qty: 1,
+    const sellUnit: "unit" | "box" = item?.sell_unit === "box" ? "box" : "unit";
+    setEntry((e) => ({
+      ...e,
+      item_id: itemId,
       unit_id: unitId,
-      unit_type: "unit",
       unit_code: unitCode,
-      cost_price: 0,
-      retail_price: 0,
-      last_retail: null,
-      retail_overridden: false,
-      location_id: locationId,
-      item_query: "",
-    };
-  }
-
-  async function changeItemForRow(row: number, newItemId: number) {
-    if (newItemId <= 0) return;
-    setDefaultItemId(newItemId);
-    const item = items.find((i) => i.id === newItemId);
-    const unitId = item?.unit_id ?? 0;
-    const unitCode = item?.unit_code ?? "";
-    setDraft((p) =>
-      p.map((x, j) =>
-        j === row ? { ...x, item_id: newItemId, unit_id: unitId, unit_code: unitCode } : x,
-      ),
-    );
+      unit_type: sellUnit,
+    }));
     if (!item) return;
     // Fetch last cost + last retail in parallel; race-safe via item_id check
     // on resolve so a later item selection doesn't get overwritten.
     const [lastCostPaise, lastRetailPaise] = await Promise.all([
-      lastCost(newItemId).catch(() => null),
-      lastRetail(newItemId).catch(() => null),
+      lastCost(itemId).catch(() => null),
+      lastRetail(itemId).catch(() => null),
     ]);
-    setDraft((p) =>
-      p.map((x, j) =>
-        j === row && x.item_id === newItemId
-          ? {
-              ...x,
-              cost_price: lastCostPaise != null ? lastCostPaise : item.cost_paise,
-              retail_price: x.retail_overridden && x.retail_price > 0
-                ? x.retail_price
+    setEntry((e) =>
+      e.item_id === itemId
+        ? {
+            ...e,
+            cost_price: lastCostPaise != null ? lastCostPaise : item.cost_paise,
+            retail_price:
+              e.retail_overridden && e.retail_price > 0
+                ? e.retail_price
                 : lastRetailPaise != null
                   ? lastRetailPaise
                   : item.retail_price_paise,
-              last_retail: lastRetailPaise,
-              retail_overridden: false,
-            }
-          : x,
-      ),
+            last_retail: lastRetailPaise,
+            retail_overridden: false,
+          }
+        : e,
     );
+  }
+
+  function commitEntry() {
+    if (entry.item_id === 0) {
+      toast.warning("Pick an item first");
+      entrySearchRef.current?.focus();
+      return;
+    }
+    if (entry.qty <= 0) {
+      toast.warning("Quantity must be positive");
+      return;
+    }
+    setDraft((p) => [...p, { ...entry, row_id: newRowId(), item_query: "" }]);
+    setEntry(emptyEntry(defaultLocationId));
+    entrySearchRef.current?.focus();
   }
 
   function itemName(id: number): string {
     const item = items.find((i) => i.id === id);
-    if (!item) return id > 0 ? `#${id}` : "Pick item…";
+    if (!item) return id > 0 ? `#${id}` : "—";
     return item.sku_code ? `${item.name} · ${item.sku_code}` : item.name;
   }
 
@@ -288,37 +255,36 @@ export default function InwardPage({ user: _user }: Props) {
     }
   }
 
-  useShortcut({ key: "F9", description: "Save inward", onMatch: () => void submit() });
-  useShortcut({
-    key: "Esc",
-    preventDefault: false,
-    description: "Clear draft lines (keep one empty)",
-    onMatch: () => {
+  useFormShortcuts({
+    onSubmit: () => void submit(),
+    onCancel: () => {
       if (draft.length === 0) return;
-      setDraft([
-        {
-          row_id: newRowId(),
-          item_id: 0,
-          qty: 1,
-          unit_id: 0,
-          unit_type: "unit",
-          unit_code: "",
-          cost_price: 0,
-          retail_price: 0,
-          last_retail: null,
-          retail_overridden: false,
-          location_id: defaultLocationId,
-          item_query: "",
-        },
-      ]);
-      setStatus("Draft lines cleared");
+      setDraft([]);
+      setEntry(emptyEntry(defaultLocationId));
+      setStatus("Draft cleared");
     },
   });
-  useShortcut({ key: "K", ctrl: true, meta: true, description: "Add vendor", onMatch: () => setAddVendorOpen(true) });
+
+  useShortcut({
+    key: "k",
+    ctrl: true,
+    meta: true,
+    scope: "page",
+    description: "Add vendor",
+    onMatch: () => setAddVendorOpen(true),
+  });
+
+  useFocusShortcut({
+    key: "F2",
+    selector: "[data-shortcut='inward-item']",
+    description: "Focus entry pad item search",
+  });
+
+  useGlobalShortcuts({ onSave: () => void submit() });
 
   return (
     <div className="space-y-4">
-      {/* ── Sticky toolbar: meta + save ─────────────────────── */}
+      {/* ── Sticky toolbar: meta + new-item + save ─────────── */}
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card/95 px-4 py-2.5 backdrop-blur">
         {/* Vendor typeahead — search + add combined into one input */}
         <div className="relative min-w-[200px] flex-1 sm:flex-none sm:w-64">
@@ -335,7 +301,9 @@ export default function InwardPage({ user: _user }: Props) {
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && vendorId == null && vendorQuery.trim().length > 0) {
+                // Stop window-level Enter handler (useFormShortcuts) from also submitting.
                 e.preventDefault();
+                e.stopPropagation();
                 const exact = vendors.find(
                   (v) => v.name.toLowerCase() === vendorQuery.trim().toLowerCase(),
                 );
@@ -434,15 +402,29 @@ export default function InwardPage({ user: _user }: Props) {
           <Money paise={total} />
         </span>
 
+        {/* New item — global, beside Save (opens ItemForm, pre-fills entry on save) */}
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          icon={PackagePlus}
+          onClick={() => setAddItemOpen(true)}
+          className="!h-8 !px-3 !text-xs"
+          data-testid="inward-new-item"
+        >
+          New item
+        </Button>
+
         {/* Save */}
         <Button
           type="button"
           onClick={() => void submit()}
           disabled={draft.length === 0}
+          shortcut="F9"
           className="!h-8 !bg-primary !px-3 !text-xs hover:!bg-primary/90 focus-visible:ring-primary/30"
           data-testid="inward-submit"
         >
-          Save <kbd className="ml-1 rounded bg-primary/20 px-1 py-0.5 font-mono text-[10px]">F9</kbd>
+          Save
         </Button>
       </div>
 
@@ -450,13 +432,18 @@ export default function InwardPage({ user: _user }: Props) {
         <p className="rounded-md bg-primary/10 px-3 py-1.5 text-xs text-primary">{status}</p>
       )}
 
-      {/* ── Items table ──────────────────────────────────────── */}
+      {/* ── Entry pad + accumulated lines ───────────────────── */}
       <section className="rounded-lg border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
           <h2 className="text-sm font-semibold text-foreground">
-            Items {draft.length > 0 && <span className="text-muted-foreground">· {draft.length} line{draft.length !== 1 ? "s" : ""}</span>}
+            Items{" "}
+            {draft.length > 0 && (
+              <span className="text-muted-foreground">
+                · {draft.length} line{draft.length !== 1 ? "s" : ""}
+              </span>
+            )}
           </h2>
-
+          <span className="text-xs text-muted-foreground">Enter to add</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -469,156 +456,205 @@ export default function InwardPage({ user: _user }: Props) {
                 <th className="px-3 py-2 font-medium"></th>
               </tr>
             </thead>
-        <tbody>
-          {initialLoading ? (
-            <tr>
-              <td colSpan={5} className="px-4 py-4">
-                <div
-                  role="status"
-                  aria-live="polite"
-                  aria-label="Loading items and locations"
-                  className="space-y-2"
-                >
-                  <Skeleton className="h-9 w-full" />
-                  <Skeleton className="h-9 w-11/12" />
-                  <Skeleton className="h-9 w-10/12" />
-                </div>
-              </td>
-            </tr>
-          ) : (
-            <>
-              {draft.map((l, i) => (
-                <tr key={l.row_id} className="border-b border-border align-top transition-colors hover:bg-muted/60">
-                  {/* Item cell — prominent name + search */}
-                  <td className="px-4 py-2">
-                    <div className="flex gap-1.5">
+            <tbody>
+              {initialLoading ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-4">
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      aria-label="Loading items and locations"
+                      className="space-y-2"
+                    >
+                      <Skeleton className="h-9 w-full" />
+                      <Skeleton className="h-9 w-11/12" />
+                      <Skeleton className="h-9 w-10/12" />
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <>
+                  {/* ── Entry pad: single always-present row ── */}
+                  <tr className="border-b-2 border-primary/30 bg-primary/5 align-top">
+                    <td className="px-4 py-2">
                       <div className="relative flex-1">
                         <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                         <input
+                          ref={entrySearchRef}
                           type="text"
-                          list={`inward-items-${i}`}
-                          value={l.item_query || ""}
+                          data-shortcut="inward-item"
+                          list="inward-entry-items"
+                          value={entry.item_query}
                           onChange={(e) => {
                             const value = e.target.value;
-                            setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: value } : x)));
-                            // Try to match by name (sku) prefix — datalist sends "Name (SKU)" format
+                            setEntry((p) => ({ ...p, item_query: value }));
+                            // Try "Name (SKU)" datalist format first.
                             const nameMatch = value.match(/^(.+?)\s*\(([^)]+)\)$/);
+                            let matched: Item | undefined;
                             if (nameMatch) {
                               const namePart = nameMatch[1].trim();
-                              const match = items.find(
-                                (it) => it.name.toLowerCase() === namePart.toLowerCase() ||
-                                        it.sku_code.toLowerCase() === nameMatch[2].trim().toLowerCase()
+                              matched = items.find(
+                                (it) =>
+                                  it.name.toLowerCase() === namePart.toLowerCase() ||
+                                  it.sku_code.toLowerCase() ===
+                                    nameMatch[2].trim().toLowerCase(),
                               );
-                              if (match) {
-                                void changeItemForRow(i, match.id);
-                                setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: "" } : x)));
-                                return;
-                              }
+                            } else {
+                              matched = items.find(
+                                (it) =>
+                                  it.name.toLowerCase() === value.toLowerCase() ||
+                                  it.sku_code.toLowerCase() === value.toLowerCase() ||
+                                  (it.barcode ?? "").toLowerCase() === value.toLowerCase(),
+                              );
                             }
-                            // Also try exact match on full value
-                            const exactMatch = items.find(
-                              (it) => it.name.toLowerCase() === value.toLowerCase() ||
-                                      it.sku_code.toLowerCase() === value.toLowerCase() ||
-                                      (it.barcode ?? "").toLowerCase() === value.toLowerCase()
-                            );
-                            if (exactMatch) {
-                              void changeItemForRow(i, exactMatch.id);
-                              setDraft((p) => p.map((x, j) => (j === i ? { ...x, item_query: "" } : x)));
+                            if (matched) {
+                              void selectItemForEntry(matched.id);
+                              setEntry((p) => ({ ...p, item_query: "" }));
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              commitEntry();
                             }
                           }}
                           placeholder="Type item name or SKU…"
                           className="input h-9 w-full py-2 pl-7 pr-2 text-sm"
+                          data-testid="inward-entry-search"
                         />
-                        <datalist id={`inward-items-${i}`}>
+                        <datalist id="inward-entry-items">
                           {items.map((it) => (
-                            <option key={it.id} value={it.name + (it.sku_code ? ` (${it.sku_code})` : "")}>
+                            <option
+                              key={it.id}
+                              value={it.name + (it.sku_code ? ` (${it.sku_code})` : "")}
+                            >
                               {`#${it.id}`}
                             </option>
                           ))}
                         </datalist>
                       </div>
-                      <button
+                      {entry.item_id > 0 && !entry.item_query && (
+                        <p
+                          className="mt-0.5 text-xs font-medium text-primary"
+                          data-testid="inward-entry-selected-name"
+                        >
+                          {itemName(entry.item_id)}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={entry.qty}
+                        onChange={(e) =>
+                          setEntry((p) => ({ ...p, qty: Number(e.target.value) }))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            commitEntry();
+                          }
+                        }}
+                        className="input h-9 w-16 px-2 text-sm tabular-nums"
+                        data-testid="inward-entry-qty"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MoneyInput
+                        min={0}
+                        value={entry.cost_price}
+                        onChange={(cost_price) =>
+                          setEntry((p) => ({ ...p, cost_price }))
+                        }
+                        className="w-24"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MoneyInput
+                        min={0}
+                        value={entry.retail_price}
+                        onChange={(retail_price) =>
+                          setEntry((p) => ({
+                            ...p,
+                            retail_price,
+                            retail_overridden: true,
+                          }))
+                        }
+                        className="w-24"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <Button
                         type="button"
-                        onClick={() => setAddItemForRow(i)}
-                        title="Add new item"
-                        aria-label="Add new item"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                        variant="primary"
+                        size="sm"
+                        onClick={commitEntry}
+                        disabled={entry.item_id === 0}
+                        className="!h-7 !px-2 !text-xs"
+                        data-testid="inward-entry-add"
                       >
-                        <PackagePlus className="h-4 w-4" />
-                      </button>
-                    </div>
-                    {/* Show item name + SKU below search when selected */}
-                    {l.item_id > 0 && !l.item_query && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {items.find((it) => it.id === l.item_id)?.name ?? `#${l.item_id}`}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      value={l.qty}
-                      onChange={(e) =>
-                        setDraft((p) => p.map((x, j) => (j === i ? { ...x, qty: Number(e.target.value) } : x)))
-                      }
-                      className="input h-9 w-16 px-2 text-sm tabular-nums"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <MoneyInput
-                      min={0}
-                      value={l.cost_price}
-                      onChange={(cost_price) =>
-                        setDraft((p) =>
-                          p.map((x, j) => (j === i ? { ...x, cost_price } : x))
-                        )
-                      }
-                      className="w-24"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <MoneyInput
-                      min={0}
-                      value={l.retail_price}
-                      onChange={(retail_price) =>
-                        setDraft((p) =>
-                          p.map((x, j) =>
-                            j === i ? { ...x, retail_price, retail_overridden: true } : x,
-                          ),
-                        )
-                      }
-                      className="w-24"
-                    />
-                  </td>
+                        Add
+                      </Button>
+                    </td>
+                  </tr>
 
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => setDraft((p) => p.filter((_, j) => j !== i))}
-                      aria-label={`Remove line ${i + 1}`}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                  {/* ── Accumulated lines: read-only display ── */}
+                  {draft.map((l) => (
+                    <tr
+                      key={l.row_id}
+                      className="border-b border-border align-top transition-colors hover:bg-muted/60"
+                      data-testid="inward-line"
                     >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {draft.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10">
-                    <EmptyState
-                      icon={PackagePlus}
-                      title="No items added"
-                      description="Pick an item to start. A new line appears automatically when you select one."
-                    />
-                  </td>
-                </tr>
+                      <td className="px-4 py-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {itemName(l.item_id)}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2 text-sm tabular-nums text-foreground">
+                        {l.qty}{" "}
+                        <span className="text-xs text-muted-foreground">
+                          {l.unit_code || "unit"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-sm tabular-nums text-foreground">
+                        <Money paise={l.cost_price} />
+                      </td>
+                      <td className="px-3 py-2 text-sm tabular-nums text-foreground">
+                        <Money paise={l.retail_price} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDraft((p) => p.filter((x) => x.row_id !== l.row_id))
+                          }
+                          aria-label={`Remove line ${itemName(l.item_id)}`}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {draft.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-6">
+                        <EmptyState
+                          icon={PackagePlus}
+                          title="No items yet"
+                          description="Type an item name above and press Enter to add. Repeat for each item in this inward."
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </tbody>
+            </tbody>
           </table>
         </div>
       </section>
@@ -642,12 +678,23 @@ export default function InwardPage({ user: _user }: Props) {
               </thead>
               <tbody>
                 {recent.map((p) => (
-                  <tr key={p.id} className="border-b border-border transition-colors hover:bg-muted/60">
+                  <tr
+                    key={p.id}
+                    className="border-b border-border transition-colors hover:bg-muted/60"
+                  >
                     <td className="px-4 py-1.5 text-foreground tabular-nums">{p.id}</td>
-                    <td className="px-3 py-1.5 text-muted-foreground">{formatDateForDisplay(p.date)}</td>
-                    <td className="px-3 py-1.5 text-foreground">{p.vendor_name ?? <span className="text-muted-foreground">—</span>}</td>
-                    <td className="px-3 py-1.5 text-right text-muted-foreground tabular-nums">{p.items.length}</td>
-                    <td className="px-3 py-1.5 text-right text-foreground"><Money paise={p.total} /></td>
+                    <td className="px-3 py-1.5 text-muted-foreground">
+                      {formatDateForDisplay(p.date)}
+                    </td>
+                    <td className="px-3 py-1.5 text-foreground">
+                      {p.vendor_name ?? <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground tabular-nums">
+                      {p.items.length}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-foreground">
+                      <Money paise={p.total} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -656,14 +703,6 @@ export default function InwardPage({ user: _user }: Props) {
         </section>
       )}
 
-      <ShortcutsHint
-        shortcuts={[
-          { key: "F9", label: "Save inward" },
-          { key: "Esc", label: "Clear draft lines" },
-          { key: "K", ctrl: true, meta: true, label: "Add vendor" },
-        ]}
-      />
-
       <InlineDialog
         open={addVendorOpen}
         onClose={() => setAddVendorOpen(false)}
@@ -671,7 +710,8 @@ export default function InwardPage({ user: _user }: Props) {
         description="Add a supplier without leaving the inward flow."
         size="md"
       >
-        <InlineVendorForm
+        <VendorForm
+          mode="create"
           onSaved={(v) => {
             setVendors((prev) => [...prev, v].sort((a, b) => a.name.localeCompare(b.name)));
             setVendorId(v.id);
@@ -683,21 +723,23 @@ export default function InwardPage({ user: _user }: Props) {
       </InlineDialog>
 
       <InlineDialog
-        open={addItemForRow !== null}
-        onClose={() => setAddItemForRow(null)}
+        open={addItemOpen}
+        onClose={() => setAddItemOpen(false)}
         title="New item"
-        description="Add a SKU with full fields. All locations are available."
+        description="Add a SKU with full fields. The new item will be selected in the entry pad."
         size="lg"
       >
         <ItemForm
           mode="create"
           onSaved={(it) => {
-            setItems((prev) => [...prev, it].sort((a, b) => a.name.localeCompare(b.name)));
-            setDefaultItemId(it.id);
-            if (addItemForRow !== null) void changeItemForRow(addItemForRow, it.id);
-            setAddItemForRow(null);
+            setItems((prev) =>
+              [...prev, it].sort((a, b) => a.name.localeCompare(b.name)),
+            );
+            setAddItemOpen(false);
+            void selectItemForEntry(it.id);
+            entrySearchRef.current?.focus();
           }}
-          onCancel={() => setAddItemForRow(null)}
+          onCancel={() => setAddItemOpen(false)}
         />
       </InlineDialog>
     </div>

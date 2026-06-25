@@ -4,7 +4,14 @@
   "description": "Minimal default capabilities — role-based access enforced at IPC layer",
   "windows": ["main"],
   "permissions": [
-    "core:default",
+    "core:event:default",
+    "core:window:default",
+    "core:webview:default",
+    "core:app:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:path:default",
     "log:default",
     "autostart:default"
   ]

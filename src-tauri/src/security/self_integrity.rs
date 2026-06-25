@@ -217,7 +217,9 @@ fn verify_authenticode_inner(path: &std::path::Path) -> Result<AuthenticodeRepor
     }
 
     // STATUS_SUCCESS = 0
-    let signed = true; // If WinVerifyTrust was called, there IS a signature field.
+    // TRUST_E_NOSIGNATURE = 0x800B0100 — no embedded signature at all.
+    // Any other non-zero status means a signature IS present (but may be untrusted).
+    let signed = (status as u32) != 0x800B_0100;
     let trusted = status == 0;
 
     // Attempt to extract signer name via CryptQueryObject / CertGetNameString.

@@ -61,13 +61,13 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (121 total).
+/// Complete ACL table for every command registered in `invoke_handler` (139 total).
 ///
 /// Classification:
 /// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.
 /// - **Stocker+** (12): read-only reference data — items, brands, units, locations, types.
-/// - **Cashier+** (79): operational — sales, purchases, day-close, CRUD, reports, alerts.
-/// - **Owner-only** (23): admin — unlock, user mgmt, settings writes, backup, hardening, void.
+/// - **Cashier+** (81): operational — sales, purchases, day-close, CRUD, reports, alerts.
+/// - **Owner-only** (39): admin — unlock, user mgmt, settings writes, backup, hardening, void, printers, import, PDE, categories.
 pub const COMMAND_ACL: &[CommandAcl] = &[
     // ── Public (7) ─────────────────────────────────────────────────────
     CommandAcl {
@@ -546,7 +546,7 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     // Printer discovery
     CommandAcl {
         name: "discover_system_printers",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     // Alerts
     CommandAcl {
@@ -577,6 +577,87 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     CommandAcl {
         name: "scan_target",
         min_role: Role::Cashier,
+    },
+    // ── Printing (S-2) ──────────────────────────────────────────────────
+    CommandAcl {
+        name: "cmd_print_receipt",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_print_receipt_dev",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_print_raw",
+        min_role: Role::Owner,
+    },
+    // ── PDE (S-5) ──────────────────────────────────────────────────────
+    CommandAcl {
+        name: "get_pde_status",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "provision_decoy_db",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "change_decoy_pin",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "change_duress_pin",
+        min_role: Role::Owner,
+    },
+    // ── Import (S-3) ───────────────────────────────────────────────────
+    CommandAcl {
+        name: "cmd_import_items_csv",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_import_inward_csv",
+        min_role: Role::Owner,
+    },
+    // ── Printer CRUD (S-4) ─────────────────────────────────────────────
+    CommandAcl {
+        name: "cmd_list_printers",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_create_printer",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_update_printer",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_delete_printer",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_set_default_printer",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_get_default_printer",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "get_printer_status",
+        min_role: Role::Owner,
+    },
+    // ── Categories (S-15) ──────────────────────────────────────────────
+    CommandAcl {
+        name: "list_categories",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "create_category",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "deactivate_category",
+        min_role: Role::Owner,
     },
 ];
 
@@ -711,8 +792,8 @@ mod tests {
     fn acl_covers_all_120_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            120,
-            "ACL has {} entries, expected 120",
+            139,
+            "ACL has {} entries, expected 139",
             COMMAND_ACL.len()
         );
     }

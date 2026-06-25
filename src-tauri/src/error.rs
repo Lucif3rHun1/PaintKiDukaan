@@ -4,6 +4,11 @@
 //! Every command, security module, and crypto helper imports from here.
 //! The serialized form is `{code: string, message: string}` — the frontend
 //! `isAppError()` type guard in `src/domain/types.ts` depends on this.
+//!
+//! `user_message()` is what the frontend renders in toasts. The default
+//! `Display` impl (`to_string()`) leaks internals (e.g. raw SQL strings,
+//! "locked out until unix 1700000000"). Always serialize `user_message()`,
+//! never `to_string()`.
 
 use serde::{Serialize, Serializer};
 
@@ -68,6 +73,9 @@ pub enum AppError {
 
     #[error("I/O error: {0}")]
     Io(std::io::Error),
+
+    #[error("cleanup failed: {0}")]
+    CleanupFailed(String),
 }
 
 impl AppError {
@@ -101,7 +109,58 @@ impl AppError {
             AppError::PathTraversal(_) => "path_traversal",
             AppError::LogInjection(_) => "log_injection",
             AppError::Io(_) => "io",
+            AppError::CleanupFailed(_) => "cleanup_failed",
         }
+    }
+
+    /// Human-facing message safe to show in a toast. Hides internals
+    /// (SQL strings, raw paths, unix timestamps). Validation/conflict
+    /// messages already come from caller-supplied strings, so pass them
+    /// through.
+    pub fn user_message(&self) -> String {
+        match self {
+            AppError::Db(_) => {
+                "Something went wrong with the local database. Please try again.".into()
+            }
+            AppError::NotFound(msg) => format!("{msg} not found."),
+            AppError::Validation(msg) => msg.clone(),
+            AppError::Conflict(msg) => msg.clone(),
+            AppError::Unauthorized(_) => "You're not signed in.".into(),
+            AppError::WrongPin => "Incorrect PIN or passphrase.".into(),
+            AppError::WrongRecoveryPassphrase => "Incorrect recovery passphrase.".into(),
+            AppError::TooManyAttempts => "Too many failed attempts. Try again later.".into(),
+            AppError::Forbidden(_) => "You don't have permission to do this.".into(),
+            AppError::Internal(_) => "An unexpected error occurred. Please try again.".into(),
+            AppError::Crypto(_) => "Encryption failed. Please try again.".into(),
+            AppError::NoKeywrap => "Master key missing. Restore from recovery to continue.".into(),
+            AppError::NoDb => "Database not set up yet.".into(),
+            AppError::NotUnlocked => "Database is locked. Unlock to continue.".into(),
+            AppError::InvalidPinFormat => "PIN must be exactly 6 digits.".into(),
+            AppError::LockedOut { until } => locked_out_message(*until),
+            AppError::Wiped => "Data was wiped. Enter your recovery passphrase to restore.".into(),
+            AppError::PathTraversal(_) => "Invalid file path.".into(),
+            AppError::LogInjection(_) => "Invalid input.".into(),
+            AppError::Io(_) => "Could not read or write a file. Please try again.".into(),
+            AppError::CleanupFailed(_) => "Cleanup failed. Please try again.".into(),
+        }
+    }
+}
+
+fn locked_out_message(until_unix_ms: u64) -> String {
+    let now_ms = chrono::Utc::now().timestamp_millis() as u64;
+    if until_unix_ms <= now_ms {
+        return "Try again now.".into();
+    }
+    let remaining_ms = until_unix_ms - now_ms;
+    let remaining_secs = remaining_ms / 1000;
+    if remaining_secs < 60 {
+        format!("Locked out. Try again in {remaining_secs} seconds.")
+    } else if remaining_secs < 3600 {
+        let minutes = (remaining_secs + 30) / 60;
+        format!("Locked out. Try again in {minutes} minutes.")
+    } else {
+        let hours = (remaining_secs + 1800) / 3600;
+        format!("Locked out. Try again in {hours} hours.")
     }
 }
 
@@ -110,7 +169,7 @@ impl Serialize for AppError {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("AppError", 2)?;
         st.serialize_field("code", self.code())?;
-        st.serialize_field("message", &self.to_string())?;
+        st.serialize_field("message", &self.user_message())?;
         st.end()
     }
 }

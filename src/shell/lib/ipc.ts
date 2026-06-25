@@ -9,12 +9,12 @@ import { tauriInvoke } from "../../lib/security/tauri";
 import type { SecurityPolicy } from "../../domain/types";
 import type { NewPrinterInput, PrinterRecord } from "../routes/settings/printing-types";
 
-export type Role = "owner" | "admin" | "cashier" | "stocker";
+export type Role = "owner" | "cashier" | "stocker";
 
 export interface User {
   id: number;
   name: string;
-  role: Role | string;
+  role: Role;
   is_active: boolean;
 }
 

@@ -2,20 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { Plus, Receipt } from "lucide-react";
+import { DatePicker } from "../../components/ui/DatePicker";
 
-import {
-  Badge,
-  Button,
-  Card,
-  DataTable,
-  EmptyState,
-  Money,
-  PaginationControls,
-  SearchInput,
-} from "../../components/ui";
+import { Badge, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { listSales } from "../api";
 import { usePaginatedQuery } from "../../lib/query";
+import { useShortcut } from "../../lib/shortcuts";
+import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { formatDateForDisplay } from "../../lib/date";
 import type { Sale } from "../types";
 
@@ -115,9 +109,38 @@ export function SalesListPage({ onCreate }: Props) {
     [],
   );
 
+  useFocusShortcut({
+    key: "F2",
+    selector: '[data-shortcut="search"]',
+    description: "Focus search",
+  });
+  useShortcut({
+    key: "F5",
+    scope: "page",
+    description: "Refresh list",
+    onMatch: () => {
+      void refetch();
+    },
+  });
+  useShortcut({
+    key: "F6",
+    scope: "page",
+    description: "New sale",
+    onMatch: onCreate,
+  });
+  useShortcut({
+    key: "Escape",
+    allowInInputs: true,
+    preventDefault: true,
+    description: "Clear search",
+    onMatch: () => {
+      if (search) setSearch("");
+    },
+  });
+
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Sales
@@ -133,77 +156,67 @@ export function SalesListPage({ onCreate }: Props) {
           size="md"
           icon={Plus}
           onClick={onCreate}
+          shortcut="F6"
         >
           New Sale
         </Button>
       </header>
 
-      <Card>
-        <Card.Body className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Search by invoice, customer, status…"
-              ariaLabel="Search sales"
-              className="min-w-[220px] flex-1"
-            />
-            <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              From
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="input px-2 py-1 text-sm"
-              />
-            </label>
-            <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              To
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="input px-2 py-1 text-sm"
-              />
-            </label>
-          </div>
-
-          <DataTable
-            data={rows}
-            columns={columns}
-            keyExtractor={(s) => s.id}
-            loading={isLoading || isFetching}
-            error={error}
-            onRetry={refetch}
-            emptyState={
-              <EmptyState
-                icon={Receipt}
-                title={search ? "No matches" : "No sales yet"}
-                description={
-                  search
-                    ? `Nothing matches "${search}". Try a different search.`
-                    : "No sales found for the selected range. Create the first sale to get started."
-                }
-                primary={
-                  <Button type="button" onClick={onCreate} icon={Plus}>
-                    New Sale
-                  </Button>
-                }
-              />
-            }
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by invoice, customer, status…"
+            ariaLabel="Search sales"
+            data-shortcut="search"
+            className="min-w-[220px] flex-1"
           />
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            From
+            <DatePicker value={from} onChange={setFrom} />
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            To
+            <DatePicker value={to} onChange={setTo} />
+          </label>
+        </div>
 
-          {!isLoading && allData.length > 0 ? (
-            <PaginationControls
-              page={page}
-              totalPages={totalPages}
-              totalItems={totalItems}
-              pageSize={pageSize}
-              onPageChange={setPage}
+        <DataTable
+          data={rows}
+          columns={columns}
+          keyExtractor={(s) => s.id}
+          loading={isLoading || isFetching}
+          error={error}
+          onRetry={refetch}
+          emptyState={
+            <EmptyState
+              icon={Receipt}
+              title={search ? "No matches" : "No sales yet"}
+              description={
+                search
+                  ? `Nothing matches "${search}". Try a different search.`
+                  : "No sales found for the selected range. Create the first sale to get started."
+              }
+              primary={
+                <Button type="button" onClick={onCreate} icon={Plus}>
+                  New Sale
+                </Button>
+              }
             />
-          ) : null}
-        </Card.Body>
-      </Card>
+          }
+        />
+
+        {!isLoading && allData.length > 0 ? (
+          <PaginationControls
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

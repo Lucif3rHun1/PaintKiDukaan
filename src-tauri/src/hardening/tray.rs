@@ -66,7 +66,7 @@ fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
 
 #[cfg(target_os = "windows")]
 fn lock_workstation<R: Runtime>(app: &AppHandle<R>) {
-    let _ = std::process::Command::new("rundll32")
+    let _ = std::process::Command::new(crate::sys_tool::resolve("rundll32"))
         .arg("user32.dll,LockWorkStation")
         .spawn();
     let _ = app.emit("tray:lock", ());

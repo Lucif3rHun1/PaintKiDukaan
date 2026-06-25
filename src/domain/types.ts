@@ -343,14 +343,6 @@ export interface ConversionResult {
   qty_in_base_units: number;
 }
 
-export interface HeldBill {
-  id: number;
-  created_at: string;
-  note: string | null;
-  cart_json: string;
-  total_paise: number;
-}
-
 export interface Unit {
   id: number;
   code: string;

@@ -1,15 +1,18 @@
-//! `powercfg` wrapper to keep the master awake while unattended.
+//! Per-thread sleep prevention via `SetThreadExecutionState`.
 //!
-//! §9.2 of the master plan: on AC set standby/hibernate/lid timeouts to 0
-//! (disabled). On DC: 15–30 min standby, 30–60 min hibernate, lid = 0. On
-//! non-Windows hosts the calls are no-ops so dev boxes keep working.
+//! Uses per-app execution state flags instead of mutating the global power
+//! scheme (SCHEME_CURRENT). On non-Windows hosts the calls are no-ops.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(target_os = "windows")]
 use std::process::Command;
 
-use tauri::{App, Runtime};
+use tauri::{App, Runtime, State};
+
+use crate::commands::auth::AppState;
+use crate::error::AppError;
+use crate::security::ipc_auth;
 
 static PREVENTED: AtomicBool = AtomicBool::new(false);
 
@@ -23,7 +26,7 @@ pub fn is_prevented() -> bool {
 pub fn apply_on_launch<R: Runtime>(_app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "windows")]
     {
-        match Command::new("net").args(["session"]).output() {
+        match Command::new(crate::sys_tool::resolve("net")).args(["session"]).output() {
             Ok(out) if out.status.success() => {}
             Ok(out) => {
                 log::warn!(
@@ -50,79 +53,34 @@ pub fn apply_on_launch<R: Runtime>(_app: &mut App<R>) -> Result<(), Box<dyn std:
 
 /// Tauri command to toggle prevent-sleep at runtime.
 #[tauri::command(rename_all = "snake_case")]
-pub fn set_prevent_sleep(enabled: bool) -> Result<bool, String> {
+pub fn set_prevent_sleep(state: State<'_, AppState>, enabled: bool) -> Result<(), AppError> {
+    ipc_auth::authorize("set_prevent_sleep", state.inner())?;
     let ok = apply_policy(enabled);
     PREVENTED.store(ok, Ordering::Relaxed);
-    Ok(ok)
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
 fn apply_policy(enabled: bool) -> bool {
-    let cmds: &[&[&str]] = if enabled {
-        &[
-            &["/change", "standby-timeout-ac", "0"],
-            &["/change", "standby-timeout-dc", "15"],
-            &["/change", "hibernate-timeout-ac", "0"],
-            &["/change", "hibernate-timeout-dc", "30"],
-            &[
-                "/setacvalueindex",
-                "SCHEME_CURRENT",
-                "SUB_BUTTONS",
-                "LIDACTION",
-                "0",
-            ],
-            &[
-                "/setdcvalueindex",
-                "SCHEME_CURRENT",
-                "SUB_BUTTONS",
-                "LIDACTION",
-                "0",
-            ],
-            &["/setactive", "SCHEME_CURRENT"],
-        ]
-    } else {
-        &[
-            &["/change", "standby-timeout-ac", "15"],
-            &["/change", "standby-timeout-dc", "15"],
-            &["/change", "hibernate-timeout-ac", "30"],
-            &["/change", "hibernate-timeout-dc", "30"],
-            &[
-                "/setacvalueindex",
-                "SCHEME_CURRENT",
-                "SUB_BUTTONS",
-                "LIDACTION",
-                "1",
-            ],
-            &[
-                "/setdcvalueindex",
-                "SCHEME_CURRENT",
-                "SUB_BUTTONS",
-                "LIDACTION",
-                "1",
-            ],
-            &["/setactive", "SCHEME_CURRENT"],
-        ]
+    use windows::Win32::System::Power::SetThreadExecutionState;
+    use windows::Win32::System::Power::{
+        ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
     };
 
-    let mut all_ok = true;
-    for args in cmds {
-        match Command::new("powercfg").args(*args).output() {
-            Ok(out) if out.status.success() => {}
-            Ok(out) => {
-                log::warn!(
-                    "powercfg {:?} failed: {}",
-                    args,
-                    String::from_utf8_lossy(&out.stderr)
-                );
-                all_ok = false;
+    unsafe {
+        if enabled {
+            let prev = SetThreadExecutionState(
+                ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED,
+            );
+            if prev.is_none() {
+                log::warn!("SetThreadExecutionState(enable) returned NULL");
+                return false;
             }
-            Err(e) => {
-                log::warn!("powercfg {:?} could not run: {e}", args);
-                all_ok = false;
-            }
+        } else {
+            let _ = SetThreadExecutionState(ES_CONTINUOUS);
         }
     }
-    all_ok
+    true
 }
 
 #[cfg(not(target_os = "windows"))]

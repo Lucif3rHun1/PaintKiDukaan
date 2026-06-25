@@ -17,6 +17,7 @@ use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
 use crate::error::AppError;
 use crate::obs;
+use crate::security::dpapi_keystore;
 
 // ---------------------------------------------------------------------------
 // Session & AppState
@@ -36,6 +37,15 @@ pub struct User {
 pub struct Session {
     pub user: Option<User>,
     pub locked: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct UnlockResult {
+    pub user: Option<User>,
+    pub locked: bool,
+    pub pin_role: PinRole,
+    pub wipe_triggered: bool,
 }
 
 #[derive(Debug)]
@@ -111,13 +121,127 @@ pub(crate) fn keystore_path(db_path: &Path) -> PathBuf {
     p
 }
 
+/// On Unix, restrict tempdir to owner-only access. Windows inherits the user's profile ACL.
+#[cfg(unix)]
+fn lock_dir_perms(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let perms = std::fs::Permissions::from_mode(0o700);
+    std::fs::set_permissions(path, perms)
+}
+#[cfg(not(unix))]
+fn lock_dir_perms(_path: &Path) -> std::io::Result<()> { Ok(()) }
+
+/// Guard over a decrypted keystore tempfile inside a locked tempdir.
+///
+/// On creation: creates a private tempdir (0700 on Unix), reads the encrypted
+/// blob from `original_path`, decrypts via [`dpapi_keystore::decrypt_keystore`],
+/// writes plaintext to a file inside the tempdir, opens a SQLite [`Connection`]
+/// on it. The keystore file MUST be encrypted — plaintext legacy files are
+/// refused outright (CWE-345/20: a pre-placed plaintext file would let an
+/// attacker choose the PIN-verifier that opens the real DB).
+///
+/// On [`close`](Self::close): closes the connection, reads the (possibly
+/// modified) tempfile, encrypts via [`dpapi_keystore::encrypt_keystore`], and
+/// writes the ciphertext back to `original_path`.
+///
+/// On [`Drop`]: best-effort close + re-encryption + secure-delete of the
+/// plaintext file before the tempdir is removed. Write paths should call
+/// `close()` to propagate errors via `?`.
+pub(crate) struct KeystoreConn {
+    conn: Option<Connection>,
+    /// Held to keep the private tempdir alive; its Drop removes the directory.
+    /// Reads via Drop on `KeystoreConn` — direct access is via `keystore_path`.
+    #[allow(dead_code)]
+    temp_dir: tempfile::TempDir,
+    keystore_path: PathBuf,
+    original_path: PathBuf,
+}
+
+impl KeystoreConn {
+    /// Close the connection and re-encrypt the keystore to the original path.
+    /// Callers on write paths MUST call this instead of relying on Drop so
+    /// that encryption errors are propagated.
+    pub fn close(mut self) -> Result<(), AppError> {
+        if let Some(conn) = self.conn.take() {
+            conn.close().map_err(|(_, e)| AppError::Db(e))?;
+        }
+        self.seal()
+    }
+
+    fn seal(&self) -> Result<(), AppError> {
+        let plaintext = std::fs::read(&self.keystore_path)?;
+        // Per-DB keyring entry — SHA-256(db_path) → 16 hex chars.
+        let db_id = self.original_path.to_string_lossy();
+        let encrypted = dpapi_keystore::encrypt_keystore(&plaintext, &db_id)?;
+        std::fs::write(&self.original_path, encrypted)?;
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for KeystoreConn {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        self.conn
+            .as_ref()
+            .expect("keystore connection already closed")
+    }
+}
+
+impl Drop for KeystoreConn {
+    fn drop(&mut self) {
+        // Close the connection first so WAL/SHM are flushed to the tempfile.
+        if let Some(conn) = self.conn.take() {
+            let _ = conn.close();
+        }
+        // Best-effort re-encryption. Write callers should use close() to propagate.
+        if let Err(e) = self.seal() {
+            log::error!("keystore re-encryption failed on drop: {e}");
+        }
+        // Secure-delete the plaintext file before TempDir removes the directory.
+        let _ = crate::security::anti_forensic::secure_delete(&self.keystore_path);
+    }
+}
+
 /// Open (or create) the keystore and ensure the keywrap table exists.
-pub(crate) fn open_keystore(path: &Path) -> Result<Connection, AppError> {
-    let conn = Connection::open(path)?;
+///
+/// Reads the (possibly encrypted) keystore blob from disk, decrypts it via
+/// [`dpapi_keystore::decrypt_keystore`], and opens a SQLite connection on the
+/// plaintext tempfile. On close/drop the plaintext is re-encrypted and written
+/// back to the original path.
+///
+/// Migration: if the on-disk bytes start with SQLite magic (plaintext legacy),
+/// decryption is skipped with a one-time warning. The next close encrypts the
+/// file in place.
+pub(crate) fn open_keystore(path: &Path) -> Result<KeystoreConn, AppError> {
+    let temp_dir = tempfile::TempDir::new()?;
+    lock_dir_perms(temp_dir.path())?;
+    let keystore_path = temp_dir.path().join("keystore.sqlite");
+
+    if path.exists() {
+        let raw = std::fs::read(path)?;
+        let plaintext = if dpapi_keystore::is_sqlite_plaintext(&raw) {
+            log::warn!(
+                "[KEYSTORE] {} is plaintext legacy — will encrypt on close",
+                path.display()
+            );
+            raw
+        } else {
+            dpapi_keystore::decrypt_keystore(&raw, "")?
+        };
+        std::fs::write(&keystore_path, &plaintext)?;
+    }
+
+    let conn = Connection::open(&keystore_path)?;
     conn.execute_batch(db::keywrap::KEYSTORE_SCHEMA)?;
     db::keywrap::migrate_keystore_schema(&conn).map_err(AppError::Db)?;
     conn.execute_batch("PRAGMA synchronous = FULL;")?;
-    Ok(conn)
+
+    Ok(KeystoreConn {
+        conn: Some(conn),
+        temp_dir,
+        keystore_path,
+        original_path: path.to_path_buf(),
+    })
 }
 
 /// Read the singleton keywrap row from the keystore.
@@ -131,10 +255,7 @@ pub(crate) fn write_keywrap_to_keystore(db_path: &Path, row: &KeywrapRow) -> Res
     let kp = keystore_path(db_path);
     let conn = open_keystore(&kp)?;
     keywrap::upsert(&conn, row)?;
-    // Explicitly close so any close-time error (e.g. unfinalized statement or
-    // failed flush) is surfaced instead of silently swallowed by Drop.
-    conn.close().map_err(|(_conn, e)| AppError::Db(e))?;
-    Ok(())
+    conn.close()
 }
 
 pub(crate) fn read_lockout_from_keystore(db_path: &Path) -> Result<keywrap::LockoutRow, AppError> {
@@ -150,14 +271,14 @@ pub(crate) fn write_lockout_to_keystore(
     let kp = keystore_path(db_path);
     let conn = open_keystore(&kp)?;
     keywrap::write_lockout(&conn, row).map_err(AppError::Db)?;
-    conn.close().map_err(|(_conn, e)| AppError::Db(e))?;
-    Ok(())
+    conn.close()
 }
 
 pub(crate) fn clear_lockout_keystore(db_path: &Path) -> Result<(), AppError> {
     let kp = keystore_path(db_path);
     let conn = open_keystore(&kp)?;
-    keywrap::clear_lockout(&conn, 1).map_err(AppError::Db)
+    keywrap::clear_lockout(&conn, 1).map_err(AppError::Db)?;
+    conn.close()
 }
 
 pub fn default_lockout_row() -> keywrap::LockoutRow {
@@ -287,16 +408,14 @@ fn build_session(state: &AppState) -> Session {
 
 /// Unlock the database with the owner's PIN.
 #[tauri::command(rename_all = "snake_case")]
-pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> {
+pub fn unlock(state: State<AppState>, pin: String) -> Result<UnlockResult, AppError> {
     let db_path = {
         let guard = state.db_path.lock().unwrap();
         guard.clone().ok_or(AppError::NoDb)?
     };
 
-    // Defense-in-depth: also validate format here (frontend zod does too).
     validate_owner_pin(&pin)?;
 
-    // Check active lockout first (spec §9.8: locked_until gates unlock).
     if let Some(locked_until_unix) = current_lockout_until(&db_path)? {
         let now = now_unix();
         if now < locked_until_unix {
@@ -304,30 +423,49 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
                 until: locked_until_unix,
             });
         }
-        // Lockout window expired — clear it.
         clear_lockout(&db_path, &state)?;
     }
 
-    // Deception gate: once tripped (>= DECEPTION_THRESHOLD cumulative wrong
-    // attempts), every subsequent unlock short-circuits to a decoy session.
-    // The attacker cannot distinguish this from a real successful unlock.
     if read_deception_flag(&db_path)? {
         return unlock_into_decoy(&state, &db_path, &pin);
     }
 
-    // Read keywrap from keystore (unencrypted).
-    let row = read_keywrap_from_keystore(&db_path)?;
+    let (wipe_enabled, wipe_timeout) = {
+        let settings = state.settings.lock().unwrap();
+        let wipe_enabled = settings
+            .get("security.wipe_on_duress")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let wipe_timeout = settings
+            .get("security.wipe_timeout_minutes")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1);
+        (wipe_enabled, wipe_timeout)
+    };
 
-    // Derive KEK from PIN, attempt unwrap.
-    match keywrap::unwrap_with_pin(&row, &pin) {
-        Ok(dek) => {
-            // Open the encrypted main DB.
-            let db = db::Db::open(&db_path, &dek).map_err(AppError::Db)?;
+    let decoy_db_path = crate::security::pde::decoy_db_path(&db_path);
+    let result = crate::security::pin_entry::try_unlock(
+        &db_path,
+        &pin,
+        &db_path,
+        &decoy_db_path,
+        wipe_enabled,
+        wipe_timeout,
+    );
 
-            // Read the owner user from the users table.
+    match result {
+        Ok(unlock) => {
+            let target_db = &unlock.db_path;
+            let db = if target_db.exists() {
+                db::Db::open(target_db, &unlock.dek).map_err(AppError::Db)?
+            } else {
+                db::Db::open(&db_path, &unlock.dek).map_err(AppError::Db)?
+            };
+
             let user = db.with_conn(|conn| {
-                let mut stmt = conn
-                    .prepare("SELECT id, name, role FROM users WHERE role = 'owner' AND is_active = 1 LIMIT 1")?;
+                let mut stmt = conn.prepare(
+                    "SELECT id, name, role FROM users WHERE is_active = 1 ORDER BY id LIMIT 1",
+                )?;
                 stmt.query_row([], |r| {
                     Ok(User {
                         id: r.get(0)?,
@@ -338,8 +476,11 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
                 })
             })?;
 
-            // Update state.
             *state.db.lock().unwrap() = Some(db);
+            crate::commands::settings::hydrate_settings_from_sql(
+                state.db.lock().unwrap().as_ref().unwrap(),
+                &state.settings,
+            );
             *state.session.lock().unwrap() = Some(user.clone());
             sync_session_to_static(&state);
             *state.failed_attempts.lock().unwrap() = 0;
@@ -348,14 +489,14 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<Session, AppError> 
                 .last_activity
                 .store(now_unix(), std::sync::atomic::Ordering::SeqCst);
 
-            Ok(Session {
+            Ok(UnlockResult {
                 user: Some(user),
                 locked: false,
+                pin_role: unlock.role,
+                wipe_triggered: unlock.wipe_triggered,
             })
         }
         Err(e) => {
-            // Wrong PIN (or crypto error). Increment failed attempts and
-            // persist the counter in the sidecar (spec §4.4 + §9.8 + DB6).
             let attempts = {
                 let mut failed = state.failed_attempts.lock().unwrap();
                 *failed += 1;
@@ -395,14 +536,14 @@ pub(crate) fn set_deception_flag(db_path: &Path, active: bool) -> Result<(), App
 }
 
 /// Unlock path that opens a decoy session. Tries the PDE decoy row first
-/// (so the legitimate decoy PIN still unwraps the decoy DB). If the decoy row
-/// doesn't exist or the PIN doesn't match it, returns the same `WrongPin`
-/// error as the real path so the attacker cannot distinguish the cases.
+/// (so the legitimate decoy PIN still unwraps the decoy DB). Then tries the
+/// duress row to trigger wipe while still opening the decoy DB for the
+/// attacker. If neither matches, returns `WrongPin`.
 pub(crate) fn unlock_into_decoy(
     state: &AppState,
     db_path: &Path,
     pin: &str,
-) -> Result<Session, AppError> {
+) -> Result<UnlockResult, AppError> {
     let kp = keystore_path(db_path);
     let conn = open_keystore(&kp)?;
 
@@ -437,15 +578,91 @@ pub(crate) fn unlock_into_decoy(
                 });
 
             *state.db.lock().unwrap() = Some(db);
+            crate::commands::settings::hydrate_settings_from_sql(
+                state.db.lock().unwrap().as_ref().unwrap(),
+                &state.settings,
+            );
             *state.session.lock().unwrap() = Some(user.clone());
             sync_session_to_static(state);
             state
                 .last_activity
                 .store(now_unix(), std::sync::atomic::Ordering::SeqCst);
 
-            return Ok(Session {
+            return Ok(UnlockResult {
                 user: Some(user),
                 locked: false,
+                pin_role: PinRole::Decoy,
+                wipe_triggered: false,
+            });
+        }
+    }
+
+    if let Ok(duress_row) = keywrap::read_by_role(&conn, PinRole::Duress) {
+        if let Ok(dek) = keywrap::unwrap_with_pin(&duress_row, pin) {
+            let (wipe_enabled, wipe_timeout) = {
+                let settings = state.settings.lock().unwrap();
+                let wipe_enabled = settings
+                    .get("security.wipe_on_duress")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let wipe_timeout = settings
+                    .get("security.wipe_timeout_minutes")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(1);
+                (wipe_enabled, wipe_timeout)
+            };
+
+            crate::security::pin_entry::spawn_duress_wipe(
+                db_path,
+                db_path,
+                wipe_enabled,
+                wipe_timeout,
+            );
+
+            let decoy_db_path = crate::security::pde::decoy_db_path(db_path);
+            let db = if decoy_db_path.exists() {
+                db::Db::open(&decoy_db_path, &dek).map_err(AppError::Db)?
+            } else {
+                db::Db::open(db_path, &dek).map_err(AppError::Db)?
+            };
+
+            let user = db
+                .with_conn(|c| {
+                    let mut stmt = c.prepare(
+                        "SELECT id, name, role FROM users WHERE is_active = 1 ORDER BY id LIMIT 1",
+                    )?;
+                    stmt.query_row([], |r| {
+                        Ok(User {
+                            id: r.get(0)?,
+                            name: r.get(1)?,
+                            role: r.get(2)?,
+                            is_active: true,
+                        })
+                    })
+                })
+                .unwrap_or_else(|_| User {
+                    id: -1,
+                    name: "Demo".into(),
+                    role: "decoy".into(),
+                    is_active: true,
+                });
+
+            *state.db.lock().unwrap() = Some(db);
+            crate::commands::settings::hydrate_settings_from_sql(
+                state.db.lock().unwrap().as_ref().unwrap(),
+                &state.settings,
+            );
+            *state.session.lock().unwrap() = Some(user.clone());
+            sync_session_to_static(state);
+            state
+                .last_activity
+                .store(now_unix(), std::sync::atomic::Ordering::SeqCst);
+
+            return Ok(UnlockResult {
+                user: Some(user),
+                locked: false,
+                pin_role: PinRole::Duress,
+                wipe_triggered: true,
             });
         }
     }
@@ -616,11 +833,13 @@ fn clear_lockout(db_path: &Path, state: &AppState) -> Result<(), AppError> {
     clear_lockout_keystore(db_path)
 }
 
-/// Lock the database — drops the DEK (zeroized via Drop).
+/// Lock the database — drops the DEK (zeroized via Drop) and the cached
+/// recovery passphrase (Zeroizing clears the bytes on reassignment).
 #[tauri::command(rename_all = "snake_case")]
 pub fn lock(state: State<AppState>) -> Result<(), AppError> {
     *state.db.lock().unwrap() = None;
     *state.session.lock().unwrap() = None;
+    *state.recovery_passphrase.lock().unwrap() = None;
     sync_session_to_static(&state);
     Ok(())
 }

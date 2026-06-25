@@ -28,6 +28,27 @@ type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "log";
 // — we'd rather lose a log than deadlock the main thread.
 const MAX_IN_FLIGHT_LOGS = 16;
 let inFlightLogs = 0;
+let lastInFlightChangeAt = Date.now();
+
+// ponytail: safety reset, interval-based. If inFlightLogs is stuck > 0 for
+// 30s (hung IPC), force-reset to 0. Interval is halved for faster detection.
+const SAFETY_RESET_MS = 30_000;
+const safetyInterval = setInterval(() => {
+  if (inFlightLogs > 0 && Date.now() - lastInFlightChangeAt > SAFETY_RESET_MS) {
+    inFlightLogs = 0;
+    // eslint-disable-next-line no-console
+    console.warn("[sessionLog] inFlightLogs safety reset");
+  }
+}, SAFETY_RESET_MS / 2);
+// unref so it doesn't keep Node/Electron alive
+if (typeof safetyInterval === "object" && "unref" in safetyInterval) safetyInterval.unref();
+
+function sanitizeControlChars(s: string): string {
+  return Array.from(s).filter(c => {
+    const code = c.charCodeAt(0);
+    return !(code <= 0x1F || code === 0x7F);
+  }).join('');
+}
 
 function safeStringify(value: unknown): string {
   if (value instanceof Error) return value.stack ?? value.message;
@@ -45,9 +66,11 @@ function sendToBackend(level: LogLevel, message: string) {
   // defense against an IPC storm during a render or error loop.
   if (inFlightLogs >= MAX_IN_FLIGHT_LOGS) return;
   inFlightLogs++;
+  lastInFlightChangeAt = Date.now();
   // `console.log` is not a valid backend log level; map it to `info`.
   const backendLevel = level === "log" ? "info" : level;
-  tauriInvoke("log_frontend", { level: backendLevel, message, correlation_id: generateCorrelationId() })
+  const sanitized = sanitizeControlChars(message);
+  tauriInvoke("log_frontend", { level: backendLevel, message: sanitized, correlation_id: generateCorrelationId() })
     .catch(() => {
       // Deliberately use the raw console here: the wrapped `console.error`
       // would re-enter this function and may itself be the source of the
@@ -58,6 +81,7 @@ function sendToBackend(level: LogLevel, message: string) {
     })
     .finally(() => {
       inFlightLogs = Math.max(0, inFlightLogs - 1);
+      lastInFlightChangeAt = Date.now();
     });
 }
 

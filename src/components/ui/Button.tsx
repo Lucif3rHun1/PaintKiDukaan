@@ -6,12 +6,15 @@ import {
 } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "./cn";
+import { KbdHint } from "./KbdHint";
 
 interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md" | "lg";
   icon?: ComponentType<{ className?: string }> | ReactNode;
   loading?: boolean;
+  /** Keyboard shortcut hint rendered inline at the end (mobile-hidden). */
+  shortcut?: string;
   children?: React.ReactNode;
 }
 
@@ -39,6 +42,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
       size = "md",
       icon,
       loading,
+      shortcut,
       children,
       className,
       disabled,
@@ -69,6 +73,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
         {!loading && IconComp && <IconComp className="h-4 w-4" />}
         {!loading && !IconComp && icon && <span>{icon as ReactNode}</span>}
         {children}
+        {shortcut && !loading && <KbdHint keys={shortcut} />}
       </button>
     );
   },

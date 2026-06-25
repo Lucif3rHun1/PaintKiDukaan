@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Money, Button } from "../../components/ui";
+import { toTitleCase } from "../../lib/format/titleCase";
 import { vendorOutstanding } from "./api";
 import type { Vendor, VendorOutstanding } from "../types";
 
@@ -25,7 +26,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
     <div>
       <div className="mb-4 flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-semibold">{vendor.name}</h2>
+          <h2 className="text-xl font-semibold">{toTitleCase(vendor.name)}</h2>
           <p className="font-mono text-sm text-muted-foreground">
             {vendor.phone ?? "—"}
           </p>

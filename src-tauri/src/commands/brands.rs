@@ -1,12 +1,9 @@
-//! Brand registry + EAN-13 barcode generator.
+//! Brand registry + barcode generator.
 //!
-//! Owns the `brands` and `brand_sequences` tables (introduced in schema v3)
-//! and the EAN-13 code generator used by `create_item` when the
-//! `auto_generate_barcode` setting is on.
+//! Owns the `brands` and `brand_sequences` tables (introduced in schema v3).
 //!
-//! Code shape: GS1 prefix `890` (India) + 5-digit brand area + 4-digit seq
-//! + EAN-13 check digit = 13 digits.
-//! Example: brand_id=1, seq=1 → body `890000010001` → check `3` → `8900000100013`.
+//! Barcode format is CODE128 (alphanumeric). The barcode value is the SKU
+//! itself (e.g., `AP-WHT-001`). SKU format: `{BRAND_PREFIX}-{NAME_ABBR}-{SEQ:03}`.
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -55,7 +52,7 @@ pub fn list_brands(state: State<'_, AppState>) -> AppResult<Vec<Brand>> {
         let mut stmt = c.prepare(
             "SELECT b.id, b.name, b.prefix, COALESCE(s.next_seq, 1) \
              FROM brands b LEFT JOIN brand_sequences s ON s.brand_id = b.id \
-             ORDER BY b.name ASC",
+             ORDER BY b.name COLLATE NOCASE ASC",
         )?;
         let rows = stmt.query_map([], row_to_brand)?;
         let mut out = Vec::new();
@@ -200,7 +197,13 @@ pub fn preview_next_barcode(
     match brand_id {
         Some(id) => db.with_raw(|conn| {
             let brand = fetch_brand(conn, id)?;
-            Ok(format_ean13_body(id, brand.next_seq))
+            let name_abbr = crate::commands::items::make_name_abbreviation(&item_name);
+            Ok(format!(
+                "{}-{}-{:03}",
+                brand.prefix.to_uppercase(),
+                name_abbr,
+                brand.next_seq
+            ))
         }),
         None => db.with_raw(|conn| {
             let n: i64 = conn
@@ -214,10 +217,11 @@ pub fn preview_next_barcode(
     }
 }
 
-/// Mint and persist the next EAN-13 barcode for a brand.
+/// Mint and persist the next barcode for a brand.
 /// Atomically bumps `brand_sequences.next_seq` and returns the assigned code.
 /// Called from `create_item` inside its transaction so the sequence and the
 /// item row land together (or roll back together).
+#[deprecated(note = "Use SKU as barcode directly — CODE128 supports alphanumeric SKUs")]
 pub fn generate_brand_barcode(
     conn: &rusqlite::Connection,
     brand_id: i64,
@@ -255,10 +259,11 @@ fn format_ean13_body(brand_id: i64, seq: i64) -> String {
     format!("{}{}", body, check)
 }
 
-/// Mint a brand-less EAN-13 barcode (brand_id = NULL).
+/// Mint a brand-less barcode (brand_id = NULL).
 /// Uses a small `no_brand_sequences` table (single row keyed by name='global')
-/// so brand-less items still get unique sequential EAN-13 codes independent
-/// of brand sequences. Shape: `89000000{seq:04}{check}` — 13 digits, EAN-13 valid.
+/// so brand-less items still get unique sequential codes independent
+/// of brand sequences. Returns SKU format: `{NAME_ABBR}-{SEQ:03}`.
+#[deprecated(note = "Use SKU as barcode directly — CODE128 supports alphanumeric SKUs")]
 pub fn generate_no_brand_barcode(conn: &rusqlite::Connection) -> AppResult<String> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS no_brand_sequences (

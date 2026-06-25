@@ -73,6 +73,28 @@ impl Db {
         // Marker table so tooling can recognise a schema_final-bootstrapped DB.
         conn.execute_batch("CREATE TABLE IF NOT EXISTS _schema_final_applied (dummy INTEGER)")?;
 
+        // -- Inline migrations for marker-DBs --------------------------------
+        // Marker-DBs skipped the wipe-and-rebootstrap above, so they keep
+        // their old column constraints. Apply targeted ALTERs here. Each
+        // migration must be idempotent (safe to re-run on already-migrated DBs).
+        //
+        // M-INLINE-001: make purchases.vendor_id nullable so opening-stock
+        // entries can omit a vendor.
+        {
+            let notnull: i64 = conn
+                .query_row(
+                    "SELECT NOT NULL as notnull FROM pragma_table_info('purchases') WHERE name='vendor_id'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if notnull == 1 {
+                conn.execute_batch(
+                    "ALTER TABLE purchases ALTER COLUMN vendor_id DROP NOT NULL",
+                )?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\

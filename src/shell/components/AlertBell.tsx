@@ -7,6 +7,7 @@ import {
   unreadAlertCount,
   markAlertRead,
   markAllAlertsRead,
+  ALERTS_QUERY_KEY,
   type Severity,
   type Alert,
 } from "../../domain/alerts";
@@ -32,8 +33,6 @@ const ROLE_HIERARCHY: Record<Role, number> = {
   owner: 2,
 };
 
-const ALERTS_QUERY_KEY = ["alerts"] as const;
-
 function alertTitle(alert: Alert): string {
   return alert.title;
 }
@@ -51,7 +50,7 @@ export function AlertBell({ currentRole }: AlertBellProps) {
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ALERTS_QUERY_KEY,
+    queryKey: [...ALERTS_QUERY_KEY, "withCount"],
     queryFn: async () => {
       const [alerts, count] = await Promise.all([listAlerts(), unreadAlertCount()]);
       return { alerts, count };

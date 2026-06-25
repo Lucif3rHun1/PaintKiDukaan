@@ -34,11 +34,22 @@ fn canonicalize_and_validate_path<R: tauri::Runtime>(
         return Err("path canonicalization failed".into());
     }
 
+    // Resolve configured backup targets — the canonical path MUST live
+    // inside one of these directories (or the OS temp dir for test-restore).
     let live_db_dir = resolve_live_db_path(app)
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_default();
-    let allowed_dirs: Vec<PathBuf> = vec![live_db_dir, std::env::temp_dir()];
+
+    let targets = crate::backup::list_backup_targets()
+        .map_err(|e| format!("cannot resolve backup targets: {e}"))?;
+    let mut allowed_dirs: Vec<PathBuf> = targets
+        .iter()
+        .map(|t| PathBuf::from(&t.path))
+        .chain(std::iter::once(live_db_dir))
+        .chain(std::iter::once(std::env::temp_dir()))
+        .collect();
+    allowed_dirs.dedup();
 
     let is_allowed = allowed_dirs.iter().any(|dir| {
         if let Ok(canon_dir) = dunce::canonicalize(dir) {
@@ -49,16 +60,8 @@ fn canonicalize_and_validate_path<R: tauri::Runtime>(
     });
 
     if !is_allowed {
-        let ext = canonical.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if ext == "pkb1" {
-            if let Some(parent) = canonical.parent() {
-                if parent.exists() {
-                    return Ok(canonical);
-                }
-            }
-        }
         return Err(format!(
-            "path not in allowed directory: {}",
+            "path not in allowed backup directory: {}",
             canonical.display()
         ));
     }
@@ -69,11 +72,15 @@ fn canonicalize_and_validate_path<R: tauri::Runtime>(
 fn validate_envelope_magic(path: &std::path::Path) -> Result<(), String> {
     use std::io::Read;
     let mut file = std::fs::File::open(path).map_err(|e| format!("cannot read envelope: {e}"))?;
-    let mut magic = [0u8; 4];
-    file.read_exact(&mut magic)
-        .map_err(|_| "envelope too small to contain magic bytes".to_string())?;
-    if &magic != PKB1_MAGIC {
+    let mut header = [0u8; 8];
+    file.read_exact(&mut header)
+        .map_err(|_| "envelope too small to contain header bytes".to_string())?;
+    if &header[0..4] != PKB1_MAGIC {
         return Err("invalid envelope: bad magic bytes".into());
+    }
+    let version = u16::from_be_bytes([header[4], header[5]]);
+    if version == 0 || version > 10 {
+        return Err(format!("invalid envelope: unsupported version {version}"));
     }
     Ok(())
 }
@@ -337,6 +344,7 @@ mod tests {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let mut data = vec![0u8; 64];
         data[..4].copy_from_slice(b"PKB1");
+        data[4..6].copy_from_slice(&1u16.to_be_bytes());
         std::fs::write(tmp.path(), &data).unwrap();
         assert!(validate_envelope_magic(tmp.path()).is_ok());
     }

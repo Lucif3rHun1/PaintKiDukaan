@@ -6,6 +6,7 @@ import {
   InlineDialog,
   Money,
   MoneyInput,
+  DatePicker,
 } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { formatDateForDisplay } from "../../lib/date";
@@ -250,13 +251,7 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
           <div className="grid grid-cols-2 gap-4">
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-foreground">Date *</span>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-                className="input"
-              />
+              <DatePicker value={date} onChange={setDate} />
             </label>
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-foreground">Description</span>

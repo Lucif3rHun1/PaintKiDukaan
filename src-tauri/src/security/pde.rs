@@ -11,6 +11,7 @@ use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
 use crate::error::AppError;
 use crate::obs;
+use crate::security::ipc_auth;
 
 /// Provision a decoy DB with plausible fake data and set up decoy + duress
 /// keywrap rows. Both decoy and duress share the same DEK_decoy so a single
@@ -106,7 +107,7 @@ pub fn provision_decoy_db_impl(
         keywrap::upsert(&conn, &row).map_err(AppError::Db)?;
     }
 
-    conn.close().map_err(|(_, e)| AppError::Db(e))?;
+    conn.close()?;
     Ok(())
 }
 
@@ -169,7 +170,7 @@ pub fn migrate_single_to_pde(db_path: &Path) -> Result<(), AppError> {
         keywrap::upsert(&conn, &row).map_err(AppError::Db)?;
     }
 
-    conn.close().map_err(|(_, e)| AppError::Db(e))?;
+    conn.close()?;
     Ok(())
 }
 
@@ -197,6 +198,7 @@ pub struct PdeStatus {
 /// in the keystore sidecar.
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_pde_status(state: State<'_, AppState>) -> Result<PdeStatus, AppError> {
+    ipc_auth::authorize("get_pde_status", state.inner())?;
     let db_path = state
         .db_path
         .lock()
@@ -225,6 +227,7 @@ pub fn provision_decoy_db(
     duress_pin: String,
     fake_shop_name: String,
 ) -> Result<(), AppError> {
+    ipc_auth::authorize("provision_decoy_db", state.inner())?;
     let db_path = state
         .db_path
         .lock()
@@ -243,6 +246,7 @@ pub fn change_decoy_pin(
     current_real_pin: String,
     new_decoy_pin: String,
 ) -> Result<(), AppError> {
+    ipc_auth::authorize("change_decoy_pin", state.inner())?;
     let db_path = state
         .db_path
         .lock()
@@ -260,7 +264,7 @@ pub fn change_decoy_pin(
 
     keywrap::rewrap_pin(&mut decoy_row, &dek_decoy, &new_decoy_pin)?;
     keywrap::upsert(&conn, &decoy_row)?;
-    conn.close().map_err(|(_, e)| AppError::Db(e))?;
+    conn.close()?;
 
     Ok(())
 }
@@ -274,6 +278,7 @@ pub fn change_duress_pin(
     current_real_pin: String,
     new_duress_pin: String,
 ) -> Result<(), AppError> {
+    ipc_auth::authorize("change_duress_pin", state.inner())?;
     let db_path = state
         .db_path
         .lock()
@@ -291,7 +296,7 @@ pub fn change_duress_pin(
 
     keywrap::rewrap_pin(&mut duress_row, &dek_duress, &new_duress_pin)?;
     keywrap::upsert(&conn, &duress_row)?;
-    conn.close().map_err(|(_, e)| AppError::Db(e))?;
+    conn.close()?;
 
     Ok(())
 }

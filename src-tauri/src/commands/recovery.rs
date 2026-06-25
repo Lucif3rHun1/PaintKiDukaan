@@ -16,6 +16,7 @@ use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
 use crate::error::AppError;
 use crate::obs;
+use crate::security::ipc_auth;
 
 /// Wipe any leftover database files and sidecar before first-launch setup.
 pub(crate) fn wipe_existing_setup(db_path: &Path) -> std::io::Result<()> {
@@ -237,11 +238,7 @@ pub fn set_recovery_passphrase(
     current_pin: String,
     new_passphrase: String,
 ) -> Result<(), AppError> {
-    let session = state.session.lock().unwrap();
-    let session = session.as_ref().ok_or(AppError::NotUnlocked)?;
-    if session.role != "owner" {
-        return Err(AppError::Unauthorized("owner role required".into()));
-    }
+    ipc_auth::authorize("set_recovery_passphrase", state.inner())?;
 
     let db_path = state
         .db_path

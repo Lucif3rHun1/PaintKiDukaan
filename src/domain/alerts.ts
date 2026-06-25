@@ -68,3 +68,7 @@ export async function fetchAlertsWithCount(): Promise<{
   const [alerts, count] = await Promise.all([listAlerts(), unreadAlertCount()]);
   return { alerts, count };
 }
+
+// Shared cache key — AlertBell and Dashboard both read this. Keep in sync
+// with Dashboard's `queryKey: ["alerts"]` (see shell/routes/Dashboard.tsx).
+export const ALERTS_QUERY_KEY = ["alerts"] as const;

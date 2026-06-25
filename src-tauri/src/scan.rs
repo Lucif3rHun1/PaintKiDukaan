@@ -70,17 +70,33 @@ pub fn init<R: tauri::Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn st
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn is_our_process_foreground() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_invalid() {
+            return false;
+        }
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        pid == std::process::id()
+    }
+}
+
 fn run_hook<R: tauri::Runtime>(buffer: Arc<Mutex<WedgeBuffer>>, app: tauri::AppHandle<R>) {
     let callback = move |event: Event| match event.event_type {
-        EventType::KeyPress(Key::ShiftLeft | Key::ShiftRight) => {
-            // Shift state is handled by the OS-level key-to-char translation
-            // downstream — we only buffer the final character here.
-        }
+        EventType::KeyPress(Key::ShiftLeft | Key::ShiftRight) => {}
         EventType::KeyPress(key) => {
-            // Mirror the scan_target check that the HID path uses — the
-            // frontend sets scan_target to one of "" | "sales" | "inward" |
-            // "stocktake"; we only buffer when set, so background typing
-            // doesn't get mis-detected as a scan.
+            // On Windows, only capture keystrokes when our process owns the
+            // foreground window — prevents logging keys from other apps.
+            #[cfg(target_os = "windows")]
+            if !is_our_process_foreground() {
+                return;
+            }
+
             let app_state = app.state::<crate::commands::auth::AppState>();
             let target = app_state.scan_target.read().clone();
             if target.is_empty() {

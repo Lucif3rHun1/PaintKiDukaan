@@ -36,9 +36,9 @@ pub fn list_locations(
     let _ = current_user()?;
     let show_all = include_inactive.unwrap_or(false);
     let sql = if show_all {
-        "SELECT id, name, zone, is_active, created_at FROM locations ORDER BY name"
+        "SELECT id, name, zone, is_active, created_at FROM locations ORDER BY name COLLATE NOCASE"
     } else {
-        "SELECT id, name, zone, is_active, created_at FROM locations WHERE is_active = 1 ORDER BY name"
+        "SELECT id, name, zone, is_active, created_at FROM locations WHERE is_active = 1 ORDER BY name COLLATE NOCASE"
     };
     db.with_raw(|c| {
         let mut stmt = c.prepare(sql)?;

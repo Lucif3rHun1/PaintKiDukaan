@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Money, MoneyInput } from "../../components/ui";
+import { Button, Money, MoneyInput, DatePicker } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { recordCustomerPayment } from "./api";
 import type { AppError, Customer, CustomerOutstanding, RecordCustomerPaymentArgs } from "../types";
@@ -96,13 +96,7 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
           </select>
         </Field>
         <Field label="Date" required>
-          <input
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            type="date"
-            required
-            className="input"
-          />
+          <DatePicker value={date} onChange={setDate} />
         </Field>
       </div>
 

@@ -9,6 +9,7 @@ import {
   ShortcutsHint,
   Skeleton,
 } from "../../components/ui";
+import { DatePicker } from "../../components/ui/DatePicker";
 import type { ColumnDef } from "../../components/ui";
 import { useShortcut } from "../../lib/shortcuts";
 import { formatDateForDisplay } from "../../lib/date";
@@ -107,12 +108,12 @@ export default function SalesReportPage({ user }: Props) {
       .finally(() => setLoading(false));
   }, [user.role, from, to]);
 
-  useShortcut({ key: "t", description: "Set date range to today", onMatch: () => {
+  useShortcut({ key: "t", scope: "page", description: "Set date range to today", onMatch: () => {
     const today = new Date().toISOString().slice(0, 10);
     setFrom(today);
     setTo(today);
   }});
-  useShortcut({ key: "w", description: "Set date range to last 7 days", onMatch: () => {
+  useShortcut({ key: "w", scope: "page", description: "Set date range to last 7 days", onMatch: () => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
     setFrom(d.toISOString().slice(0, 10));
@@ -133,7 +134,7 @@ export default function SalesReportPage({ user }: Props) {
         title="Sales report"
         description="Daily sales breakdown by payment mode."
         action={
-          <div className="flex flex-wrap items-end gap-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
             <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-card p-0.5">
               {[
                 { label: "Today", days: 0 },
@@ -176,21 +177,11 @@ export default function SalesReportPage({ user }: Props) {
             </div>
             <label className="flex items-center gap-1.5 text-muted-foreground">
               From{" "}
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="input px-2 py-1 text-sm appearance-none pr-7"
-              />
+              <DatePicker value={from} onChange={setFrom} />
             </label>
             <label className="flex items-center gap-1.5 text-muted-foreground">
               To{" "}
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="input px-2 py-1 text-sm appearance-none pr-7"
-              />
+              <DatePicker value={to} onChange={setTo} />
             </label>
           </div>
         }

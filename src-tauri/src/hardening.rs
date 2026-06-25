@@ -162,7 +162,9 @@ pub fn autostart_is_enabled<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Resu
 /// Read the BitLocker status of the C: drive. Returns "on", "off",
 /// "suspended", or "unknown".
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn bitlocker_status() -> Result<String, String> {
+pub fn bitlocker_status(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    ipc_auth::authorize("bitlocker_status", state.inner())
+        .map_err(|e| e.to_string())?;
     bitlocker_status_inner().map_err(|e| e.to_string())
 }
 
@@ -170,7 +172,7 @@ fn bitlocker_status_inner() -> Result<String, String> {
     if cfg!(not(target_os = "windows")) {
         return Ok("unknown".into());
     }
-    let output = Command::new("powershell")
+    let output = Command::new(crate::sys_tool::resolve("powershell"))
         .args([
             "-NoProfile",
             "-NonInteractive",

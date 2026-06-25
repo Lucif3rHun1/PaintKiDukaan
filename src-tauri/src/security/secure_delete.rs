@@ -154,13 +154,16 @@ fn random_bytes(n: usize) -> Vec<u8> {
 /// Rename file to a random name then delete (anti-forensic naming).
 fn rename_and_delete(path: &Path) -> Result<(), AppError> {
     let random_name: String = {
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        (0..16u128)
+        let mut seed = [0u8; 16];
+        if getrandom::getrandom(&mut seed).is_err() {
+            // ponytail: getrandom failed, fall back to rand (should never happen)
+            for b in seed.iter_mut() {
+                *b = rand::random::<u8>();
+            }
+        }
+        (0..16usize)
             .map(|i| {
-                let v = ((seed.wrapping_mul(i + 1).wrapping_add(i * 7919)) % 62) as u8;
+                let v = seed[i] % 62;
                 match v {
                     0..=9 => (b'0' + v) as char,
                     10..=35 => (b'a' + v - 10) as char,

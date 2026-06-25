@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import type { PinRole } from "../../domain/types";
+import { isAppError } from "../../domain/types";
 import { type UnlockInput, unlockSchema } from "./pin";
 import { type Role, type Session, type User, useSecurity } from "./state";
 
@@ -20,12 +21,12 @@ interface UnlockResponse {
 }
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-center text-lg font-medium tracking-[0.35em] text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  "h-14 w-full rounded-xl border-2 border-border bg-background px-4 text-center text-2xl font-semibold tracking-[0.5em] text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/20 focus-visible:ring-4 focus-visible:ring-primary/30 disabled:opacity-50";
 const buttonClass =
-  "inline-flex h-11 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground transition-all duration-150 hover:bg-primary/90 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: UnlockResponse): Session {
-  const role: Role = result.user?.role ?? result.role ?? "owner";
+  const role: Role = result.user?.role ?? result.role ?? "stocker";
   const name = result.user?.name ?? result.user_name ?? "Owner";
   const id = result.user?.id ?? result.user_id ?? 0;
   const user: User | null = result.user === null ? null : { id, name, role };
@@ -59,6 +60,7 @@ export function LockScreen() {
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [isWiped, setIsWiped] = useState(false);
   const setPhase = useSecurity((state) => state.setPhase);
+  const lastUser = useSecurity((state) => state.session?.user);
 
   const {
     register,
@@ -104,15 +106,16 @@ export function LockScreen() {
       setFailedAttempts(0);
       setLockedUntil(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("[LOCK-SCREEN] Unlock error:", message);
+      console.error("[LOCK-SCREEN] Unlock error:", error);
 
-      // Check if wiped
-      if (message.includes("data wiped")) {
+      // Check if wiped — typed error from backend
+      if (isAppError(error) && error.code === "wiped") {
         setIsWiped(true);
         setBackendError(null);
         return;
       }
+
+      const message = error instanceof Error ? error.message : String(error);
 
       // Check for lockout with timestamp
       const until = extractLockedUntil(message);
@@ -133,26 +136,18 @@ export function LockScreen() {
     return (
       <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
         <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
-          <div className="w-full rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8">
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-destructive">Data wiped</p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                  Recovery required
-                </h1>
+          <div className="w-full rounded-2xl border border-border bg-card p-8 shadow-2xl">
+            <div className="mb-8 flex flex-col items-center text-center">
+              <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-destructive/10">
+                <img src={logo} alt="" className="h-14 w-14 rounded-xl" />
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-destructive/10">
-                <img
-                  src={logo}
-                  alt=""
-                  className="h-10 w-10 rounded-xl"
-                />
-              </div>
+              <p className="text-sm font-semibold uppercase tracking-[3px] text-destructive">Data wiped</p>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight">Recovery required</h1>
             </div>
 
-            <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm leading-6 text-destructive">
+            <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-5 text-sm leading-6 text-destructive">
               <p className="font-medium">Too many failed attempts — data has been wiped.</p>
-              <p className="mt-1 text-destructive/80">
+              <p className="mt-1.5 text-destructive/80">
                 You must use your recovery passphrase to restore your data and set a new PIN.
               </p>
             </div>
@@ -171,99 +166,108 @@ export function LockScreen() {
   }
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
+    <main className="min-h-screen bg-[radial-gradient(#27272a_0.5px,transparent_1px)] bg-[length:3px_3px] px-4 py-8 text-foreground sm:px-6">
       <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
         <form
-          className="w-full rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8"
+          className="w-full rounded-3xl border border-border bg-card p-8 shadow-2xl"
           onSubmit={handleSubmit(onSubmit)}
         >
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-primary">PaintKiDukaan</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                Enter your PIN
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Enter the 6-digit PIN to unlock the shop database.
-              </p>
+          {/* Branding */}
+          <div className="mb-8 flex flex-col items-center text-center">
+            <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
+              <img src={logo} alt="PaintKiDukaan" className="h-14 w-14 rounded-xl" />
             </div>
-            <img
-              src={logo}
-              alt="PaintKiDukaan"
-              className="h-12 w-12 rounded-xl"
-            />
+            <div className="text-2xl font-semibold tracking-[-0.02em]">PaintKiDukaan</div>
+            <div className="mt-1 text-xs font-medium uppercase tracking-[3px] text-muted-foreground">Paint Shop</div>
+          </div>
+
+          {/* Welcome / Title */}
+          <div className="mb-6 text-center">
+            {lastUser ? (
+              <>
+                <div className="text-xl font-semibold tracking-tight">Welcome back, {lastUser.name}</div>
+                <div className="mt-1.5 inline-flex items-center rounded-full bg-primary/10 px-3 py-0.5 text-xs font-medium text-primary ring-1 ring-primary/20">
+                  {lastUser.role}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xl font-semibold tracking-tight">Enter your PIN</div>
+                <p className="mt-1.5 text-sm text-muted-foreground">Unlock the shop database</p>
+              </>
+            )}
           </div>
 
           {/* Error display */}
           {backendError ? (
             <div
-              className="mb-5 flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+              className="mb-5 flex gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
               role="alert"
             >
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{backendError}</span>
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+              <span className="leading-snug">{backendError}</span>
             </div>
           ) : null}
 
           {/* Lockout timer */}
           {lockedUntil ? (
             <div
-              className="mb-5 flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4"
+              className="mb-5 flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-4"
               role="alert"
             >
-              <Timer className="h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+              <Timer className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
               <div>
-                <p className="text-sm font-medium text-warning">Too many failed attempts</p>
-                <p className="mt-0.5 text-xs text-warning/80">{timeDisplay}</p>
+                <p className="text-sm font-semibold text-warning">Account locked</p>
+                <p className="mt-0.5 text-sm text-warning/80">{timeDisplay}</p>
               </div>
             </div>
           ) : null}
 
           {/* PIN input */}
-          <label className="text-sm font-medium text-foreground" htmlFor="pin">
-            Owner PIN
-          </label>
-          <div className="relative mt-2">
-            <input
-              id="pin"
-              className={inputClass}
-              aria-label="Six digit PIN"
-              aria-invalid={Boolean(errors.pin)}
-              autoComplete="off"
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="••••••"
-              type="password"
-              disabled={!!lockedUntil}
-              {...register("pin")}
-            />
-            <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="pin">
+              Owner PIN
+            </label>
+            <div className="relative">
+              <input
+                id="pin"
+                className={inputClass}
+                aria-label="Six digit PIN"
+                aria-invalid={Boolean(errors.pin)}
+                autoComplete="off"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="••••••"
+                type="password"
+                disabled={!!lockedUntil}
+                {...register("pin")}
+              />
+              <KeyRound className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground/60" aria-hidden="true" />
+            </div>
+            {errors.pin?.message ? (
+              <p className="mt-2 flex items-center gap-1.5 text-sm text-destructive" role="alert">
+                <AlertCircle className="h-4 w-4" aria-hidden="true" />
+                {errors.pin.message}
+              </p>
+            ) : null}
           </div>
-          {errors.pin?.message ? (
-            <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
-              <AlertCircle className="h-4 w-4" aria-hidden="true" />
-              {errors.pin.message}
-            </p>
-          ) : null}
 
-          {/* Attempt counter */}
-          <div className="mt-4 min-h-12 text-sm text-muted-foreground">
+          {/* Attempt counter / hint */}
+          <div className="mt-5 min-h-[52px] text-sm text-muted-foreground">
             {failedAttempts > 0 && !lockedUntil ? (
-              <p role="alert">
-                Failed attempts: <span className="font-medium text-foreground">{failedAttempts}</span>/5
+              <p role="alert" className="rounded-xl bg-muted/50 px-4 py-3">
+                Failed attempts: <span className="font-semibold text-foreground">{failedAttempts}</span>/5
                 {failedAttempts >= 3 && (
-                  <span className="ml-2 text-warning">
-                    — more failures will lock you out
-                  </span>
+                  <span className="ml-2 text-warning">— more failures will lock you out</span>
                 )}
               </p>
             ) : (
-              <p>Your PIN stays in memory only. It is never stored in plain text.</p>
+              <p className="px-1 text-muted-foreground/80">Your PIN stays in memory only. Never stored in plain text.</p>
             )}
           </div>
 
           <button
-            className={`${buttonClass} mt-5`}
+            className={`${buttonClass} mt-2`}
             type="submit"
             disabled={!canSubmit || isSubmitting}
           >
@@ -274,7 +278,7 @@ export function LockScreen() {
           </button>
 
           <button
-            className="mt-5 w-full text-center text-sm font-medium text-primary transition-colors duration-150 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="mt-4 w-full text-center text-sm font-medium text-primary transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             type="button"
             onClick={() => setPhase("restore-recovery")}
           >

@@ -8,10 +8,12 @@ import {
 } from "lucide-react";
 
 import { Card, Section, Button, Badge } from "../../../components/ui";
+import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import { getPdeStatus, changeDecoyPin, changeDuressPin } from "../../../domain/ipc";
 import { changePin, setRecoveryPassphrase } from "../../../lib/security/pin";
 import type { PdeStatus, SecurityPolicy } from "../../../domain/types";
-import { ipc } from "../../lib/ipc";
+import { ipc, type MasterHealth } from "../../lib/ipc";
+import { fetchMasterHealth } from "../../health/api";
 import { toast } from "../../../lib/feedback/toast";
 import { PdeSetupWizard } from "../../../lib/security/pdeSetup";
 import {
@@ -43,22 +45,127 @@ export function BackupSettings() {
 
 export function SecuritySettings() {
   return (
-    <div className="space-y-6">
-      <PdeSettingsCard />
-      <SecurityPolicyCard />
-    </div>
+    <RoleGuard minRole="owner">
+      <div className="space-y-6">
+        <PdeSettingsCard />
+        <SecurityPolicyCard />
+      </div>
+    </RoleGuard>
   );
 }
 
 export function MasterHealthSettings() {
+  const [data, setData] = useState<MasterHealth | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchMasterHealth()
+      .then((d) => setData(d ?? null))
+      .catch((e: unknown) => setError(extractError(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <SkeletonRow count={6} />;
+  if (error) {
+    return (
+      <Card>
+        <Section title="Master health" description="Run diagnostics across data, network, and operations.">
+          <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+            {error}
+          </div>
+        </Section>
+      </Card>
+    );
+  }
+
+  const overallBadge =
+    data?.overall === "ok"
+      ? "bg-success/20 text-success"
+      : data?.overall === "warn"
+        ? "bg-warning/20 text-warning"
+        : "bg-destructive/20 text-destructive";
+
   return (
     <Card>
       <Section title="Master health" description="Run diagnostics across data, network, and operations.">
-        <p className="text-sm text-muted-foreground">
-          Visit the <a href="#/health" className="font-medium text-primary hover:underline">Health page</a> for full diagnostics.
-        </p>
+        <div className="space-y-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Overall</span>
+            {data && (
+              <span className={`rounded px-2 py-0.5 text-xs font-medium ${overallBadge}`}>
+                {data.overall}
+              </span>
+            )}
+          </div>
+
+          <HealthSection title="App">
+            <HealthRow k="Version" v={data?.app.version} />
+            <HealthRow k="WebView2" v={data?.app.webview2} />
+            <HealthRow k="SQLCipher" v={data?.app.sqlcipher} />
+            <HealthRow k="Last backup" v={data?.app.last_backup} />
+            <HealthRow k="Last test-restore" v={data?.app.last_test_restore} />
+          </HealthSection>
+
+          <HealthSection title="System">
+            <HealthRow k="BitLocker (C:)" v={data?.system.bitlocker_c_drive} />
+            <HealthRow k="Disk free (GB)" v={data?.system.disk_free_gb?.toFixed(1)} />
+            <HealthRow k="Sleep prevented" v={data?.system.sleep_prevented ? "yes" : "no"} />
+            <HealthRow k="Auto-lock policy" v={data?.system.auto_lock_policy} />
+          </HealthSection>
+
+          <HealthSection title="Data">
+            <HealthRow k="DB integrity" v={data?.data.db_integrity} />
+            <HealthRow
+              k="Rows"
+              v={data?.data.rows_count
+                ? `sales=${data.data.rows_count.sales}, items=${data.data.rows_count.items}, customers=${data.data.rows_count.customers}`
+                : undefined}
+            />
+            <HealthRow
+              k="Backup age (h)"
+              v={data?.data.backup_age_hours != null
+                ? (data.data.backup_age_hours < 0 ? "never" : String(data.data.backup_age_hours))
+                : undefined}
+            />
+          </HealthSection>
+
+          <HealthSection title="Network">
+            <HealthRow k="mDNS active" v={data?.network.mdns_active ? "yes" : "no"} />
+            <HealthRow k="LAN IP" v={data?.network.lan_ip || "—"} />
+            <HealthRow k="Connected devices" v={data?.network.connected_devices != null ? String(data.network.connected_devices) : undefined} />
+          </HealthSection>
+
+          <HealthSection title="Ops">
+            <HealthRow k="Day-close age (h)" v={data?.ops.day_close_age_hours != null ? String(data.ops.day_close_age_hours) : undefined} />
+            <HealthRow k="Low-stock count" v={data?.ops.low_stock_count != null ? String(data.ops.low_stock_count) : undefined} />
+            <HealthRow k="Pending sales" v={data?.ops.pending_sales != null ? String(data.ops.pending_sales) : undefined} />
+          </HealthSection>
+
+          {data?.checked_at && (
+            <p className="text-xs text-muted-foreground">Checked at {data.checked_at}</p>
+          )}
+        </div>
       </Section>
     </Card>
+  );
+}
+
+function HealthSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-border p-3">
+      <h4 className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{title}</h4>
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
+}
+
+function HealthRow({ k, v }: { k: string; v: string | undefined }) {
+  return (
+    <div className="flex justify-between gap-3 text-sm">
+      <span className="text-muted-foreground">{k}</span>
+      <span className="font-mono text-foreground">{v ?? "—"}</span>
+    </div>
   );
 }
 

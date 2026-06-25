@@ -95,8 +95,6 @@ CREATE TABLE settings (
   currency_code            TEXT    NOT NULL DEFAULT 'INR',
   currency_symbol          TEXT    NOT NULL DEFAULT '₹',
   currency_decimal_places  INTEGER NOT NULL DEFAULT 2,
-  label_printer_name       TEXT,
-  receipt_printer_name     TEXT,
   label_size               TEXT,
   failed_attempts_lockout  INTEGER NOT NULL DEFAULT 5,
   alerts_retention_days    INTEGER NOT NULL DEFAULT 30,
@@ -443,7 +441,7 @@ END;
 CREATE TABLE purchases (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   purchase_number TEXT    NOT NULL UNIQUE,
-  vendor_id       INTEGER NOT NULL REFERENCES vendors(id) ON DELETE NO ACTION,
+  vendor_id       INTEGER REFERENCES vendors(id) ON DELETE NO ACTION,
   location_id     INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
   subtotal_paise  INTEGER NOT NULL DEFAULT 0,
   discount_paise  INTEGER NOT NULL DEFAULT 0,

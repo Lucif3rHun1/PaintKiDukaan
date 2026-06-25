@@ -33,8 +33,9 @@ fn now_millis() -> i64 {
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn list_customer_types(
     state: State<'_, AppState>,
-    include_inactive: bool,
+    include_inactive: Option<bool>,
 ) -> AppResult<Vec<CustomerType>> {
+    let include_inactive = include_inactive.unwrap_or(false);
     let guard = state
         .db
         .lock()
@@ -42,9 +43,9 @@ pub fn list_customer_types(
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?; // any signed-in user
     let sql = if include_inactive {
-        "SELECT id, name, is_active, created_at, updated_at FROM customer_types ORDER BY name"
+        "SELECT id, name, is_active, created_at, updated_at FROM customer_types ORDER BY name COLLATE NOCASE"
     } else {
-        "SELECT id, name, is_active, created_at, updated_at FROM customer_types WHERE is_active = 1 ORDER BY name"
+        "SELECT id, name, is_active, created_at, updated_at FROM customer_types WHERE is_active = 1 ORDER BY name COLLATE NOCASE"
     };
     db.with_raw(|c| {
         let mut stmt = c.prepare(sql)?;

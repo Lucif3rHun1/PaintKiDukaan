@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { customerOutstanding } from "./api";
 import { formatRupeesFromPaise } from "../../lib/money";
+import { toTitleCase } from "../../lib/format/titleCase";
 import type { Customer, CustomerOutstanding } from "../types";
 import { KhataRecord } from "./KhataRecord";
 
@@ -29,7 +30,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
     <div>
       <div className="mb-4 flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-semibold">{customer.name}</h2>
+          <h2 className="text-xl font-semibold">{toTitleCase(customer.name)}</h2>
           <p className="font-mono text-sm text-muted-foreground">{customer.phone}</p>
           {customer.is_flagged && (
             <span className="mt-1 inline-block rounded bg-destructive/10 px-2 py-0.5 text-xs text-destructive">

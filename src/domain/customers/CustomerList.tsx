@@ -5,23 +5,16 @@
 import { useMemo } from "react";
 import { UserPlus, Flag, Phone, Banknote } from "lucide-react";
 
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  DataTable,
-  EmptyState,
-  Money,
-  PaginationControls,
-  SearchInput,
-} from "../../components/ui";
+import { Alert, Badge, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { listCustomers } from "./api";
 import { usePaginatedQuery } from "../../lib/query";
 import type { Customer } from "../types";
 import { extractError } from "../../lib/extractError";
+import { useShortcut } from "../../lib/shortcuts";
+import { toTitleCase } from "../../lib/format/titleCase";
+import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 
 interface Props {
   onSelect?: (c: Customer) => void;
@@ -79,7 +72,7 @@ export function CustomerList({
         cell: (c) => (
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-medium text-foreground">{c.name}</span>
+              <span className="font-medium text-foreground">{toTitleCase(c.name)}</span>
               {c.is_flagged ? (
                 <Badge variant="danger" size="sm">
                   <Flag className="h-3 w-3" />
@@ -168,9 +161,29 @@ export function CustomerList({
 
   const rowClassName = (c: Customer) => (c.is_active ? "" : "opacity-60");
 
+  useFocusShortcut({ key: "F2", selector: '[data-shortcut="search"]', description: "Focus search" });
+  useShortcut({ key: "F5", scope: "page", description: "Refresh list", onMatch: () => { void refetch(); } });
+  useShortcut({
+    key: "F6",
+    scope: "page",
+    description: "New customer",
+    onMatch: () => {
+      if (canCreate && onCreate) onCreate();
+    },
+  });
+  useShortcut({
+    key: "Escape",
+    allowInInputs: true,
+    preventDefault: true,
+    description: "Clear search",
+    onMatch: () => {
+      if (search) setSearch("");
+    },
+  });
+
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold tracking-tight">Customers</h2>
           <p className="text-sm text-muted-foreground">
@@ -185,71 +198,71 @@ export function CustomerList({
             size="md"
             icon={UserPlus}
             onClick={onCreate}
+            shortcut="F6"
           >
             New Customer
           </Button>
         ) : null}
       </header>
 
-      <Card>
-        <Card.Body className="space-y-3">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search by name or phone…"
-            ariaLabel="Search customers"
-          />
+      <div className="space-y-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by name or phone…"
+          ariaLabel="Search customers"
+          data-shortcut="search"
+        />
 
-          {error ? (
-            <Alert title="Could not load customers" variant="destructive">
-              {extractError(error)}
-            </Alert>
-          ) : null}
+        {error ? (
+          <Alert title="Could not load customers" variant="destructive">
+            {extractError(error)}
+          </Alert>
+        ) : null}
 
-          <DataTable
-            data={items}
-            columns={columns}
-            keyExtractor={(c) => c.id}
-            loading={isLoading || isFetching}
-            emptyState={
-              <EmptyState
-                icon={UserPlus}
-                title={search ? "No matches" : "No customers yet"}
-                description={
-                  search
-                    ? `Nothing matches "${search}". Try a different search.`
-                    : "Add the first customer to start recording sales and credit."
-                }
-                primary={
-                  canCreate ? (
-                    <Button
-                      type="button"
-                      onClick={onCreate}
-                      icon={UserPlus}
-                    >
-                      Add Customer
-                    </Button>
-                  ) : undefined
-                }
-              />
-            }
-            error={error}
-            onRetry={refetch}
-            onRowClick={onSelect ? (c) => onSelect(c) : undefined}
-            rowClassName={rowClassName}
-          />
-
-          {!isLoading && allData.length > 0 ? (
-            <PaginationControls
-              page={page}
-              totalPages={totalPages}
-              totalItems={totalItems}
-              pageSize={pageSize}
-              onPageChange={setPage}
+        <DataTable
+          data={items}
+          columns={columns}
+          keyExtractor={(c) => c.id}
+          loading={isLoading || isFetching}
+          emptyState={
+            <EmptyState
+              icon={UserPlus}
+              title={search ? "No matches" : "No customers yet"}
+              description={
+                search
+                  ? `Nothing matches "${search}". Try a different search.`
+                  : "Add the first customer to start recording sales and credit."
+              }
+              primary={
+                canCreate ? (
+                  <Button
+                    type="button"
+                    onClick={onCreate}
+                    icon={UserPlus}
+                  >
+                    Add Customer
+                  </Button>
+                ) : undefined
+              }
             />
-          ) : null}
-        </Card.Body>
-      </Card>
+          }
+          error={error}
+          onRetry={refetch}
+          onRowClick={onSelect ? (c) => onSelect(c) : undefined}
+          rowClassName={rowClassName}
+        />
+
+        {!isLoading && allData.length > 0 ? (
+          <PaginationControls
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

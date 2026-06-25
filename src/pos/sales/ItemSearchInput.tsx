@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Search, ScanBarcode } from "lucide-react";
+import { AlertTriangle, CheckCircle2, PackagePlus, Search, ScanBarcode } from "lucide-react";
 import { listItems, lookupItem } from "../../domain/items/api";
 import { useBarcodeScan } from "../../shell/hooks/useBarcodeScan";
+import { Button } from "../../components/ui";
 import { cn } from "../../components/ui/cn";
+import { toTitleCase } from "../../lib/format/titleCase";
 import type { ItemLookup } from "../../domain/types";
 import type { ItemSearchHit } from "../types";
 
 interface Props {
   onPick: (item: ItemSearchHit) => void;
   allowOutOfStock?: boolean;
+  onCreateItem?: () => void;
 }
 
 type StockStatus = "in-stock" | "low" | "out";
@@ -44,7 +47,7 @@ function stockLabel(item: ItemSearchHit, status: StockStatus): string {
   return `${item.current_qty} in stock`;
 }
 
-export function ItemSearchInput({ onPick, allowOutOfStock = false }: Props) {
+export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem }: Props) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ItemSearchHit[]>([]);
   const [open, setOpen] = useState(false);
@@ -240,6 +243,18 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false }: Props) {
             Scan
           </button>
         </div>
+        {onCreateItem ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={PackagePlus}
+            onClick={onCreateItem}
+            title="Create a new item (uses the full ItemForm)"
+          >
+            New item
+          </Button>
+        ) : null}
       </div>
       {scanHint ? (
         <div
@@ -295,7 +310,7 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false }: Props) {
                         status === "out" ? "text-muted-foreground line-through" : "text-foreground",
                       )}
                     >
-                      {item.name}
+                      {toTitleCase(item.name)}
                     </span>
                     <span
                       className={cn(

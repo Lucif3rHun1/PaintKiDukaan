@@ -301,7 +301,7 @@ pub fn list_customers(
             sql.push_str(&format!(" AND (c.name LIKE ?{} OR c.phone LIKE ?{})", args.len() + 1, args.len() + 1));
             args.push(Box::new(format!("%{}%", q)));
         }
-        sql.push_str(" ORDER BY c.name");
+        sql.push_str(" ORDER BY c.name COLLATE NOCASE");
         let mut stmt = c.prepare(&sql)?;
         let dyn_args: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(dyn_args.as_slice(), |r| {

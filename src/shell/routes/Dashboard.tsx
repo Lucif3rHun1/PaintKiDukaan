@@ -32,6 +32,7 @@ import {
   Alert,
   EmptyState,
 } from "../../components/ui";
+import { AlertBell } from "../components/AlertBell";
 import { SkeletonRow } from "../../components/ui/SkeletonRow";
 import { useSecurity } from "../../lib/security/state";
 import { formatDateForDisplay } from "../../lib/date";
@@ -47,6 +48,7 @@ import { listCustomers } from "../../domain/customers/api";
 import {
   listAlerts,
   markAlertRead,
+  ALERTS_QUERY_KEY,
   type Alert as DomainAlert,
   type Severity,
 } from "../../domain/alerts";
@@ -121,7 +123,7 @@ const severityRank: Record<Severity, number> = {
 export function Dashboard() {
   const session = useSecurity((s) => s.session);
   const userName = session.user?.name ?? "Owner";
-  const role = session.user?.role ?? "owner";
+  const role = session.user?.role ?? "stocker";
   const queryClient = useQueryClient();
 
   const today = startOfTodayIso();
@@ -175,7 +177,7 @@ export function Dashboard() {
   });
 
   const alerts = useQuery({
-    queryKey: ["dashboard", "alerts"],
+    queryKey: [...ALERTS_QUERY_KEY, "list"],
     queryFn: () => listAlerts(),
     refetchInterval: STAGGER.alerts,
   });
@@ -275,20 +277,16 @@ export function Dashboard() {
 
   const handleDismissAlert = async (id: number) => {
     await markAlertRead(id);
-    void queryClient.invalidateQueries({ queryKey: ["dashboard", "alerts"] });
+    void queryClient.invalidateQueries({ queryKey: ALERTS_QUERY_KEY });
   };
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
-          <p className="text-sm text-muted-foreground">
-            Welcome back, {userName}.{" "}
-            <span className="text-foreground/70">Today</span> · {role}
-          </p>
-        </div>
+    <div className="space-y-3">
+      <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-muted-foreground">
+            Welcome back, {userName}.
+          </p>
           {backup.data ? (
             <Badge variant={backupStale ? "warning" : "success"} size="sm">
               <Activity className="h-3 w-3" />
@@ -301,9 +299,8 @@ export function Dashboard() {
             </Badge>
           )}
         </div>
+        <AlertBell currentRole={role} />
       </header>
-
-      <QuickActions dayCloseOverdue={dayClose.data?.overdue ?? false} />
 
       {errorMsg && (
         <Alert title="Some dashboard data is unavailable" variant="warning">

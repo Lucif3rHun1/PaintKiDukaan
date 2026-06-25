@@ -6,6 +6,8 @@
 import { useEffect, useState } from "react";
 import { Button, MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
+import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
+import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import { createItem, listBrands, updateItem, previewNextBarcode } from "./api";
 import { listLocations, listSubLocations } from "../locations/api";
 import { createInward } from "../../pos/api";
@@ -200,16 +202,16 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     }
   }
 
-  function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      onCancel();
-    }
-    if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") {
-      e.preventDefault();
-      void submit();
-    }
-  }
+  // ---- Shortcuts ----
+  // Real <form onSubmit> below — suppress hook's Enter to avoid double-submit.
+  useFormShortcuts({
+    onSubmit: () => void submit(),
+    onCancel,
+    submitOnEnter: false,
+  });
+  useGlobalShortcuts({
+    onSave: () => void submit(),
+  });
 
   const displayBarcode =
     mode === "edit" ? (initial?.barcode ?? "") : predictedBarcode;
@@ -217,16 +219,12 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   return (
     <form
       onSubmit={(e) => void submit(e)}
-      onKeyDown={onKeyDown}
       className="mx-auto w-full max-w-3xl space-y-6"
     >
       <header className="flex items-center justify-between border-b border-border pb-4">
         <h2 className="text-lg font-semibold text-foreground">
           {mode === "create" ? "New item" : `Edit ${initial?.sku_code ?? ""}`}
         </h2>
-        <span className="text-[11px] text-muted-foreground">
-          ⏎ save · Esc cancel
-        </span>
       </header>
 
       {/* Identity */}
@@ -454,7 +452,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         >
           Cancel
         </Button>
-        <Button type="submit" loading={busy} disabled={busy}>
+        <Button type="submit" loading={busy} disabled={busy} shortcut="F9">
           {busy ? "Saving…" : "Save"}
         </Button>
       </div>

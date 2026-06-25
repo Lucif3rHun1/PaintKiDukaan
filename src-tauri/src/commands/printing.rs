@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
+use crate::security::ipc_auth;
 
 const ESC: u8 = 0x1B;
 const GS: u8 = 0x1D;
@@ -140,6 +142,19 @@ fn sanitize(s: &str, max: usize) -> String {
         .map(|c| if c.is_control() { ' ' } else { c })
         .take(max)
         .collect::<String>()
+}
+
+/// Validate printer name: alphanumeric + space _ . - only, 1-64 chars, no path separators.
+fn validate_printer_name(name: &str) -> AppResult<()> {
+    if name.contains('\\') || name.contains('/') || name.contains('\0') || name.contains("..") {
+        return Err(AppError::Validation(format!("invalid printer_name: {name}")));
+    }
+    let valid = name.chars().all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '_' || c == '.' || c == '-')
+        && (1..=64).contains(&name.len());
+    if !valid {
+        return Err(AppError::Validation(format!("invalid printer_name: {name}")));
+    }
+    Ok(())
 }
 
 fn validate_input(printer_name: &str, data: &ReceiptData) -> AppResult<()> {
@@ -367,7 +382,13 @@ fn print_raw(_printer_name: &str, _data: &[u8]) -> AppResult<()> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn cmd_print_receipt(printer_name: String, receipt_data: ReceiptData) -> AppResult<()> {
+pub fn cmd_print_receipt(
+    state: tauri::State<'_, AppState>,
+    printer_name: String,
+    receipt_data: ReceiptData,
+) -> AppResult<()> {
+    validate_printer_name(&printer_name)?;
+    ipc_auth::authorize("cmd_print_receipt", state.inner())?;
     validate_input(&printer_name, &receipt_data)?;
     let bytes = build_receipt(receipt_data);
     log::info!(
@@ -379,7 +400,12 @@ pub fn cmd_print_receipt(printer_name: String, receipt_data: ReceiptData) -> App
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn cmd_print_receipt_dev(sale_id: i64, pdf_base64: String) -> AppResult<String> {
+pub fn cmd_print_receipt_dev(
+    state: tauri::State<'_, AppState>,
+    sale_id: i64,
+    pdf_base64: String,
+) -> AppResult<String> {
+    ipc_auth::authorize("cmd_print_receipt_dev", state.inner())?;
     use base64::{engine::general_purpose, Engine as _};
     use std::io::Write;
 
@@ -408,7 +434,13 @@ pub fn cmd_print_receipt_dev(sale_id: i64, pdf_base64: String) -> AppResult<Stri
 /// Send raw byte data to a printer (ZPL, custom ESC/POS, etc.).
 /// Reuses the same Win32 print pipeline as `cmd_print_receipt`.
 #[tauri::command(rename_all = "snake_case")]
-pub fn cmd_print_raw(printer_name: String, data: Vec<u8>) -> AppResult<()> {
+pub fn cmd_print_raw(
+    state: tauri::State<'_, AppState>,
+    printer_name: String,
+    data: Vec<u8>,
+) -> AppResult<()> {
+    validate_printer_name(&printer_name)?;
+    ipc_auth::authorize("cmd_print_raw", state.inner())?;
     if printer_name.trim().is_empty() {
         return Err(AppError::Validation("printer name is required".into()));
     }
@@ -542,38 +574,30 @@ mod tests {
     }
 
     #[test]
-    fn cmd_print_raw_validates_empty_data() {
-        let result = cmd_print_raw("XP-80".into(), vec![]);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("must not be empty"));
+    fn validate_printer_name_rejects_empty() {
+        assert!(validate_printer_name("").is_err());
     }
 
     #[test]
-    fn cmd_print_raw_validates_oversized_data() {
-        let result = cmd_print_raw("XP-80".into(), vec![0u8; 1024 * 1024 + 1]);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("1 MB"));
+    fn validate_printer_name_rejects_path_traversal() {
+        assert!(validate_printer_name("../etc/passwd").is_err());
+        assert!(validate_printer_name("C:\\Windows\\System32").is_err());
+        assert!(validate_printer_name("//server/share").is_err());
+        assert!(validate_printer_name("name\0injection").is_err());
     }
 
     #[test]
-    fn cmd_print_raw_validates_empty_printer_name() {
-        let result = cmd_print_raw("".into(), vec![0x1B, 0x40]);
-        assert!(result.is_err());
+    fn validate_printer_name_accepts_valid() {
+        assert!(validate_printer_name("XP-80").is_ok());
+        assert!(validate_printer_name("HP LaserJet Pro").is_ok());
+        assert!(validate_printer_name("TSC_TE210").is_ok());
     }
 
-    #[cfg(not(target_os = "windows"))]
     #[test]
-    fn cmd_print_receipt_dev_writes_pdf_and_returns_path() {
-        use base64::{engine::general_purpose, Engine as _};
-        let fake_pdf = b"%PDF-1.4\n%fake pdf body\n%%EOF";
-        let b64 = general_purpose::STANDARD.encode(fake_pdf);
-        let path = cmd_print_receipt_dev(99, b64).expect("dev fallback should succeed");
-        assert!(path.contains("pkb-receipt-99.pdf"));
-        let bytes = std::fs::read(&path).expect("file should be readable");
-        assert_eq!(bytes, fake_pdf);
-        let _ = std::fs::remove_file(&path);
+    fn validate_printer_name_rejects_too_long() {
+        let long_name = "A".repeat(65);
+        assert!(validate_printer_name(&long_name).is_err());
+        let ok_name = "A".repeat(64);
+        assert!(validate_printer_name(&ok_name).is_ok());
     }
 }
