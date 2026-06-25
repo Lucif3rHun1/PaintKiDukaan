@@ -104,6 +104,7 @@ export type ItemLookup =
       sku_code: string;
       name: string;
       retail_price_paise: number;
+      sell_unit: string;
       unit_id: number;
       unit_code: string;
       unit_label: string | null;

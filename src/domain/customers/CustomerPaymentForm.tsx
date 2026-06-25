@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Button, Money, MoneyInput, DatePicker } from "../../components/ui";
+import { Button, Money, MoneyInput, DatePicker, Select } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
+import { extractError } from "../../lib/extractError";
 import { recordCustomerPayment } from "./api";
 import type { AppError, Customer, CustomerOutstanding, RecordCustomerPaymentArgs } from "../types";
 
@@ -10,7 +11,14 @@ interface Props {
   onCancel?: () => void;
 }
 
-const MODES = ["cash", "upi", "card", "cheque", "neft", "other"];
+const MODES = [
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "card", label: "Card" },
+  { value: "cheque", label: "Cheque" },
+  { value: "neft", label: "NEFT" },
+  { value: "other", label: "Other" },
+];
 
 export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
   const [amount, setAmount] = useState(0);
@@ -43,14 +51,13 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
         {
           loading: "Recording payment…",
           success: () => `Payment from ${customer.name} recorded`,
-          error: (e) => (e as AppError)?.message ?? "Save failed",
+          error: (e) => extractError(e),
         },
       );
       setOutstanding(out);
       onSaved?.(out);
     } catch (e) {
-      const err = e as AppError;
-      setError(err.message ?? "Save failed");
+      setError(extractError(e));
     } finally {
       setBusy(false);
     }
@@ -83,17 +90,12 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="Mode" required>
-          <select
+          <Select
             value={mode}
             onChange={(e) => setMode(e.target.value)}
-            className="input"
-          >
-            {MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            options={MODES}
+            size="md"
+          />
         </Field>
         <Field label="Date" required>
           <DatePicker value={date} onChange={setDate} />

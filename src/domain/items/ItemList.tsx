@@ -33,6 +33,7 @@ import {
   Money,
   PaginationControls,
   SearchInput,
+  Select,
   Skeleton,
 } from "../../components/ui";
 import { formatRupeesFromPaise } from "../../lib/money";
@@ -413,7 +414,7 @@ export function ItemList({ role }: Props) {
           Archived
         </label>
 
-        <select
+        <Select
           value={`${sortField}:${sortDirection}`}
           onChange={(e) => {
             const [field, direction] = e.target.value.split(":");
@@ -421,17 +422,19 @@ export function ItemList({ role }: Props) {
             setSortDirection(direction as SortDirection);
             setPage(1);
           }}
-          className="input h-9 w-auto text-xs pr-8 appearance-none"
+          className="w-auto"
+          size="sm"
           aria-label="Sort inventory"
-        >
-          <option value="name:asc">Name A-Z</option>
-          <option value="name:desc">Name Z-A</option>
-          <option value="sku:asc">SKU A-Z</option>
-          <option value="stock:asc">Lowest stock</option>
-          <option value="stock:desc">Highest stock</option>
-          <option value="retail:desc">Highest retail</option>
-          <option value="retail:asc">Lowest retail</option>
-        </select>
+          options={[
+            { value: "name:asc", label: "Name A-Z" },
+            { value: "name:desc", label: "Name Z-A" },
+            { value: "sku:asc", label: "SKU A-Z" },
+            { value: "stock:asc", label: "Lowest stock" },
+            { value: "stock:desc", label: "Highest stock" },
+            { value: "retail:desc", label: "Highest retail" },
+            { value: "retail:asc", label: "Lowest retail" },
+          ]}
+        />
 
         <div className="h-5 w-px bg-border" />
 

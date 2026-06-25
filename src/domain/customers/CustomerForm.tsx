@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button } from "../../components/ui";
+import { Button, Select } from "../../components/ui";
 import { createCustomer, updateCustomer } from "./api";
 import type {
   AppError,
@@ -105,18 +105,15 @@ export function CustomerForm({
       </Field>
 
       <Field label="Type">
-        <select
+        <Select
           value={typeId}
           onChange={(e) => setTypeId(e.target.value)}
-          className="input"
-        >
-          <option value="">—</option>
-          {types.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "—" },
+            ...types.map((t) => ({ value: String(t.id), label: t.name })),
+          ]}
+          size="md"
+        />
       </Field>
 
       <Field label="Opening balance (₹)">

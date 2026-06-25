@@ -18,6 +18,7 @@ import { getSetting, listItems, listLabelPrints, recordLabelPrint } from "./api"
 import type { Item, LabelPrintRecord } from "../types";
 import { ipc } from "../../shell/lib/ipc";
 import { BarcodeThumb } from "./BarcodeThumb";
+import { Select } from "../../components/ui/Select";
 import {
   buildLabelPdfBlob,
   LOCKED_FORMAT,
@@ -352,22 +353,22 @@ export function BulkLabelsPage() {
         {/* Item picker */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">Item</label>
-          <select
+          <Select
             data-shortcut="item-picker"
-            value={selectedItemId}
+            value={selectedItemId === "" ? "" : String(selectedItemId)}
             onChange={(e) =>
               setSelectedItemId(e.target.value ? Number(e.target.value) : "")
             }
-            className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            options={[
+              { value: "", label: "— Pick an item —" },
+              ...items.map((i) => ({
+                value: String(i.id),
+                label: `${i.name} (${i.sku_code})${i.barcode ? ` · ${i.barcode}` : " · (no barcode)"}`,
+              })),
+            ]}
+            size="md"
             disabled={loadingItems}
-          >
-            <option value="">— Pick an item —</option>
-            {items.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name} ({i.sku_code}){i.barcode ? ` · ${i.barcode}` : " · (no barcode)"}
-              </option>
-            ))}
-          </select>
+          />
           {itemError && <p className="text-xs text-destructive">{itemError}</p>}
         </div>
 
@@ -436,47 +437,45 @@ export function BulkLabelsPage() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Printer</label>
-            <select
+            <Select
               value={printer}
               onChange={(e) => setPrinter(e.target.value as PrinterType)}
-              className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="thermal">Thermal</option>
-              <option value="laser-a4">Laser (A4 sheet)</option>
-            </select>
+              options={[
+                { value: "thermal", label: "Thermal" },
+                { value: "laser-a4", label: "Laser (A4 sheet)" },
+              ]}
+              size="md"
+            />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">
               {printer === "thermal" ? "Label size" : "Labels per A4"}
             </label>
-            <select
+            <Select
               value={sizeChoice}
               onChange={(e) => setSizeChoice(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-            >
-              {PRINTER_PRESETS[printer].map((p) => (
-                <option key={p} value={p}>
-                  {printer === "thermal" && THERMAL_SIZES[p as ThermalSize]
+              options={PRINTER_PRESETS[printer].map((p) => ({
+                value: String(p),
+                label:
+                  printer === "thermal" && THERMAL_SIZES[p as ThermalSize]
                     ? THERMAL_SIZES[p as ThermalSize].label
-                    : `${p}${printer === "laser-a4" ? " per sheet" : " mm"}`}
-                </option>
-              ))}
-            </select>
+                    : `${p}${printer === "laser-a4" ? " per sheet" : " mm"}`,
+              }))}
+              size="md"
+            />
           </div>
           {printer === "thermal" && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Labels per row</label>
-              <select
-                value={labelsPerRow}
+              <Select
+                value={String(labelsPerRow)}
                 onChange={(e) => setLabelsPerRow(Number(e.target.value) || 1)}
-                className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              >
-                {[1, 2, 3, 4].map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
+                options={[1, 2, 3, 4].map((value) => ({
+                  value: String(value),
+                  label: String(value),
+                }))}
+                size="md"
+              />
             </div>
           )}
         </div>

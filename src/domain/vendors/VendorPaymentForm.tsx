@@ -4,7 +4,7 @@
  */
 import { useState } from "react";
 import { recordVendorPayment } from "./api";
-import { Button, Money, DatePicker } from "../../components/ui";
+import { Button, Money, DatePicker, Select } from "../../components/ui";
 import { type AppError, type Vendor, type VendorOutstanding } from "../types";
 
 interface Props {
@@ -13,7 +13,14 @@ interface Props {
   onCancel?: () => void;
 }
 
-const MODES = ["cash", "upi", "card", "cheque", "neft", "other"];
+const MODES = [
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "card", label: "Card" },
+  { value: "cheque", label: "Cheque" },
+  { value: "neft", label: "NEFT" },
+  { value: "other", label: "Other" },
+];
 
 export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
   const [amount, setAmount] = useState("");
@@ -86,17 +93,12 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="Mode" required>
-          <select
+          <Select
             value={mode}
             onChange={(e) => setMode(e.target.value)}
-            className="input"
-          >
-            {MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            options={MODES}
+            size="md"
+          />
         </Field>
         <Field label="Date" required>
           <DatePicker value={date} onChange={setDate} />

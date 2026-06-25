@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
-import { Button } from "../../components/ui";
+import { Button, Select } from "../../components/ui";
 import { createUnit, type UnitDimension } from "./api";
 import type { Unit } from "../types";
 
@@ -25,7 +25,7 @@ export function CreateUnitForm({ onSaved, onCancel }: Props) {
   return <form onSubmit={submit} onKeyDown={onKeyDown} className="space-y-3">
     <Field label="Code" required><input autoFocus value={code} onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 4))} required maxLength={4} className="input" /></Field>
     <Field label="Label"><input value={label} onChange={(e) => setLabel(e.target.value)} className="input" /></Field>
-    <Field label="Dimension" required><select value={dimension} onChange={(e) => setDimension(e.target.value as UnitDimension)} className="input"><option value="volume">volume</option><option value="mass">mass</option><option value="area">area</option><option value="count">count</option></select></Field>
+    <Field label="Dimension" required><Select value={dimension} onChange={(e) => setDimension(e.target.value as UnitDimension)} size="md" options={[{ value: "volume", label: "Volume" }, { value: "mass", label: "Mass" }, { value: "area", label: "Area" }, { value: "count", label: "Count" }]} /></Field>
     {error && <p className="text-sm text-destructive">{error}</p>}
     <div className="flex justify-end gap-2 border-t border-border pt-4">
       <Button type="button" variant="secondary" onClick={onCancel} disabled={busy}>Cancel</Button>

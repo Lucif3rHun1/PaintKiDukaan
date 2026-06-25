@@ -7,12 +7,14 @@ import {
   Money,
   MoneyInput,
   DatePicker,
+  Select,
 } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { formatDateForDisplay } from "../../lib/date";
 import { fetchCustomerLedger, createCustomerCreditInvoice } from "./api";
 import { listItems } from "../items/api";
 import { toast } from "../../lib/feedback/toast";
+import { extractError } from "../../lib/extractError";
 import type {
   AppError,
   Customer,
@@ -227,12 +229,12 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
         {
           loading: "Creating credit invoice…",
           success: () => "Credit invoice created",
-          error: (err: unknown) => (err as AppError).message ?? "Save failed",
+          error: (err: unknown) => extractError(err),
         },
       );
       onSaved();
     } catch (err) {
-      setError((err as AppError).message ?? "Save failed");
+      setError(extractError(err));
     } finally {
       setBusy(false);
     }
@@ -270,19 +272,19 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
               {lines.map((line, idx) => (
                 <div key={idx} className="grid grid-cols-12 items-end gap-2">
                   <div className="col-span-5">
-                    <select
-                      value={line.item_id}
+                    <Select
+                      value={String(line.item_id)}
                       onChange={(e) => updateLine(idx, { item_id: Number(e.target.value) })}
                       required
-                      className="input"
-                    >
-                      <option value={0}>Select item…</option>
-                      {items.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} ({item.unit_code})
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: "0", label: "Select item…" },
+                        ...items.map((item) => ({
+                          value: String(item.id),
+                          label: `${item.name} (${item.unit_code})`,
+                        })),
+                      ]}
+                      size="md"
+                    />
                   </div>
                   <div className="col-span-2">
                     <input

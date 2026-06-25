@@ -4,7 +4,7 @@
  * Keyboard: Enter submits, Esc cancels (except inside <textarea>).
  */
 import { useEffect, useState } from "react";
-import { Button, MoneyInput } from "../../components/ui";
+import { Button, MoneyInput, Select } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
@@ -25,6 +25,7 @@ import type {
   SubLocation,
 } from "../types";
 import { listUnits } from "../units/api";
+import { extractError } from "../../lib/extractError";
 
 type Mode = "create" | "edit";
 
@@ -168,7 +169,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         const item = await toast.promise(createItem(base as NewItem), {
           loading: "Saving item…",
           success: (it) => `Added ${it.name}`,
-          error: (err) => (err as AppError)?.message ?? "Save failed",
+          error: (err) => extractError(err),
         });
         const openingQty = Number(openingStock) || 0;
         if (openingQty > 0 && item.primary_location_id) {
@@ -191,12 +192,12 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         const item = await toast.promise(updateItem(initial.id, base), {
           loading: "Saving changes…",
           success: (it) => `Updated ${it.name}`,
-          error: (err) => (err as AppError)?.message ?? "Save failed",
+          error: (err) => extractError(err),
         });
         onSaved(item);
       }
     } catch (err) {
-      setError((err as AppError)?.message ?? "Save failed");
+      setError(extractError(err));
     } finally {
       setBusy(false);
     }
@@ -239,34 +240,33 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Brand">
-            <select
-              value={brandId ?? 0}
+            <Select
+              value={String(brandId ?? 0)}
               onChange={(e) =>
                 setBrandId(e.target.value === "0" ? null : Number(e.target.value))
               }
-              className="input"
-            >
-              <option value={0}>— None —</option>
-              {brands.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} ({b.prefix})
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "0", label: "— None —" },
+                ...brands.map((b) => ({
+                  value: String(b.id),
+                  label: `${b.name} (${b.prefix})`,
+                })),
+              ]}
+              size="md"
+            />
           </Field>
           <Field label="Category">
-            <select
+            <Select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="input"
-            >
-              <option value="">— None —</option>
-              {categories.filter((c) => c.is_active).map((c) => (
-                <option key={c.id} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "— None —" },
+                ...categories
+                  .filter((c) => c.is_active)
+                  .map((c) => ({ value: c.name, label: c.name })),
+              ]}
+              size="md"
+            />
             {categories.filter((c) => c.is_active).length === 0 ? (
               <span className="mt-1 block text-[10px] text-warning">
                 No categories configured — add categories in Settings.
@@ -280,18 +280,20 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       <Section title="Units & pricing">
         <div className="grid grid-cols-2 gap-4">
           <Field label="Unit">
-            <select
-              value={unitId ?? 0}
+            <Select
+              value={String(unitId ?? 0)}
               onChange={(e) => setUnitId(Number(e.target.value) || null)}
-              className="input"
-            >
-              <option value={0}>— Select unit —</option>
-              {units.filter((u) => u.is_active).map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.label ?? u.code}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "0", label: "— Select unit —" },
+                ...units
+                  .filter((u) => u.is_active)
+                  .map((u) => ({
+                    value: String(u.id),
+                    label: u.label ?? u.code,
+                  })),
+              ]}
+              size="md"
+            />
             {units.filter((u) => u.is_active).length === 0 ? (
               <span className="mt-1 block text-[10px] text-warning">
                 No units configured — add units in Settings.
@@ -380,33 +382,33 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           required
           error={fieldErrors.primary_location_id}
         >
-          <select
-            value={primaryLocationId}
+          <Select
+            value={String(primaryLocationId)}
             onChange={(e) => setPrimaryLocationId(Number(e.target.value))}
-            className="input"
-          >
-            <option value={0}>Select location…</option>
-            {locations.map((loc) => (
-              <option key={loc.id} value={loc.id}>
-                {loc.name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "0", label: "Select location…" },
+              ...locations.map((loc) => ({
+                value: String(loc.id),
+                label: loc.name,
+              })),
+            ]}
+            size="md"
+          />
         </Field>
         {subLocations.length > 0 && (
           <Field label="Sub-location">
-            <select
-              value={subLocationId ?? 0}
+            <Select
+              value={String(subLocationId ?? 0)}
               onChange={(e) => setSubLocationId(Number(e.target.value) || null)}
-              className="input"
-            >
-              <option value={0}>— None —</option>
-              {subLocations.map((sub) => (
-                <option key={sub.id} value={sub.id}>
-                  {sub.name}{sub.position ? ` (${sub.position})` : ""}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "0", label: "— None —" },
+                ...subLocations.map((sub) => ({
+                  value: String(sub.id),
+                  label: `${sub.name}${sub.position ? ` (${sub.position})` : ""}`,
+                })),
+              ]}
+              size="md"
+            />
           </Field>
         )}
         <Field label="Position">
