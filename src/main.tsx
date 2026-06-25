@@ -10,10 +10,13 @@ import { queryClient } from "./lib/query/queryClient";
 import "./index.css";
 
 // Must run BEFORE React mounts so console overrides are in place before any
-// component renders. Calling initSessionLog() inside App()'s render body is
-// unsafe — see the docstring on initSessionLog for details.
+// component renders.
 applyInitialTheme();
 initSessionLog();
+
+if (import.meta.env.PROD) {
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
