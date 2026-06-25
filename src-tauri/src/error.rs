@@ -2,13 +2,12 @@
 //!
 //! This is the SINGLE source of truth for `AppError` / `AppResult`.
 //! Every command, security module, and crypto helper imports from here.
-//! The serialized form is `{code: string, message: string}` — the frontend
+//! The serialized form is `{code, message, user_message}` — the frontend
 //! `isAppError()` type guard in `src/domain/types.ts` depends on this.
-//!
 //! `user_message()` is what the frontend renders in toasts. The default
 //! `Display` impl (`to_string()`) leaks internals (e.g. raw SQL strings,
-//! "locked out until unix 1700000000"). Always serialize `user_message()`,
-//! never `to_string()`.
+//! "locked out until unix 1700000000"); `Serialize` emits that raw form
+//! as `message` so backend logs preserve traceback.
 
 use serde::{Serialize, Serializer};
 
@@ -167,9 +166,13 @@ fn locked_out_message(until_unix_ms: u64) -> String {
 impl Serialize for AppError {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("AppError", 2)?;
+        let mut st = s.serialize_struct("AppError", 3)?;
         st.serialize_field("code", self.code())?;
-        st.serialize_field("message", &self.user_message())?;
+        // Raw underlying error — kept in the payload so backend logs
+        // (e.g. `[IPC:ERR]`) preserve traceback. May leak internals.
+        st.serialize_field("message", &self.to_string())?;
+        // Human-friendly toast text. Frontend extractError() prefers this.
+        st.serialize_field("user_message", &self.user_message())?;
         st.end()
     }
 }
