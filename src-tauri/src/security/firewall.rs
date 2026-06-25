@@ -7,6 +7,8 @@
 //! On non-Windows, all functions return safe defaults or unsupported.
 
 use serde::Serialize;
+#[cfg(target_os = "windows")]
+use std::ffi::c_void;
 
 use crate::error::AppError;
 
@@ -412,15 +414,17 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
         let local_bstr = alloc_bstr("*");
 
         unsafe {
-            (rule.put_name)(rule_ptr as *mut win::INetFwRule, name_bstr);
-            (rule.put_application_name)(rule_ptr as *mut win::INetFwRule, app_bstr);
-            (rule.put_direction)(rule_ptr as *mut win::INetFwRule, win::NET_FW_RULE_DIR_OUT);
-            (rule.put_action)(rule_ptr as *mut win::INetFwRule, win::NET_FW_ACTION_BLOCK);
-            (rule.put_remote_addresses)(rule_ptr as *mut win::INetFwRule, remote_bstr);
-            (rule.put_local_addresses)(rule_ptr as *mut win::INetFwRule, local_bstr);
-            (rule.put_enabled)(rule_ptr as *mut win::INetFwRule, -1); // VARIANT_TRUE
+            let vtbl = &*rule.vtable;
+            (vtbl.put_name)(rule_ptr as *mut win::INetFwRule, name_bstr);
+            (vtbl.put_application_name)(rule_ptr as *mut win::INetFwRule, app_bstr);
+            (vtbl.put_direction)(rule_ptr as *mut win::INetFwRule, win::NET_FW_RULE_DIR_OUT);
+            (vtbl.put_action)(rule_ptr as *mut win::INetFwRule, win::NET_FW_ACTION_BLOCK);
+            (vtbl.put_remote_addresses)(rule_ptr as *mut win::INetFwRule, remote_bstr);
+            (vtbl.put_local_addresses)(rule_ptr as *mut win::INetFwRule, local_bstr);
+            (vtbl.put_enabled)(rule_ptr as *mut win::INetFwRule, -1); // VARIANT_TRUE
 
-            let hr = (rules.add)(rules_ptr as *mut win::INetFwRules, rule_ptr);
+            let rules_vtbl = &*rules.vtable;
+            let hr = (rules_vtbl.add)(rules_ptr as *mut win::INetFwRules, rule_ptr);
             if hr == win::S_OK {
                 report.outbound_blocked = true;
             } else {
@@ -435,7 +439,9 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
             win::SysFreeString(local_bstr);
         }
 
-        release_com(rule_ptr);
+        unsafe {
+            release_com(rule_ptr);
+        }
     } else {
         report
             .errors
@@ -464,15 +470,17 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
         let remote_bstr = alloc_bstr("127.0.0.1");
 
         unsafe {
-            (rule.put_name)(rule_ptr as *mut win::INetFwRule, name_bstr);
-            (rule.put_application_name)(rule_ptr as *mut win::INetFwRule, app_bstr);
-            (rule.put_direction)(rule_ptr as *mut win::INetFwRule, win::NET_FW_RULE_DIR_OUT);
-            (rule.put_action)(rule_ptr as *mut win::INetFwRule, win::NET_FW_ACTION_ALLOW);
-            (rule.put_local_addresses)(rule_ptr as *mut win::INetFwRule, local_bstr);
-            (rule.put_remote_addresses)(rule_ptr as *mut win::INetFwRule, remote_bstr);
-            (rule.put_enabled)(rule_ptr as *mut win::INetFwRule, -1); // VARIANT_TRUE
+            let vtbl = &*rule.vtable;
+            (vtbl.put_name)(rule_ptr as *mut win::INetFwRule, name_bstr);
+            (vtbl.put_application_name)(rule_ptr as *mut win::INetFwRule, app_bstr);
+            (vtbl.put_direction)(rule_ptr as *mut win::INetFwRule, win::NET_FW_RULE_DIR_OUT);
+            (vtbl.put_action)(rule_ptr as *mut win::INetFwRule, win::NET_FW_ACTION_ALLOW);
+            (vtbl.put_local_addresses)(rule_ptr as *mut win::INetFwRule, local_bstr);
+            (vtbl.put_remote_addresses)(rule_ptr as *mut win::INetFwRule, remote_bstr);
+            (vtbl.put_enabled)(rule_ptr as *mut win::INetFwRule, -1); // VARIANT_TRUE
 
-            let hr = (rules.add)(rules_ptr as *mut win::INetFwRules, rule_ptr);
+            let rules_vtbl = &*rules.vtable;
+            let hr = (rules_vtbl.add)(rules_ptr as *mut win::INetFwRules, rule_ptr);
             if hr == win::S_OK {
                 report.loopback_allowed = true;
             } else {
@@ -487,15 +495,19 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
             win::SysFreeString(remote_bstr);
         }
 
-        release_com(rule_ptr);
+        unsafe {
+            release_com(rule_ptr);
+        }
     } else {
         report.errors.push(format!(
             "CoCreateInstance(INetFwRule) for loopback failed: 0x{hr:08X}"
         ));
     }
 
-    release_com(rules_ptr);
-    release_com(policy_ptr);
+    unsafe {
+        release_com(rules_ptr);
+        release_com(policy_ptr);
+    }
     unsafe {
         win::CoUninitialize();
     }
@@ -552,13 +564,16 @@ fn windows_unblock() -> Result<(), AppError> {
     for rule_name in &[RULE_NAME_OUTBOUND, RULE_NAME_LOOPBACK] {
         let name_bstr = alloc_bstr(rule_name);
         unsafe {
-            (rules.remove)(rules_ptr as *mut win::INetFwRules, name_bstr);
+            let rules_vtbl = &*rules.vtable;
+            (rules_vtbl.remove)(rules_ptr as *mut win::INetFwRules, name_bstr);
             win::SysFreeString(name_bstr);
         }
     }
 
-    release_com(rules_ptr);
-    release_com(policy_ptr);
+    unsafe {
+        release_com(rules_ptr);
+        release_com(policy_ptr);
+    }
     unsafe {
         win::CoUninitialize();
     }
@@ -601,7 +616,9 @@ fn windows_is_firewall_enabled() -> bool {
         );
     }
 
-    release_com(policy_ptr);
+    unsafe {
+        release_com(policy_ptr);
+    }
     unsafe {
         win::CoUninitialize();
     }
