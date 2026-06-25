@@ -265,7 +265,7 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
         } else if auto_generate {
             if let Some(_brand_id) = payload.brand_id {
                 // Still bump brand_sequences so the counter stays in sync
-                // even though we don't use the EAN-13 value anymore.
+                // even though we don't use the return value anymore.
                 #[allow(deprecated)]
                 let _ = crate::commands::brands::generate_brand_barcode(tx, _brand_id, &payload.name);
                 sku.clone()

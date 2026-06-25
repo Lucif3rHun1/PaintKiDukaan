@@ -244,137 +244,44 @@ pub fn generate_brand_barcode(
             brand.name
         )));
     }
-    Ok(format_ean13_body(brand_id, seq))
-}
-
-/// Build a 12-digit EAN-13 body for a (brand_id, sequence) pair and append
-/// the check digit. Returns a 13-digit string.
-fn format_ean13_body(brand_id: i64, seq: i64) -> String {
-    let body = format!(
-        "890{:05}{:04}",
+    Ok(format!(
+        "BR{:05}{:04}",
         (brand_id as u64).min(99_999),
         (seq as u64).min(9999)
-    );
-    let check = ean13_check_digit(&body);
-    format!("{}{}", body, check)
-}
-
-/// Mint a brand-less barcode (brand_id = NULL).
-/// Uses a small `no_brand_sequences` table (single row keyed by name='global')
-/// so brand-less items still get unique sequential codes independent
-/// of brand sequences. Returns SKU format: `{NAME_ABBR}-{SEQ:03}`.
-#[deprecated(note = "Use SKU as barcode directly — CODE128 supports alphanumeric SKUs")]
-pub fn generate_no_brand_barcode(conn: &rusqlite::Connection) -> AppResult<String> {
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS no_brand_sequences (
-            name TEXT PRIMARY KEY,
-            next_seq INTEGER NOT NULL DEFAULT 1
-        )",
-        [],
-    )?;
-    conn.execute(
-        "INSERT OR IGNORE INTO no_brand_sequences (name, next_seq) VALUES ('global', 1)",
-        [],
-    )?;
-    conn.execute(
-        "UPDATE no_brand_sequences SET next_seq = next_seq + 1 WHERE name = 'global'",
-        [],
-    )?;
-    let next_seq: i64 = conn.query_row(
-        "SELECT next_seq FROM no_brand_sequences WHERE name = 'global'",
-        [],
-        |r| r.get(0),
-    )?;
-    let seq = next_seq - 1;
-    if seq < 0 || seq > 9999 {
-        return Err(AppError::Conflict(
-            "brand-less sequence exhausted (max 9999 codes)".into(),
-        ));
-    }
-    let body = format!("89000000{:04}", seq);
-    Ok(format!("{}{}", body, ean13_check_digit(&body)))
-}
-
-/// EAN-13 check digit: weight odd positions × 1, even positions × 3,
-/// sum mod 10, then (10 - mod) mod 10.
-fn ean13_check_digit(body12: &str) -> u8 {
-    let digits: Vec<u8> = body12
-        .bytes()
-        .filter_map(|b| (b as char).to_digit(10))
-        .map(|d| d as u8)
-        .collect();
-    let sum: u32 = digits
-        .iter()
-        .enumerate()
-        .map(|(i, &d)| {
-            let weight = if i % 2 == 0 { 1 } else { 3 };
-            d as u32 * weight
-        })
-        .sum();
-    ((10 - (sum % 10)) % 10) as u8
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ean13_check_digit, format_ean13_body, generate_no_brand_barcode};
     use crate::db::Db;
 
     #[test]
-    fn ean13_check_known_values() {
-        // Standard test vectors from GS1 spec.
-        assert_eq!(ean13_check_digit("590123412345"), 7);
-        assert_eq!(ean13_check_digit("978020137962"), 4);
-        assert_eq!(ean13_check_digit("400638133393"), 1);
-    }
-
-    #[test]
-    fn format_body_appends_check() {
-        let code = format_ean13_body(1, 1);
-        assert_eq!(code.len(), 13);
-        assert!(code.starts_with("890"));
-        // Validate the check digit in the full string.
-        let (body, check) = code.split_at(12);
-        let expected = ean13_check_digit(body).to_string();
-        assert_eq!(check, expected);
-    }
-
-    #[test]
-    fn format_body_zero_seq() {
-        let code = format_ean13_body(42, 0);
-        assert_eq!(
-            code,
-            format!("89000042{:04}{}", 0, ean13_check_digit("890000420000"))
-        );
-    }
-
-    #[test]
-    fn no_brand_barcode_is_valid_ean13() {
+    fn generate_brand_barcode_returns_code128_compatible() {
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
-            let code = generate_no_brand_barcode(c).unwrap();
-            assert_eq!(code.len(), 13, "must be 13 digits");
-            assert!(code.starts_with("89000000"), "brand-less prefix: {code}");
-            assert!(
-                code.chars().all(|c| c.is_ascii_digit()),
-                "must be all digits: {code}"
-            );
-            // Validate the check digit.
-            let (body, check) = code.split_at(12);
-            let expected = ean13_check_digit(body).to_string();
-            assert_eq!(check, expected, "check digit mismatch");
-        });
-    }
-
-    #[test]
-    fn no_brand_barcode_is_monotonically_unique() {
-        let db = Db::open_in_memory().unwrap();
-        db.with_raw(|c| {
-            let first = generate_no_brand_barcode(c).unwrap();
-            let second = generate_no_brand_barcode(c).unwrap();
-            let third = generate_no_brand_barcode(c).unwrap();
-            assert_ne!(first, second);
-            assert_ne!(second, third);
-            assert_ne!(first, third);
+            c.execute(
+                "CREATE TABLE brands (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, prefix TEXT NOT NULL)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "CREATE TABLE brand_sequences (brand_id INTEGER PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 1)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO brands (id, name, prefix) VALUES (1, 'Test', 'TE')",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO brand_sequences (brand_id, next_seq) VALUES (1, 1)",
+                [],
+            )
+            .unwrap();
+            let code = super::generate_brand_barcode(c, 1, "item").unwrap();
+            assert!(code.starts_with("BR"));
+            assert!(code.chars().all(|c| c.is_ascii_alphanumeric()));
         });
     }
 }
