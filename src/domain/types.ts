@@ -383,6 +383,8 @@ export interface AppError {
     | "log_injection"
     | "io";
   message: string;
+  /** Human-friendly toast text. Falls back to `message` if absent. */
+  user_message?: string;
 }
 
 export function isAppError(e: unknown): e is AppError {
