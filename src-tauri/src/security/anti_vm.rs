@@ -115,15 +115,17 @@ fn real_cpuid(leaf: u32, subleaf: u32) -> [u32; 4] {
     let mut ebx: u32;
     let mut ecx: u32;
     let mut edx: u32;
+    // LLVM reserves rbx on Windows x64, so cpuid's ebx output must be captured
+    // into a different non-allocatable register. r12 is callee-saved on Windows
+    // x64 (safe to clobber inside inline asm) and is not used by LLVM.
     unsafe {
         std::arch::asm!(
-            "push rbx",
+            "xchg r12, rbx",
             "cpuid",
-            "mov {0:e}, ebx",
-            "pop rbx",
-            out(reg) ebx,
-            inlateout("eax") leaf => eax,
-            inlateout("ecx") subleaf => ecx,
+            "xchg r12, rbx",
+            out("r12") ebx,
+            inout("eax") leaf => eax,
+            inout("ecx") subleaf => ecx,
             lateout("edx") edx,
         );
     }

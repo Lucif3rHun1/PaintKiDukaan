@@ -59,6 +59,22 @@ pub fn run_security_init(
     app: &tauri::AppHandle<impl tauri::Runtime>,
     state: &crate::commands::auth::AppState,
 ) {
+    // A panic in any single check must NOT abort dev startup. Wrap the whole
+    // sequence in catch_unwind; a panicking check becomes a logged warning.
+    // (Caveat: STATUS_ACCESS_VIOLATION from unsafe FFI is not a Rust panic and
+    // will still terminate the process — those need a code-level fix.)
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_security_init_inner(app, state);
+    }));
+    if let Err(e) = res {
+        log::error!("security: a startup check panicked; continuing: {e:?}");
+    }
+}
+
+fn run_security_init_inner(
+    app: &tauri::AppHandle<impl tauri::Runtime>,
+    state: &crate::commands::auth::AppState,
+) {
     // Anti-debug detection
     let debug_report = anti_debug::detect();
     if debug_report.debugger_present || debug_report.remote_debugger {
