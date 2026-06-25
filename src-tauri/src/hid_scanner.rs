@@ -1,6 +1,16 @@
-//! USB HID barcode scanner (Windows). Vendor-defined HID devices whose product
-//! string contains a scanner hint. Buffers printable bytes via the shared
-//! `WedgeBuffer` from `scan` and emits the same `barcode:scan` Tauri event.
+//! USB HID barcode scanner (Windows, raw-HID mode only).
+//!
+//! USB barcode scanners almost always present as HID keyboard-wedge devices —
+//! the OS routes their keystrokes to the focused window automatically and our
+//! webview inputs already handle them via onChange + Enter. No Rust hook is
+//! needed in that case.
+//!
+//! This module exists only for scanners configured in raw-HID mode (rare for
+//! POS use). It walks the HID device list, picks devices whose product string
+//! looks like a scanner, opens them, and feeds keystrokes into the shared
+//! `WedgeBuffer` from `scan` to emit a single `barcode:scan` Tauri event per
+//! scan. If nothing matches, the function is a no-op — keyboard-wedge mode
+//! still works.
 
 use std::sync::Arc;
 use std::thread;
@@ -17,9 +27,15 @@ const READ_TIMEOUT_MS: i32 = 100;
 const SCAN_FLUSH_GAP_MS: u64 = 200;
 
 pub fn try_init(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let api = hidapi::HidApi::new()?;
-    let mut opened = false;
+    let api = match hidapi::HidApi::new() {
+        Ok(api) => api,
+        Err(e) => {
+            log::warn!("HidApi::new failed ({e}); scanner runs in OS keyboard-wedge mode only");
+            return Ok(());
+        }
+    };
 
+    let mut opened = false;
     for info in api.device_list() {
         if !is_pos_scanner(info) {
             continue;
@@ -47,7 +63,12 @@ pub fn try_init(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::
     }
 
     if !opened {
-        log::info!("No USB HID barcode scanner found; HID hook inactive");
+        log::info!(
+            "No raw-HID scanner attached. If your scanner is in USB-HID keyboard-wedge \
+             mode (default for TVS / Symbol / Honeywell / Datalogic / Netum / most POS \
+             scanners), scan into any focused input — the existing Enter handler picks \
+             the item. Use Settings → Scanner → Fire scan for dev testing."
+        );
     }
     Ok(())
 }
@@ -62,9 +83,7 @@ fn is_pos_scanner(info: &hidapi::DeviceInfo) -> bool {
         return false;
     }
     match info.usage_page() {
-        // Vendor-defined: must have a product-string hint.
         p if p >= 0xFF00 => product_hint(info).is_some(),
-        // Keyboard usage page: also must have a product-string hint.
         0x0001 => info.usage() == 0x0006 && product_hint(info).is_some(),
         _ => false,
     }
@@ -72,8 +91,14 @@ fn is_pos_scanner(info: &hidapi::DeviceInfo) -> bool {
 
 fn product_hint(info: &hidapi::DeviceInfo) -> Option<()> {
     let p = info.product_string()?.to_lowercase();
-    let hit =
-        p.contains("scanner") || p.contains("barcode") || p.contains("pos") || p.contains("qr");
+    let hit = p.contains("scanner")
+        || p.contains("barcode")
+        || p.contains("pos")
+        || p.contains("qr")
+        || p.contains("symbol")
+        || p.contains("honeywell")
+        || p.contains("datalogic")
+        || p.contains("tvs");
     hit.then_some(())
 }
 
@@ -124,7 +149,6 @@ fn process_report(data: &[u8], buffer: &Arc<Mutex<WedgeBuffer>>, app: &tauri::Ap
     let mut buf = buffer.lock();
     let now = Instant::now();
 
-    // Slow run-on → fresh start.
     if let Some(last) = buf.last_keypress {
         if now.duration_since(last) > Duration::from_millis(INTER_SCAN_GAP_MS) {
             buf.chars.clear();
@@ -143,7 +167,6 @@ fn process_report(data: &[u8], buffer: &Arc<Mutex<WedgeBuffer>>, app: &tauri::Ap
         }
     }
 
-    // Emit if buffer reached min_length within the per-char budget.
     let len = buf.chars.len();
     if len >= min_length {
         if let Some(started) = buf.started {
@@ -163,7 +186,6 @@ fn process_report(data: &[u8], buffer: &Arc<Mutex<WedgeBuffer>>, app: &tauri::Ap
         }
     }
 
-    // Long gap → reset.
     if let Some(last) = buf.last_keypress {
         if now.duration_since(last).as_millis() as u64 >= SCAN_FLUSH_GAP_MS && !buf.chars.is_empty()
         {

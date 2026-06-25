@@ -112,7 +112,8 @@ fn register_uninstall_inner() -> Result<(), AppError> {
     let app_dir = app_data.join("in.paintkiduakan.master");
 
     // Schedule deferred delete via MoveFileExW — no shell injection surface.
-    // Prefix with \\?\ for paths >= MAX_PATH.
+    // Prefix with \\?\ for paths >= MAX_PATH. Failure is non-fatal: the uninstaller
+    // still runs, the data dir simply stays around for manual cleanup.
     let path_str = app_dir.to_string_lossy().to_string();
     let long_path = to_long_path(&path_str);
     let wide_path = to_wide(&long_path);
@@ -124,11 +125,11 @@ fn register_uninstall_inner() -> Result<(), AppError> {
         )
     };
     if move_ok == 0 {
-        return Err(AppError::CleanupFailed(format!(
-            "MoveFileExW failed for {}: {}",
+        log::warn!(
+            "MoveFileExW failed for {}: {} — deferred wipe skipped, manual cleanup needed",
             long_path,
             std::io::Error::last_os_error()
-        )));
+        );
     }
 
     // Build uninstall command pointing to the Tauri NSIS uninstaller.
