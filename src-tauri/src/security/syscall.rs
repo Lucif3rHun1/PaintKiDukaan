@@ -205,8 +205,9 @@ pub(crate) mod plat {
             }
             // PEB_LDR_DATA->InMemoryOrderModuleList.Flink at offset 0x20
             let mut flink = *(ldr.add(0x20) as *const *const u8);
-            // Skip the first entry (exe) — second is ntdll.dll.
-            for _ in 0..2 {
+            // First entry IS the main exe; advance once to land on ntdll.dll.
+            // (0..2 here mis-targeted kernel32.dll and broke every SSN lookup.)
+            for _ in 0..1 {
                 if flink.is_null() {
                     return None;
                 }

@@ -175,8 +175,7 @@ mod win {
             return None;
         }
         let name = b"WerRegisterExcludedApplication\0";
-        let wide_name: Vec<u16> = name.iter().map(|&b| b as u16).collect();
-        let proc = GetProcAddress(module, wide_name.as_ptr());
+        let proc = GetProcAddress(module, name.as_ptr());
         if proc.is_none() {
             return None;
         }
@@ -189,7 +188,7 @@ mod win {
         pub fn LoadLibraryW(lp_lib_file_name: *const u16) -> *mut c_void;
         pub fn GetProcAddress(
             h_module: *mut c_void,
-            lp_proc_name: *const u16,
+            lp_proc_name: *const u8,
         ) -> Option<unsafe extern "system" fn() -> isize>;
     }
 }

@@ -1,15 +1,17 @@
-//! SetProcessMitigationPolicy full matrix — bank-grade process hardening.
+//! SetProcessMitigationPolicy subset — bank-grade process hardening that
+//! doesn't break the Tauri / WebView2 / V8 stack.
 //!
-//! Applies DEP, ASLR, dynamic code restrictions, CFG, binary signature
-//! enforcement, font/image-load restrictions, handle checks, and extension
-//! point disable.
+//! Applies DEP, ASLR, CFG, handle strictness, and extension-point disable.
 //!
-//! `ProcessSystemCallDisablePolicy` is intentionally NOT applied — it breaks
-//! GUI apps (Tauri/WebView2).
+//! Policies INTENTIONALLY OMITTED (would break the host process):
+//! - `DynamicCode` (ProhibitDynamicCode) — V8 / WebView2 emit JIT code.
+//! - `Signature` (MicrosoftSignedOnly) — too restrictive for development.
+//! - `FontDisable` (DisableNonSystemFonts) — breaks Tauri text rendering.
+//! - `ImageLoad` (NoRemoteImages) — DLL search-order hardening is safer.
+//! - `ProcessSystemCallDisablePolicy` — breaks GUI apps entirely.
 //!
-//! All Windows API calls are behind `#[cfg(target_os = "windows")]`.
-//! Non-Windows stubs return safe defaults so the module compiles and tests
-//! pass everywhere.
+//! All Windows API calls are behind `#[cfg(target_os = "windows")]`. Non-Windows
+//! stubs return safe defaults so the module compiles and tests pass everywhere.
 
 use serde::Serialize;
 
@@ -24,20 +26,12 @@ pub enum MitigationPolicy {
     Dep,
     /// Enable bottom-up ASLR randomization.
     Aslr,
-    /// Block VirtualAlloc with executable protection.
-    DynamicCode,
     /// Invalid handle → immediate process termination.
     StrictHandleCheck,
     /// Disable legacy shim/extension-point DLLs.
     ExtensionPointDisable,
     /// Enable Control Flow Guard.
     ControlFlowGuard,
-    /// Require Microsoft-signed binaries only.
-    Signature,
-    /// Disable loading non-system fonts.
-    FontDisable,
-    /// Block remote-image and low-IL image loads.
-    ImageLoad,
 }
 
 /// Report returned by `apply_full_hardening`.
@@ -60,13 +54,9 @@ pub fn apply_full_hardening() -> Result<MitigationReport, AppError> {
     let policies = [
         MitigationPolicy::Dep,
         MitigationPolicy::Aslr,
-        MitigationPolicy::DynamicCode,
         MitigationPolicy::StrictHandleCheck,
         MitigationPolicy::ExtensionPointDisable,
         MitigationPolicy::ControlFlowGuard,
-        MitigationPolicy::Signature,
-        MitigationPolicy::FontDisable,
-        MitigationPolicy::ImageLoad,
     ];
 
     let mut applied = Vec::new();
@@ -81,7 +71,8 @@ pub fn apply_full_hardening() -> Result<MitigationReport, AppError> {
 
     let all_critical_applied = applied.contains(&MitigationPolicy::Dep)
         && applied.contains(&MitigationPolicy::Aslr)
-        && applied.contains(&MitigationPolicy::DynamicCode);
+        && applied.contains(&MitigationPolicy::StrictHandleCheck)
+        && applied.contains(&MitigationPolicy::ControlFlowGuard);
 
     Ok(MitigationReport {
         applied,
@@ -109,13 +100,9 @@ mod win {
     // ProcessMitigationPolicy information class values.
     pub const PROCESS_MITIGATION_DEP_POLICY: u32 = 0;
     pub const PROCESS_MITIGATION_ASLR_POLICY: u32 = 1;
-    pub const PROCESS_MITIGATION_DYNAMIC_CODE_POLICY: u32 = 2;
     pub const PROCESS_MITIGATION_STRICT_HANDLE_CHECK_POLICY: u32 = 3;
     pub const PROCESS_MITIGATION_EXTENSION_POINT_DISABLE_POLICY: u32 = 6;
     pub const PROCESS_MITIGATION_CONTROL_FLOW_GUARD_POLICY: u32 = 7;
-    pub const PROCESS_MITIGATION_BINARY_SIGNATURE_POLICY: u32 = 8;
-    pub const PROCESS_MITIGATION_FONT_DISABLE_POLICY: u32 = 9;
-    pub const PROCESS_MITIGATION_IMAGE_LOAD_POLICY: u32 = 10;
 
     #[link(name = "kernel32")]
     extern "system" {
@@ -138,11 +125,6 @@ mod win {
     }
 
     #[repr(C)]
-    pub struct DynamicCodePolicy {
-        pub flags: u32,
-    }
-
-    #[repr(C)]
     pub struct StrictHandleCheckPolicy {
         pub flags: u32,
     }
@@ -156,21 +138,6 @@ mod win {
     pub struct ControlFlowGuardPolicy {
         pub flags: u32,
         pub reserved: u32,
-    }
-
-    #[repr(C)]
-    pub struct BinarySignaturePolicy {
-        pub flags: u32,
-    }
-
-    #[repr(C)]
-    pub struct FontDisablePolicy {
-        pub flags: u32,
-    }
-
-    #[repr(C)]
-    pub struct ImageLoadPolicy {
-        pub flags: u32,
     }
 }
 
@@ -199,16 +166,6 @@ fn apply_policy_inner(policy: super::MitigationPolicy) -> Result<(), AppError> {
                     win::PROCESS_MITIGATION_ASLR_POLICY,
                     &p as *const _ as *const std::ffi::c_void,
                     std::mem::size_of::<win::AslrPolicy>(),
-                )
-            }
-            MitigationPolicy::DynamicCode => {
-                let p = win::DynamicCodePolicy {
-                    flags: 0b1, // ProhibitDynamicCode
-                };
-                (
-                    win::PROCESS_MITIGATION_DYNAMIC_CODE_POLICY,
-                    &p as *const _ as *const std::ffi::c_void,
-                    std::mem::size_of::<win::DynamicCodePolicy>(),
                 )
             }
             MitigationPolicy::StrictHandleCheck => {
@@ -240,36 +197,6 @@ fn apply_policy_inner(policy: super::MitigationPolicy) -> Result<(), AppError> {
                     win::PROCESS_MITIGATION_CONTROL_FLOW_GUARD_POLICY,
                     &p as *const _ as *const std::ffi::c_void,
                     std::mem::size_of::<win::ControlFlowGuardPolicy>(),
-                )
-            }
-            MitigationPolicy::Signature => {
-                let p = win::BinarySignaturePolicy {
-                    flags: 0b11, // MicrosoftSignedOnly | StoreSignedOnly
-                };
-                (
-                    win::PROCESS_MITIGATION_BINARY_SIGNATURE_POLICY,
-                    &p as *const _ as *const std::ffi::c_void,
-                    std::mem::size_of::<win::BinarySignaturePolicy>(),
-                )
-            }
-            MitigationPolicy::FontDisable => {
-                let p = win::FontDisablePolicy {
-                    flags: 0b1, // DisableNonSystemFonts
-                };
-                (
-                    win::PROCESS_MITIGATION_FONT_DISABLE_POLICY,
-                    &p as *const _ as *const std::ffi::c_void,
-                    std::mem::size_of::<win::FontDisablePolicy>(),
-                )
-            }
-            MitigationPolicy::ImageLoad => {
-                let p = win::ImageLoadPolicy {
-                    flags: 0b111, // NoRemoteImages | NoLowMandatoryLabelImages | PreferSystem32Images
-                };
-                (
-                    win::PROCESS_MITIGATION_IMAGE_LOAD_POLICY,
-                    &p as *const _ as *const std::ffi::c_void,
-                    std::mem::size_of::<win::ImageLoadPolicy>(),
                 )
             }
         };
@@ -318,12 +245,6 @@ mod tests {
     }
 
     #[test]
-    fn apply_dynamic_code_succeeds() {
-        let result = apply_policy(MitigationPolicy::DynamicCode);
-        let _ = result;
-    }
-
-    #[test]
     fn apply_strict_handle_check_succeeds() {
         let result = apply_policy(MitigationPolicy::StrictHandleCheck);
         let _ = result;
@@ -342,32 +263,14 @@ mod tests {
     }
 
     #[test]
-    fn apply_signature_succeeds() {
-        let result = apply_policy(MitigationPolicy::Signature);
-        let _ = result;
-    }
-
-    #[test]
-    fn apply_font_disable_succeeds() {
-        let result = apply_policy(MitigationPolicy::FontDisable);
-        let _ = result;
-    }
-
-    #[test]
-    fn apply_image_load_succeeds() {
-        let result = apply_policy(MitigationPolicy::ImageLoad);
-        let _ = result;
-    }
-
-    #[test]
     fn full_hardening_returns_report() {
         let report = apply_full_hardening().unwrap();
         // On non-Windows, all policies are silently applied (stub Ok).
         // On Windows, some may fail depending on process privileges.
         assert_eq!(
             report.applied.len() + report.skipped.len(),
-            9,
-            "report must account for all 9 policies"
+            5,
+            "report must account for all 5 policies"
         );
     }
 
@@ -379,7 +282,7 @@ mod tests {
             report.all_critical_applied,
             "stubs return Ok, so all critical should pass"
         );
-        assert_eq!(report.applied.len(), 9);
+        assert_eq!(report.applied.len(), 5);
         assert!(report.skipped.is_empty());
     }
 
@@ -404,13 +307,9 @@ mod tests {
         let variants = [
             MitigationPolicy::Dep,
             MitigationPolicy::Aslr,
-            MitigationPolicy::DynamicCode,
             MitigationPolicy::StrictHandleCheck,
             MitigationPolicy::ExtensionPointDisable,
             MitigationPolicy::ControlFlowGuard,
-            MitigationPolicy::Signature,
-            MitigationPolicy::FontDisable,
-            MitigationPolicy::ImageLoad,
         ];
         for (i, a) in variants.iter().enumerate() {
             for (j, b) in variants.iter().enumerate() {

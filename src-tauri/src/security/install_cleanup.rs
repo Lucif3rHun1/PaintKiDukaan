@@ -48,13 +48,13 @@ fn read_reg_string(
     let value_c = CString::new(value).ok()?;
 
     unsafe {
-        let hkey = HKEY(std::ptr::null_mut());
+        let mut hkey = HKEY(std::ptr::null_mut());
         let status = RegOpenKeyExA(
             hkey_root,
             windows::core::PCSTR(subkey_c.as_ptr() as *const u8),
             0,
             KEY_READ,
-            hkey.0 as *mut HKEY,
+            &mut hkey as *mut HKEY,
         );
         if status != windows::Win32::Foundation::ERROR_SUCCESS {
             return None;
@@ -103,7 +103,7 @@ fn register_uninstall_inner() -> Result<(), AppError> {
     use std::ffi::CString;
     use windows::Win32::Foundation::ERROR_SUCCESS;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegCreateKeyExA, RegSetValueExA, HKEY_CURRENT_USER, KEY_WRITE,
+        RegCloseKey, RegCreateKeyExA, RegSetValueExA, HKEY, HKEY_CURRENT_USER, KEY_WRITE,
         REG_OPTION_NON_VOLATILE, REG_SZ,
     };
 
@@ -159,7 +159,7 @@ fn register_uninstall_inner() -> Result<(), AppError> {
             .unwrap();
 
     unsafe {
-        let hkey = windows::Win32::System::Registry::HKEY(std::ptr::null_mut());
+        let mut hkey = windows::Win32::System::Registry::HKEY(std::ptr::null_mut());
         let status = RegCreateKeyExA(
             HKEY_CURRENT_USER,
             windows::core::PCSTR(key_path.as_ptr() as *const u8),
@@ -168,7 +168,7 @@ fn register_uninstall_inner() -> Result<(), AppError> {
             REG_OPTION_NON_VOLATILE,
             KEY_WRITE,
             None,
-            hkey.0 as *mut windows::Win32::System::Registry::HKEY,
+            &mut hkey as *mut HKEY,
             None,
         );
         if status != ERROR_SUCCESS {

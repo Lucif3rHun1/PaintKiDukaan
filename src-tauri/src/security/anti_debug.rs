@@ -236,6 +236,7 @@ mod win {
         pub fn GetCurrentProcess() -> *mut c_void;
         pub fn GetThreadContext(hThread: *mut c_void, lpContext: *mut CONTEXT) -> i32;
         pub fn GetCurrentThread() -> *mut c_void;
+        pub fn GetCurrentProcessId() -> u32;
     }
 
     #[link(name = "ntdll")]
@@ -722,14 +723,7 @@ fn sota_parent_walk(cr: &mut ComprehensiveReport) {
 
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 fn get_current_pid() -> usize {
-    unsafe {
-        let peb = get_peb();
-        if peb.is_null() {
-            return 0;
-        }
-        // PEB->UniqueProcessId at offset 0x2C (Win10/11)
-        *(peb.add(0x2C) as *const u32) as usize
-    }
+    unsafe { win::GetCurrentProcessId() as usize }
 }
 
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
@@ -856,16 +850,6 @@ fn get_process_name_by_pid(pid: usize) -> Option<String> {
     }
 }
 
-#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-unsafe fn get_peb() -> *const u8 {
-    let peb: *const u8;
-    std::arch::asm!(
-        "mov {}, gs:[0x60]",
-        out(reg) peb,
-    );
-    peb
-}
-
 /// Hypervisor brand detection via CPUID leaf 0x40000000.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn sota_hypervisor_brand(cr: &mut ComprehensiveReport) {
@@ -945,12 +929,12 @@ fn cpuid(leaf: u32, subleaf: u32) -> [u32; 4] {
     [eax, ebx, ecx, edx]
 }
 
-/// KUSER_SHARED_DATA → HypervisorPresent at offset 0x140 (Win10+).
+/// KUSER_SHARED_DATA → HypervisorPresent at offset 0x274 (Win10 1607+).
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 fn sota_kuser_hypervisor(cr: &mut ComprehensiveReport) {
     // KUSER_SHARED_DATA is mapped at a fixed address in user mode.
     const KUSER_SHARED_DATA: usize = 0x7FFE_0000; // user-mode mapping
-    const HYPERVISOR_PRESENT_OFFSET: usize = 0x140;
+    const HYPERVISOR_PRESENT_OFFSET: usize = 0x274;
 
     unsafe {
         let ptr = (KUSER_SHARED_DATA + HYPERVISOR_PRESENT_OFFSET) as *const u8;
