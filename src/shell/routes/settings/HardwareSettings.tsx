@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Barcode, Loader2, Plus, ScanBarcode, ScanLine, Trash2 } from "lucide-react";
+import { Barcode, Loader2, Plus, Printer, ScanBarcode, ScanLine, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { Section } from "../../../components/ui/Section";
 import { Radio } from "../../../components/ui/Radio";
+import { Select } from "../../../components/ui/Select";
+import { InlineDialog } from "../../../components/ui/InlineDialog";
 import { emit } from "@tauri-apps/api/event";
 import { ipc } from "../../lib/ipc";
 import { extractError } from "../../../lib/extractError";
@@ -12,18 +14,34 @@ import { loadNumber, loadString, saveSetting } from "./components/SettingsFields
 import type {
   DiscoveredPrinter,
   NewPrinterInput,
-  PrinterRecord,
   PrinterConnectionType,
+  PrinterRecord,
+  ReceiptPaperSize,
 } from "./printing-types";
 
 type Tab = "printers" | "scanner";
+
+const RECEIPT_PAPER_OPTIONS: { value: ReceiptPaperSize; label: string }[] = [
+  { value: "a4", label: "A4 (default)" },
+  { value: "a5", label: "A5" },
+  { value: "thermal-58mm", label: "Thermal 58mm" },
+  { value: "thermal-80mm", label: "Thermal 80mm" },
+];
+
+const CONNECTION_OPTIONS: { value: PrinterConnectionType; label: string }[] = [
+  { value: "usb", label: "USB" },
+  { value: "bluetooth", label: "Bluetooth" },
+  { value: "network", label: "Network" },
+  { value: "serial", label: "Serial" },
+  { value: "system", label: "System (driver)" },
+];
 
 export function HardwareSettings() {
   const [tab, setTab] = useState<Tab>("printers");
   return (
     <div className="space-y-4">
       <nav className="flex gap-2 border-b border-border" aria-label="Hardware sections">
-        <TabButton active={tab === "printers"} onClick={() => setTab("printers")} icon={<ScanLine className="h-4 w-4" />}>
+        <TabButton active={tab === "printers"} onClick={() => setTab("printers")} icon={<Printer className="h-4 w-4" />}>
           Printers
         </TabButton>
         <TabButton active={tab === "scanner"} onClick={() => setTab("scanner")} icon={<ScanBarcode className="h-4 w-4" />}>
@@ -64,12 +82,18 @@ function TabButton({
   );
 }
 
+type ModalState =
+  | { mode: "add"; prefill?: DiscoveredPrinter }
+  | { mode: "edit"; printer: PrinterRecord }
+  | null;
+
 function PrintersPanel() {
   const [printers, setPrinters] = useState<PrinterRecord[] | null>(null);
-  const [editing, setEditing] = useState<NewPrinterInput | null>(null);
-  const [discovered, setDiscovered] = useState<DiscoveredPrinter[]>([]);
+  const [discovered, setDiscovered] = useState<DiscoveredPrinter[] | null>(null);
+  const [discoverLoaded, setDiscoverLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<ModalState>(null);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -84,16 +108,16 @@ function PrintersPanel() {
     void reload();
   }, [reload]);
 
-  async function save(input: NewPrinterInput) {
+  async function save(input: NewPrinterInput, editingId?: number) {
     setBusy(true);
     setError(null);
     try {
-      if (editing && "id" in editing && typeof (editing as { id?: number }).id === "number") {
-        await ipc.updatePrinter((editing as unknown as { id: number }).id, input);
+      if (editingId !== undefined) {
+        await ipc.updatePrinter(editingId, input);
       } else {
         await ipc.createPrinter(input);
       }
-      setEditing(null);
+      setModal(null);
       await reload();
     } catch (e) {
       setError(extractError(e));
@@ -132,6 +156,7 @@ function PrintersPanel() {
     try {
       const list = await ipc.discoverSystemPrinters();
       setDiscovered(list);
+      setDiscoverLoaded(true);
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -146,15 +171,16 @@ function PrintersPanel() {
           {error}
         </div>
       ) : null}
+
       <Section
-        title="Printers"
-        description="Discover connected hardware or add a printer manually. Each printer is bound to a single use case (receipt or label)."
+        title="Saved printers"
+        description="Each printer is bound to one use case (receipt or label). Label stock size is set per-item on the barcode label page."
         actions={
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={discover} disabled={busy}>
               <ScanLine className="h-4 w-4" /> Discover
             </Button>
-            <Button size="sm" onClick={() => setEditing(blankPrinter())} shortcut="F6">
+            <Button size="sm" onClick={() => setModal({ mode: "add" })} shortcut="F6">
               <Plus className="h-4 w-4" /> Add printer
             </Button>
           </div>
@@ -164,7 +190,7 @@ function PrintersPanel() {
           <SkeletonRows />
         ) : printers.length === 0 ? (
           <EmptyState
-            icon={<ScanLine className="h-8 w-8" />}
+            icon={<Printer className="h-8 w-8" />}
             title="No printers yet"
             description="Discover devices on this machine or add one manually."
           />
@@ -175,20 +201,7 @@ function PrintersPanel() {
                 key={p.id}
                 printer={p}
                 onSetDefault={() => setDefault(p.id)}
-                onEdit={() =>
-                  setEditing({
-                    name: p.name,
-                    use_case: p.use_case,
-                    connection_type: p.connection_type,
-                    address: p.address,
-                    driver_name: p.driver_name,
-                    port_name: p.port_name,
-                    is_default: p.is_default,
-                    label_width_mm: p.label_width_mm,
-                    label_height_mm: p.label_height_mm,
-                    paper_size: p.paper_size,
-                  })
-                }
+                onEdit={() => setModal({ mode: "edit", printer: p })}
                 onRemove={() => remove(p.id)}
               />
             ))}
@@ -196,39 +209,54 @@ function PrintersPanel() {
         )}
       </Section>
 
-      {discovered.length > 0 ? (
-        <Section title="Discovered printers" description="Pick one to add as a receipt or label printer.">
-          <div className="grid gap-2 md:grid-cols-2">
-            {discovered.map((d) => (
-              <Card key={d.name}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{d.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {d.driver_name ?? "—"} · {d.port_name ?? "—"}
+      {discoverLoaded ? (
+        <Section
+          title="Discovered printers"
+          description={
+            discovered && discovered.length > 0
+              ? "Pick one to add it as a receipt or label printer."
+              : "No devices found. Plug the printer in (USB / power on / share the network printer) and try again."
+          }
+        >
+          {discovered && discovered.length > 0 ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              {discovered.map((d) => (
+                <Card key={`${d.name}-${d.port_name ?? ""}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{d.name}</div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {d.driver_name ?? "—"} · {d.port_name ?? "—"} · {d.connection_type}
+                      </div>
                     </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setModal({ mode: "add", prefill: d });
+                        setDiscovered(null);
+                        setDiscoverLoaded(false);
+                      }}
+                    >
+                      Add
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setEditing({ ...blankPrinter(), name: d.name, driver_name: d.driver_name, port_name: d.port_name });
-                      setDiscovered([]);
-                    }}
-                  >
-                    Add
-                  </Button>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex justify-end pt-2">
+            <Button size="sm" variant="ghost" onClick={() => { setDiscovered(null); setDiscoverLoaded(false); }}>
+              Dismiss
+            </Button>
           </div>
         </Section>
       ) : null}
 
-      {editing ? (
-        <PrinterForm
-          initial={editing}
+      {modal ? (
+        <PrinterModal
+          state={modal}
           saving={busy}
-          onCancel={() => setEditing(null)}
+          onCancel={() => setModal(null)}
           onSave={save}
         />
       ) : null}
@@ -255,8 +283,8 @@ function PrinterCard({
             <div className="truncate font-semibold">{printer.name}</div>
             <div className="text-xs text-muted-foreground">
               {printer.use_case === "label"
-                ? `Label · ${printer.label_width_mm ?? "?"}×${printer.label_height_mm ?? "?"}mm`
-                : `Receipt · ${printer.paper_size ?? "?"}`}
+                ? `Label · ${printer.connection_type}`
+                : `Receipt · ${printer.paper_size ?? "a4"} · ${printer.connection_type}`}
             </div>
           </div>
           {printer.is_default ? (
@@ -281,18 +309,48 @@ function PrinterCard({
   );
 }
 
-function PrinterForm({
-  initial,
+function PrinterModal({
+  state,
   saving,
   onCancel,
   onSave,
 }: {
-  initial: NewPrinterInput;
+  state: NonNullable<ModalState>;
   saving: boolean;
   onCancel: () => void;
-  onSave: (input: NewPrinterInput) => void;
+  onSave: (input: NewPrinterInput, editingId?: number) => void;
 }) {
+  const initial: NewPrinterInput =
+    state.mode === "edit"
+      ? {
+          name: state.printer.name,
+          use_case: state.printer.use_case,
+          connection_type: state.printer.connection_type,
+          address: state.printer.address,
+          driver_name: state.printer.driver_name,
+          port_name: state.printer.port_name,
+          is_default: state.printer.is_default,
+          label_width_mm: state.printer.label_width_mm,
+          label_height_mm: state.printer.label_height_mm,
+          paper_size: state.printer.paper_size,
+        }
+      : state.prefill
+        ? {
+            name: state.prefill.name,
+            use_case: "receipt",
+            connection_type: asConnectionType(state.prefill.connection_type),
+            address: state.prefill.port_name ?? "",
+            driver_name: state.prefill.driver_name,
+            port_name: state.prefill.port_name,
+            is_default: false,
+            label_width_mm: null,
+            label_height_mm: null,
+            paper_size: "a4",
+          }
+        : blankPrinter();
+
   const [input, setInput] = useState<NewPrinterInput>(initial);
+  const editingId = state.mode === "edit" ? state.printer.id : undefined;
 
   function update<K extends keyof NewPrinterInput>(key: K, value: NewPrinterInput[K]) {
     setInput((prev) => ({ ...prev, [key]: value }));
@@ -302,14 +360,16 @@ function PrinterForm({
     setInput((prev) => ({
       ...prev,
       use_case: useCase,
-      label_width_mm: useCase === "label" ? prev.label_width_mm ?? 50 : null,
-      label_height_mm: useCase === "label" ? prev.label_height_mm ?? 25 : null,
-      paper_size: useCase === "receipt" ? prev.paper_size ?? "thermal-80mm" : null,
+      label_width_mm: null,
+      label_height_mm: null,
+      paper_size: useCase === "receipt" ? prev.paper_size ?? "a4" : null,
     }));
   }
 
+  const title = state.mode === "edit" ? `Edit ${state.printer.name}` : "Add printer";
+
   return (
-    <Section title="Printer" description="Bind this printer to one use case and stock size.">
+    <InlineDialog open onClose={onCancel} title={title} size="md">
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Name">
           <input
@@ -317,6 +377,7 @@ function PrinterForm({
             value={input.name}
             onChange={(e) => update("name", e.target.value)}
             placeholder="e.g. Xprinter XP-80"
+            autoFocus
           />
         </Field>
         <Field label="Use case">
@@ -333,17 +394,12 @@ function PrinterForm({
           </div>
         </Field>
         <Field label="Connection">
-          <select
-            className="input"
+          <Select
             value={input.connection_type}
             onChange={(e) => update("connection_type", e.target.value as PrinterConnectionType)}
-          >
-            <option value="usb">USB</option>
-            <option value="bluetooth">Bluetooth</option>
-            <option value="network">Network</option>
-            <option value="serial">Serial</option>
-            <option value="system">System</option>
-          </select>
+            options={CONNECTION_OPTIONS}
+            size="md"
+          />
         </Field>
         <Field label="Address / port">
           <input
@@ -353,45 +409,20 @@ function PrinterForm({
             placeholder="USB001 or 192.168.1.50"
           />
         </Field>
-        <Field label="Driver name (read-only)">
-          <input className="input" value={input.driver_name ?? ""} readOnly />
-        </Field>
-        <Field label="Port name (read-only)">
-          <input className="input" value={input.port_name ?? ""} readOnly />
-        </Field>
         {input.use_case === "label" ? (
-          <>
-            <Field label="Label width (mm)">
-              <input
-                className="input"
-                type="number"
-                min={1}
-                value={input.label_width_mm ?? 0}
-                onChange={(e) => update("label_width_mm", Number(e.target.value))}
-              />
-            </Field>
-            <Field label="Label height (mm)">
-              <input
-                className="input"
-                type="number"
-                min={1}
-                value={input.label_height_mm ?? 0}
-                onChange={(e) => update("label_height_mm", Number(e.target.value))}
-              />
-            </Field>
-          </>
+          <Field label="Label stock">
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Label width and height are set per-item on the barcode label page, not here.
+            </div>
+          </Field>
         ) : (
           <Field label="Paper size">
-            <select
-              className="input"
-              value={input.paper_size ?? "thermal-80mm"}
-              onChange={(e) => update("paper_size", e.target.value as NewPrinterInput["paper_size"])}
-            >
-              <option value="thermal-58mm">Thermal 58mm</option>
-              <option value="thermal-80mm">Thermal 80mm</option>
-              <option value="A4">A4</option>
-              <option value="A5">A5</option>
-            </select>
+            <Select
+              value={input.paper_size ?? "a4"}
+              onChange={(e) => update("paper_size", e.target.value as ReceiptPaperSize)}
+              options={RECEIPT_PAPER_OPTIONS}
+              size="md"
+            />
           </Field>
         )}
         <label className="col-span-full flex items-center gap-2 text-sm">
@@ -403,16 +434,16 @@ function PrinterForm({
           Set as default for this use case
         </label>
       </div>
-      <div className="flex justify-end gap-2">
+      <div className="mt-6 flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
-        <Button onClick={() => onSave(input)} disabled={saving || !input.name.trim()}>
+        <Button onClick={() => onSave(input, editingId)} disabled={saving || !input.name.trim()}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          Save
+          {state.mode === "edit" ? "Save changes" : "Add printer"}
         </Button>
       </div>
-    </Section>
+    </InlineDialog>
   );
 }
 
@@ -514,16 +545,17 @@ function ScannerPanel() {
             />
           </Field>
           <Field label="Terminator mode">
-            <select
-              className="input"
+            <Select
               value={terminator}
               onChange={(e) => setTerminator(e.target.value)}
-            >
-              <option value="enter">Enter</option>
-              <option value="tab">Tab</option>
-              <option value="enter+tab">Enter + Tab</option>
-              <option value="timeout">Timeout (time-gap)</option>
-            </select>
+              options={[
+                { value: "enter", label: "Enter" },
+                { value: "tab", label: "Tab" },
+                { value: "enter+tab", label: "Enter + Tab" },
+                { value: "timeout", label: "Timeout (time-gap)" },
+              ]}
+              size="md"
+            />
           </Field>
           <Field label="Timeout ms (time-gap mode)">
             <input
@@ -555,7 +587,7 @@ function ScannerPanel() {
 
       <Section
         title="Manual test"
-        description="Type a barcode and press Fire scan to run the full ItemSearchInput → lookupItem → handlePick flow."
+        description="Type a barcode and press Fire scan to run the full ItemSearchInput to lookupItem to handlePick flow."
       >
         <div className="flex gap-2">
           <input
@@ -615,6 +647,13 @@ function blankPrinter(): NewPrinterInput {
     is_default: false,
     label_width_mm: null,
     label_height_mm: null,
-    paper_size: "thermal-80mm",
+    paper_size: "a4",
   };
+}
+
+function asConnectionType(s: string): PrinterConnectionType {
+  if (s === "usb" || s === "bluetooth" || s === "network" || s === "serial" || s === "system") {
+    return s;
+  }
+  return "system";
 }

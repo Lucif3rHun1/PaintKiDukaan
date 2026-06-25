@@ -36,8 +36,10 @@ pub struct NewPrinter {
     pub paper_size: Option<String>,
 }
 
-const ALLOWED_USE_CASES: &[&str] = &["receipt", "label"];
-const ALLOWED_CONN_TYPES: &[&str] = &["usb", "bluetooth", "network", "serial", "system"];
+pub const ALLOWED_USE_CASES: &[&str] = &["receipt", "label"];
+pub const ALLOWED_CONN_TYPES: &[&str] = &["usb", "bluetooth", "network", "serial", "system"];
+pub const ALLOWED_PAPER_SIZES: &[&str] = &["thermal-58mm", "thermal-80mm", "a4", "a5"];
+pub const DEFAULT_RECEIPT_PAPER: &str = "a4";
 
 fn validate(input: &NewPrinter) -> AppResult<()> {
     let name = input.name.trim();
@@ -60,10 +62,15 @@ fn validate(input: &NewPrinter) -> AppResult<()> {
     }
     match use_case.as_str() {
         "label" => {
-            if input.label_width_mm.is_none() || input.label_height_mm.is_none() {
-                return Err(AppError::Validation(
-                    "label printer requires label_width_mm and label_height_mm".into(),
-                ));
+            // Label dimensions are NOT required at the printer level —
+            // the per-item stock size is authoritative. We just sanity-check
+            // any values that WERE provided.
+            if let (Some(w), Some(h)) = (input.label_width_mm, input.label_height_mm) {
+                if w <= 0 || h <= 0 {
+                    return Err(AppError::Validation(
+                        "label dimensions must be positive".into(),
+                    ));
+                }
             }
             if input.paper_size.is_some() {
                 return Err(AppError::Validation(
@@ -72,10 +79,14 @@ fn validate(input: &NewPrinter) -> AppResult<()> {
             }
         }
         "receipt" => {
-            if input.paper_size.is_none() {
-                return Err(AppError::Validation(
-                    "receipt printer requires paper_size".into(),
-                ));
+            // Default paper size if caller didn't specify (A4).
+            if let Some(ps) = &input.paper_size {
+                if !ALLOWED_PAPER_SIZES.contains(&ps.to_lowercase().as_str()) {
+                    return Err(AppError::Validation(format!(
+                        "paper_size must be one of {:?}",
+                        ALLOWED_PAPER_SIZES
+                    )));
+                }
             }
             if input.label_width_mm.is_some() || input.label_height_mm.is_some() {
                 return Err(AppError::Validation(
@@ -175,9 +186,10 @@ pub fn cmd_create_printer(state: State<'_, AppState>, input: NewPrinter) -> AppR
                 )?;
             }
             "receipt" => {
+                let ps = input.paper_size.as_deref().unwrap_or(DEFAULT_RECEIPT_PAPER);
                 tx.execute(
                     "INSERT INTO printer_mappings (printer_id, paper_size, created_at, updated_at) VALUES (?1, ?2, unixepoch('now'), unixepoch('now'))",
-                    params![id, input.paper_size],
+                    params![id, ps],
                 )?;
             }
             _ => unreachable!(),
@@ -241,9 +253,10 @@ pub fn cmd_update_printer(
                 )?;
             }
             "receipt" => {
+                let ps = input.paper_size.as_deref().unwrap_or(DEFAULT_RECEIPT_PAPER);
                 tx.execute(
                     "INSERT INTO printer_mappings (printer_id, paper_size, created_at, updated_at) VALUES (?1, ?2, unixepoch('now'), unixepoch('now'))",
-                    params![id, input.paper_size],
+                    params![id, ps],
                 )?;
             }
             _ => unreachable!(),
@@ -347,8 +360,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validate_label_printer_requires_dimensions() {
-        let mut p = NewPrinter {
+    fn validate_label_printer_works_without_dimensions() {
+        let p = NewPrinter {
             name: "TSC".into(),
             use_case: "label".into(),
             connection_type: "usb".into(),
@@ -360,17 +373,46 @@ mod tests {
             label_height_mm: None,
             paper_size: None,
         };
-        assert!(validate(&p).is_err());
-        p.label_width_mm = Some(50);
-        p.label_height_mm = Some(25);
         assert!(validate(&p).is_ok());
-        p.paper_size = Some("A4".into());
+    }
+
+    #[test]
+    fn validate_label_printer_rejects_paper_size() {
+        let p = NewPrinter {
+            name: "TSC".into(),
+            use_case: "label".into(),
+            connection_type: "usb".into(),
+            address: "USB001".into(),
+            driver_name: None,
+            port_name: None,
+            is_default: false,
+            label_width_mm: None,
+            label_height_mm: None,
+            paper_size: Some("a4".into()),
+        };
         assert!(validate(&p).is_err());
     }
 
     #[test]
-    fn validate_receipt_printer_requires_paper_size() {
-        let mut p = NewPrinter {
+    fn validate_label_printer_rejects_non_positive_dims() {
+        let p = NewPrinter {
+            name: "TSC".into(),
+            use_case: "label".into(),
+            connection_type: "usb".into(),
+            address: "USB001".into(),
+            driver_name: None,
+            port_name: None,
+            is_default: false,
+            label_width_mm: Some(0),
+            label_height_mm: Some(25),
+            paper_size: None,
+        };
+        assert!(validate(&p).is_err());
+    }
+
+    #[test]
+    fn validate_receipt_printer_works_without_paper_size() {
+        let p = NewPrinter {
             name: "XP-80".into(),
             use_case: "receipt".into(),
             connection_type: "usb".into(),
@@ -382,10 +424,57 @@ mod tests {
             label_height_mm: None,
             paper_size: None,
         };
-        assert!(validate(&p).is_err());
-        p.paper_size = Some("thermal-80mm".into());
         assert!(validate(&p).is_ok());
-        p.label_width_mm = Some(50);
+    }
+
+    #[test]
+    fn validate_receipt_printer_accepts_known_paper_size() {
+        let p = NewPrinter {
+            name: "XP-80".into(),
+            use_case: "receipt".into(),
+            connection_type: "usb".into(),
+            address: "USB002".into(),
+            driver_name: None,
+            port_name: None,
+            is_default: false,
+            label_width_mm: None,
+            label_height_mm: None,
+            paper_size: Some("thermal-80mm".into()),
+        };
+        assert!(validate(&p).is_ok());
+    }
+
+    #[test]
+    fn validate_receipt_printer_rejects_label_dims() {
+        let p = NewPrinter {
+            name: "XP-80".into(),
+            use_case: "receipt".into(),
+            connection_type: "usb".into(),
+            address: "USB002".into(),
+            driver_name: None,
+            port_name: None,
+            is_default: false,
+            label_width_mm: Some(50),
+            label_height_mm: None,
+            paper_size: Some("a4".into()),
+        };
+        assert!(validate(&p).is_err());
+    }
+
+    #[test]
+    fn validate_receipt_printer_rejects_unknown_paper_size() {
+        let p = NewPrinter {
+            name: "XP-80".into(),
+            use_case: "receipt".into(),
+            connection_type: "usb".into(),
+            address: "USB002".into(),
+            driver_name: None,
+            port_name: None,
+            is_default: false,
+            label_width_mm: None,
+            label_height_mm: None,
+            paper_size: Some("letter".into()),
+        };
         assert!(validate(&p).is_err());
     }
 

@@ -1,4 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::process::Stdio;
+#[cfg(target_os = "windows")]
+use std::thread;
+#[cfg(target_os = "windows")]
+use std::time::{Duration, Instant};
 
 use crate::commands::auth::AppState;
 use crate::error::AppResult;
@@ -12,61 +19,100 @@ pub struct DiscoveredPrinter {
     pub connection_type: String,
 }
 
+/// Spawn a PowerShell script and wait up to `timeout_secs` for completion.
+/// Kills the process on timeout. Returns None on spawn failure / timeout / non-zero exit.
+#[cfg(target_os = "windows")]
+fn run_powershell(script: &str, timeout_secs: u64) -> Option<String> {
+    let mut child = match Command::new(crate::sys_tool::resolve("powershell"))
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("run_powershell: spawn failed: {e}");
+            return None;
+        }
+    };
+
+    let deadline = Duration::from_secs(timeout_secs);
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break Some(s),
+            Ok(None) => {
+                if start.elapsed() >= deadline {
+                    let _ = child.kill();
+                    log::warn!("run_powershell: timed out after {timeout_secs}s");
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => {
+                log::warn!("run_powershell: try_wait error: {e}");
+                let _ = child.kill();
+                return None;
+            }
+        }
+    };
+
+    let status = status?;
+    let output = child.wait_with_output().ok()?;
+    if !status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!("run_powershell: exit {status}: {stderr}");
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 // ── Type-based classification (primary signal) ──────────────────────────
+//
+// `Get-Printer` returns `Type` as a string enum (per MS docs):
+//   Local | Logical | Connection | Network | Group | Shared | Internet
+//   | PrintServer | PrintQueue | Fax | Service | Deferred
+// Some hosts/CIM return it as a uint instead, so handle both.
 
-/// Map `Get-Printer` `Type` field integer to a connection type string.
-/// Returns None when the value is absent or unrecognized (fallback will handle it).
 #[cfg(target_os = "windows")]
-fn classify_from_type(printer_type: Option<i64>) -> Option<String> {
-    match printer_type {
-        Some(3) => Some("usb".into()),     // local printer
-        Some(4) => Some("network".into()), // network printer
-        Some(5) => Some("usb".into()),     // software / PDF printer (local)
-        Some(6) => Some("unknown".into()), // fax
-        _ => None,                         // let fallback handle it
+fn classify_from_type(v: &Option<serde_json::Value>) -> Option<String> {
+    let v = v.as_ref()?;
+    if let Some(s) = v.as_str() {
+        return match s.to_ascii_lowercase().as_str() {
+            "local" | "logical" => Some("usb".into()),
+            "network" | "connection" | "shared" | "internet" | "printserver" | "printqueue" => {
+                Some("network".into())
+            }
+            "fax" => Some("unknown".into()),
+            _ => None,
+        };
     }
-}
-
-/// Extract the integer value from the raw JSON `Type` field (may be number or string).
-#[cfg(target_os = "windows")]
-fn extract_printer_type(v: &Option<serde_json::Value>) -> Option<i64> {
-    match v {
-        Some(serde_json::Value::Number(n)) => n.as_i64(),
-        Some(serde_json::Value::String(s)) => s.parse::<i64>().ok(),
-        _ => None,
+    if let Some(n) = v.as_i64() {
+        return match n {
+            3 | 5 => Some("usb".into()), // local / software
+            4 => Some("network".into()),
+            6 => Some("unknown".into()), // fax
+            _ => None,
+        };
     }
+    None
 }
-
-/// Classify a printer: prefer the Type field, fall back to port/driver heuristics.
-#[cfg(target_os = "windows")]
-fn classify_printer(
-    printer_type: Option<i64>,
-    port: &Option<String>,
-    driver: &Option<String>,
-) -> String {
-    if let Some(ct) = classify_from_type(printer_type) {
-        return ct;
-    }
-    classify_connection(port, driver)
-}
-
-// ── Heuristic fallback (port / driver) ──────────────────────────────────
 
 #[cfg(target_os = "windows")]
 fn classify_connection(port: &Option<String>, driver: &Option<String>) -> String {
-    if let Some(ref p) = port {
+    if let Some(p) = port {
         let pl = p.to_lowercase();
-        if pl.contains("usb") || pl.contains("virtual") || pl.starts_with("usb") {
+        if pl.contains("usb") || pl.starts_with("usb") || pl.contains("virtual") {
             return "usb".into();
         }
-        if pl.contains("tcp") || pl.contains("ip") || pl.contains("wsd") || pl.contains("http") {
+        if pl.contains("tcp") || pl.contains("ip_") || pl.contains("wsd") || pl.contains("http") {
             return "network".into();
         }
         if pl.contains("bt") || pl.contains("bluetooth") {
             return "bluetooth".into();
         }
     }
-    if let Some(ref d) = driver {
+    if let Some(d) = driver {
         let dl = d.to_lowercase();
         if dl.contains("network") || dl.contains("tcp") || dl.contains("ip") {
             return "network".into();
@@ -82,6 +128,15 @@ fn classify_connection(port: &Option<String>, driver: &Option<String>) -> String
 }
 
 #[cfg(target_os = "windows")]
+fn classify_printer(
+    type_field: &Option<serde_json::Value>,
+    port: &Option<String>,
+    driver: &Option<String>,
+) -> String {
+    classify_from_type(type_field).unwrap_or_else(|| classify_connection(port, driver))
+}
+
+#[cfg(target_os = "windows")]
 fn mask_printer_name(name: &str) -> String {
     if name.contains('\\') || name.contains('/') {
         let parts: Vec<&str> = name.split(|c| c == '\\' || c == '/').collect();
@@ -93,9 +148,9 @@ fn mask_printer_name(name: &str) -> String {
 }
 
 #[cfg(target_os = "windows")]
-const PS_TIMEOUT_SECS: u64 = 3;
+const PS_TIMEOUT_SECS: u64 = 5;
 
-// ── Raw JSON printer shared across Get-Printer and WMI ──────────────────
+// ── Raw JSON printer shared across Get-Printer and CIM ──────────────────
 
 #[cfg(target_os = "windows")]
 #[derive(Deserialize)]
@@ -106,265 +161,165 @@ struct RawPrinter {
     driver_name: Option<String>,
     #[serde(rename = "PortName")]
     port_name: Option<String>,
-    #[serde(rename = "Type")]
+    #[serde(rename = "PrinterType", alias = "Type")]
     printer_type: Option<serde_json::Value>,
 }
 
-// ── WMIC fallback (wmic printer get ...) ────────────────────────────────
-
 #[cfg(target_os = "windows")]
-fn try_wmic_discover() -> Vec<DiscoveredPrinter> {
-    use std::process::Command;
-    use std::thread;
-    use std::time::{Duration, Instant};
-
-    const WMIC_TIMEOUT_SECS: u64 = 5;
-
-    let mut child = match Command::new(crate::sys_tool::resolve("wmic"))
-        .args(["printer", "get", "Name,PortName,DriverName", "/format:list"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!("try_wmic_discover: failed to run wmic: {e}");
-            return vec![];
-        }
-    };
-
-    let timeout = Duration::from_secs(WMIC_TIMEOUT_SECS);
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break s,
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    log::warn!("try_wmic_discover: wmic timed out after {WMIC_TIMEOUT_SECS}s");
-                    return vec![];
-                }
-                thread::sleep(Duration::from_millis(50));
-            }
-            Err(e) => {
-                log::warn!("try_wmic_discover: error waiting for wmic: {e}");
-                let _ = child.kill();
-                return vec![];
-            }
-        }
-    };
-
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => {
-            log::warn!("try_wmic_discover: failed to collect wmic output: {e}");
-            return vec![];
-        }
-    };
-
-    if !status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        log::warn!("try_wmic_discover: wmic exited with {status}: {}", stderr);
-        return vec![];
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_wmic_output(&stdout)
+#[derive(Deserialize)]
+struct Win32Printer {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "DriverName")]
+    driver_name: Option<String>,
+    #[serde(rename = "PortName")]
+    port_name: Option<String>,
+    #[serde(rename = "Network", default)]
+    network: bool,
+    #[serde(rename = "Local", default)]
+    local: bool,
+    #[serde(rename = "Shared", default)]
+    shared: bool,
 }
 
 #[cfg(target_os = "windows")]
-fn parse_wmic_output(stdout: &str) -> Vec<DiscoveredPrinter> {
-    let mut printers = Vec::new();
-    let mut current_name: Option<String> = None;
-    let mut current_port: Option<String> = None;
-    let mut current_driver: Option<String> = None;
-
-    fn flush(
-        printers: &mut Vec<DiscoveredPrinter>,
-        name: &mut Option<String>,
-        port: &mut Option<String>,
-        driver: &mut Option<String>,
-    ) {
-        if let Some(n) = name.take() {
-            if !n.is_empty() {
-                let connection_type = classify_connection(port, driver);
-                printers.push(DiscoveredPrinter {
-                    name: mask_printer_name(&n),
-                    driver_name: driver.take(),
-                    port_name: port.take(),
-                    connection_type,
-                });
-                return;
-            }
-        }
-        name.take();
-        port.take();
-        driver.take();
-    }
-
-    for line in stdout.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            flush(
-                &mut printers,
-                &mut current_name,
-                &mut current_port,
-                &mut current_driver,
-            );
-            continue;
-        }
-        if let Some((key, value)) = line.split_once('=') {
-            let key = key.trim();
-            let value = value.trim();
-            match key {
-                "Name" => current_name = Some(value.to_string()),
-                "PortName" => current_port = Some(value.to_string()),
-                "DriverName" => current_driver = Some(value.to_string()),
-                _ => {}
-            }
-        }
-    }
-
-    flush(
-        &mut printers,
-        &mut current_name,
-        &mut current_port,
-        &mut current_driver,
-    );
-    printers
-}
-
-// ── WMI fallback (Get-CimInstance Win32_Printer) ────────────────────────
-
-#[cfg(target_os = "windows")]
-fn try_wmi_discover() -> Vec<DiscoveredPrinter> {
-    use std::process::Command;
-
-    let wmi_script = format!(
-        "$job = Start-Job {{ Get-CimInstance -Class Win32_Printer | \
-         Select-Object Name, DriverName, PortName, Type | ConvertTo-Json }}; \
-         $done = Wait-Job $job -Timeout {PS_TIMEOUT_SECS}; \
-         if ($done) {{ Receive-Job $job | ConvertTo-Json }} else {{ Stop-Job $job; '[]' }}",
-    );
-
-    let output = match Command::new(crate::sys_tool::resolve("powershell"))
-        .args(["-NoProfile", "-NonInteractive", "-Command", &wmi_script])
-        .output()
-    {
-        Ok(o) => o,
-        Err(e) => {
-            log::warn!("try_wmi_discover: failed to run PowerShell: {e}");
-            return vec![];
-        }
-    };
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        log::warn!(
-            "try_wmi_discover: PowerShell exited with {}: {}",
-            output.status,
-            stderr
-        );
-        return vec![];
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stdout = stdout.trim();
-    if stdout.is_empty() || stdout == "[]" {
-        return vec![];
-    }
-
-    let raw_printers: Vec<RawPrinter> = if stdout.starts_with('[') {
-        serde_json::from_str(stdout).unwrap_or_default()
-    } else if stdout.starts_with('{') {
-        serde_json::from_str::<RawPrinter>(stdout)
-            .map(|p| vec![p])
-            .unwrap_or_default()
+fn parse_printer_list(stdout: &str) -> Result<Vec<RawPrinter>, serde_json::Error> {
+    let trimmed = stdout.trim();
+    if trimmed.starts_with('[') {
+        serde_json::from_str(trimmed)
+    } else if trimmed.starts_with('{') {
+        serde_json::from_str::<RawPrinter>(trimmed).map(|p| vec![p])
     } else {
-        log::warn!("try_wmi_discover: unexpected JSON format");
+        Ok(vec![])
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn parse_win32_list(stdout: &str) -> Result<Vec<Win32Printer>, serde_json::Error> {
+    let trimmed = stdout.trim();
+    if trimmed.starts_with('[') {
+        serde_json::from_str(trimmed)
+    } else if trimmed.starts_with('{') {
+        serde_json::from_str::<Win32Printer>(trimmed).map(|p| vec![p])
+    } else {
+        Ok(vec![])
+    }
+}
+
+// ── Try Get-Printer (direct, no Start-Job) ─────────────────────────────
+
+#[cfg(target_os = "windows")]
+fn try_get_printer() -> Vec<DiscoveredPrinter> {
+    let script = "try { \
+        Get-Printer -ErrorAction Stop | \
+        Select-Object Name, DriverName, PortName, PrinterType | \
+        ConvertTo-Json -Depth 1 -Compress \
+    } catch { '[]' }";
+
+    let Some(stdout) = run_powershell(script, PS_TIMEOUT_SECS) else {
         return vec![];
     };
 
-    raw_printers
-        .into_iter()
-        .filter_map(|p| {
-            let name = p.name?;
-            if name.is_empty() {
-                return None;
-            }
-            let ptype = extract_printer_type(&p.printer_type);
-            let connection_type = classify_printer(ptype, &p.port_name, &p.driver_name);
-            Some(DiscoveredPrinter {
-                name: mask_printer_name(&name),
-                driver_name: p.driver_name,
-                port_name: p.port_name,
-                connection_type,
+    match parse_printer_list(&stdout) {
+        Ok(raw) => raw
+            .into_iter()
+            .filter_map(|p| {
+                let name = p.name?;
+                if name.is_empty() {
+                    return None;
+                }
+                let connection_type =
+                    classify_printer(&p.printer_type, &p.port_name, &p.driver_name);
+                Some(DiscoveredPrinter {
+                    name: mask_printer_name(&name),
+                    driver_name: p.driver_name,
+                    port_name: p.port_name,
+                    connection_type,
+                })
             })
-        })
-        .collect()
+            .collect(),
+        Err(e) => {
+            log::warn!("try_get_printer: json parse failed: {e}");
+            vec![]
+        }
+    }
+}
+
+// ── Try Get-CimInstance Win32_Printer (more reliable than wmic) ────────
+
+#[cfg(target_os = "windows")]
+fn try_cim_discover() -> Vec<DiscoveredPrinter> {
+    let script = "try { \
+        Get-CimInstance -Class Win32_Printer -ErrorAction Stop | \
+        Select-Object Name, DriverName, PortName, Network, Local, Shared | \
+        ConvertTo-Json -Depth 1 -Compress \
+    } catch { '[]' }";
+
+    let Some(stdout) = run_powershell(script, PS_TIMEOUT_SECS) else {
+        return vec![];
+    };
+
+    match parse_win32_list(&stdout) {
+        Ok(list) => list
+            .into_iter()
+            .filter_map(|p| {
+                let name = p.name?;
+                if name.is_empty() {
+                    return None;
+                }
+                let connection_type = if p.network || p.shared {
+                    "network".into()
+                } else if p.local {
+                    "usb".into()
+                } else {
+                    classify_connection(&p.port_name, &p.driver_name)
+                };
+                Some(DiscoveredPrinter {
+                    name: mask_printer_name(&name),
+                    driver_name: p.driver_name,
+                    port_name: p.port_name,
+                    connection_type,
+                })
+            })
+            .collect(),
+        Err(e) => {
+            log::warn!("try_cim_discover: json parse failed: {e}");
+            vec![]
+        }
+    }
 }
 
 // ── macOS lpstat discovery ──────────────────────────────────────────────
 
 #[cfg(target_os = "macos")]
 fn discover_macos_printers() -> AppResult<Vec<DiscoveredPrinter>> {
-    use std::process::Command;
-
-    let output = match Command::new(crate::sys_tool::resolve("lpstat"))
+    let output = Command::new(crate::sys_tool::resolve("lpstat"))
         .arg("-p")
         .output()
-    {
-        Ok(o) => o,
-        Err(e) => {
-            log::warn!("discover_macos_printers: lpstat failed: {e}");
-            return Ok(vec![]);
-        }
+        .ok()
+        .filter(|o| o.status.success());
+
+    let Some(out) = output else {
+        return Ok(vec![]);
     };
 
-    if !output.status.success() {
-        log::warn!(
-            "discover_macos_printers: lpstat exited with {}",
-            output.status
-        );
-        return Ok(vec![]);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&out.stdout);
     let mut printers = Vec::new();
 
     for line in stdout.lines() {
-        // Lines look like: "printer HP-LaserJet is idle."
         if !line.starts_with("printer ") {
             continue;
         }
         let rest = &line["printer ".len()..];
         let name = match rest.split_whitespace().next() {
-            Some(n) => n.to_string(),
-            None => continue,
+            Some(n) if !n.is_empty() => n.to_string(),
+            _ => continue,
         };
-        if name.is_empty() {
-            continue;
-        }
-
-        // Try to get driver info from lpoptions
-        let driver_name = Command::new(crate::sys_tool::resolve("lpoptions"))
-            .args(["-p", &name, "-l"])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .and_then(|raw| {
-                // Look for a line containing "PageSize" as a driver hint
-                raw.lines()
-                    .find(|l| l.contains("PageSize") || l.contains("Resolution"))
-                    .map(|_| name.clone())
-            });
-
         printers.push(DiscoveredPrinter {
             name,
-            driver_name,
+            driver_name: None,
             port_name: None,
-            connection_type: "usb".into(), // default for direct-connected
+            connection_type: "usb".into(),
         });
     }
 
@@ -378,6 +333,7 @@ pub fn discover_system_printers(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<DiscoveredPrinter>> {
     ipc_auth::authorize("discover_system_printers", state.inner())?;
+
     #[cfg(target_os = "macos")]
     {
         return discover_macos_printers();
@@ -391,98 +347,12 @@ pub fn discover_system_printers(
 
     #[cfg(target_os = "windows")]
     {
-        use std::process::Command;
-
-        let ps_script = format!(
-            "$job = Start-Job {{ Get-Printer | Select-Object Name, DriverName, PortName, Type }}; \
-             $done = Wait-Job $job -Timeout {PS_TIMEOUT_SECS}; \
-             if ($done) {{ Receive-Job $job | ConvertTo-Json }} else {{ Stop-Job $job; '[]' }}",
-        );
-
-        let output = match Command::new(crate::sys_tool::resolve("powershell"))
-            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
-            .output()
-        {
-            Ok(o) => o,
-            Err(e) => {
-                log::warn!("discover_system_printers: failed to run PowerShell, trying wmic: {e}");
-                let mut printers = try_wmic_discover();
-                if printers.is_empty() {
-                    printers = try_wmi_discover();
-                }
-                return Ok(printers);
-            }
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!(
-                "discover_system_printers: Get-Printer exited with {}, falling back to wmic: {}",
-                output.status,
-                stderr
-            );
-            let mut printers = try_wmic_discover();
-            if printers.is_empty() {
-                printers = try_wmi_discover();
-            }
-            return Ok(printers);
+        // Try Get-Printer first (richer: Type field); fall back to CIM (more compatible).
+        let mut printers = try_get_printer();
+        if printers.is_empty() {
+            log::info!("discover_system_printers: Get-Printer returned empty, trying CIM");
+            printers = try_cim_discover();
         }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stdout = stdout.trim();
-        if stdout.is_empty() || stdout == "[]" {
-            log::info!("discover_system_printers: Get-Printer returned empty, trying wmic");
-            let mut printers = try_wmic_discover();
-            if printers.is_empty() {
-                printers = try_wmi_discover();
-            }
-            return Ok(printers);
-        }
-
-        let raw_printers: Vec<RawPrinter> = if stdout.starts_with('[') {
-            serde_json::from_str(stdout).unwrap_or_default()
-        } else if stdout.starts_with('{') {
-            serde_json::from_str::<RawPrinter>(stdout)
-                .map(|p| vec![p])
-                .unwrap_or_default()
-        } else {
-            log::warn!("discover_system_printers: unexpected JSON, trying wmic");
-            let mut printers = try_wmic_discover();
-            if printers.is_empty() {
-                printers = try_wmi_discover();
-            }
-            return Ok(printers);
-        };
-
-        if raw_printers.is_empty() {
-            log::info!(
-                "discover_system_printers: parsed zero printers from Get-Printer, trying wmic"
-            );
-            let mut printers = try_wmic_discover();
-            if printers.is_empty() {
-                printers = try_wmi_discover();
-            }
-            return Ok(printers);
-        }
-
-        let printers: Vec<DiscoveredPrinter> = raw_printers
-            .into_iter()
-            .filter_map(|p| {
-                let name = p.name?;
-                if name.is_empty() {
-                    return None;
-                }
-                let ptype = extract_printer_type(&p.printer_type);
-                let connection_type = classify_printer(ptype, &p.port_name, &p.driver_name);
-                Some(DiscoveredPrinter {
-                    name: mask_printer_name(&name),
-                    driver_name: p.driver_name,
-                    port_name: p.port_name,
-                    connection_type,
-                })
-            })
-            .collect();
-
         Ok(printers)
     }
 }
@@ -491,7 +361,9 @@ pub fn discover_system_printers(
 
 #[cfg(target_os = "windows")]
 mod win32_printer_status {
-    type HANDLE = *mut std::ffi::c_void;
+    use std::ffi::c_void;
+
+    type HANDLE = *mut c_void;
     type DWORD = u32;
     type BOOL = i32;
 
@@ -508,34 +380,35 @@ mod win32_printer_status {
 
     #[repr(C)]
     struct PrinterInfo2W {
-        p_server_name: *mut u16,
+        _p_server_name: *mut u16,
         p_printer_name: *mut u16,
-        p_share_name: *mut u16,
-        p_port_name: *mut u16,
-        p_driver_name: *mut u16,
-        p_comment: *mut u16,
-        p_location: *mut u16,
-        p_dev_mode: *mut std::ffi::c_void,
-        p_sep_file: *mut u16,
-        p_print_processor: *mut u16,
-        p_datatype: *mut u16,
-        p_parameters: *mut u16,
-        p_security_descriptor: *mut std::ffi::c_void,
-        attributes: DWORD,
-        priority: DWORD,
-        default_priority: DWORD,
-        start_time: DWORD,
-        until_time: DWORD,
+        _p_share_name: *mut u16,
+        _p_port_name: *mut u16,
+        _p_driver_name: *mut u16,
+        _p_comment: *mut u16,
+        _p_location: *mut u16,
+        _p_dev_mode: *mut c_void,
+        _p_sep_file: *mut u16,
+        _p_print_processor: *mut u16,
+        _p_datatype: *mut u16,
+        _p_parameters: *mut u16,
+        _p_security_descriptor: *mut c_void,
+        _attributes: DWORD,
+        _priority: DWORD,
+        _default_priority: DWORD,
+        _start_time: DWORD,
+        _until_time: DWORD,
         status: DWORD,
-        c_jobs: DWORD,
-        average_ppm: DWORD,
+        _c_jobs: DWORD,
+        _average_ppm: DWORD,
     }
 
+    #[link(name = "winspool")]
     extern "system" {
         fn OpenPrinterW(
             p_printer_name: *const u16,
             ph_printer: *mut HANDLE,
-            p_default: *mut std::ffi::c_void,
+            p_default: *mut c_void,
         ) -> BOOL;
         fn GetPrinterW(
             h_printer: HANDLE,
@@ -559,7 +432,6 @@ mod win32_printer_status {
             return Err(format!("OpenPrinterW failed for '{}'", printer_name));
         }
 
-        // Ensure handle is closed on every exit path.
         struct PrinterGuard(HANDLE);
         impl Drop for PrinterGuard {
             fn drop(&mut self) {
@@ -570,7 +442,6 @@ mod win32_printer_status {
         }
         let _guard = PrinterGuard(handle);
 
-        // First call: get required buffer size.
         let mut needed: DWORD = 0;
         unsafe {
             GetPrinterW(handle, 2, std::ptr::null_mut(), 0, &mut needed);
@@ -590,23 +461,19 @@ mod win32_printer_status {
         }
 
         let info = unsafe { &*(buf.as_ptr() as *const PrinterInfo2W) };
-        let status = info.status;
-
-        Ok(classify_status_flags(status))
+        Ok(classify_status_flags(info.status))
     }
 
     fn classify_status_flags(status: u32) -> String {
         if status == 0 {
             return "online".into();
         }
-        // Priority: printing > busy > most-severe remaining
         if status & PRINTER_STATUS_PRINTING != 0 {
             return "printing".into();
         }
         if status & (PRINTER_STATUS_BUSY | PRINTER_STATUS_IO_ACTIVE) != 0 {
             return "busy".into();
         }
-        // Pick the most severe remaining flag.
         if status & PRINTER_STATUS_ERROR != 0 {
             return "error".into();
         }
@@ -628,7 +495,6 @@ mod win32_printer_status {
         if status & PRINTER_STATUS_PENDING_DELETION != 0 {
             return "pending_deletion".into();
         }
-        // Fallback for any unrecognized flag combination.
         "busy".into()
     }
 }
@@ -644,14 +510,13 @@ pub fn get_printer_status(
         let _ = printer_name;
         Ok("unknown".into())
     }
-
     #[cfg(target_os = "windows")]
     {
         match win32_printer_status::query_status(&printer_name) {
             Ok(s) => Ok(s),
             Err(e) => {
                 log::warn!("get_printer_status: {e}");
-                Err(crate::error::AppError::Internal(e))
+                Err(AppError::Internal(e))
             }
         }
     }
@@ -661,44 +526,111 @@ pub fn get_printer_status(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
     use super::*;
 
-    // ── classify_from_type ──────────────────────────────────────────────
+    // ── classify_from_type (string enum, the actual shape Get-Printer returns) ──
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn classify_from_type_maps_known_types() {
-        assert_eq!(classify_from_type(Some(3)), Some("usb".into()));
-        assert_eq!(classify_from_type(Some(4)), Some("network".into()));
-        assert_eq!(classify_from_type(Some(5)), Some("usb".into()));
-        assert_eq!(classify_from_type(Some(6)), Some("unknown".into()));
-        assert_eq!(classify_from_type(Some(99)), None);
-        assert_eq!(classify_from_type(None), None);
+    fn classify_from_type_handles_string_enum() {
+        assert_eq!(
+            classify_from_type(&Some(serde_json::Value::String("Local".into()))),
+            Some("usb".into())
+        );
+        assert_eq!(
+            classify_from_type(&Some(serde_json::Value::String("Logical".into()))),
+            Some("usb".into())
+        );
+        assert_eq!(
+            classify_from_type(&Some(serde_json::Value::String("Network".into()))),
+            Some("network".into())
+        );
+        assert_eq!(
+            classify_from_type(&Some(serde_json::Value::String("Connection".into()))),
+            Some("network".into())
+        );
+        assert_eq!(
+            classify_from_type(&Some(serde_json::Value::String("Shared".into()))),
+            Some("network".into())
+        );
+        assert_eq!(
+            classify_from_type(&Some(serde_json::Value::String("Fax".into()))),
+            Some("unknown".into())
+        );
+        assert_eq!(classify_from_type(&None), None);
     }
 
-    // ── classify_printer ────────────────────────────────────────────────
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn classify_from_type_handles_int_legacy() {
+        // Some hosts report it as a uint (3=local, 4=network, 5=software, 6=fax)
+        assert_eq!(
+            classify_from_type(&Some(serde_json::json!(3))),
+            Some("usb".into())
+        );
+        assert_eq!(
+            classify_from_type(&Some(serde_json::json!(4))),
+            Some("network".into())
+        );
+    }
 
     #[cfg(target_os = "windows")]
     #[test]
     fn classify_printer_prefers_type_over_heuristic() {
-        // Type 4 = network, even if port looks USB
+        // Type says Network but port looks USB → Type wins
         assert_eq!(
-            classify_printer(Some(4), &Some("USB001".into()), &None),
+            classify_printer(
+                &Some(serde_json::Value::String("Network".into())),
+                &Some("USB001".into()),
+                &None
+            ),
             "network"
         );
-        // Type 3 = usb, even if port looks network
+        // Type says Local but port looks network → Type wins
         assert_eq!(
-            classify_printer(Some(3), &Some("TCP/IP".into()), &None),
+            classify_printer(
+                &Some(serde_json::Value::String("Local".into())),
+                &Some("TCP/IP".into()),
+                &None
+            ),
             "usb"
         );
-        // Type = None → falls back to heuristic
-        assert_eq!(classify_printer(None, &Some("USB001".into()), &None), "usb");
+        // No Type → falls back to heuristic
+        assert_eq!(
+            classify_printer(&None, &Some("USB001".into()), &None),
+            "usb"
+        );
     }
 
-    // ── Existing tests (verbatim) ───────────────────────────────────────
+    // ── parse_printer_list (Get-Printer JSON shape) ────────────────────
 
     #[cfg(target_os = "windows")]
-    use super::mask_printer_name;
+    #[test]
+    fn parse_printer_list_handles_array() {
+        let json = r#"[{"Name":"X","DriverName":"D","PortName":"USB001","PrinterType":"Local"}]"#;
+        let list = parse_printer_list(json).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name.as_deref(), Some("X"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn parse_printer_list_handles_single_object() {
+        let json = r#"{"Name":"X","DriverName":"D","PortName":"USB001","Type":"Local"}"#;
+        let list = parse_printer_list(json).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name.as_deref(), Some("X"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn parse_printer_list_returns_empty_on_unknown() {
+        assert!(parse_printer_list("hello").unwrap().is_empty());
+        assert!(parse_printer_list("").unwrap().is_empty());
+    }
+
+    // ── Existing tests preserved ───────────────────────────────────────
 
     #[cfg(target_os = "windows")]
     #[test]
