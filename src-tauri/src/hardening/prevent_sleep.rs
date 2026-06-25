@@ -26,7 +26,10 @@ pub fn is_prevented() -> bool {
 pub fn apply_on_launch<R: Runtime>(_app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "windows")]
     {
-        match Command::new(crate::sys_tool::resolve("net")).args(["session"]).output() {
+        match Command::new(crate::sys_tool::resolve("net"))
+            .args(["session"])
+            .output()
+        {
             Ok(out) if out.status.success() => {}
             Ok(out) => {
                 log::warn!(
@@ -63,16 +66,13 @@ pub fn set_prevent_sleep(state: State<'_, AppState>, enabled: bool) -> Result<()
 #[cfg(target_os = "windows")]
 fn apply_policy(enabled: bool) -> bool {
     use windows::Win32::System::Power::SetThreadExecutionState;
-    use windows::Win32::System::Power::{
-        ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
-    };
+    use windows::Win32::System::Power::{ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED};
 
     unsafe {
         if enabled {
-            let prev = SetThreadExecutionState(
-                ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED,
-            );
-            if prev.is_none() {
+            let prev =
+                SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+            if prev.0 == 0 {
                 log::warn!("SetThreadExecutionState(enable) returned NULL");
                 return false;
             }

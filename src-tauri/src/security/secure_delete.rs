@@ -256,7 +256,7 @@ fn windows_is_ssd(path: &Path) -> Result<bool, AppError> {
 
     // Get the drive root (e.g., "C:\").
     let drive_root = get_drive_root(path);
-    let wide_root: Vec<u16> = drive_root
+    let _wide_root: Vec<u16> = drive_root
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();
@@ -332,7 +332,7 @@ fn windows_issue_trim(file: &fs::File) -> Result<(), AppError> {
         Offset: 0,
         Length: u64::MAX,
     };
-    let mut trim = win::FILE_LEVEL_TRIM {
+    let trim = win::FILE_LEVEL_TRIM {
         Key: 0,
         NumRanges: 1,
     };

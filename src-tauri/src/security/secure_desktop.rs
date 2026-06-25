@@ -117,11 +117,11 @@ fn create_secure_desktop(name: &str) -> Result<HDESK, AppError> {
     let hdesk = unsafe {
         win::CreateDesktopW(
             wide_name.as_ptr(),
-            std::ptr::null(), // lpszDevice
-            std::ptr::null(), // pDevMode
-            0,                // dwFlags
+            std::ptr::null(),     // lpszDevice
+            std::ptr::null_mut(), // pDevMode
+            0,                    // dwFlags
             desired_access,
-            std::ptr::null(), // lpsa
+            std::ptr::null_mut(), // lpsa
         )
     };
 

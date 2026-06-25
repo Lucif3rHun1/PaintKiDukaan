@@ -210,7 +210,7 @@ fn windows_parse_usb_event(wparam: usize, lparam: usize) -> Option<UsbDeviceInfo
     }
 
     let volume = unsafe { &*(lparam as *const win::DEV_BROADCAST_VOLUME) };
-    if volume.dbcv_flags & DBTF_MEDIA == 0 {
+    if volume.dbcv_flags & (DBTF_MEDIA as u16) == 0 {
         // Not a media change (e.g., drive letter added).
     }
 

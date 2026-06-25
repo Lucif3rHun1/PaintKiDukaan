@@ -172,8 +172,6 @@ fn unix_check_rollback(clock: &mut MonotonicClock) -> Result<TimeVerdict, AppErr
 
 #[cfg(target_os = "windows")]
 mod win {
-    use std::ffi::c_void;
-
     #[link(name = "kernel32")]
     extern "system" {
         pub fn QueryPerformanceCounter(lpPerformanceCount: *mut i64) -> i32;

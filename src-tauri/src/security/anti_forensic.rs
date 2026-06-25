@@ -127,8 +127,8 @@ pub fn clear_shellbags_and_recent() -> Result<(), AppError> {
         unsafe {
             let empty = CString::new("").unwrap();
             windows::Win32::UI::Shell::SHAddToRecentDocs(
-                windows::Win32::UI::Shell::SHARD_PATHA,
-                empty.as_ptr() as _,
+                windows::Win32::UI::Shell::SHARD_PATHA.0 as u32,
+                Some(empty.as_ptr() as *const std::ffi::c_void),
             );
         }
     }

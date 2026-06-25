@@ -237,7 +237,7 @@ fn verify_authenticode_inner(path: &std::path::Path) -> Result<AuthenticodeRepor
 #[cfg(target_os = "windows")]
 fn extract_signer_name(path: &std::path::Path) -> Result<Option<String>, AppError> {
     use std::ffi::c_void;
-    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
     // Crypt32 FFI for certificate extraction.
     const CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED: u32 = 0x400;

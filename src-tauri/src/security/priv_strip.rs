@@ -219,19 +219,17 @@ fn has_privilege_inner(name: &str) -> Result<bool, AppError> {
         let mut buf = PrivilegeSet {
             privilege_count: 0,
             control: 0,
-            privilege: unsafe { std::mem::zeroed() },
+            privilege: std::mem::zeroed(),
         };
         let mut ret_len: u32 = 0;
 
-        let ok = unsafe {
-            GetTokenInformation(
-                token,
-                TOKEN_INFORMATION_CLASS_PRIVILEGES,
-                &mut buf as *mut _ as *mut std::ffi::c_void,
-                std::mem::size_of::<PrivilegeSet>() as u32,
-                &mut ret_len,
-            )
-        };
+        let ok = GetTokenInformation(
+            token,
+            TOKEN_INFORMATION_CLASS_PRIVILEGES,
+            &mut buf as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<PrivilegeSet>() as u32,
+            &mut ret_len,
+        );
 
         if ok == 0 {
             return Err(AppError::Internal(format!(
