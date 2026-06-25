@@ -28,6 +28,7 @@ import {
   type ThermalSize,
   THERMAL_SIZES,
 } from "../../pos/print";
+import { buildTsplBytes } from "../../pos/tspl";
 import { Button, Skeleton } from "../../components/ui";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
@@ -313,34 +314,52 @@ export function BulkLabelsPage() {
     setBusy(true);
     setActionMsg(null);
     try {
-      const cfg = configFromSelect(printer, sizeChoice, labelsPerRow);
-      const labels = batch.map((r) => r.label);
-      const blob = await buildLabelPdfBlob(labels, cfg);
-      const url = URL.createObjectURL(blob);
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.left = "-9999px";
-      iframe.style.top = "0";
-      iframe.style.width = "1px";
-      iframe.style.height = "1px";
-      iframe.onload = () => {
-        // print() blocks the event loop while the dialog is open in
-        // desktop webviews, so the finally block runs after the user
-        // closes/clicks the dialog.
+      const isTauriApp =
+        typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+      // TSPL raw-print path — works on Windows via Win32 WritePrinter.
+      if (isTauriApp && defaultMapping) {
         try {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-        } finally {
-          document.body.removeChild(iframe);
-          URL.revokeObjectURL(url);
+          const printerName = defaultMapping.name;
+          const widthMm = defaultMapping.width_mm;
+          const heightMm = defaultMapping.height_mm;
+
+          // Group identical labels so we send one PRINT command per
+          // unique barcode+text combination (qty encoded in TSPL).
+          const grouped = new Map<string, { label: BatchLabel; qty: number }>();
+          for (const row of batch) {
+            const l = row.label;
+            const key = `${l.barcode}\x00${l.line1 ?? ""}\x00${l.line2 ?? ""}\x00${l.sku ?? ""}`;
+            const existing = grouped.get(key);
+            if (existing) {
+              existing.qty++;
+            } else {
+              grouped.set(key, { label: l, qty: 1 });
+            }
+          }
+
+          for (const { label, qty } of grouped.values()) {
+            const bytes = buildTsplBytes(label, widthMm, heightMm, qty);
+            await ipc.printRaw(printerName, bytes);
+          }
+
+          await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
+          setActionMsg(`Sent ${batch.length} label(s) to ${printerName}.`);
+          return;
+        } catch (rawErr) {
+          console.warn("TSPL raw print failed, falling back to PDF:", rawErr);
         }
-      };
-      // Set onload before src to avoid the load event firing before
-      // the handler is attached (a race that silently swallows print).
-      document.body.appendChild(iframe);
-      iframe.src = url;
+      }
+
+      // Fallback — download PDF (also used when no default label printer).
+      const cfg = configFromSelect(printer, sizeChoice, labelsPerRow);
+      await printLabelBatch(batch.map((r) => r.label), cfg);
       await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
-      setActionMsg(`Sent ${batch.length} label(s) to printer.`);
+      setActionMsg(
+        defaultMapping
+          ? "Direct thermal print unavailable on this platform — PDF downloaded instead."
+          : "No default label printer configured — PDF downloaded.",
+      );
     } catch (e) {
       setActionMsg(`Failed: ${extractError(e)}`);
     } finally {
