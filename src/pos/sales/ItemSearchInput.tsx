@@ -73,6 +73,7 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
             unit_id: item.unit_id,
             unit_code: item.unit_code ?? "",
             unit_label: item.unit_label ?? "",
+            sell_unit: item.sell_unit,
             current_qty: item.current_qty,
             min_qty: item.min_qty ?? 0,
           }));
@@ -99,6 +100,7 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
         unit_id: 0,
         unit_code: "",
         unit_label: "",
+        sell_unit: "unit",
         current_qty,
         min_qty: item.min_qty ?? 0,
       };
@@ -114,6 +116,7 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
         unit_id: item.unit_id,
         unit_code: item.unit_code,
         unit_label: item.unit_label ?? "",
+        sell_unit: item.sell_unit,
         current_qty: item.in_stock,
         min_qty: 0,
       };
@@ -128,6 +131,7 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
       unit_id: item.unit_id,
       unit_code: item.unit_code ?? "",
       unit_label: item.unit_label ?? "",
+      sell_unit: item.sell_unit,
       current_qty: item.current_qty,
       min_qty: item.min_qty ?? 0,
     };

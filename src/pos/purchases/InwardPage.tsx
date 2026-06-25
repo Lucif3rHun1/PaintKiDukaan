@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PackagePlus, Search, Truck, X } from "lucide-react";
 import { EmptyState, Skeleton } from "../../components/ui";
 
-import { Button, InlineDialog, Money, MoneyInput } from "../../components/ui";
+import { Button, InlineDialog, Money, MoneyInput, QtyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
@@ -544,23 +544,12 @@ export default function InwardPage({ user: _user }: Props) {
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        step="0.5"
-                        min="0"
+                      <QtyInput
                         value={entry.qty}
-                        onChange={(e) =>
-                          setEntry((p) => ({ ...p, qty: Number(e.target.value) }))
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            commitEntry();
-                          }
-                        }}
-                        className="input h-9 w-16 px-2 text-sm tabular-nums"
-                        data-testid="inward-entry-qty"
+                        step={0.5}
+                        min={0}
+                        onChange={(v) => setEntry((p) => ({ ...p, qty: v }))}
+                        ariaLabel="Quantity"
                       />
                     </td>
                     <td className="px-3 py-2">

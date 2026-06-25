@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Save, Search, Trash2, UserMinus, UserPlus } from "lucide-react";
 
-import { Alert, Badge, Button, Card, InlineDialog, KbdHint, Money, MoneyInput } from "../../components/ui";
+import { Alert, Badge, Button, Card, InlineDialog, KbdHint, Money, MoneyInput, QtyInput, Select } from "../../components/ui";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
 import { listLocations } from "../../domain/locations/api";
@@ -166,10 +166,10 @@ export default function ReturnPage({ user, onBack }: Props) {
     };
     try {
       const saved = await toast.promise(createSalesReturn(payload), {
-        loading: "Saving return…",
-        success: (returnId) => `Return #${returnId} saved`,
-        error: (e) => (e as Error)?.message ?? "Return save failed",
-      });
+loading: "Saving return…",
+          success: (returnId) => `Return #${returnId} saved`,
+          error: (e) => extractError(e),
+        });
       clearAll();
       setStatus(`Return #${saved} saved`);
     } catch (e) {
@@ -294,14 +294,11 @@ export default function ReturnPage({ user, onBack }: Props) {
                           <div className="font-mono text-[10px] text-muted-foreground">#{line.item_id}</div>
                         </td>
                         <td className="py-2">
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.5}
+                          <div className="flex flex-col gap-1">
+                            <QtyInput
                               value={line.qty}
-                              onChange={(event) => updateLineQty(index, Number(event.target.value))}
-                              className="input h-9 w-20 px-2 text-sm tabular-nums"
+                              step={0.5}
+                              onChange={(v) => updateLineQty(index, v)}
                             />
                             {line.unit_code ? (
                               <span className="text-[11px] text-muted-foreground">{line.unit_code}</span>
@@ -357,18 +354,16 @@ export default function ReturnPage({ user, onBack }: Props) {
 
               <label className="block space-y-1 text-sm">
                 <span className="font-medium text-foreground">Return location</span>
-                <select
-                  value={locationId || ""}
+                <Select
+                  value={locationId ? String(locationId) : ""}
                   onChange={(event) => setLocationId(Number(event.target.value))}
-                  className="input h-10 w-full px-3"
-                >
-                  <option value="" disabled>Select location</option>
-                  {locations.map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name}{location.zone ? ` · ${location.zone}` : ""}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Select location"
+                  size="md"
+                  options={locations.map((location) => ({
+                    value: String(location.id),
+                    label: `${location.name}${location.zone ? ` · ${location.zone}` : ""}`,
+                  }))}
+                />
               </label>
 
               <label className="block space-y-1 text-sm">

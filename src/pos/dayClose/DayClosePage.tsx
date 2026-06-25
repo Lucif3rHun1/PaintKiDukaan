@@ -20,6 +20,7 @@ import {
 } from "../api";
 import type { BackupGate, CashSalesSummary, DayClose } from "../types";
 import { formatDateForDisplay } from "../../lib/date";
+import { extractError } from "../../lib/extractError";
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
@@ -138,7 +139,7 @@ export default function DayClosePage({ user }: Props) {
       setStatus(`Day closed (id=${id}, decision=${decision})`);
       setRecent(await listDayClose(30));
     } catch (e) {
-      setStatus(`Close failed: ${String(e)}`);
+      setStatus(`Close failed: ${extractError(e)}`);
     }
   }
 

@@ -1,10 +1,10 @@
 // Sales list page — recent sales with search, date filter, and pagination.
 
 import { useMemo, useState } from "react";
-import { Plus, Receipt } from "lucide-react";
+import { Download, Eye, Plus, Printer, Receipt } from "lucide-react";
 import { DatePicker } from "../../components/ui/DatePicker";
 
-import { Badge, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
+import { ActionMenu, Badge, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { listSales } from "../api";
 import { usePaginatedQuery } from "../../lib/query";
@@ -12,6 +12,10 @@ import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { formatDateForDisplay } from "../../lib/date";
 import type { Sale } from "../types";
+import {
+  safeDownloadSalePdfById,
+  safePrintSaleById,
+} from "./printOrDownload";
 
 interface Props {
   onCreate: () => void;
@@ -63,9 +67,13 @@ export function SalesListPage({ onCreate }: Props) {
       {
         header: "No",
         cell: (s) => (
-          <span className="font-mono tabular-nums text-foreground">
+          <a
+            href={`#/sales/${s.id}`}
+            className="font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
+            aria-label={`Open invoice ${s.no}`}
+          >
             {s.no}
-          </span>
+          </a>
         ),
       },
       {
@@ -104,6 +112,34 @@ export function SalesListPage({ onCreate }: Props) {
         header: "Paid",
         align: "right",
         cell: (s) => <Money paise={s.paid_amount} />,
+      },
+      {
+        header: "",
+        id: "actions",
+        align: "right",
+        width: "3rem",
+        cell: (s) => (
+          <ActionMenu
+            label={`Actions for ${s.no}`}
+            items={[
+              {
+                label: "View",
+                icon: Eye,
+                onSelect: () => (window.location.hash = `#/sales/${s.id}`),
+              },
+              {
+                label: "Print",
+                icon: Printer,
+                onSelect: () => void safePrintSaleById(s.id),
+              },
+              {
+                label: "Download PDF",
+                icon: Download,
+                onSelect: () => void safeDownloadSalePdfById(s.id),
+              },
+            ]}
+          />
+        ),
       },
     ],
     [],
@@ -186,6 +222,7 @@ export function SalesListPage({ onCreate }: Props) {
           data={rows}
           columns={columns}
           keyExtractor={(s) => s.id}
+          onRowClick={(s) => (window.location.hash = `#/sales/${s.id}`)}
           loading={isLoading || isFetching}
           error={error}
           onRetry={refetch}

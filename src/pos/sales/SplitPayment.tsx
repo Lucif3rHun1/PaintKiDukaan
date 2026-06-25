@@ -1,6 +1,5 @@
-// @ts-nocheck
 import { Plus, X } from "lucide-react";
-import { Button, MoneyInput } from "../../components/ui";
+import { Button, MoneyInput, Select } from "../../components/ui";
 import type { PaymentMode, PaymentSplit } from "../types";
 
 interface Props {
@@ -9,19 +8,38 @@ interface Props {
   onChange: (splits: PaymentSplit[]) => void;
 }
 
-const MODES: PaymentMode[] = ["cash", "upi", "card", "bank", "cheque"];
+const MODE_OPTIONS = [
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "card", label: "Card" },
+  { value: "bank", label: "Bank" },
+  { value: "cheque", label: "Cheque" },
+] as const;
 
 export function SplitPayment({ total, splits, onChange }: Props) {
-  const paidAmount = splits.reduce((sum, s) => sum + s.amount, 0);
-  const remaining = Math.max(0, total - paidAmount);
-
   function addSplit() {
     const defaultMode = splits.length === 0 ? "cash" : "upi";
-    onChange([...splits, { mode: defaultMode, amount: remaining }]);
+    onChange([...splits, { mode: defaultMode, amount: 0 }]);
   }
 
-  function updateSplit(index: number, patch: Partial<PaymentSplit>) {
-    onChange(splits.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  function handleChange(index: number, patch: Partial<PaymentSplit>) {
+    const next = splits.map((s, i) => (i === index ? { ...s, ...patch } : s));
+    // Last split acts as the running remainder — re-fill it whenever an
+    // earlier split changes. Editing the last split itself is a direct commit.
+    if (
+      next.length > 1 &&
+      index !== next.length - 1 &&
+      patch.amount !== undefined
+    ) {
+      const others = next
+        .slice(0, -1)
+        .reduce((sum, s) => sum + s.amount, 0);
+      next[next.length - 1] = {
+        ...next[next.length - 1],
+        amount: Math.max(0, total - others),
+      };
+    }
+    onChange(next);
   }
 
   function removeSplit(index: number) {
@@ -38,36 +56,34 @@ export function SplitPayment({ total, splits, onChange }: Props) {
           size="sm"
           icon={Plus}
           onClick={addSplit}
-          disabled={remaining === 0}
         >
           Add
         </Button>
       </div>
 
       {splits.map((split, index) => (
-        <div key={index} className="flex items-center gap-2">
-          <select
+        <div
+          key={index}
+          className="grid grid-cols-[7rem_minmax(0,1fr)_2.25rem] items-center gap-2"
+        >
+          <Select
             value={split.mode}
             onChange={(e) =>
-              updateSplit(index, { mode: e.target.value as PaymentMode })
+              handleChange(index, { mode: e.target.value as PaymentMode })
             }
-            className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-          >
-            {MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            options={MODE_OPTIONS as unknown as { value: string; label: string }[]}
+            size="md"
+            aria-label="Payment mode"
+          />
           <MoneyInput
             value={split.amount}
-            onChange={(amount) => updateSplit(index, { amount })}
+            onChange={(amount) => handleChange(index, { amount })}
             min={0}
-            className="flex-1"
           />
           <button
             type="button"
             onClick={() => removeSplit(index)}
+            aria-label="Remove payment"
             className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           >
             <X className="h-4 w-4" />

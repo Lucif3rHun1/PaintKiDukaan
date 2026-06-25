@@ -1,7 +1,7 @@
 // Return detail page — read-only view of a past return.
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, RotateCcw } from "lucide-react";
+import { ArrowLeft, ExternalLink, RotateCcw } from "lucide-react";
 
 import { Badge, Button, Card, EmptyState, Money } from "../../components/ui";
 import { getSaleReturn } from "../../domain/ipc";
@@ -86,6 +86,19 @@ export function ReturnDetailPage({ id, onBack }: Props) {
             Return <span className="font-mono tabular-nums">{ret.no}</span>
           </h1>
           <Badge variant="info" size="sm">return</Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          {ret.sale_id > 0 ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              icon={ExternalLink}
+              onClick={() => (window.location.hash = `#/sales/${ret.sale_id}`)}
+            >
+              View original sale
+            </Button>
+          ) : null}
         </div>
       </header>
 

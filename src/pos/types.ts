@@ -277,6 +277,9 @@ export interface ItemSearchHit {
   unit_id: number;
   unit_code: string;
   unit_label: string;
+  /** Sell form ("unit" | "box") — maps to `sale_items.unit_type`. Distinct from
+   * `unit_code` which is the measurement unit ("L", "pc", etc.). */
+  sell_unit: string;
   current_qty: number;
   /** Reorder threshold (0 = no threshold). Used to render "low stock" UI. */
   min_qty?: number;

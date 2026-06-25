@@ -60,96 +60,218 @@ export interface ReceiptSpec {
   shop_phone?: string;
   shop_gstin?: string;
   sale: Sale;
+  customer_phone?: string | null;
+  customer_address?: string | null;
 }
 
 export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  const pageW = 210;
   const margin = 12;
+  const right = pageW - margin;
   let y = margin;
-  doc.setFontSize(16);
+
+  const PRIMARY: [number, number, number] = [37, 99, 235]; // indigo-600 — matches app --primary
+  const PRIMARY_LIGHT: [number, number, number] = [238, 242, 255]; // indigo-50 — header bg
+  const MUTED: [number, number, number] = [100, 116, 139]; // slate-500 — matches --muted-foreground
+  const DARK: [number, number, number] = [15, 23, 42]; // slate-900 — matches --foreground
+  const BORDER: [number, number, number] = [226, 232, 240]; // slate-200 — matches --border
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(...DARK);
+  doc.text("INVOICE", margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...PRIMARY);
+  doc.text("ORIGINAL FOR RECIPIENT", right, y, { align: "right" });
+  y += 4;
+  doc.setDrawColor(...PRIMARY);
+  doc.setLineWidth(0.6);
+  doc.line(margin, y, right, y);
+  y += 8;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(...PRIMARY);
   doc.text(spec.shop_name, margin, y);
   y += 6;
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  if (spec.shop_phone) {
+    doc.text(`Phone: ${spec.shop_phone}`, margin, y);
+    y += 4;
+  }
   if (spec.shop_address) {
     doc.text(spec.shop_address, margin, y);
     y += 4;
   }
-  if (spec.shop_phone || spec.shop_gstin) {
-    const line = [spec.shop_phone, spec.shop_gstin].filter(Boolean).join("  |  GSTIN: ");
-    doc.text(line, margin, y);
+  if (spec.shop_gstin) {
+    doc.text(`GSTIN: ${spec.shop_gstin}`, margin, y);
     y += 4;
   }
   y += 2;
-  doc.setLineWidth(0.2);
-  doc.line(margin, y, 210 - margin, y);
-  y += 5;
-  doc.setFontSize(11);
-  doc.text(`Bill ${spec.sale.no}`, margin, y);
-  doc.text(spec.sale.date, 210 - margin, y, { align: "right" });
-  y += 6;
-  if (spec.sale.customer_name) {
-    doc.setFontSize(10);
-    doc.text(`Customer: ${spec.sale.customer_name}`, margin, y);
-    y += 5;
-  }
-  doc.setFontSize(9);
-  doc.text("Item", margin, y);
-  doc.text("Qty", 120, y, { align: "right" });
-  doc.text("Price", 145, y, { align: "right" });
-  doc.text("Disc", 165, y, { align: "right" });
-  doc.text("Total", 195, y, { align: "right" });
-  y += 2;
-  doc.line(margin, y, 210 - margin, y);
+  doc.setDrawColor(...PRIMARY);
+  doc.setLineWidth(0.4);
+  doc.line(margin, y, right, y);
   y += 4;
-  for (const it of spec.sale.items) {
-    doc.text(it.item_name.slice(0, 50), margin, y);
-    doc.text(`${it.qty}${it.unit_type ? " " + it.unit_type : ""}`, 120, y, { align: "right" });
-    doc.text(paiseToRupees(it.price), 145, y, { align: "right" });
-    doc.text(paiseToRupees(it.line_discount), 165, y, { align: "right" });
-    const lineValue = it.qty * it.price - it.line_discount;
-    doc.text(paiseToRupees(Math.max(0, lineValue)), 195, y, { align: "right" });
+
+  doc.setFillColor(...PRIMARY_LIGHT);
+  doc.rect(margin, y - 4, right - margin, 9, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...DARK);
+  doc.text(`Sales No: ${spec.sale.no}`, margin + 2, y + 2);
+  doc.text(`Sales Date: ${spec.sale.date}`, right - 2, y + 2, { align: "right" });
+  y += 10;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  doc.text("BILL TO", margin, y);
+  y += 4;
+  doc.setFontSize(10);
+  doc.setTextColor(...DARK);
+  doc.text(spec.sale.customer_name || "-", margin, y);
+  if (spec.customer_phone) {
     y += 4;
+    doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    doc.text(spec.customer_phone, margin, y);
+  }
+  if (spec.customer_address) {
+    y += 4;
+    doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    doc.text(spec.customer_address, margin, y);
+  }
+  y += 8;
+
+  const tableX = margin;
+  const tableW = right - margin;
+  const colQty = margin + tableW * 0.55;
+  const colRate = margin + tableW * 0.72;
+  const colAmt = right;
+  doc.setFillColor(...PRIMARY);
+  doc.rect(tableX, y - 4, tableW, 8, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(255, 255, 255);
+  doc.text("Items", tableX + 2, y + 1);
+  doc.text("Quantity", colQty, y + 1, { align: "right" });
+  doc.text("Rate", colRate, y + 1, { align: "right" });
+  doc.text("Amount", colAmt, y + 1, { align: "right" });
+  y += 7;
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...DARK);
+  for (const it of spec.sale.items) {
+    const qtyStr = `${it.qty}${it.unit_type ? " " + it.unit_type : ""}`;
+    const lineValue = Math.max(0, it.qty * it.price - it.line_discount);
+    doc.text(it.item_name.slice(0, 40), tableX + 2, y);
+    doc.text(qtyStr, colQty, y, { align: "right" });
+    doc.text(paiseToPdfRupees(it.price), colRate, y, { align: "right" });
+    doc.text(paiseToPdfRupees(lineValue), colAmt, y, { align: "right" });
+    y += 5;
     if (it.shade_note) {
       doc.setFontSize(8);
-      doc.text(`   shade: ${it.shade_note}`, margin, y);
+      doc.setTextColor(...MUTED);
+      doc.text(`shade: ${it.shade_note}`, tableX + 4, y);
       doc.setFontSize(9);
-      y += 3;
+      doc.setTextColor(...DARK);
+      y += 4;
     }
-    if (y > 270) {
+    if (y > 240) {
       doc.addPage();
       y = margin;
     }
   }
   y += 2;
-  doc.line(margin, y, 210 - margin, y);
-  y += 5;
-  doc.setFontSize(10);
-  doc.text("Subtotal", 150, y, { align: "right" });
-  doc.text(paiseToRupees(spec.sale.subtotal), 195, y, { align: "right" });
-  y += 5;
-  doc.text("Bill Discount", 150, y, { align: "right" });
-  doc.text(`- ${paiseToRupees(spec.sale.bill_discount)}`, 195, y, { align: "right" });
-  y += 5;
-  doc.setFontSize(12);
-  doc.text("Total", 150, y, { align: "right" });
-  doc.text(paiseToRupees(spec.sale.total), 195, y, { align: "right" });
+  doc.setDrawColor(...PRIMARY);
+  doc.setLineWidth(0.4);
+  doc.line(margin, y, right, y);
   y += 6;
+
+  const labelX = right - 60;
+  const valueX = right;
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text("Payment Breakdown", margin, y);
-  y += 4;
-  for (const m of spec.sale.payment_modes) {
-    doc.text(m.mode.toUpperCase(), margin, y);
-    doc.text(paiseToRupees(m.amount), 195, y, { align: "right" });
-    y += 4;
-  }
-  if (spec.sale.paid_amount < spec.sale.total) {
-    doc.text("Outstanding", 150, y, { align: "right" });
-    doc.text(paiseToRupees(spec.sale.total - spec.sale.paid_amount), 195, y, { align: "right" });
+  doc.setTextColor(...DARK);
+  doc.text("Sub Total", labelX, y);
+  doc.text(paiseToPdfRupees(spec.sale.subtotal), valueX, y, { align: "right" });
+  y += 5;
+  if (spec.sale.bill_discount > 0) {
+    doc.text("Bill Discount", labelX, y);
+    doc.text(`- ${paiseToPdfRupees(spec.sale.bill_discount)}`, valueX, y, { align: "right" });
     y += 5;
   }
+  doc.setDrawColor(...PRIMARY);
+  doc.setLineWidth(0.3);
+  doc.line(labelX, y, right, y);
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(...PRIMARY);
+  doc.text("Total Amount", labelX, y);
+  doc.text(paiseToPdfRupees(spec.sale.total), valueX, y, { align: "right" });
+  y += 7;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...DARK);
+  doc.text("Received Amount", labelX, y);
+  doc.text(paiseToPdfRupees(spec.sale.paid_amount), valueX, y, { align: "right" });
+  y += 5;
+  const balance = spec.sale.total - spec.sale.paid_amount;
+  doc.text(balance > 0 ? "Due Amount" : "Balance", labelX, y);
+  doc.text(paiseToPdfRupees(Math.abs(balance)), valueX, y, { align: "right" });
+  y += 7;
+
+  if (spec.sale.payment_modes.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    doc.text("PAYMENT BREAKDOWN", margin, y);
+    y += 4;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...DARK);
+    for (const m of spec.sale.payment_modes) {
+      doc.text(m.mode.toUpperCase(), margin, y);
+      doc.text(paiseToPdfRupees(m.amount), valueX, y, { align: "right" });
+      y += 4;
+    }
+  }
+
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  doc.text("Thank you for your purchase.", margin, 285);
+  doc.setTextColor(...MUTED);
+  doc.text("Total Amount in Words: INR Only", margin, y + 1);
+  y += 12;
+
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.3);
+  doc.rect(margin, y, 70, 22);
+  doc.setFontSize(8);
+  doc.text("Customer Signature", margin + 2, y + 26);
+  doc.setFontSize(9);
+  doc.setTextColor(...DARK);
+  doc.text(`Authorised Signature For ${spec.shop_name}`, right, y + 11, { align: "right" });
+  doc.setDrawColor(...BORDER);
+  doc.line(right - 60, y + 14, right, y + 14);
+
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(10);
+  doc.setTextColor(...PRIMARY);
+  doc.text("Thank You For Your Business !", pageW / 2, 285, { align: "center" });
+
   return doc;
+}
+
+function paiseToPdfRupees(paise: number): string {
+  const rupees = (paise || 0) / 100;
+  return `Rs.${rupees.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export async function buildReceiptPdfBlob(spec: ReceiptSpec): Promise<Blob> {

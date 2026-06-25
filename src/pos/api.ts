@@ -27,7 +27,7 @@ const isTauri = (): boolean =>
 
 // ----- Sales -----
 export const createSale = (req: NewSale): Promise<number> =>
-  isTauri() ? tauriInvoke<number>("cmd_create_sale", { req }) : Promise.resolve(0);
+  isTauri() ? tauriInvoke<number>("cmd_create_sale", { sale: req }) : Promise.resolve(0);
 export const convertQuotation = (req: ConvertQuotation): Promise<number> =>
   isTauri() ? tauriInvoke<number>("cmd_convert_quotation", { req }) : Promise.resolve(0);
 export const getSale = (id: number): Promise<Sale | null> =>

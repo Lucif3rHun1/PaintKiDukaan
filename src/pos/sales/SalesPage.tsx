@@ -4,12 +4,14 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
 import {
   ArrowLeft,
   PackagePlus,
+  Printer,
   Save,
   ShoppingCart,
   X,
@@ -23,6 +25,8 @@ import {
   InlineDialog,
   Money,
   MoneyInput,
+  MoneyStatic,
+  QtyInput,
   Skeleton,
   cn,
 } from "../../components/ui";
@@ -30,6 +34,7 @@ import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
 import { toast } from "../../lib/feedback/toast";
+import { extractError } from "../../lib/extractError";
 import { useSecurity } from "../../lib/security/state";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
@@ -89,6 +94,7 @@ export default function SalesPage({ user, onExit }: Props) {
   const [ackFlag, setAckFlag] = useState(false);
   const [recent, setRecent] = useState<Sale[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
+  const shouldPrintAfterSaveRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,7 +142,7 @@ export default function SalesPage({ user, onExit }: Props) {
           current_qty_at_add: item.current_qty,
           qty: 1,
           price: item.retail_price_paise,
-          unit_type: item.unit_code || "unit",
+          unit_type: item.sell_unit === "box" ? "box" : "unit",
           line_discount: 0,
           shade_note: null,
         },
@@ -194,27 +200,33 @@ export default function SalesPage({ user, onExit }: Props) {
   }
 
   // ---- Save sale / quotation ----
+  const walkInUnpaid =
+    kind === "final" && customer === null && balance > 0;
   const canSave = useMemo(() => {
     if (lines.length === 0) return false;
     if (lines.every((l) => l.qty <= 0)) return false;
-    if (kind === "final") {
-      if (total > 0 && balance > 0) return false;
-    }
     if (isFlagged(customer) && !ackFlag) return false;
+    // Walk-in final bills must be paid in full — no credit allowed.
+    if (walkInUnpaid) return false;
     return true;
-  }, [lines, total, balance, kind, customer, ackFlag]);
+  }, [lines, customer, ackFlag, walkInUnpaid]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!canSave || busy) return;
     setBusy(true);
     setError(null);
+    shouldPrintAfterSaveRef.current = false;
+    const finalSplits =
+      kind === "final" ? splits.filter((s) => s.amount > 0) : [];
+    const finalPaid =
+      kind === "final" ? finalSplits.reduce((sum, s) => sum + s.amount, 0) : 0;
     const payload: NewSale = {
       customer_id: customer?.id ?? null,
       kind,
       bill_discount: billDiscount,
-      paid_amount: kind === "final" ? paid : 0,
-      payment_modes: kind === "final" ? splits : [],
+      paid_amount: finalPaid,
+      payment_modes: finalSplits,
       validity_days: kind === "quotation" ? validityDays : null,
       acknowledge_flag: ackFlag,
       lines,
@@ -228,18 +240,24 @@ export default function SalesPage({ user, onExit }: Props) {
           setSplits([]);
           setAckFlag(false);
           void refreshRecent();
-          // ponytail: best-effort print on bill save; never blocks the sale.
-          // Quotations aren't finalized — skip print until converted to a bill.
-          if (kind === "final") void tryPrintReceipt(id);
+          if (shouldPrintAfterSaveRef.current) {
+            shouldPrintAfterSaveRef.current = false;
+            void tryPrintReceipt(id);
+          }
           return kind === "final" ? `Bill #${id} saved` : `Quotation #${id} saved`;
         },
-        error: (e: unknown) =>
-          e instanceof Error ? e.message : String(e),
+        error: (e: unknown) => extractError(e),
       })
       .catch(() => {
         /* toast already surfaces */
       })
       .finally(() => setBusy(false));
+  }
+
+  function handleSaveAndPrint() {
+    if (!canSave || busy) return;
+    shouldPrintAfterSaveRef.current = true;
+    handleSubmit({ preventDefault() {} } as FormEvent);
   }
 
   /**
@@ -278,7 +296,7 @@ export default function SalesPage({ user, onExit }: Props) {
         toast.success(`Receipt sent to ${printer?.name ?? "thermal printer"}`);
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = extractError(e);
       toast.warning(`Receipt not printed: ${msg}`);
     }
   }
@@ -297,9 +315,7 @@ export default function SalesPage({ user, onExit }: Props) {
         toast.success(`Quotation ${sale.no} → Bill #${newId}`);
         void refreshRecent();
       })
-      .catch((e: unknown) =>
-        toast.error(e instanceof Error ? e.message : String(e)),
-      )
+      .catch((e: unknown) => toast.error(extractError(e)))
       .finally(() => setBusy(false));
   }
 
@@ -308,9 +324,7 @@ export default function SalesPage({ user, onExit }: Props) {
     setLoadingRecent(true);
     listSales(undefined, undefined, 10)
       .then((d) => setRecent(d ?? []))
-      .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : String(e)),
-      )
+      .catch((e: unknown) => setError(extractError(e)))
       .finally(() => setLoadingRecent(false));
   }, []);
 
@@ -417,90 +431,54 @@ export default function SalesPage({ user, onExit }: Props) {
                     description="Scan a barcode or search for an item to start a bill."
                   />
                 ) : (
-                  <div className="overflow-x-auto rounded border border-border">
-                    <table className="w-full text-sm">
-                      <thead className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2">Item</th>
-                          <th className="px-3 py-2 text-right">Qty</th>
-                          <th className="px-3 py-2 text-right">Price</th>
-                          <th className="px-3 py-2 text-right">Disc</th>
-                          <th className="px-3 py-2 text-right">Total</th>
-                          <th className="w-8" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {lines.map((l, i) => (
-                          <tr
-                            key={`${l.item_id}-${i}`}
-                            className="border-t border-border"
-                          >
-                            <td className="px-3 py-2">
-                              <div className="font-medium text-foreground">
-                                {l.item_name ? toTitleCase(l.item_name) : `#${l.item_id}`}
-                              </div>
-                              {l.shade_note ? (
-                                <div className="mt-0.5 text-xs text-muted-foreground">
-                                  {l.shade_note}
-                                </div>
-                              ) : null}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.5}
-                                value={l.qty}
-                                onChange={(e) =>
-                                  updateLine(i, {
-                                    qty: Number(e.target.value) || 0,
-                                  })
-                                }
-                                className="input h-8 w-20 text-right tabular-nums"
-                              />
-                              <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                                {l.unit_type}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <MoneyInput
-                                value={l.price}
-                                onChange={(v) => updateLine(i, { price: v })}
-                                disabled={!canOwner && kind === "final"}
-                                className="w-28"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <input
-                                type="number"
-                                min={0}
-                                value={l.line_discount}
-                                onChange={(e) =>
-                                  updateLine(i, {
-                                    line_discount:
-                                      Number(e.target.value) || 0,
-                                  })
-                                }
-                                className="input h-8 w-20 text-right tabular-nums"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-right font-medium">
-                              <Money paise={lineTotal(l)} />
-                            </td>
-                            <td className="px-2">
-                              <button
-                                type="button"
-                                onClick={() => removeLine(i)}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                title="Remove line"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="rounded border border-border">
+                    {/* ponytail: fixed 8rem money columns + identical ₹+value structure
+                        in PRICE/TOTAL = the only way ₹ aligns across editable (MoneyInput)
+                        and read-only (MoneyStatic) cells in the same column. */}
+                    <div className="grid grid-cols-[1fr_auto_8rem_8rem_2.5rem] items-center gap-3 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
+                      <div>Item</div>
+                      <div>Qty</div>
+                      <div className="text-right">Price</div>
+                      <div className="text-right">Total</div>
+                      <div />
+                    </div>
+                    {lines.map((l, i) => (
+                      <div
+                        key={`${l.item_id}-${i}`}
+                        className="grid grid-cols-[1fr_auto_8rem_8rem_2.5rem] items-center gap-3 border-t border-border px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-foreground">
+                            {l.item_name ? toTitleCase(l.item_name) : `#${l.item_id}`}
+                          </div>
+                          {l.shade_note ? (
+                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {l.shade_note}
+                            </div>
+                          ) : null}
+                        </div>
+                        <QtyInput
+                          value={l.qty}
+                          step={l.unit_type === "ml" || l.unit_type === "g" ? 1 : 0.5}
+                          onChange={(v) => updateLine(i, { qty: v })}
+                        />
+                        <MoneyInput
+                          value={l.price}
+                          onChange={(v) => updateLine(i, { price: v })}
+                          disabled={!canOwner && kind === "final"}
+                          className="w-full"
+                        />
+                        <MoneyStatic paise={lineTotal(l)} className="font-medium" />
+                        <button
+                          type="button"
+                          onClick={() => removeLine(i)}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          title="Remove line"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </Card.Body>
@@ -516,22 +494,22 @@ export default function SalesPage({ user, onExit }: Props) {
                 </h2>
               </Card.Header>
               <Card.Body className="space-y-3 text-sm">
-                <div className="flex items-center justify-between">
+                <div className="grid grid-cols-[1fr_8rem] items-center gap-3">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <Money paise={subtotal} />
+                  <MoneyStatic paise={subtotal} />
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="grid grid-cols-[1fr_8rem] items-center gap-3">
                   <span className="text-muted-foreground">Bill discount</span>
                   <MoneyInput
                     value={billDiscount}
                     onChange={setBillDiscount}
                     disabled={!canOwner}
-                    className="w-32"
+                    className="w-full"
                   />
                 </div>
-                <div className="flex items-center justify-between border-t border-border pt-3 text-base font-semibold">
+                <div className="grid grid-cols-[1fr_8rem] items-center gap-3 border-t border-border pt-3 text-base font-semibold">
                   <span>Total</span>
-                  <Money paise={total} />
+                  <MoneyStatic paise={total} className="font-semibold text-base" />
                 </div>
 
                 {kind === "quotation" ? (
@@ -558,18 +536,22 @@ export default function SalesPage({ user, onExit }: Props) {
                         onChange={setSplits}
                       />
                     </div>
-                    <div className="flex items-center justify-between text-xs">
+                    <div className="grid grid-cols-[1fr_8rem] items-center gap-3 text-xs">
                       <span className="text-muted-foreground">Paid</span>
-                      <Money paise={paid} />
+                      <MoneyStatic paise={paid} tone="muted" />
                     </div>
-                    <div
-                      className={cn(
-                        "flex items-center justify-between text-xs",
-                        balance > 0 ? "text-destructive" : "text-success",
-                      )}
-                    >
-                      <span>{balance > 0 ? "Balance due" : "Fully paid"}</span>
-                      <Money paise={Math.abs(balance)} />
+                    <div className="grid grid-cols-[1fr_8rem] items-center gap-3 text-xs">
+                      <span
+                        className={cn(
+                          balance > 0 ? "text-destructive" : "text-success",
+                        )}
+                      >
+                        {balance > 0 ? "Balance due" : "Fully paid"}
+                      </span>
+                      <MoneyStatic
+                        paise={Math.abs(balance)}
+                        tone={balance > 0 ? "destructive" : "success"}
+                      />
                     </div>
                   </>
                 )}
@@ -587,13 +569,30 @@ export default function SalesPage({ user, onExit }: Props) {
                 >
                   {kind === "final" ? "Save bill" : "Save quotation"}
                 </Button>
+                {kind === "final" ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="md"
+                    icon={Printer}
+                    disabled={!canSave || busy}
+                    onClick={handleSaveAndPrint}
+                    className="w-full"
+                  >
+                    Save &amp; print
+                  </Button>
+                ) : null}
                 {!canSave && lines.length > 0 ? (
                   <p className="text-center text-xs text-muted-foreground">
                     {isFlagged(customer) && !ackFlag
                       ? "Acknowledge flagged customer to save"
-                      : kind === "final" && total > 0 && balance > 0
-                        ? `Add ${formatRupeesFromPaise(balance)} more in payments`
+                      : walkInUnpaid
+                        ? "Walk-in customers must be paid in full"
                         : "Add at least one item with qty > 0"}
+                  </p>
+                ) : kind === "final" && balance > 0 ? (
+                  <p className="text-center text-xs text-muted-foreground">
+                    Will save with {formatRupeesFromPaise(balance)} as balance due
                   </p>
                 ) : null}
               </Card.Footer>
@@ -631,38 +630,44 @@ export default function SalesPage({ user, onExit }: Props) {
                 ) : (
                   <ul className="divide-y divide-border">
                     {recent.slice(0, 6).map((s) => (
-                      <li
-                        key={s.id}
-                        className="flex items-center justify-between gap-2 px-3 py-2 text-sm transition-colors hover:bg-muted/40"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs text-foreground tabular-nums">
-                              {s.no}
-                            </span>
-                            <Badge
-                              variant={s.status === "final" ? "success" : "warning"}
-                              size="sm"
-                            >
-                              {s.status}
-                            </Badge>
+                      <li key={s.id}>
+                        <button
+                          type="button"
+                          onClick={() => (window.location.hash = `#/sales/${s.id}`)}
+                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          aria-label={`Open ${s.status === "final" ? "invoice" : "quotation"} ${s.no}`}
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs text-foreground tabular-nums">
+                                {s.no}
+                              </span>
+                              <Badge
+                                variant={s.status === "final" ? "success" : "warning"}
+                                size="sm"
+                              >
+                                {s.status}
+                              </Badge>
+                            </div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {s.customer_name ? toTitleCase(s.customer_name) : "Walk-in"} · {formatDateForDisplay(s.date)}
+                            </div>
                           </div>
-                          <div className="truncate text-xs text-muted-foreground">
-                            {s.customer_name ? toTitleCase(s.customer_name) : "Walk-in"} · {formatDateForDisplay(s.date)}
+                          <div className="shrink-0 text-right">
+                            <Money paise={s.total} muted />
                           </div>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <Money paise={s.total} muted />
-                          {s.status === "quotation" ? (
+                        </button>
+                        {s.status === "quotation" ? (
+                          <div className="px-3 pb-2">
                             <button
                               type="button"
                               onClick={() => handleConvert(s)}
-                              className="ml-2 rounded px-2 py-0.5 text-xs text-primary hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                              className="rounded px-2 py-0.5 text-xs text-primary hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             >
                               Convert to invoice
                             </button>
-                          ) : null}
-                        </div>
+                          </div>
+                        ) : null}
                       </li>
                     ))}
                   </ul>
