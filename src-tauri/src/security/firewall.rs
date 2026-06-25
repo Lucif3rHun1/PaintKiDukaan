@@ -6,6 +6,8 @@
 //!
 //! On non-Windows, all functions return safe defaults or unsupported.
 
+#![cfg_attr(target_os = "windows", allow(dead_code, non_snake_case))]
+
 use serde::Serialize;
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;

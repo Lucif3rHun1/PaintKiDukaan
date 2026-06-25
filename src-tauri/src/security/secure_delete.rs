@@ -7,6 +7,8 @@
 //! On non-Windows, all functions degrade gracefully: HDD-style overwrite works
 //! cross-platform; SSD detection and TRIM are stubs.
 
+#![cfg_attr(target_os = "windows", allow(dead_code, non_snake_case))]
+
 use std::fs::{self, OpenOptions};
 use std::io::{Seek, Write};
 use std::path::Path;

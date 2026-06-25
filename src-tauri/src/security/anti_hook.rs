@@ -10,6 +10,8 @@
 //!
 //! On non-Windows platforms, provides stub implementations.
 
+#![cfg_attr(target_os = "windows", allow(dead_code, non_snake_case))]
+
 use serde::Serialize;
 
 use crate::error::AppError;

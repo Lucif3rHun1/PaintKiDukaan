@@ -6,6 +6,8 @@
 //!
 //! On non-Windows platforms, all functions return unsupported / safe defaults.
 
+#![cfg_attr(target_os = "windows", allow(dead_code, non_snake_case))]
+
 use serde::Serialize;
 
 use crate::error::AppError;

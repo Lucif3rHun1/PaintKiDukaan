@@ -3,6 +3,8 @@
 //!
 //! On non-Windows: all functions are no-ops returning Ok.
 
+#![cfg_attr(target_os = "windows", allow(dead_code, non_snake_case))]
+
 use crate::error::AppError;
 
 // ─── Public API ────────────────────────────────────────────────────────────

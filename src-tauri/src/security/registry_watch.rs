@@ -5,9 +5,13 @@
 //!
 //! On non-Windows, all functions return safe defaults.
 
+#![cfg_attr(target_os = "windows", allow(dead_code, non_snake_case))]
+
 use serde::Serialize;
 #[cfg(target_os = "windows")]
 use sha2::{Digest, Sha256};
+#[cfg(target_os = "windows")]
+use std::ffi::c_void;
 
 use crate::error::AppError;
 
@@ -161,28 +165,28 @@ mod win {
     #[link(name = "advapi32")]
     extern "system" {
         pub fn RegOpenKeyExW(
-            hKey: isize,
+            hKey: *mut c_void,
             lpSubKey: *const u16,
             ulOptions: u32,
             samDesired: u32,
-            phkResult: *mut isize,
+            phkResult: *mut *mut c_void,
         ) -> i32;
         pub fn RegNotifyChangeKeyValue(
-            hKey: isize,
+            hKey: *mut c_void,
             bWatchSubtree: i32,
             dwNotifyFilter: u32,
             hEvent: *mut c_void,
             fAsynchronous: i32,
         ) -> i32;
         pub fn RegQueryValueExW(
-            hKey: isize,
+            hKey: *mut c_void,
             lpValueName: *const u16,
             lpReserved: *mut u32,
             lpType: *mut u32,
             lpData: *mut u8,
             lpcbData: *mut u32,
         ) -> i32;
-        pub fn RegCloseKey(hKey: isize) -> i32;
+        pub fn RegCloseKey(hKey: *mut c_void) -> i32;
     }
 
     #[link(name = "kernel32")]
@@ -214,11 +218,11 @@ mod win {
 }
 
 #[cfg(target_os = "windows")]
-fn hive_to_handle(hive: &str) -> isize {
+fn hive_to_handle(hive: &str) -> *mut c_void {
     match hive {
-        "HKCU" | "HKEY_CURRENT_USER" => win::HKEY_CURRENT_USER,
-        "HKLM" | "HKEY_LOCAL_MACHINE" => win::HKEY_LOCAL_MACHINE,
-        _ => win::HKEY_CURRENT_USER,
+        "HKCU" | "HKEY_CURRENT_USER" => win::HKEY_CURRENT_USER as *mut c_void,
+        "HKLM" | "HKEY_LOCAL_MACHINE" => win::HKEY_LOCAL_MACHINE as *mut c_void,
+        _ => win::HKEY_CURRENT_USER as *mut c_void,
     }
 }
 
@@ -243,7 +247,7 @@ where
 
             while !should_stop_clone.load(Ordering::Relaxed) {
                 unsafe {
-                    let mut hkey: isize = 0;
+                    let mut hkey: *mut c_void = std::ptr::null_mut();
                     let status = win::RegOpenKeyExW(
                         hive_handle,
                         wide_sub.as_ptr(),
@@ -362,7 +366,7 @@ fn windows_read_registry_value(
         .collect();
 
     unsafe {
-        let mut hkey: isize = 0;
+        let mut hkey: *mut c_void = std::ptr::null_mut();
         let status =
             win::RegOpenKeyExW(hive_handle, wide_sub.as_ptr(), 0, win::KEY_READ, &mut hkey);
         if status != win::ERROR_SUCCESS {

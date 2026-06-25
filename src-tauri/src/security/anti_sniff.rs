@@ -4,6 +4,8 @@
 //! Each detection method accepts injectable helpers so tests never probe
 //! the real OS.
 
+#![cfg_attr(target_os = "windows", allow(dead_code, non_snake_case))]
+
 use serde::Serialize;
 
 // ─── Report ────────────────────────────────────────────────────────────────

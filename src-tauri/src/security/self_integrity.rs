@@ -4,6 +4,8 @@
 //! On non-Windows: Authenticode stub returns `signed: false`; hash and
 //! path use portable std APIs.
 
+#![cfg_attr(target_os = "windows", allow(dead_code, non_snake_case))]
+
 use std::path::PathBuf;
 
 use serde::Serialize;

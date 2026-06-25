@@ -7,6 +7,8 @@
 //!
 //! On non-Windows platforms, provides a stub guard that always succeeds.
 
+#![cfg_attr(target_os = "windows", allow(dead_code, non_snake_case))]
+
 use crate::error::AppError;
 
 // ─── Guard ──────────────────────────────────────────────────────────────────
