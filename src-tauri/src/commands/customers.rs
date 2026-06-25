@@ -494,6 +494,17 @@ pub fn get_by_id(c: &rusqlite::Connection, id: i64) -> AppResult<Option<Customer
     }
 }
 
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_customer(state: State<'_, AppState>, id: i64) -> AppResult<Option<Customer>> {
+    let _ = current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    db.with_raw(|c| get_by_id(c, id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

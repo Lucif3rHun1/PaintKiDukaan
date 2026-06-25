@@ -155,6 +155,7 @@ pub(crate) struct KeystoreConn {
     temp_dir: tempfile::TempDir,
     keystore_path: PathBuf,
     original_path: PathBuf,
+    db_id: String,
 }
 
 impl KeystoreConn {
@@ -170,10 +171,7 @@ impl KeystoreConn {
 
     fn seal(&self) -> Result<(), AppError> {
         let plaintext = std::fs::read(&self.keystore_path)?;
-        let encrypted = dpapi_keystore::encrypt_keystore(
-            &plaintext,
-            &self.original_path.to_string_lossy(),
-        )?;
+        let encrypted = dpapi_keystore::encrypt_keystore(&plaintext, &self.db_id)?;
         std::fs::write(&self.original_path, encrypted)?;
         Ok(())
     }
@@ -242,6 +240,7 @@ pub(crate) fn open_keystore(path: &Path) -> Result<KeystoreConn, AppError> {
         temp_dir,
         keystore_path,
         original_path: path.to_path_buf(),
+        db_id: path.to_string_lossy().to_string(),
     })
 }
 

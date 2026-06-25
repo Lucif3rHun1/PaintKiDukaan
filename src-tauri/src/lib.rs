@@ -230,6 +230,7 @@ pub fn run() {
             commands::customers::list_customers,
             commands::customers::lookup_customer,
             commands::customers::customer_outstanding,
+            commands::customers::get_customer,
             commands::customers::list_customer_bills,
             commands::customers::customer_ledger,
             commands::customers::create_customer_credit_invoice,

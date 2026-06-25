@@ -115,9 +115,7 @@ pub enum SaleError {
     NegativePaid,
     #[error("paid_amount ({paid}) exceeds total ({total})")]
     PaidExceedsTotal { paid: i64, total: i64 },
-    #[error(
-        "paid_amount ({paid}) does not match total ({total}) for walk-in or non-credit customer"
-    )]
+    #[error("walk-in customers must be paid in full (paid={paid}, total={total})")]
     WalkinMustPayFull { paid: i64, total: i64 },
     #[error("payment_modes sum ({got}) must equal paid_amount ({want})")]
     ModesSumMismatch { got: i64, want: i64 },
@@ -133,6 +131,29 @@ pub enum SaleError {
     Db(#[from] rusqlite::Error),
     #[error("{0}")]
     Other(#[from] anyhow::Error),
+}
+
+/// Map typed business-rule errors to user-facing AppError variants so the
+/// toast renders a meaningful message instead of the generic
+/// "An unexpected error occurred." string used by `Internal`.
+impl From<SaleError> for AppError {
+    fn from(e: SaleError) -> Self {
+        match e {
+            SaleError::EmptyCart
+            | SaleError::BadLineQty(_)
+            | SaleError::BadLinePrice(_)
+            | SaleError::NegativePaid
+            | SaleError::PaidExceedsTotal { .. }
+            | SaleError::WalkinMustPayFull { .. }
+            | SaleError::ModesSumMismatch { .. }
+            | SaleError::MustAcknowledgeFlag
+            | SaleError::QuotationNotFound(_)
+            | SaleError::NotAQuotation(_, _)
+            | SaleError::InvalidKind(_) => AppError::Validation(e.to_string()),
+            SaleError::Db(inner) => AppError::from(inner),
+            SaleError::Other(inner) => AppError::Internal(inner.to_string()),
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -677,13 +698,12 @@ pub fn cmd_create_sale(state: tauri::State<'_, AppState>, sale: NewSale) -> AppR
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
     let user_id = user.id;
     match sale.kind.as_str() {
-        "quotation" => {
-            create_quotation(db, user_id, sale).map_err(|e| AppError::Internal(e.to_string()))
-        }
-        "final" => {
-            create_final_bill(db, user_id, sale).map_err(|e| AppError::Internal(e.to_string()))
-        }
-        k => Err(AppError::Internal(format!("invalid kind: {}", k))),
+        "quotation" => create_quotation(db, user_id, sale).map_err(AppError::from),
+        "final" => create_final_bill(db, user_id, sale).map_err(AppError::from),
+        k => Err(AppError::Validation(format!(
+            "invalid kind: {} (expected 'quotation' or 'final')",
+            k
+        ))),
     }
 }
 
@@ -704,7 +724,7 @@ pub fn cmd_convert_quotation(
         .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
     let user_id = user.id;
-    convert_quotation(db, user_id, req).map_err(|e| AppError::Internal(e.to_string()))
+    convert_quotation(db, user_id, req).map_err(AppError::from)
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
