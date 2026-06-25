@@ -28,6 +28,7 @@ import { useShortcut } from "../lib/shortcuts";
 import { toTitleCase } from "../lib/format/titleCase";
 import { AlertBell } from "./components/AlertBell";
 import type { Role } from "../lib/security/state";
+import { ipc } from "./lib/ipc";
 
 export type AppShellTab =
   | "dashboard"
@@ -411,35 +412,42 @@ function SidebarLinkButton({
 }
 
 function AccountMenu({ user, collapsed, onLock, onLogout, onSwitchUser }: { user: AppShellUser | null; collapsed: boolean; onLock: () => void; onLogout: () => void; onSwitchUser: () => void }) {
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [hasOtherUsers, setHasOtherUsers] = useState(false);
 
   useEffect(() => {
-    const dialog = dialogRef.current;
-    if (open && dialog && !dialog.open) {
-      dialog.showModal();
-      window.setTimeout(() => firstItemRef.current?.focus(), 0);
-    }
-  }, [open]);
+    ipc.listUsers().then((users) => setHasOtherUsers(users.length > 1)).catch(() => setHasOtherUsers(false));
+  }, []);
 
-  function close() {
-    const dialog = dialogRef.current;
-    if (dialog?.open) dialog.close();
-    setOpen(false);
-    triggerRef.current?.focus();
-  }
+  useEffect(() => {
+    if (!open) return;
+    const firstItem = firstItemRef.current;
+    window.setTimeout(() => firstItem?.focus(), 0);
+
+    function handleOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
 
   const displayName = toTitleCase(user?.name ?? "Owner");
   const displayRole = user?.role ?? "stocker";
 
   return (
-    <div className="border-t border-sidebar-border pt-3">
+    <div ref={wrapperRef} className="relative border-t border-sidebar-border pt-3">
       <button
-        ref={triggerRef}
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => setOpen((v) => !v)}
         className={cn(
           "flex w-full items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent px-2 py-2 text-left transition-colors hover:bg-sidebar-accent/80",
           collapsed && "justify-center px-0",
@@ -454,23 +462,12 @@ function AccountMenu({ user, collapsed, onLock, onLogout, onSwitchUser }: { user
               <div className="truncate text-sm font-medium text-sidebar-foreground">{displayName}</div>
               <div className="truncate text-xs text-sidebar-foreground/60">{displayRole}</div>
             </div>
-            <ChevronDown className="h-4 w-4 text-sidebar-foreground/60" aria-hidden="true" />
+            <ChevronDown className={cn("h-4 w-4 text-sidebar-foreground/60 transition-transform", open && "rotate-180")} aria-hidden="true" />
           </>
         ) : null}
       </button>
       {open ? (
-        <dialog
-          ref={dialogRef}
-          onCancel={(event) => {
-            event.preventDefault();
-            close();
-          }}
-          onClose={() => setOpen(false)}
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) close();
-          }}
-          className="fixed bottom-20 left-3 m-0 w-56 rounded-xl border border-border bg-popover p-1.5 text-sm text-popover-foreground shadow-xl"
-        >
+        <div className="absolute bottom-full left-0 z-50 mb-2 w-56 rounded-xl border border-border bg-popover p-1.5 text-sm text-popover-foreground shadow-xl">
           {/* User header */}
           <div className="flex items-center gap-3 px-3 py-2.5">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
@@ -488,38 +485,31 @@ function AccountMenu({ user, collapsed, onLock, onLogout, onSwitchUser }: { user
           <button
             ref={firstItemRef}
             type="button"
-            onClick={() => {
-              onLock();
-              close();
-            }}
+            onClick={() => { onLock(); setOpen(false); }}
             className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-foreground transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
           >
             <Lock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             Lock
           </button>
+          {hasOtherUsers ? (
+            <button
+              type="button"
+              onClick={() => { onSwitchUser(); setOpen(false); }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-foreground transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
+            >
+              <UserCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              Switch User
+            </button>
+          ) : null}
           <button
             type="button"
-            onClick={() => {
-              onSwitchUser();
-              close();
-            }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-foreground transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
-          >
-            <UserCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            Switch User
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onLogout();
-              close();
-            }}
+            onClick={() => { onLogout(); setOpen(false); }}
             className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-destructive transition-colors hover:bg-destructive/10 focus:bg-destructive/10 focus:outline-none"
           >
             <LogOut className="h-4 w-4" aria-hidden="true" />
             Logout
           </button>
-        </dialog>
+        </div>
       ) : null}
     </div>
   );
