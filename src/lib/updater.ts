@@ -8,7 +8,7 @@ export interface UpdateInfo {
 }
 
 export type UpdateProgress =
-  | { stage: "downloading"; totalBytes?: number; chunkBytes?: number }
+  | { stage: "downloading"; downloadedBytes: number; totalBytes: number; percent: number }
   | { stage: "installing" }
   | { stage: "done" };
 
@@ -35,13 +35,23 @@ export async function downloadAndInstallUpdate(
   const update = await check();
   if (!update) return;
 
-  onProgress?.({ stage: "downloading" });
+  let total = 0;
+  let downloaded = 0;
+
+  onProgress?.({ stage: "downloading", downloadedBytes: downloaded, totalBytes: total, percent: 0 });
 
   await update.downloadAndInstall((event) => {
     if (event.event === "Started" && typeof event.data.contentLength === "number") {
-      onProgress?.({ stage: "downloading", totalBytes: event.data.contentLength });
+      total = event.data.contentLength;
+      onProgress?.({ stage: "downloading", downloadedBytes: downloaded, totalBytes: total, percent: 0 });
     } else if (event.event === "Progress" && typeof event.data.chunkLength === "number") {
-      onProgress?.({ stage: "downloading", chunkBytes: event.data.chunkLength });
+      downloaded += event.data.chunkLength;
+      onProgress?.({
+        stage: "downloading",
+        downloadedBytes: downloaded,
+        totalBytes: total,
+        percent: total > 0 ? Math.round((downloaded / total) * 100) : 0,
+      });
     } else if (event.event === "Finished") {
       onProgress?.({ stage: "installing" });
     }
