@@ -16,6 +16,7 @@ import { safeShareSalePdfById } from "./printOrDownload";
 import { toast } from "../../lib/feedback/toast";
 import { formatDateForDisplay } from "../../lib/date";
 import type { Sale } from "../types";
+import { saleStatus } from "./saleStatus";
 
 interface Props {
   id: number;
@@ -171,8 +172,8 @@ export function SaleDetailPage({ id, onBack, onConvert }: Props) {
             {isQuotation ? "Quotation" : "Invoice"}{" "}
             <span className="font-mono tabular-nums">{sale.no}</span>
           </h1>
-          <Badge variant={isQuotation ? "info" : "success"} size="sm">
-            {sale.status}
+          <Badge variant={saleStatus(sale).variant} size="sm">
+            {saleStatus(sale).text}
           </Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -234,12 +235,24 @@ export function SaleDetailPage({ id, onBack, onConvert }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {sale.items.map((line, idx) => {
+                {(sale.items ?? []).length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                      No items on this invoice.
+                      <div className="mt-1 text-xs">
+                        (Header totals {formatRupeesFromPaise(sale.total)} were saved, but the line
+                        items did not load. This can happen after a partial data update — try
+                        reloading.)
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+                {(sale.items ?? []).map((line, idx) => {
                   const lineValue = Math.max(0, line.qty * line.price - line.line_discount);
                   return (
                     <tr key={`${line.item_id}-${idx}`} className="border-b border-border align-middle">
                       <td className="py-2">
-                        <div className="text-sm font-medium text-foreground">{line.item_name}</div>
+                          <div className="text-sm font-medium text-foreground">{line.display_name}</div>
                         {line.shade_note ? (
                           <div className="text-xs text-muted-foreground">
                             shade: {line.shade_note}

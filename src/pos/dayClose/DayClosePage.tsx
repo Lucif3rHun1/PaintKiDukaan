@@ -19,7 +19,7 @@ import {
   triggerDayClose,
 } from "../api";
 import type { BackupGate, CashSalesSummary, DayClose } from "../types";
-import { formatDateForDisplay } from "../../lib/date";
+import { formatDateForDisplay, todayLocalYyyymmdd } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 
 interface Props {
@@ -30,23 +30,23 @@ const recentClosesColumns: ColumnDef<DayClose>[] = [
   {
     header: "Date",
     cell: (d) => (
-      <span className="text-foreground">{formatDateForDisplay(d.date)}</span>
+      <span className="text-foreground">{formatDateForDisplay(d.day)}</span>
     ),
   },
   {
     header: "Cash sales",
     align: "right",
-    cell: (d) => <Money paise={d.cash_sales} />,
+    cell: (d) => <Money paise={d.cash_sales_paise} />,
   },
   {
     header: "Expected",
     align: "right",
-    cell: (d) => <Money paise={d.expected_cash} />,
+    cell: (d) => <Money paise={d.closing_cash_paise} />,
   },
   {
     header: "Counted",
     align: "right",
-    cell: (d) => <Money paise={d.counted_cash} />,
+    cell: (d) => <Money paise={d.actual_cash_paise} />,
   },
   {
     header: "Variance",
@@ -54,17 +54,11 @@ const recentClosesColumns: ColumnDef<DayClose>[] = [
     cell: (d) => (
       <span
         className={
-          d.variance === 0 ? "text-success" : "text-destructive"
+          d.variance_paise === 0 ? "text-success" : "text-destructive"
         }
       >
-        <Money paise={d.variance} />
+        <Money paise={d.variance_paise} />
       </span>
-    ),
-  },
-  {
-    header: "Backup",
-    cell: (d) => (
-      <span className="text-muted-foreground">{d.backup_check_status}</span>
     ),
   },
 ];
@@ -85,11 +79,11 @@ function RecentClosesTable({ rows }: { rows: DayClose[] }) {
 }
 
 export default function DayClosePage({ user }: Props) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [opening, setOpening] = useState(0);
-  const [cashIn, setCashIn] = useState(0);
-  const [cashOut, setCashOut] = useState(0);
-  const [counted, setCounted] = useState(0);
+  const [date, setDate] = useState(() => todayLocalYyyymmdd());
+  const [openingRupees, setOpeningRupees] = useState("0");
+  const [cashInRupees, setCashInRupees] = useState("0");
+  const [cashOutRupees, setCashOutRupees] = useState("0");
+  const [countedRupees, setCountedRupees] = useState("0");
   const [notes, setNotes] = useState("");
   const [gate, setGate] = useState<BackupGate | null>(null);
   const [summary, setSummary] = useState<CashSalesSummary | null>(null);
@@ -105,7 +99,9 @@ export default function DayClosePage({ user }: Props) {
       // eslint-disable-next-line no-console
       console.error("[DayClosePage] failed to load cash sales summary", e);
     });
-    lastOpeningFor(user.id, date).then((n) => setOpening(n)).catch((e: unknown) => {
+    lastOpeningFor(user.id, date).then((n) => {
+      setOpeningRupees(String((n ?? 0) / 100));
+    }).catch((e: unknown) => {
       // eslint-disable-next-line no-console
       console.error("[DayClosePage] failed to load last opening", e);
     });
@@ -115,24 +111,29 @@ export default function DayClosePage({ user }: Props) {
     });
   }, [user.id, date]);
 
+  const openingPaise = Math.round(Number(openingRupees || 0) * 100);
+  const cashInPaise = Math.round(Number(cashInRupees || 0) * 100);
+  const cashOutPaise = Math.round(Number(cashOutRupees || 0) * 100);
+  const countedPaise = Math.round(Number(countedRupees || 0) * 100);
+
   const expected = useMemo(
     () =>
-      opening +
+      openingPaise +
       (summary?.cash_sales_paise ?? 0) +
-      cashIn -
-      cashOut,
-    [opening, summary, cashIn, cashOut]
+      cashInPaise -
+      cashOutPaise,
+    [openingPaise, summary, cashInPaise, cashOutPaise]
   );
-  const variance = counted - expected;
+  const variance = countedPaise - expected;
 
   async function submit(decision: "fresh" | "skip" | "back_up") {
     try {
       const id = await triggerDayClose({
         date,
-        opening_cash: opening,
-        cash_in: cashIn,
-        cash_out: cashOut,
-        counted_cash: counted,
+        opening_cash: openingPaise,
+        cash_in: cashInPaise,
+        cash_out: cashOutPaise,
+        counted_cash: countedPaise,
         notes: notes || null,
         backup_decision: decision,
       });
@@ -161,7 +162,7 @@ export default function DayClosePage({ user }: Props) {
                     : `Backup is fresh (${gate.age_hours?.toFixed(1)}h).`}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Last backup: {gate.last_backup_at ? formatDateForDisplay(gate.last_backup_at) : "—"}
+                  Last backup: {gate.last_backup_unix_ms ? formatDateForDisplay(new Date(gate.last_backup_unix_ms).toISOString()) : "—"}
                 </p>
               </>
             ) : (
@@ -179,56 +180,60 @@ export default function DayClosePage({ user }: Props) {
             <h2 className="text-sm font-semibold">Close form</h2>
             <div className="grid grid-cols-2 gap-3">
               <label className="space-y-1">
-                <span className="label-text">Date</span>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Date</span>
                 <DatePicker value={date} onChange={setDate} />
               </label>
               <label className="space-y-1">
-                <span className="label-text">Opening cash</span>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Opening cash (₹)</span>
                 <input
                   type="number"
                   min="0"
-                  value={opening}
-                  onChange={(e) => setOpening(Number(e.target.value))}
+                  step="0.01"
+                  value={openingRupees}
+                  onChange={(e) => setOpeningRupees(e.target.value)}
                   className="input w-full"
                   data-testid="opening-cash"
                 />
               </label>
               <label className="space-y-1">
-                <span className="label-text">Cash sales (auto)</span>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Cash sales (auto, ₹)</span>
                 <input
                   type="number"
                   readOnly
-                  value={(summary?.cash_sales_paise ?? 0) / 100}
+                  value={((summary?.cash_sales_paise ?? 0) / 100).toFixed(2)}
                   className="input w-full bg-muted"
                 />
               </label>
               <label className="space-y-1">
-                <span className="label-text">Cash in</span>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Cash in (₹)</span>
                 <input
                   type="number"
                   min="0"
-                  value={cashIn}
-                  onChange={(e) => setCashIn(Number(e.target.value))}
+                  step="0.01"
+                  value={cashInRupees}
+                  onChange={(e) => setCashInRupees(e.target.value)}
                   className="input w-full"
                 />
               </label>
               <label className="space-y-1">
-                <span className="label-text">Cash out</span>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Cash out (₹)</span>
                 <input
                   type="number"
                   min="0"
-                  value={cashOut}
-                  onChange={(e) => setCashOut(Number(e.target.value))}
+                  step="0.01"
+                  value={cashOutRupees}
+                  onChange={(e) => setCashOutRupees(e.target.value)}
                   className="input w-full"
                 />
               </label>
               <label className="space-y-1">
-                <span className="label-text">Counted cash</span>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Counted cash (₹)</span>
                 <input
                   type="number"
                   min="0"
-                  value={counted}
-                  onChange={(e) => setCounted(Number(e.target.value))}
+                  step="0.01"
+                  value={countedRupees}
+                  onChange={(e) => setCountedRupees(e.target.value)}
                   className="input w-full"
                   data-testid="counted-cash"
                 />
@@ -252,7 +257,7 @@ export default function DayClosePage({ user }: Props) {
 
             {/* Notes */}
             <label className="space-y-1">
-              <span className="label-text">Notes</span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Notes</span>
               <input
                 type="text"
                 value={notes}

@@ -74,6 +74,7 @@ mod tests {
             "sequences",
             "daily_counters",
             "items",
+            "formulas",
             // Section E
             "stock_movement_kinds",
             "stock_movements",

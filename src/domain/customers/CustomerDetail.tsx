@@ -3,6 +3,7 @@
  */
 import { useEffect, useState } from "react";
 import { customerOutstanding } from "./api";
+import { extractError } from "../../lib/extractError";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { toTitleCase } from "../../lib/format/titleCase";
 import type { Customer, CustomerOutstanding } from "../types";
@@ -23,7 +24,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
   useEffect(() => {
     customerOutstanding(customer.id)
       .then((d) => setOutstanding(d ?? null))
-      .catch((e) => setError(e.message ?? "Failed"));
+      .catch((e) => setError(extractError(e)));
   }, [customer.id]);
 
   return (

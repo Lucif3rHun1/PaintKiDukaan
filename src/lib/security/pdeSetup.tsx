@@ -24,9 +24,9 @@ import {
 type Step = "opt-in" | "decoy-pin" | "duress-pin" | "fake-data" | "confirm";
 
 const STEPS: ReadonlyArray<{ key: Step; label: string; icon: typeof Shield }> = [
-  { key: "opt-in", label: "Enable PDE", icon: Shield },
-  { key: "decoy-pin", label: "Decoy PIN", icon: ShieldCheck },
-  { key: "duress-pin", label: "Duress PIN", icon: ShieldAlert },
+  { key: "opt-in", label: "Enable Fake Shop", icon: Shield },
+  { key: "decoy-pin", label: "Fake PIN", icon: ShieldCheck },
+  { key: "duress-pin", label: "Emergency PIN", icon: ShieldAlert },
   { key: "fake-data", label: "Fake Shop", icon: Store },
   { key: "confirm", label: "Confirm", icon: CheckCircle2 },
 ];
@@ -178,7 +178,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
   return (
     <div className="space-y-5">
       {/* Step indicator */}
-      <div aria-label="PDE setup progress">
+      <div aria-label="Fake Shop setup progress">
         <div className="flex items-center gap-2 mb-2">
           {STEPS.map((s, i) => (
             <div key={s.key} className="flex items-center gap-2">
@@ -225,11 +225,11 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
         <div>
           <p className="text-sm font-medium text-foreground">{currentMeta.label}</p>
           <p className="text-xs text-muted-foreground">
-            {step === "opt-in" && "Set up a Plausible Deniability Environment with decoy and duress PINs."}
-            {step === "decoy-pin" && "This PIN opens a plausible fake shop database."}
-            {step === "duress-pin" && "This PIN triggers silent secure deletion, then opens the decoy database."}
-            {step === "fake-data" && "Configure what the decoy database looks like to an intruder."}
-            {step === "confirm" && "Review your PDE configuration before provisioning."}
+            {step === "opt-in" && "Set up a Fake Shop with a fake PIN and an emergency PIN."}
+            {step === "decoy-pin" && "This PIN opens the fake shop."}
+            {step === "duress-pin" && "This PIN permanently deletes your real shop data, then opens the fake shop."}
+            {step === "fake-data" && "Configure what the fake shop looks like to an intruder."}
+            {step === "confirm" && "Review your Fake Shop settings before finishing setup."}
           </p>
         </div>
       </div>
@@ -246,12 +246,12 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       {step === "opt-in" && (
         <div className="space-y-4">
           <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
-            <p className="text-sm font-medium text-warning">What is Plausible Deniability?</p>
+            <p className="text-sm font-medium text-warning">What is a Fake Shop?</p>
             <p className="mt-1 text-xs leading-5 text-warning/80">
-              PDE creates a separate encrypted database with fake shop data. If someone forces you
-              to unlock the app, the <strong>decoy PIN</strong> shows plausible fake data. The{" "}
-              <strong>duress PIN</strong> silently wipes the real database and shows the decoy data.
-              An attacker cannot tell which PIN is real.
+              A Fake Shop creates a separate protected shop with sample data. If someone forces you
+              to unlock the app, the <strong>fake PIN</strong> shows believable sample data. The{" "}
+              <strong>emergency PIN</strong> permanently deletes your real shop data and shows the fake shop.
+              An intruder cannot tell which PIN is real.
             </p>
           </div>
           <label className="flex items-center gap-3 rounded-xl border border-border bg-card/60 p-4 cursor-pointer">
@@ -261,8 +261,8 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
               {...register("enabled")}
             />
             <div>
-              <span className="text-sm font-medium text-foreground">Enable Plausible Deniability</span>
-              <p className="text-xs text-muted-foreground">Create decoy and duress PINs for hostile situations.</p>
+              <span className="text-sm font-medium text-foreground">Enable Fake Shop</span>
+              <p className="text-xs text-muted-foreground">Create fake and emergency PINs for emergencies.</p>
             </div>
           </label>
         </div>
@@ -272,7 +272,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       {step === "decoy-pin" && (
         <div className="space-y-4">
           <div>
-            <label className={labelClass} htmlFor="decoyPin">Decoy PIN *</label>
+            <label className={labelClass} htmlFor="decoyPin">Fake PIN *</label>
             <div className="relative">
               <input
                 id="decoyPin"
@@ -297,14 +297,14 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
             {fieldError(errors.decoyPin?.message)}
           </div>
           <div>
-            <label className={labelClass} htmlFor="decoyPinConfirm">Confirm decoy PIN *</label>
+            <label className={labelClass} htmlFor="decoyPinConfirm">Confirm fake PIN *</label>
             <input
               id="decoyPinConfirm"
               className={inputClass}
               autoComplete="off"
               inputMode="numeric"
               maxLength={6}
-              placeholder="Re-enter decoy PIN"
+              placeholder="Re-enter fake PIN"
               type={showPins ? "text" : "password"}
               {...register("decoyPinConfirm")}
             />
@@ -319,12 +319,12 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3">
             <p className="text-sm font-medium text-destructive">Warning</p>
             <p className="mt-1 text-xs leading-5 text-destructive/80">
-              The duress PIN will <strong>permanently and irreversibly</strong> wipe your real shop
+              The emergency PIN will <strong>permanently and irreversibly</strong> delete your real shop
               data after unlock. Only set this if you understand the consequences.
             </p>
           </div>
           <div>
-            <label className={labelClass} htmlFor="duressPin">Duress PIN *</label>
+            <label className={labelClass} htmlFor="duressPin">Emergency PIN *</label>
             <div className="relative">
               <input
                 id="duressPin"
@@ -332,7 +332,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
                 autoComplete="off"
                 inputMode="numeric"
                 maxLength={6}
-                placeholder="6 digits — different from decoy"
+                placeholder="6 digits — different from fake PIN"
                 type={showPins ? "text" : "password"}
                 {...register("duressPin")}
               />
@@ -349,14 +349,14 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
             {fieldError(errors.duressPin?.message)}
           </div>
           <div>
-            <label className={labelClass} htmlFor="duressPinConfirm">Confirm duress PIN *</label>
+            <label className={labelClass} htmlFor="duressPinConfirm">Confirm emergency PIN *</label>
             <input
               id="duressPinConfirm"
               className={inputClass}
               autoComplete="off"
               inputMode="numeric"
               maxLength={6}
-              placeholder="Re-enter duress PIN"
+              placeholder="Re-enter emergency PIN"
               type={showPins ? "text" : "password"}
               {...register("duressPinConfirm")}
             />
@@ -369,7 +369,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       {step === "fake-data" && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Configure the fake shop that appears when the decoy or duress PIN is used.
+            Configure the fake shop that appears when the fake or emergency PIN is used.
             Default values create a believable paint shop.
           </p>
           <div>
@@ -390,14 +390,14 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       {step === "confirm" && (
         <div className="space-y-4">
           <div className="rounded-xl border border-success/30 bg-success/10 p-4 space-y-3">
-            <p className="text-sm font-medium text-success">PDE Configuration Summary</p>
+            <p className="text-sm font-medium text-success">Fake Shop Summary</p>
             <div className="space-y-2 text-sm text-success/80">
               <div className="flex justify-between">
-                <span>Decoy PIN:</span>
+                <span>Fake PIN:</span>
                 <span className="font-mono text-success">{"•".repeat(6)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Duress PIN:</span>
+                <span>Emergency PIN:</span>
                 <span className="font-mono text-success">{"•".repeat(6)}</span>
               </div>
               <div className="flex justify-between">
@@ -410,10 +410,10 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
           <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 space-y-2">
             <p className="text-sm font-medium text-primary">What happens next</p>
             <ul className="space-y-1 text-xs leading-5 text-primary/80">
-              <li>• A separate encrypted decoy database will be created with fake shop data.</li>
-              <li>• Your <strong>decoy PIN</strong> shows plausible fake data — the intruder sees a real-looking shop.</li>
-              <li>• Your <strong>duress PIN</strong> silently wipes the real database after unlock, then shows the decoy data.</li>
-              <li>• An attacker cannot distinguish real, decoy, or duress PINs from each other.</li>
+              <li>• A separate protected fake shop will be created with sample data.</li>
+              <li>• Your <strong>fake PIN</strong> shows believable sample data — the intruder sees a real-looking shop.</li>
+              <li>• Your <strong>emergency PIN</strong> permanently deletes your real shop data after unlock, then shows the fake shop.</li>
+              <li>• An intruder cannot distinguish real, fake, or emergency PINs from each other.</li>
             </ul>
           </div>
         </div>
@@ -450,7 +450,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
             {submitting ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
             ) : null}
-            Provision decoy database
+            Set up fake shop
           </button>
         )}
       </div>

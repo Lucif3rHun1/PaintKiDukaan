@@ -127,11 +127,11 @@ pub fn list_vendors(
                 id: r.get(0)?,
                 name: r.get(1)?,
                 phone: r.get(2)?,
-                opening_balance: 0,
+                opening_balance: r.get::<_, i64>(3)?,
                 notes: None,
-                is_active: r.get::<_, i64>(3)? != 0,
-                created_at: r.get::<_, i64>(4)?.to_string(),
-                updated_at: r.get::<_, i64>(5)?.to_string(),
+                is_active: r.get::<_, i64>(4)? != 0,
+                created_at: r.get::<_, i64>(5)?.to_string(),
+                updated_at: r.get::<_, i64>(6)?.to_string(),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -155,11 +155,11 @@ pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 phone: r.get(2)?,
-                opening_balance: 0,
+                opening_balance: r.get::<_, i64>(3)?,
                 notes: None,
-                is_active: r.get::<_, i64>(3)? != 0,
-                created_at: r.get::<_, i64>(4)?.to_string(),
-                updated_at: r.get::<_, i64>(5)?.to_string(),
+                is_active: r.get::<_, i64>(4)? != 0,
+                created_at: r.get::<_, i64>(5)?.to_string(),
+                updated_at: r.get::<_, i64>(6)?.to_string(),
             })
         })?;
         rows.next()
@@ -214,11 +214,11 @@ pub fn update_vendor(
                 id: r.get(0)?,
                 name: r.get(1)?,
                 phone: r.get(2)?,
-                opening_balance: 0,
+                opening_balance: r.get::<_, i64>(3)?,
                 notes: None,
-                is_active: r.get::<_, i64>(3)? != 0,
-                created_at: r.get::<_, i64>(4)?.to_string(),
-                updated_at: r.get::<_, i64>(5)?.to_string(),
+                is_active: r.get::<_, i64>(4)? != 0,
+                created_at: r.get::<_, i64>(5)?.to_string(),
+                updated_at: r.get::<_, i64>(6)?.to_string(),
             })
         })?;
         rows.next()

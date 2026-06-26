@@ -523,7 +523,7 @@ function ScannerPanel() {
       ) : null}
       <Section
         title="Scanner behaviour"
-        description="Tune how the rdev keyboard-wedge hook converts keystrokes into a barcode event."
+        description="Fine-tune how the scanner reads barcode input."
       >
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Min length (chars)">

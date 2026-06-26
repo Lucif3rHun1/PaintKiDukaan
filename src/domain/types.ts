@@ -72,7 +72,7 @@ export interface Item {
   unit_code: string;
   unit_label: string;
   unit: string;
-  units_per_pack: number;
+  units_per_pack: number | null;
   sell_unit: string;
   retail_price_paise: number;
   cost_paise: number;
@@ -108,7 +108,7 @@ export type ItemLookup =
       unit_id: number;
       unit_code: string;
       unit_label: string | null;
-      units_per_pack: number;
+      units_per_pack: number | null;
       in_stock: number;
     }
   | {
@@ -340,7 +340,7 @@ export interface Category {
 
 export interface ConversionResult {
   unit_code: string;
-  units_per_pack: number;
+  units_per_pack: number | null;
   qty_in_base_units: number;
 }
 
@@ -512,4 +512,57 @@ export interface SaleReturnLine {
 
 export interface GetSaleByInvoiceNumberRequest {
   no: string;
+}
+
+export interface Formula {
+  id: number;
+  id_code: string;
+  name: string | null;
+  with_base: boolean;
+  retail_price_paise: number;
+  is_active: boolean;
+  created_at: string;
+  created_by_user_id: number | null;
+  sales_count: number;
+  last_sold_at: string | null;
+}
+
+export interface FormulaFilter {
+  query?: string;
+  active?: boolean | null;
+}
+
+export interface NewFormula {
+  id_code: string;
+  name?: string | null;
+  with_base: boolean;
+  retail_price_paise: number;
+}
+
+export interface UpdateFormula {
+  name?: string | null;
+  with_base?: boolean;
+  retail_price_paise?: number;
+  is_active?: boolean;
+}
+
+export interface FormulaSaleRow {
+  sale_id: number;
+  sale_no: string;
+  sale_kind: "quotation" | "final";
+  date: string;
+  customer_id: number | null;
+  customer_name: string | null;
+  price: number;
+  qty: number;
+  line_total: number;
+}
+
+export interface FormulaSearchHit {
+  kind: "formula";
+  id: number;
+  id_code: string;
+  name: string | null;
+  retail_price_paise: number;
+  with_base: boolean;
 }

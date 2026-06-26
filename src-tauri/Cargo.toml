@@ -24,6 +24,9 @@ tauri = { version = "2", features = ["tray-icon", "test"] }
 tauri-plugin-log = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
 # tauri-plugin-global-shortcut — removed (unused, CWE-1104)
 # tauri-plugin-oauth — removed (unused, CWE-1104)
 # tauri-plugin-keyring-store — removed (unused, CWE-1104)

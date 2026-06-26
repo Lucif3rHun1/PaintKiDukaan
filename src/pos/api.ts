@@ -11,15 +11,24 @@ import type {
   DailySalesReport,
   DayClose,
   DayLockState,
+  DeadStockRow,
+  ExpenseSummary,
+  InventoryAgingReport,
   NewDayClose,
   NewPurchase,
   NewSale,
   OutstandingReport,
+  PaymentSummary,
   Purchase,
   PurchaseCreated,
+  PurchaseSummary,
   Sale,
+  StockHealthSummary,
   StockMovement,
   StockReport,
+  TopCustomerRow,
+  TopItemRow,
+  TopVendorRow,
 } from "./types";
 
 const isTauri = (): boolean =>
@@ -62,13 +71,13 @@ export const movementsForItem = (itemId: number, limit = 200): Promise<StockMove
 export const cashSalesFor = (userId: number, date: string): Promise<CashSalesSummary> =>
   isTauri()
     ? tauriInvoke<CashSalesSummary>("cmd_cash_sales_for", { user_id: userId, date })
-    : Promise.resolve({ date, user_id: userId, cash_sales_paise: 0, non_cash_sales_paise: 0, total_sales_paise: 0 });
+    : Promise.resolve({ date, user_id: userId, cash_sales_paise: 0, card_sales_paise: 0, upi_sales_paise: 0, non_cash_sales_paise: 0, total_sales_paise: 0 });
 export const lastOpeningFor = (userId: number, date: string): Promise<number> =>
   isTauri()
     ? tauriInvoke<number>("cmd_last_opening_for", { user_id: userId, date })
     : Promise.resolve(0);
 export const backupGateCheck = (): Promise<BackupGate> =>
-  isTauri() ? tauriInvoke<BackupGate>("cmd_backup_gate_check", {}) : Promise.resolve({ needs_prompt: false, age_hours: null, reason: "browser", last_backup_at: null });
+  isTauri() ? tauriInvoke<BackupGate>("cmd_backup_gate_check", {}) : Promise.resolve({ needs_prompt: false, age_hours: null, reason: "browser", last_backup_unix_ms: null });
 export const triggerDayClose = (req: NewDayClose): Promise<number> =>
   isTauri() ? tauriInvoke<number>("cmd_trigger_day_close", { req }) : Promise.resolve(0);
 export const lockState = (userId: number, date: string): Promise<DayLockState> =>
@@ -95,3 +104,52 @@ export const outstandingReport = (): Promise<OutstandingReport> =>
   isTauri()
     ? tauriInvoke<OutstandingReport>("cmd_outstanding_report")
     : Promise.resolve({ customers: [], customer_total: 0, vendors: [], vendor_total: 0 });
+
+// ----- Dashboard metrics (R20) -----
+export const purchaseSummary = (fromDate: string, toDate: string): Promise<PurchaseSummary> =>
+  isTauri()
+    ? tauriInvoke<PurchaseSummary>("cmd_purchase_summary", { from_date: fromDate, to_date: toDate })
+    : Promise.resolve({ grand_total: 0, rows: [] });
+export const expenseSummary = (fromDate: string, toDate: string): Promise<ExpenseSummary> =>
+  isTauri()
+    ? tauriInvoke<ExpenseSummary>("cmd_expense_summary", { from_date: fromDate, to_date: toDate })
+    : Promise.resolve({ grand_total: 0 });
+export const topItemsSold = (fromDate?: string, toDate?: string, limit = 5): Promise<TopItemRow[]> =>
+  isTauri()
+    ? tauriInvoke<TopItemRow[]>("cmd_top_items_sold", { from_date: fromDate, to_date: toDate, limit })
+    : Promise.resolve([]);
+export const topCustomers = (fromDate: string, toDate: string, limit = 5): Promise<TopCustomerRow[]> =>
+  isTauri()
+    ? tauriInvoke<TopCustomerRow[]>("cmd_top_customers", { from_date: fromDate, to_date: toDate, limit })
+    : Promise.resolve([]);
+export const topItemsPurchased = (fromDate?: string, toDate?: string, limit = 5): Promise<TopItemRow[]> =>
+  isTauri()
+    ? tauriInvoke<TopItemRow[]>("cmd_top_items_purchased", { from_date: fromDate, to_date: toDate, limit })
+    : Promise.resolve([]);
+export const topVendors = (fromDate: string, toDate: string, limit = 5): Promise<TopVendorRow[]> =>
+  isTauri()
+    ? tauriInvoke<TopVendorRow[]>("cmd_top_vendors", { from_date: fromDate, to_date: toDate, limit })
+    : Promise.resolve([]);
+export const stockHealthSummary = (): Promise<StockHealthSummary> =>
+  isTauri()
+    ? tauriInvoke<StockHealthSummary>("cmd_stock_health_summary")
+    : Promise.resolve({
+        total_active_items: 0,
+        healthy_count: 0,
+        low_count: 0,
+        zero_count: 0,
+        negative_count: 0,
+        retail_value_paise: 0,
+      });
+export const deadStock = (daysIdle = 60): Promise<DeadStockRow[]> =>
+  isTauri()
+    ? tauriInvoke<DeadStockRow[]>("cmd_dead_stock", { days_idle: daysIdle })
+    : Promise.resolve([]);
+export const inventoryAging = (): Promise<InventoryAgingReport> =>
+  isTauri()
+    ? tauriInvoke<InventoryAgingReport>("cmd_inventory_aging")
+    : Promise.resolve({ bucket_0_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_91_plus: 0 });
+export const paymentSummary = (fromDate: string, toDate: string): Promise<PaymentSummary> =>
+  isTauri()
+    ? tauriInvoke<PaymentSummary>("cmd_payment_summary", { from_date: fromDate, to_date: toDate })
+    : Promise.resolve({ received_paise: 0, paid_paise: 0 });

@@ -246,6 +246,14 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "list_sub_locations",
         min_role: Role::Stocker,
     },
+    CommandAcl {
+        name: "cmd_list_formulas",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_get_formula",
+        min_role: Role::Stocker,
+    },
     // ── Cashier+ (79) — operational commands ───────────────────────────
     // Session
     CommandAcl {
@@ -659,6 +667,22 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "deactivate_category",
         min_role: Role::Owner,
     },
+    CommandAcl {
+        name: "cmd_create_formula",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_update_formula",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_deactivate_formula",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_formula_sales",
+        min_role: Role::Cashier,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -789,11 +813,11 @@ mod tests {
     // -- ACL completeness --------------------------------------------------
 
     #[test]
-    fn acl_covers_all_120_commands() {
+    fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            139,
-            "ACL has {} entries, expected 139",
+            145,
+            "ACL has {} entries, expected 145",
             COMMAND_ACL.len()
         );
     }

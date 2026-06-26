@@ -20,7 +20,6 @@ import { ipc } from "../../shell/lib/ipc";
 import { BarcodeThumb } from "./BarcodeThumb";
 import { Select } from "../../components/ui/Select";
 import {
-  buildLabelPdfBlob,
   LOCKED_FORMAT,
   printLabelBatch,
   type BatchLabel,
@@ -28,7 +27,9 @@ import {
   type ThermalSize,
   THERMAL_SIZES,
 } from "../../pos/print";
-import { buildTsplBytes } from "../../pos/tspl";
+import { buildTsplBytes, buildTsplString } from "../../pos/tspl";
+import { TsplLabelPreview } from "../../pos/TsplLabelPreview";
+import { DEFAULT_TSPL_CONFIG, type TsplConfig } from "../../pos/tsplConfig";
 import { Button, Skeleton } from "../../components/ui";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
@@ -83,12 +84,21 @@ export function BulkLabelsPage() {
   const [sizeChoice, setSizeChoice] = useState<string>("50x25");
   const [labelsPerRow, setLabelsPerRow] = useState(1);
 
+  const [tsplConfig, setTsplConfig] = useState<TsplConfig>(DEFAULT_TSPL_CONFIG);
+
+  function updateTsplConfig(updater: (c: TsplConfig) => TsplConfig) {
+    setTsplConfig((prev) => {
+      const next = updater(prev);
+      ipc.setSetting("label.tspl_config", JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }
+
   const [batch, setBatch] = useState<GeneratedRow[]>([]);
   const [history, setHistory] = useState<LabelPrintRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [shopName, setShopName] = useState("");
   const [defaultPrinterName, setDefaultPrinterName] = useState<string | null>(null);
 
@@ -109,6 +119,14 @@ export function BulkLabelsPage() {
     let cancelled = false;
     getSetting("shop_name")
       .then((v) => !cancelled && setShopName(v || "")).catch((err: unknown) => console.error("Silent catch replaced:", err));
+    getSetting("label.tspl_config").then((raw) => {
+      if (!raw || cancelled) return;
+      try {
+        const saved = JSON.parse(raw) as Partial<TsplConfig>;
+        setTsplConfig((prev) => ({ ...prev, ...saved }));
+      } catch { /* ignore corrupt */ }
+    }).catch(() => {});
+
     Promise.all([
       getSetting("receipt_template").catch(() => ""),
       ipc.getDefaultPrinter("label").catch(() => null),
@@ -264,11 +282,12 @@ export function BulkLabelsPage() {
           const selectedSize = THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES];
           if (!selectedSize) throw new Error(`Unknown label size: ${sizeChoice}`);
           const { w: widthMm, h: heightMm } = selectedSize;
-          const bytes = buildTsplBytes(
-            { barcode: record.barcode, line1: record.line1 ?? undefined, line2: record.line2 ?? undefined },
-            widthMm, heightMm,
-            Math.max(1, record.qty),
-          );
+          const reprintLabel = { barcode: record.barcode, line1: record.line1 ?? undefined, line2: record.line2 ?? undefined };
+          const cols = printer === "thermal" ? Math.max(1, labelsPerRow) : 1;
+          // Fill every cell of the strip with the same label; use PRINT stripsNeeded,1.
+          const strip = Array.from({ length: cols }, () => reprintLabel);
+          const stripsNeeded = Math.ceil(Math.max(1, record.qty) / cols);
+          const bytes = buildTsplBytes(strip, widthMm, heightMm, cols, stripsNeeded, tsplConfig);
           await ipc.printRaw(defaultPrinterName, bytes);
           setActionMsg(`Reprinted ${record.qty} label${record.qty === 1 ? "" : "s"} for ${record.itemName}.`);
           return;
@@ -311,25 +330,6 @@ export function BulkLabelsPage() {
     }
   }
 
-  async function handlePreview() {
-    if (batch.length === 0) return;
-    setBusy(true);
-    setActionMsg(null);
-    try {
-      const cfg = configFromSelect(printer, sizeChoice, labelsPerRow);
-      const labels = batch.map((r) => r.label);
-      const blob = await buildLabelPdfBlob(labels, cfg);
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
-      setActionMsg(`Preview ready — review before downloading or printing.`);
-    } catch (e) {
-      setActionMsg(`Failed: ${extractError(e)}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handlePrint() {
     if (batch.length === 0) return;
     setBusy(true);
@@ -346,24 +346,31 @@ export function BulkLabelsPage() {
           const selectedSize = THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES];
           if (!selectedSize) throw new Error(`Unknown label size: ${sizeChoice}`);
           const { w: widthMm, h: heightMm } = selectedSize;
+          const cols = printer === "thermal" ? Math.max(1, labelsPerRow) : 1;
+          const flatLabels = batch.map((r) => r.label);
 
-          // Group identical labels so we send one PRINT command per
-          // unique barcode+text combination (qty encoded in TSPL).
-          const grouped = new Map<string, { label: BatchLabel; qty: number }>();
-          for (const row of batch) {
-            const l = row.label;
-            const key = `${l.barcode}\x00${l.line1 ?? ""}\x00${l.line2 ?? ""}\x00${l.sku ?? ""}`;
-            const existing = grouped.get(key);
-            if (existing) {
-              existing.qty++;
-            } else {
-              grouped.set(key, { label: l, qty: 1 });
+          if (cols === 1) {
+            // Single-column: group identical labels into one job — avoids queue flooding.
+            // PRINT qty,1 lets the printer repeat internally.
+            const grouped = new Map<string, { label: BatchLabel; qty: number }>();
+            for (const l of flatLabels) {
+              const key = `${l.barcode}\x00${l.line1 ?? ""}\x00${l.line2 ?? ""}`;
+              const existing = grouped.get(key);
+              if (existing) existing.qty++;
+              else grouped.set(key, { label: l, qty: 1 });
             }
-          }
-
-          for (const { label, qty } of grouped.values()) {
-            const bytes = buildTsplBytes(label, widthMm, heightMm, qty);
-            await ipc.printRaw(defaultPrinterName, bytes);
+            for (const { label, qty } of grouped.values()) {
+              const bytes = buildTsplBytes([label], widthMm, heightMm, 1, qty, tsplConfig);
+              await ipc.printRaw(defaultPrinterName, bytes);
+            }
+          } else {
+            // Multi-column: chunk batch into strips of `cols` labels, one job per strip.
+            // SIZE stays at physical roll width (widthMm); cells are rollWidth/cols each.
+            for (let i = 0; i < flatLabels.length; i += cols) {
+              const strip = flatLabels.slice(i, i + cols);
+              const bytes = buildTsplBytes(strip, widthMm, heightMm, cols, 1, tsplConfig);
+              await ipc.printRaw(defaultPrinterName, bytes);
+            }
           }
 
           await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
@@ -531,36 +538,101 @@ export function BulkLabelsPage() {
           )}
         </div>
 
-        {/* Live preview */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Preview</label>
-          <div className="rounded-lg border border-border bg-background p-4">
-            {selectedItem?.barcode ? (
-              <div className="flex flex-col items-center gap-1">
-                <div className="text-center text-[10px] font-medium leading-tight text-foreground">
-                  {line1 || "—"}
-                </div>
-                <div className="text-center text-[9px] leading-tight text-muted-foreground">
-                  {line2 || "—"}
-                </div>
-                <div className="w-full px-2">
-                  <BarcodeThumb
-                    value={selectedItem.barcode}
-                    containerWidth={200}
-                    containerHeight={56}
+        {/* Label configurator + live TSPL preview */}
+        {(() => {
+          const thermalSize = printer === "thermal" ? THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES] : null;
+          const rollW   = thermalSize?.w ?? 100;
+          const rollH   = thermalSize?.h ?? 50;
+          const cols    = printer === "thermal" ? Math.max(1, labelsPerRow) : 1;
+          const cellWmm = rollW / cols;
+          const previewW = 300;
+          const previewH = Math.round(previewW * (rollH / cellWmm));
+
+          function Spinner({
+            label, value, step, min, max, unit = "mm", onChange,
+          }: { label: string; value: number; step: number; min: number; max: number; unit?: string; onChange: (v: number) => void }) {
+            const clamp = (v: number) => Math.round(Math.min(max, Math.max(min, v)) * 10) / 10;
+            return (
+              <div className="space-y-1">
+                <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+                <div className="flex items-center">
+                  <button type="button" onClick={() => onChange(clamp(value - step))}
+                    className="flex h-7 w-7 items-center justify-center rounded-l border border-border bg-muted text-sm font-bold text-muted-foreground hover:text-foreground active:scale-95">−</button>
+                  <input
+                    type="number" value={value} step={step} min={min} max={max}
+                    onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(clamp(v)); }}
+                    className="h-7 w-14 border-y border-border bg-background text-center font-mono text-xs text-foreground outline-none focus:border-primary"
                   />
-                </div>
-                <div className="text-center text-[8px] font-mono leading-tight text-muted-foreground">
-                  {skuOverride || selectedItem.sku_code}
+                  <button type="button" onClick={() => onChange(clamp(value + step))}
+                    className="flex h-7 w-7 items-center justify-center rounded-r border border-border bg-muted text-sm font-bold text-muted-foreground hover:text-foreground active:scale-95">+</button>
+                  {unit && <span className="ml-1.5 text-[10px] text-muted-foreground">{unit}</span>}
                 </div>
               </div>
-            ) : (
-              <p className="py-8 text-center text-xs text-muted-foreground">
-                Pick an item to preview the label.
-              </p>
-            )}
-          </div>
-        </div>
+            );
+          }
+
+          return (
+            <div className="space-y-3 rounded-lg border border-border bg-background p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-foreground">
+                  Label configurator
+                  <span className="ml-1.5 font-normal text-muted-foreground">{cellWmm} × {rollH} mm</span>
+                </span>
+                <button type="button" onClick={() => updateTsplConfig(() => DEFAULT_TSPL_CONFIG)}
+                  className="text-[10px] text-muted-foreground hover:text-foreground">Reset</button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Spinner
+                  label="Font (2–5)" value={Number(tsplConfig.font)} step={1} min={2} max={5} unit=""
+                  onChange={(v) => updateTsplConfig((c) => ({ ...c, font: String(Math.round(v)) as TsplConfig["font"] }))}
+                />
+                <Spinner
+                  label="Spacing" value={tsplConfig.spacingMm} step={0.5} min={0} max={10}
+                  onChange={(v) => updateTsplConfig((c) => ({ ...c, spacingMm: v }))}
+                />
+                <Spinner
+                  label="Top margin" value={tsplConfig.topMarginMm} step={0.5} min={0} max={30}
+                  onChange={(v) => updateTsplConfig((c) => ({ ...c, topMarginMm: v }))}
+                />
+                <Spinner
+                  label="Side margin" value={tsplConfig.sideMarginMm} step={0.5} min={0} max={15}
+                  onChange={(v) => updateTsplConfig((c) => ({ ...c, sideMarginMm: v }))}
+                />
+              </div>
+
+              <div className="flex justify-center pt-1">
+                {selectedItem?.barcode ? (
+                  <TsplLabelPreview
+                    label={{ barcode: selectedItem.barcode, line1: line1.trim() || undefined, line2: line2.trim() || undefined }}
+                    rollWidthMm={rollW} heightMm={rollH} labelsPerRow={cols}
+                    config={tsplConfig} displayWidth={previewW}
+                  />
+                ) : (
+                  <div style={{ width: previewW, height: previewH }}
+                    className="flex items-center justify-center rounded border border-dashed border-border bg-muted/30">
+                    <p className="text-xs text-muted-foreground">Pick an item to preview</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Raw TSPL viewer — shows exactly what gets sent to the printer */}
+              {selectedItem?.barcode && (
+                <details className="group">
+                  <summary className="cursor-pointer select-none text-[10px] text-muted-foreground hover:text-foreground">
+                    Raw TSPL ▸
+                  </summary>
+                  <pre className="mt-1 max-h-48 overflow-auto rounded border border-border bg-muted/30 p-2 font-mono text-[10px] text-foreground leading-relaxed">
+                    {buildTsplString(
+                      [{ barcode: selectedItem.barcode, line1: line1.trim() || undefined, line2: line2.trim() || undefined }],
+                      rollW, rollH, cols, tsplConfig,
+                    )}
+                  </pre>
+                </details>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Add to batch */}
         <Button
@@ -643,20 +715,12 @@ export function BulkLabelsPage() {
           </div>
 
           {/* Action buttons */}
-          <div className="mt-2.5 grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={handlePreview}
-              disabled={batch.length === 0 || busy}
-              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Preview
-            </button>
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={handleDownload}
               disabled={batch.length === 0 || busy}
-              className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               Download PDF
             </button>
@@ -664,45 +728,82 @@ export function BulkLabelsPage() {
               type="button"
               onClick={handlePrint}
               disabled={batch.length === 0 || busy}
-              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Print
             </button>
           </div>
         </div>
 
-        {/* PDF preview */}
-        <div className="rounded-lg border border-border bg-card/60 p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground">Verify before print</h3>
-            {previewUrl && (
-              <button
-                type="button"
-                onClick={() => {
-                  URL.revokeObjectURL(previewUrl);
-                  setPreviewUrl(null);
-                }}
-                className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          {previewUrl ? (
-            <iframe
-              src={previewUrl}
-              title="Label PDF preview"
-              className="h-[380px] w-full rounded-md border border-border bg-background"
-            />
-          ) : (
-            <div className="flex h-[380px] items-center justify-center rounded-md border border-dashed border-border bg-background">
-              <p className="text-center text-xs text-muted-foreground">
-                Click <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">Preview</span> to
-                render the batch here.
-              </p>
+        {/* Live TSPL batch preview */}
+        {(() => {
+          const thermalSize = printer === "thermal" ? THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES] : null;
+          const rollW = thermalSize?.w ?? 100;
+          const rollH = thermalSize?.h ?? 50;
+          const cols  = printer === "thermal" ? Math.max(1, labelsPerRow) : 1;
+          // Each cell preview fits inside the right panel; panel ≈ 580px minus padding
+          const panelW    = 560;
+          const cellPreviewW = Math.floor(panelW / cols);
+          const cellPreviewH = Math.round(cellPreviewW * (rollH / (rollW / cols)));
+          const MAX_STRIPS = 8;
+          const flatLabels = batch.map((r) => r.label);
+          // Group into strips of `cols`
+          const strips: (typeof flatLabels)[] = [];
+          for (let i = 0; i < flatLabels.length; i += cols) {
+            strips.push(flatLabels.slice(i, i + cols));
+          }
+          const visibleStrips = strips.slice(0, MAX_STRIPS);
+          const hiddenCount   = flatLabels.length - visibleStrips.length * cols;
+
+          return (
+            <div className="rounded-lg border border-border bg-card/60 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Print preview
+                  <span className="ml-1.5 font-normal text-muted-foreground text-xs">
+                    — actual TSPL layout, {rollW / cols} × {rollH} mm cell
+                  </span>
+                </h3>
+              </div>
+
+              {batch.length === 0 ? (
+                <div style={{ height: cellPreviewH || 160 }}
+                  className="flex items-center justify-center rounded-md border border-dashed border-border bg-background">
+                  <p className="text-center text-xs text-muted-foreground">Add labels to the batch to preview</p>
+                </div>
+              ) : (
+                <div className="max-h-[480px] overflow-y-auto space-y-1 rounded-md border border-border bg-background p-2">
+                  {visibleStrips.map((strip, si) => (
+                    <div key={si} className="flex" style={{ gap: 2 }}>
+                      {Array.from({ length: cols }, (_, ci) => {
+                        const lbl = strip[ci];
+                        return lbl ? (
+                          <TsplLabelPreview
+                            key={ci}
+                            label={lbl}
+                            rollWidthMm={rollW}
+                            heightMm={rollH}
+                            labelsPerRow={cols}
+                            config={tsplConfig}
+                            displayWidth={cellPreviewW}
+                          />
+                        ) : (
+                          <div key={ci} style={{ width: cellPreviewW, height: cellPreviewH }}
+                            className="rounded border border-dashed border-border bg-muted/20" />
+                        );
+                      })}
+                    </div>
+                  ))}
+                  {hiddenCount > 0 && (
+                    <p className="py-1 text-center text-[10px] text-muted-foreground">
+                      +{hiddenCount} more label{hiddenCount === 1 ? "" : "s"} not shown
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* History */}
         <div className="rounded-lg border border-border bg-card/60 p-4">

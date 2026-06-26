@@ -662,7 +662,9 @@ mod tests {
                 validity_days: None,
                 acknowledge_flag: false,
                 lines: vec![CartLine {
-                    item_id: 1,
+                    kind: "item".into(),
+                    item_id: Some(1),
+                    formula_id: None,
                     qty: 1.0,
                     price: 300,
                     unit_type: "unit".into(),
@@ -689,7 +691,9 @@ mod tests {
                 validity_days: None,
                 acknowledge_flag: false,
                 lines: vec![CartLine {
-                    item_id: 1,
+                    kind: "item".into(),
+                    item_id: Some(1),
+                    formula_id: None,
                     qty: 1.0,
                     price: 50,
                     unit_type: "unit".into(),
@@ -728,7 +732,9 @@ mod tests {
                     validity_days: None,
                     acknowledge_flag: false,
                     lines: vec![CartLine {
-                        item_id: 1,
+                        kind: "item".into(),
+                        item_id: Some(1),
+                        formula_id: None,
                         qty: 1.0,
                         price: amt,
                         unit_type: "unit".into(),

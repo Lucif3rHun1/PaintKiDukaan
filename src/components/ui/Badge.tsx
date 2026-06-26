@@ -10,11 +10,11 @@ interface Props {
 
 const variants = {
   default: "bg-muted text-muted-foreground",
-  success: "bg-success/15 text-success",
-  warning: "bg-warning/15 text-warning",
-  danger: "bg-destructive/15 text-destructive",
+  success: "bg-success/25 text-success ring-1 ring-inset ring-success/40",
+  warning: "bg-warning/25 text-warning ring-1 ring-inset ring-warning/40",
+  danger: "bg-destructive/20 text-destructive ring-1 ring-inset ring-destructive/40 font-semibold",
   muted: "bg-muted text-muted-foreground",
-  info: "bg-info/15 text-info",
+  info: "bg-info/25 text-info ring-1 ring-inset ring-info/40",
   neutral: "bg-muted text-muted-foreground",
 };
 

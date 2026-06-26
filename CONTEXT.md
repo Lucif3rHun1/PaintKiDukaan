@@ -90,3 +90,26 @@ All monetary values stored as integers in paise (1/100 of rupee). Displayed usin
 - **Owner**: Full access to all features
 - **Cashier**: Can process sales, record payments
 - **Stocker**: Can manage inventory
+
+## Formulas
+
+### Formula
+A named, priced, repeatable paint-mix recipe sold to customers. First-class entity in the shop system, parallel to `Item`. Identified primarily by a user-assigned `id_code` (e.g. `"8827"`). May have an optional `name` (e.g. `"Rose Beige"`). Carries a `with_base` flag and a `retail_price_paise`. Editable; soft-deletable only. Sold as a sale line via the same cart as items. (See ADR-011, ADR-012.)
+
+### Shade ID (`id_code`)
+The numeric/text code a cashier or owner uses to refer to a Formula at the counter — the number physically written on the shade card. Primary identifier in the UI and on receipts. Required, unique, immutable after creation. Display leads; `name` is secondary.
+
+### Base (with/without)
+Whether a Formula is mixed on top of a white/neutral/deep base paint. Affects pricing and the physical mixing process but does not touch inventory in the current system — the shop charges a service fee per mix, not a stock deduction. Stored as the boolean `with_base` on the formula.
+
+### Formula Line
+A `sale_items` row of `kind='formula'`. Captures `formula_id`, the negotiated `price` (snapshot at sale time), `qty=1`, optional `shade_note`. **Not returnable** (ADR-013). Allowed in both quotations and final sales (ADR-015).
+
+### Shade Mix
+The act of mixing a Formula. Used as a verb in UI copy ("shade mixed", "mix this shade"). Does not produce a stock movement.
+
+### Formula History
+The sub-section of `FormulaDetailsPage` listing all sales of a specific formula. Columns: invoice_no, date, customer, qty, price, line_total. Filters: search by invoice + customer name, date range. Each row links to `SaleDetailPage` in view-only mode. (See ADR-016.)
+
+### Unified Sales Search
+The single `ItemSearchInput` on the sales page that matches both `items` and `formulas`. Discriminated by `kind` in the hit row (paint-brush icon prefix for formulas). Picking a formula adds it to the cart with `qty=1` and the formula's current `retail_price_paise` — no modal, no separate flow. (See ADR-009, ADR-011.)

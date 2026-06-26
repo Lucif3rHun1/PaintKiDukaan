@@ -5,7 +5,8 @@
 import { useState } from "react";
 import { recordVendorPayment } from "./api";
 import { Button, Money, DatePicker, Select } from "../../components/ui";
-import { type AppError, type Vendor, type VendorOutstanding } from "../types";
+import { extractError } from "../../lib/extractError";
+import { type Vendor, type VendorOutstanding } from "../types";
 
 interface Props {
   vendor: Vendor;
@@ -53,8 +54,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
       setOutstanding(out);
       onSaved?.(out);
     } catch (e) {
-      const err = e as AppError;
-      setError(err.message ?? "Save failed");
+      setError(extractError(e));
     } finally {
       setBusy(false);
     }

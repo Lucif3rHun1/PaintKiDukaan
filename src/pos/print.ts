@@ -169,7 +169,7 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   for (const it of spec.sale.items) {
     const qtyStr = `${it.qty}${it.unit_type ? " " + it.unit_type : ""}`;
     const lineValue = Math.max(0, it.qty * it.price - it.line_discount);
-    doc.text(it.item_name.slice(0, 40), tableX + 2, y);
+    doc.text(it.display_name.slice(0, 40), tableX + 2, y);
     doc.text(qtyStr, colQty, y, { align: "right" });
     doc.text(paiseToPdfRupees(it.price), colRate, y, { align: "right" });
     doc.text(paiseToPdfRupees(lineValue), colAmt, y, { align: "right" });

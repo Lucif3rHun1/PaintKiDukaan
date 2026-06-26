@@ -108,7 +108,7 @@ export function UserManagement() {
   }
 
   async function onDeleteUser(userId: number, userName: string) {
-    if (!window.confirm(`Remove ${userName} from the system? They will no longer be able to log in.`)) {
+    if (!window.confirm(`Remove ${userName}? They will no longer be able to log in.`)) {
       return;
     }
     setError(null);

@@ -5,7 +5,7 @@
 import { useMemo } from "react";
 import { UserPlus, Flag, Phone, Banknote } from "lucide-react";
 
-import { Alert, Badge, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
+import { Alert, Badge, Button, Card, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { listCustomers } from "./api";
@@ -57,6 +57,18 @@ export function CustomerList({
       listCustomers(debouncedSearch || undefined),
   });
 
+  const metrics = useMemo(() => {
+    let active = 0;
+    let inactive = 0;
+    let flagged = 0;
+    for (const c of allData) {
+      if (c.is_active) active++;
+      else inactive++;
+      if (c.is_flagged) flagged++;
+    }
+    return { total: allData.length, active, inactive, flagged };
+  }, [allData]);
+
   function handlePay(c: Customer) {
     if (onRecordPayment) {
       onRecordPayment(c);
@@ -74,7 +86,7 @@ export function CustomerList({
             <div className="flex items-center gap-2">
               <span className="font-medium text-foreground">{toTitleCase(c.name)}</span>
               {c.is_flagged ? (
-                <Badge variant="danger" size="sm">
+                <Badge variant="warning" size="sm">
                   <Flag className="h-3 w-3" />
                   Flagged
                 </Badge>
@@ -182,20 +194,51 @@ export function CustomerList({
   });
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight">Customers</h2>
-          <p className="text-sm text-muted-foreground">
-            {totalItems} {totalItems === 1 ? "customer" : "customers"}
-            {search ? ` matching "${search}"` : ""}
+    <div className="space-y-3">
+      {/* ── Metric cards ─────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total</p>
+          <p className="text-2xl font-semibold tabular-nums text-foreground">{metrics.total}</p>
+        </Card>
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Active</p>
+          <p className="text-2xl font-semibold tabular-nums text-success">{metrics.active}</p>
+        </Card>
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Inactive</p>
+          <p className="text-2xl font-semibold tabular-nums text-muted-foreground">{metrics.inactive}</p>
+        </Card>
+        <Card
+          as="section"
+          className={
+            metrics.flagged > 0
+              ? "space-y-1 border-warning/40 bg-warning/5 p-4"
+              : "space-y-1 p-4"
+          }
+        >
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Flagged</p>
+          <p className={`text-2xl font-semibold tabular-nums ${metrics.flagged > 0 ? "text-warning" : "text-foreground"}`}>
+            {metrics.flagged}
           </p>
-        </div>
+        </Card>
+      </div>
+
+      {/* ── Filter bar ───────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by name or phone…"
+          ariaLabel="Search customers"
+          data-shortcut="search"
+          className="min-w-[220px] flex-1"
+        />
         {canCreate ? (
           <Button
             type="button"
             variant="primary"
-            size="md"
+            size="sm"
             icon={UserPlus}
             onClick={onCreate}
             shortcut="F6"
@@ -203,66 +246,56 @@ export function CustomerList({
             New Customer
           </Button>
         ) : null}
-      </header>
-
-      <div className="space-y-3">
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search by name or phone…"
-          ariaLabel="Search customers"
-          data-shortcut="search"
-        />
-
-        {error ? (
-          <Alert title="Could not load customers" variant="destructive">
-            {extractError(error)}
-          </Alert>
-        ) : null}
-
-        <DataTable
-          data={items}
-          columns={columns}
-          keyExtractor={(c) => c.id}
-          loading={isLoading || isFetching}
-          emptyState={
-            <EmptyState
-              icon={UserPlus}
-              title={search ? "No matches" : "No customers yet"}
-              description={
-                search
-                  ? `Nothing matches "${search}". Try a different search.`
-                  : "Add the first customer to start recording sales and credit."
-              }
-              primary={
-                canCreate ? (
-                  <Button
-                    type="button"
-                    onClick={onCreate}
-                    icon={UserPlus}
-                  >
-                    Add Customer
-                  </Button>
-                ) : undefined
-              }
-            />
-          }
-          error={error}
-          onRetry={refetch}
-          onRowClick={onSelect ? (c) => onSelect(c) : undefined}
-          rowClassName={rowClassName}
-        />
-
-        {!isLoading && allData.length > 0 ? (
-          <PaginationControls
-            page={page}
-            totalPages={totalPages}
-            totalItems={totalItems}
-            pageSize={pageSize}
-            onPageChange={setPage}
-          />
-        ) : null}
       </div>
+
+      {error ? (
+        <Alert title="Could not load customers" variant="destructive">
+          {extractError(error)}
+        </Alert>
+      ) : null}
+
+      <DataTable
+        data={items}
+        columns={columns}
+        keyExtractor={(c) => c.id}
+        loading={isLoading || isFetching}
+        emptyState={
+          <EmptyState
+            icon={UserPlus}
+            title={search ? "No matches" : "No customers yet"}
+            description={
+              search
+                ? `Nothing matches "${search}". Try a different search.`
+                : "Add the first customer to start recording sales and credit."
+            }
+            primary={
+              canCreate ? (
+                <Button
+                  type="button"
+                  onClick={onCreate}
+                  icon={UserPlus}
+                >
+                  Add Customer
+                </Button>
+              ) : undefined
+            }
+          />
+        }
+        error={error}
+        onRetry={refetch}
+        onRowClick={onSelect ? (c) => onSelect(c) : undefined}
+        rowClassName={rowClassName}
+      />
+
+      {!isLoading && allData.length > 0 ? (
+        <PaginationControls
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          onPageChange={setPage}
+        />
+      ) : null}
     </div>
   );
 }

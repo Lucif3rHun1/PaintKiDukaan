@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
 import { Button, Select } from "../../components/ui";
+import { extractError } from "../../lib/extractError";
 import { createUnit, type UnitDimension } from "./api";
 import type { Unit } from "../types";
 
@@ -18,7 +19,7 @@ export function CreateUnitForm({ onSaved, onCancel }: Props) {
     if (!dimension) return setError("Dimension is required");
     setBusy(true);
     try { onSaved(await createUnit(trimmedCode, label.trim(), dimension)); }
-    catch (err) { setError((err as Error)?.message ?? "Save failed"); }
+    catch (err) { setError(extractError(err)); }
     finally { setBusy(false); }
   }
   function onKeyDown(e: KeyboardEvent<HTMLFormElement>) { if (e.key === "Escape") onCancel(); }

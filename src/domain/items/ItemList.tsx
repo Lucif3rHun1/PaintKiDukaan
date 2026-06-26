@@ -206,7 +206,7 @@ export function ItemList({ role }: Props) {
       if (item.current_qty < 0) stockAnomaly++;
       else if (item.current_qty === 0) outOfStock++;
       else if (item.current_qty <= item.min_qty) lowStock++;
-      totalRetail += item.retail_price_paise;
+      totalRetail += (item.current_qty ?? 0) * item.retail_price_paise;
     }
     return {
       total: allItems.length,
@@ -492,7 +492,7 @@ export function ItemList({ role }: Props) {
           totalItems={totalItems}
           pageSize={pageSize}
           onPageChange={setPage}
-          className="card !rounded-lg !border-border !bg-muted px-3 py-2"
+          className="rounded-lg border border-border bg-muted px-3 py-2"
         />
       ) : null}
       {[...grouped.entries()].map(([itemBrand, categories]) => (

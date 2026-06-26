@@ -110,7 +110,7 @@ export function RestoreFromRecovery() {
             <div>
               <p className="text-sm font-medium text-primary">Recovery access</p>
               <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                Restore with passphrase
+                Restore with password
               </h1>
             </div>
             <img
@@ -138,16 +138,16 @@ export function RestoreFromRecovery() {
           {step === 0 ? (
             <div>
               <label className={labelClass} htmlFor="passphrase">
-                Recovery passphrase
+                Recovery password
               </label>
               <div className="relative mt-2">
                 <input
                   id="passphrase"
                   className={`${inputClass} pr-11`}
-                  aria-label="Recovery passphrase"
+                  aria-label="Recovery password"
                   aria-invalid={Boolean(errors.passphrase)}
                   autoComplete="off"
-                  placeholder="Enter recovery passphrase"
+                  placeholder="Enter recovery password"
                   type={showPassphrase ? "text" : "password"}
                   {...register("passphrase")}
                 />
@@ -155,7 +155,7 @@ export function RestoreFromRecovery() {
                   className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   type="button"
                   onClick={() => setShowPassphrase((visible) => !visible)}
-                  aria-label={showPassphrase ? "Hide recovery passphrase" : "Show recovery passphrase"}
+                  aria-label={showPassphrase ? "Hide recovery password" : "Show recovery password"}
                 >
                   {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

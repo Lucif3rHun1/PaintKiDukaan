@@ -1,0 +1,195 @@
+{
+  "schema_version": 2,
+  "active_work_id": "db-performance-83c44b6b",
+  "works": {
+    "db-performance-83c44b6b": {
+      "work_id": "db-performance-83c44b6b",
+      "active_plan": "/Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/.omo/plans/db-performance.md",
+      "plan_name": "db-performance",
+      "status": "completed",
+      "started_at": "2026-06-26T10:17:36.870Z",
+      "ended_at": "2026-06-26T11:44:52.503Z",
+      "updated_at": "2026-06-26T11:44:52.503Z",
+      "session_ids": [
+        "opencode:ses_0fc994370ffeTG3BRkXxOWVd70",
+        "opencode:ses_0fc878a1dffe07xVWY8RlhcC5U",
+        "opencode:ses_0fc872711ffeaGlL7jatOE9Fkt",
+        "opencode:ses_0fc86f452ffeGUHXiUzEhN8jUn",
+        "opencode:ses_0fc834f7bfferTmyZcj1Kt8VO9",
+        "opencode:ses_0fc7ed60bffef5xs6cuW3G7fHO",
+        "opencode:ses_0fc7ea196ffeK6GcT592aNp1Tn",
+        "opencode:ses_0fc7e857effeaI3KEP9bxETUoW"
+      ],
+      "session_origins": {
+        "opencode:ses_0fc994370ffeTG3BRkXxOWVd70": "direct",
+        "opencode:ses_0fc878a1dffe07xVWY8RlhcC5U": "appended",
+        "opencode:ses_0fc872711ffeaGlL7jatOE9Fkt": "appended",
+        "opencode:ses_0fc86f452ffeGUHXiUzEhN8jUn": "appended",
+        "opencode:ses_0fc834f7bfferTmyZcj1Kt8VO9": "appended",
+        "opencode:ses_0fc7ed60bffef5xs6cuW3G7fHO": "appended",
+        "opencode:ses_0fc7ea196ffeK6GcT592aNp1Tn": "appended",
+        "opencode:ses_0fc7e857effeaI3KEP9bxETUoW": "appended"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Add performance PRAGMAs to db/mod.rs",
+          "session_id": "opencode:ses_0fc8ae630ffern1vX0icDFl2vW",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-26T10:26:19.858Z",
+          "started_at": "2026-06-26T10:24:37.737Z",
+          "status": "completed",
+          "ended_at": "2026-06-26T10:26:19.858Z",
+          "elapsed_ms": 102121
+        },
+        "todo:4": {
+          "task_key": "todo:4",
+          "task_label": "4",
+          "task_title": "Add FTS5 virtual table and sync triggers to schema_final.sql",
+          "session_id": "opencode:ses_0fc872711ffeaGlL7jatOE9Fkt",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "started_at": "2026-06-26T10:30:57.454Z",
+          "status": "completed",
+          "updated_at": "2026-06-26T10:31:43.885Z",
+          "ended_at": "2026-06-26T10:31:43.885Z",
+          "elapsed_ms": 46431
+        },
+        "todo:5": {
+          "task_key": "todo:5",
+          "task_label": "5",
+          "task_title": "Rewrite search_items to use FTS5 MATCH",
+          "session_id": "opencode:ses_0fc834f7bfferTmyZcj1Kt8VO9",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-06-26T10:34:22.637Z",
+          "ended_at": "2026-06-26T10:34:22.637Z",
+          "status": "completed"
+        },
+        "todo:8": {
+          "task_key": "todo:8",
+          "task_label": "8",
+          "task_title": "End-to-end verification and performance testing",
+          "session_id": "opencode:ses_0fc8084c9ffeNegAOiKokAVgUZ",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-06-26T10:36:42.026Z",
+          "started_at": "2026-06-26T10:36:14.514Z",
+          "status": "completed",
+          "ended_at": "2026-06-26T10:36:42.026Z",
+          "elapsed_ms": 27512
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit — verify all tasks completed as specified",
+          "session_id": "opencode:ses_0fc7c771effeqobjlgpjO6AYD4",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "started_at": "2026-06-26T10:39:01.053Z",
+          "status": "completed",
+          "updated_at": "2026-06-26T10:41:26.367Z",
+          "ended_at": "2026-06-26T10:41:26.367Z",
+          "elapsed_ms": 145314
+        }
+      },
+      "elapsed_ms": 5235633
+    }
+  },
+  "active_plan": "/Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/.omo/plans/db-performance.md",
+  "started_at": "2026-06-26T10:17:36.870Z",
+  "ended_at": "2026-06-26T11:44:52.503Z",
+  "status": "completed",
+  "updated_at": "2026-06-26T11:44:52.503Z",
+  "session_ids": [
+    "opencode:ses_0fc994370ffeTG3BRkXxOWVd70",
+    "opencode:ses_0fc878a1dffe07xVWY8RlhcC5U",
+    "opencode:ses_0fc872711ffeaGlL7jatOE9Fkt",
+    "opencode:ses_0fc86f452ffeGUHXiUzEhN8jUn",
+    "opencode:ses_0fc834f7bfferTmyZcj1Kt8VO9",
+    "opencode:ses_0fc7ed60bffef5xs6cuW3G7fHO",
+    "opencode:ses_0fc7ea196ffeK6GcT592aNp1Tn",
+    "opencode:ses_0fc7e857effeaI3KEP9bxETUoW"
+  ],
+  "session_origins": {
+    "opencode:ses_0fc994370ffeTG3BRkXxOWVd70": "direct",
+    "opencode:ses_0fc878a1dffe07xVWY8RlhcC5U": "appended",
+    "opencode:ses_0fc872711ffeaGlL7jatOE9Fkt": "appended",
+    "opencode:ses_0fc86f452ffeGUHXiUzEhN8jUn": "appended",
+    "opencode:ses_0fc834f7bfferTmyZcj1Kt8VO9": "appended",
+    "opencode:ses_0fc7ed60bffef5xs6cuW3G7fHO": "appended",
+    "opencode:ses_0fc7ea196ffeK6GcT592aNp1Tn": "appended",
+    "opencode:ses_0fc7e857effeaI3KEP9bxETUoW": "appended"
+  },
+  "plan_name": "db-performance",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Add performance PRAGMAs to db/mod.rs",
+      "session_id": "opencode:ses_0fc8ae630ffern1vX0icDFl2vW",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-26T10:26:19.858Z",
+      "started_at": "2026-06-26T10:24:37.737Z",
+      "status": "completed",
+      "ended_at": "2026-06-26T10:26:19.858Z",
+      "elapsed_ms": 102121
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Add FTS5 virtual table and sync triggers to schema_final.sql",
+      "session_id": "opencode:ses_0fc872711ffeaGlL7jatOE9Fkt",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "started_at": "2026-06-26T10:30:57.454Z",
+      "status": "completed",
+      "updated_at": "2026-06-26T10:31:43.885Z",
+      "ended_at": "2026-06-26T10:31:43.885Z",
+      "elapsed_ms": 46431
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Rewrite search_items to use FTS5 MATCH",
+      "session_id": "opencode:ses_0fc834f7bfferTmyZcj1Kt8VO9",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-06-26T10:34:22.637Z",
+      "ended_at": "2026-06-26T10:34:22.637Z",
+      "status": "completed"
+    },
+    "todo:8": {
+      "task_key": "todo:8",
+      "task_label": "8",
+      "task_title": "End-to-end verification and performance testing",
+      "session_id": "opencode:ses_0fc8084c9ffeNegAOiKokAVgUZ",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-06-26T10:36:42.026Z",
+      "started_at": "2026-06-26T10:36:14.514Z",
+      "status": "completed",
+      "ended_at": "2026-06-26T10:36:42.026Z",
+      "elapsed_ms": 27512
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan compliance audit — verify all tasks completed as specified",
+      "session_id": "opencode:ses_0fc7c771effeqobjlgpjO6AYD4",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "started_at": "2026-06-26T10:39:01.053Z",
+      "status": "completed",
+      "updated_at": "2026-06-26T10:41:26.367Z",
+      "ended_at": "2026-06-26T10:41:26.367Z",
+      "elapsed_ms": 145314
+    }
+  },
+  "agent": "atlas",
+  "elapsed_ms": 5235633
+}

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button, Select } from "../../components/ui";
+import { extractError } from "../../lib/extractError";
 import { createCustomer, updateCustomer } from "./api";
 import type {
-  AppError,
   Customer,
   CustomerType,
   NewCustomer,
@@ -74,8 +74,7 @@ export function CustomerForm({
         onSaved(c);
       }
     } catch (e) {
-      const err = e as AppError;
-      setError(err.message ?? "Save failed");
+      setError(extractError(e));
     } finally {
       setBusy(false);
     }

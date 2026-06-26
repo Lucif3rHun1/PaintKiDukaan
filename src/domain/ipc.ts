@@ -22,6 +22,11 @@ import {
   type Customer,
   type SaleReturn,
   type GetSaleByInvoiceNumberRequest,
+  type Formula,
+  type FormulaFilter,
+  type NewFormula,
+  type UpdateFormula,
+  type FormulaSaleRow,
 } from "./types";
 import type { Sale } from "../pos/types";
 
@@ -151,4 +156,36 @@ export async function getNextReturnNumber(): Promise<string> {
 
 export async function getCustomer(id: number): Promise<Customer | null> {
   return invoke<Customer | null>("get_customer", { id });
+}
+
+export async function listFormulas(
+  filter: FormulaFilter = {},
+): Promise<Formula[]> {
+  return invoke<Formula[]>("cmd_list_formulas", { filter });
+}
+
+export async function getFormula(id: number): Promise<Formula | null> {
+  return invoke<Formula | null>("cmd_get_formula", { id });
+}
+
+export async function createFormula(payload: NewFormula): Promise<Formula> {
+  return invoke<Formula>("cmd_create_formula", { payload });
+}
+
+export async function updateFormula(
+  id: number,
+  patch: UpdateFormula,
+): Promise<Formula> {
+  return invoke<Formula>("cmd_update_formula", { id, patch });
+}
+
+export async function deactivateFormula(id: number): Promise<void> {
+  return invoke<void>("cmd_deactivate_formula", { id });
+}
+
+export async function listFormulaSales(
+  id: number,
+  opts: { query?: string; from_date?: string; to_date?: string } = {},
+): Promise<FormulaSaleRow[]> {
+  return invoke<FormulaSaleRow[]>("cmd_list_formula_sales", { id, ...opts });
 }

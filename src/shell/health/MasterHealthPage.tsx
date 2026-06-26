@@ -40,14 +40,14 @@ export function MasterHealthPage() {
 
       <Section title="App">
         <Row k="Version" v={data.app.version} />
-        <Row k="WebView2" v={data.app.webview2} />
-        <Row k="SQLCipher" v={data.app.sqlcipher} />
+        <Row k="Browser engine" v={data.app.webview2} />
+        <Row k="Database engine" v={data.app.sqlcipher} />
         <Row k="Last backup" v={data.app.last_backup} />
         <Row k="Last test-restore" v={data.app.last_test_restore} />
       </Section>
 
       <Section title="System">
-        <Row k="BitLocker (C:)" v={data.system.bitlocker_c_drive} />
+        <Row k="Drive protection (C:)" v={data.system.bitlocker_c_drive} />
         <Row k="Disk free (GB)" v={data.system.disk_free_gb.toFixed(1)} />
         <Row
           k="Sleep prevented"
@@ -57,7 +57,7 @@ export function MasterHealthPage() {
       </Section>
 
       <Section title="Data">
-        <Row k="DB integrity" v={data.data.db_integrity} />
+        <Row k="Data health" v={data.data.db_integrity} />
         <Row
           k="Rows"
           v={`sales=${data.data.rows_count.sales}, items=${data.data.rows_count.items}, customers=${data.data.rows_count.customers}`}
@@ -69,7 +69,7 @@ export function MasterHealthPage() {
       </Section>
 
       <Section title="Network">
-        <Row k="mDNS active" v={data.network.mdns_active ? "yes" : "no"} />
+        <Row k="Network discovery" v={data.network.mdns_active ? "yes" : "no"} />
         <Row k="LAN IP" v={data.network.lan_ip || "—"} />
         <Row k="Connected devices" v={String(data.network.connected_devices)} />
       </Section>

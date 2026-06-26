@@ -28,9 +28,9 @@ interface FirstLaunchRestoreProps {
 }
 
 const STEPS = [
-  { key: "file", label: "File", icon: HardDrive, description: "Point PaintKiDukaan at your .pkb1 backup envelope" },
-  { key: "passphrase", label: "Passphrase", icon: ShieldCheck, description: "Unlock the encrypted backup with your recovery passphrase" },
-  { key: "confirm", label: "Confirm", icon: FileWarning, description: "Replace the first-launch database with the restored backup" },
+  { key: "file", label: "File", icon: HardDrive, description: "Select your backup file to restore from" },
+  { key: "passphrase", label: "Passphrase", icon: ShieldCheck, description: "Enter your recovery password to unlock the backup" },
+  { key: "confirm", label: "Confirm", icon: FileWarning, description: "Replace the starting shop data with the restored backup" },
 ] as const;
 
 const inputClass =
@@ -173,7 +173,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                 Restore from backup
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Bring back a shop database from an encrypted backup file.
+                Bring back your shop data from a backup file.
               </p>
             </div>
             <img
@@ -270,7 +270,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                 </button>
               </div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Absolute path to a .pkb1 backup file. E.g. /Users/me/backups/shop-2025-01-15.pkb1
+                Absolute path to a backup file. E.g. /Users/me/backups/shop-2025-01-15.pkb1
               </p>
               {fieldError(errors.envelopePath?.message)}
             </div>
@@ -279,13 +279,13 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
           {step === 1 ? (
             <div>
               <label className={labelClass} htmlFor="restorePassphrase">
-                Recovery passphrase *
+                Recovery password *
               </label>
               <div className="relative">
                 <input
                   id="restorePassphrase"
                   className={`${inputClass} pr-11`}
-                  aria-label="Recovery passphrase"
+                  aria-label="Recovery password"
                   aria-invalid={Boolean(errors.passphrase)}
                   autoComplete="off"
                   placeholder="At least 12 characters"
@@ -296,7 +296,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                   className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   type="button"
                   onClick={() => setShowPassphrase((v) => !v)}
-                  aria-label={showPassphrase ? "Hide recovery passphrase" : "Show recovery passphrase"}
+                  aria-label={showPassphrase ? "Hide recovery password" : "Show recovery password"}
                 >
                   {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -308,7 +308,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
           {step === 2 ? (
             <div className="space-y-4">
               <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3">
-                <p className="text-sm font-medium text-destructive">This will replace the first-launch database.</p>
+                <p className="text-sm font-medium text-destructive">This will replace the starting shop data.</p>
                 <p className="mt-1 text-xs leading-5 text-destructive/80">
                   PaintKiDukaan will restore the backup, then lock the app so you can unlock with the original PIN.
                 </p>
@@ -318,7 +318,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                 <p className="mt-1 break-all font-mono text-xs text-foreground">{truncateMiddle(envelopePath.trim())}</p>
               </div>
               <div className="rounded-xl border border-border bg-background/60 p-3 text-sm text-foreground">
-                Passphrase: {passphrase.length} characters
+                Password: {passphrase.length} characters
               </div>
             </div>
           ) : null}

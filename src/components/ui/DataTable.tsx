@@ -150,6 +150,7 @@ export function DataTable<T>({
                 {columns.map((col) => (
                   <td
                     key={col.id ?? (typeof col.header === "string" ? col.header : "cell")}
+                    style={col.width ? { width: col.width, minWidth: col.width } : undefined}
                     className={cn("px-3 py-2", alignClass(col.align), col.className)}
                   >
                       {col.cell(row, index)}

@@ -126,3 +126,31 @@ pnpm exec tsc -b
 ( cd src-tauri && cargo check )
 ```
 On macOS dev, the receipt PDF path is printed in the toast after `cmd_print_receipt_dev`.
+
+## Versioning & Releases
+
+Version must be synced across three files before any commit:
+- `Cargo.toml` (line: `version = "X.Y.Z"`)
+- `src-tauri/tauri.conf.json` (line: `"version": "X.Y.Z"`)
+- `package.json` (line: `"version": "X.Y.Z"`)
+
+### Release process
+
+1. Bump version in all three files above
+2. Commit: `git commit -am "release: vX.Y.Z"`
+3. Tag: `git tag vX.Y.Z`
+4. Push tag: `git push origin vX.Y.Z`
+5. GitHub Actions builds platform artifacts and uploads them to a GitHub Release
+6. CI generates `latest.json` for the Tauri updater endpoint
+
+### Signing key
+
+- Private key: `src-tauri/updater.key` (NEVER commit — in .gitignore)
+- Public key: embedded in `src-tauri/tauri.conf.json` under `updater.pubkey`
+- To regenerate: `pnpm exec tauri signer generate -w src-tauri/updater.key`
+
+### Update flow
+
+- On launch, the app checks `https://github.com/Lucif3rHun1/PaintKiDukaan/releases/latest/download/latest.json`
+- If a newer version is found, it auto-downloads, installs, and relaunches
+- No user choice — updates are mandatory

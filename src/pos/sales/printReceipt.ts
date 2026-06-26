@@ -46,7 +46,7 @@ export function buildReceiptData(sale: Sale, settings: ReceiptPrintSettings) {
     created_at: sale.date,
     customer_name: sale.customer_name,
     items: sale.items.map((it) => ({
-      name: it.item_name,
+      name: it.display_name,
       qty: formatQty(it.qty, it.unit_type),
       unit: it.unit_type,
       unit_price: formatRupeesFromPaise(it.price),

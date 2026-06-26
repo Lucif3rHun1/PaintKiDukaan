@@ -8,6 +8,7 @@ pub mod categories;
 pub mod customer_ledger;
 pub mod customer_types;
 pub mod customers;
+pub mod formulas;
 pub mod items;
 pub mod label_log;
 pub mod locations;

@@ -23,3 +23,4 @@ export { DataTable, type ColumnDef } from "./DataTable";
 export { KbdHint } from "./KbdHint";
 export { DatePicker } from "./DatePicker";
 export { Radio } from "./Radio";
+export { PeriodDropdown, type PeriodRange } from "./PeriodDropdown";

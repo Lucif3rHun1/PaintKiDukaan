@@ -58,8 +58,8 @@ const CATEGORY_DESCRIPTIONS: Record<SettingsCategoryId, string> = {
   shop: "Identity, currency, and tax defaults for this local shop profile.",
   catalog: "Reusable catalog lists that shape inventory, customers, and stock movement.",
   printing: "Printers and barcode scanners used for receipts, labels, and stock ops.",
-  team: "Users, enrolled devices, and role assignments for sign-in.",
-  system: "Backup, security, and operational health controls.",
+  team: "Users, devices, and permissions for sign-in.",
+  system: "Backup, security, and health checks.",
 };
 
 const SETTINGS_ITEMS: SettingsItem[] = [
@@ -69,9 +69,9 @@ const SETTINGS_ITEMS: SettingsItem[] = [
   { id: "locations", category: "catalog", title: "Locations", description: "Configure stock locations for inventory movement.", icon: MapPin, Component: LocationsSettings },
   { id: "catalog", category: "catalog", title: "Catalog", description: "Brands, categories, and units used across items and billing.", icon: PaintBucket, Component: CatalogSettingsCombined },
   { id: "hardware", category: "printing", title: "Hardware", description: "Discover and manage printers (receipt or label) and tune the barcode scanner.", icon: ScanLine, Component: HardwareSettings },
-  { id: "users", category: "team", title: "Users", description: "Create local accounts and assign operational roles.", icon: Users, Component: UsersSettings },
-  { id: "devices", category: "team", title: "Enrolled devices", description: "Devices trusted to unlock the app and their assigned roles.", icon: HardDrive, Component: DevicesSettings },
-  { id: "backup", category: "system", title: "Backup", description: "Create encrypted backups and manage restore points.", icon: DatabaseBackup, Component: BackupSettings },
+  { id: "users", category: "team", title: "Users", description: "Create accounts and assign permissions.", icon: Users, Component: UsersSettings },
+  { id: "devices", category: "team", title: "Enrolled devices", description: "Devices allowed to unlock the app and their permissions.", icon: HardDrive, Component: DevicesSettings },
+  { id: "backup", category: "system", title: "Backup", description: "Create protected backups and manage restore points.", icon: DatabaseBackup, Component: BackupSettings },
   { id: "security", category: "system", title: "Security", description: "Idle auto-lock and lockout policy for this device.", icon: ShieldCheck, Component: SecuritySettings },
   { id: "theme", category: "system", title: "Appearance", description: "Theme mode — system, light, or dark.", icon: Monitor, Component: ThemeSettings },
   { id: "master-health", category: "system", title: "Master health", description: "Run diagnostics across data, network, and operations.", icon: ClipboardList, Component: MasterHealthSettings },

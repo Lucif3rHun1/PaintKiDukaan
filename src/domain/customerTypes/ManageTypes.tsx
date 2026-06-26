@@ -11,7 +11,8 @@ import {
 } from "./api";
 import { DataTable } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
-import { type AppError, type CustomerType } from "../types";
+import { extractError } from "../../lib/extractError";
+import { type CustomerType } from "../types";
 
 export function ManageTypes() {
   const [types, setTypes] = useState<CustomerType[]>([]);
@@ -28,7 +29,7 @@ export function ManageTypes() {
       const rows = await listCustomerTypes(true);
       setTypes(rows);
     } catch (e) {
-      setError((e as AppError).message ?? "Failed");
+      setError(extractError(e));
     } finally {
       setLoading(false);
     }
@@ -47,7 +48,7 @@ export function ManageTypes() {
       setNewName("");
       refresh();
     } catch (e) {
-      setError((e as AppError).message ?? "Add failed");
+      setError(extractError(e));
     }
   }
 
@@ -58,7 +59,7 @@ export function ManageTypes() {
       setEditing(null);
       refresh();
     } catch (e) {
-      setError((e as AppError).message ?? "Rename failed");
+      setError(extractError(e));
     }
   }
 
@@ -68,7 +69,7 @@ export function ManageTypes() {
       await deactivateCustomerType(id);
       refresh();
     } catch (e) {
-      setError((e as AppError).message ?? "Deactivate failed");
+      setError(extractError(e));
     }
   }
 

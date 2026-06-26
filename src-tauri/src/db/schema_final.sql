@@ -353,6 +353,25 @@ CREATE INDEX idx_items_primary_location_id ON items(primary_location_id) WHERE i
 -- serves: "fast partial barcode prefix match" (e.g. typeahead scan)
 CREATE INDEX idx_items_is_active_barcode ON items(barcode) WHERE is_active = 1 AND barcode IS NOT NULL;
 
+-- D5. Formulas (custom shade mixes sold on demand — no stock movement)
+-- See ADR-011 (first-class entity) and ADR-012 (id_code as primary identifier).
+CREATE TABLE formulas (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  id_code             TEXT    NOT NULL UNIQUE,
+  name                TEXT,
+  with_base           INTEGER NOT NULL DEFAULT 0 CHECK(with_base IN (0,1)),
+  retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),
+  is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  created_at          TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+  created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+
+-- serves: "search by id_code prefix on POS search bar"
+CREATE INDEX idx_formulas_id_code ON formulas(id_code);
+
+-- serves: "formulas list with active/inactive filter"
+CREATE INDEX idx_formulas_is_active ON formulas(is_active);
+
 -- =====================================================================
 -- SECTION E — Stock
 -- =====================================================================
@@ -405,6 +424,8 @@ CREATE TABLE stock_balances (
 
 -- serves: "list all balances for this item" (e.g. for stocker view)
 CREATE INDEX idx_stock_balances_item ON stock_balances(item_id);
+
+CREATE INDEX idx_stock_balances_item_qty ON stock_balances(item_id, qty);
 
 -- E4. Trigger: refresh stock_balances on every stock_movements INSERT
 CREATE TRIGGER stock_movements_ai
@@ -555,11 +576,14 @@ CREATE INDEX idx_sales_status ON sales(status);
 -- serves: "all quotations / invoices, newest first"
 CREATE INDEX idx_sales_kind_created ON sales(status, created_at DESC);
 
--- G2. Sale lines — flat shape matching Rust SaleItem (M009)
+-- G2. Sale lines — polymorphic (item OR formula) per ADR-011.
+-- A line carries EXACTLY ONE of item_id / formula_id via the CHECK.
 CREATE TABLE sale_items (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   sale_id       INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
-  item_id       INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),
+  item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,
+  formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
   qty           INTEGER NOT NULL CHECK(qty > 0),
   price         INTEGER NOT NULL CHECK(price >= 0),
   unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','box')),
@@ -567,7 +591,9 @@ CREATE TABLE sale_items (
   shade_note    TEXT,
   line_order    INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
-  created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION
+  created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  CHECK ((item_id IS NOT NULL AND formula_id IS NULL)
+      OR (item_id IS NULL AND formula_id IS NOT NULL))
 );
 
 -- serves: "lines for this sale"
@@ -575,6 +601,9 @@ CREATE INDEX idx_sale_items_sale_id ON sale_items(sale_id);
 
 -- serves: "sale history for this item"
 CREATE INDEX idx_sale_items_item_id ON sale_items(item_id);
+
+-- serves: "history sub-section of FormulaDetailsPage" (ADR-016)
+CREATE INDEX idx_sale_items_formula_id ON sale_items(formula_id);
 
 -- G3. Sale payments — source of truth for payment splits
 CREATE TABLE sale_payments (
@@ -878,3 +907,39 @@ INSERT OR IGNORE INTO brands (name, prefix, created_at, updated_at) VALUES
 -- Brand sequences for seeded brands (each starts at seq = 1)
 INSERT OR IGNORE INTO brand_sequences (brand_id, prefix, next_seq, padding, updated_at)
   SELECT id, prefix, 1, 4, 0 FROM brands;
+
+-- ============================================================
+-- FTS5 full-text search index for items
+-- Indexes: name, sku_code, barcode, brand (denormalized text)
+-- content='items' → reads original text from items table (no duplication)
+-- content_rowid='id' → maps FTS rowid to items.id
+-- ============================================================
+CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
+  name,
+  sku_code,
+  barcode,
+  brand,
+  content='items',
+  content_rowid='id'
+);
+
+-- Sync triggers: keep items_fts in lockstep with items
+CREATE TRIGGER IF NOT EXISTS items_fts_insert AFTER INSERT ON items BEGIN
+  INSERT INTO items_fts(rowid, name, sku_code, barcode, brand)
+  VALUES (new.id, new.name, new.sku_code, new.barcode, new.brand);
+END;
+
+CREATE TRIGGER IF NOT EXISTS items_fts_update AFTER UPDATE ON items BEGIN
+  DELETE FROM items_fts WHERE rowid = old.id;
+  INSERT INTO items_fts(rowid, name, sku_code, barcode, brand)
+  VALUES (new.id, new.name, new.sku_code, new.barcode, new.brand);
+END;
+
+CREATE TRIGGER IF NOT EXISTS items_fts_delete AFTER DELETE ON items BEGIN
+  DELETE FROM items_fts WHERE rowid = old.id;
+END;
+
+-- Bootstrap: populate FTS index from any pre-existing items
+-- (no-op on fresh DB; catches data on schema re-apply/migration)
+INSERT INTO items_fts(rowid, name, sku_code, barcode, brand)
+  SELECT id, name, sku_code, barcode, brand FROM items;

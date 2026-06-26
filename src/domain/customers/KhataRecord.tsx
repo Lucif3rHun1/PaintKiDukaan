@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { DataTable, Money } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
+import { extractError } from "../../lib/extractError";
 import { formatDateForDisplay } from "../../lib/date";
 import { customerOutstanding } from "./api";
 import type { CustomerOutstanding } from "../types";
@@ -27,7 +28,7 @@ export function KhataRecord({ customerId }: Props) {
   useEffect(() => {
     customerOutstanding(customerId)
       .then((d) => setData(d ?? null))
-      .catch((e) => setError(e.message ?? "Failed"));
+      .catch((e) => setError(extractError(e)));
   }, [customerId]);
 
   const placeholder: Row[] = data
@@ -41,7 +42,7 @@ export function KhataRecord({ customerId }: Props) {
         {
           date: "—",
           kind: "payment",
-          amount: -data.total_payments,
+          amount: data.total_payments,
           ref: "(aggregated payments)",
         },
       ]

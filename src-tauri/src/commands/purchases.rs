@@ -182,17 +182,17 @@ pub fn list(
     db.with_conn(|c| -> Result<Vec<Purchase>, PurchaseError> {
         let limit = limit.clamp(1, 500);
         let mut sql = String::from(
-            "SELECT p.id, p.vendor_id, v.name, p.bill_date, p.total_paise, p.created_by, p.notes
+            "SELECT p.id, p.vendor_id, v.name, p.bill_date, p.total_paise, p.created_by, p.notes, p.created_at
              FROM purchases p LEFT JOIN vendors v ON v.id = p.vendor_id
              WHERE 1=1",
         );
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if let Some(f) = from_date {
-            sql.push_str(" AND p.bill_date >= ?");
+            sql.push_str(" AND (p.bill_date >= ? OR p.bill_date IS NULL)");
             args.push(Box::new(date_to_ms(f)));
         }
         if let Some(t) = to_date {
-            sql.push_str(" AND p.bill_date <= ?");
+            sql.push_str(" AND (p.bill_date <= ? OR p.bill_date IS NULL)");
             args.push(Box::new(date_to_ms(t)));
         }
         sql.push_str(" ORDER BY p.bill_date DESC, p.id DESC LIMIT ?");
@@ -206,11 +206,14 @@ pub fn list(
             let id: i64 = r.get(0)?;
             let vendor_id: Option<i64> = r.get(1)?;
             let vendor_name: Option<String> = r.get(2)?;
-            let date: i64 = r.get(3)?;
-            let date = date.to_string();
+            let bill_date_ms: Option<i64> = r.get(3)?;
             let total: i64 = r.get(4)?;
             let user_id: i64 = r.get(5)?;
             let notes: Option<String> = r.get(6)?;
+            let created_at_ms: i64 = r.get(7)?;
+            // Fallback to created_at when bill_date is NULL (pre-migration data)
+            let date = bill_date_ms.map(ms_to_date).filter(|s| !s.is_empty())
+                .unwrap_or_else(|| ms_to_date(created_at_ms));
             let items = load_items(c, id)?;
             purchases.push(Purchase {
                 id,
@@ -230,7 +233,7 @@ pub fn list(
 pub fn get(db: &Db, id: i64) -> Result<Option<Purchase>, PurchaseError> {
     db.with_conn(|c| -> Result<Option<Purchase>, PurchaseError> {
         let r = c.query_row(
-            "SELECT p.id, p.vendor_id, v.name, p.bill_date, p.total_paise, p.created_by, p.notes
+            "SELECT p.id, p.vendor_id, v.name, p.bill_date, p.total_paise, p.created_by, p.notes, p.created_at
              FROM purchases p LEFT JOIN vendors v ON v.id = p.vendor_id
              WHERE p.id = ?1",
             params![id],
@@ -239,21 +242,24 @@ pub fn get(db: &Db, id: i64) -> Result<Option<Purchase>, PurchaseError> {
                     row.get::<_, i64>(0)?,
                     row.get::<_, Option<i64>>(1)?,
                     row.get::<_, Option<String>>(2)?,
-                    row.get::<_, i64>(3)?,
+                    row.get::<_, Option<i64>>(3)?,
                     row.get::<_, i64>(4)?,
                     row.get::<_, i64>(5)?,
                     row.get::<_, Option<String>>(6)?,
+                    row.get::<_, i64>(7)?,
                 ))
             },
         );
         match r {
-            Ok((id, vendor_id, vendor_name, date, total, user_id, notes)) => {
+            Ok((id, vendor_id, vendor_name, date_ms, total, user_id, notes, created_at_ms)) => {
                 let items = load_items(c, id)?;
+                let date = date_ms.map(ms_to_date).filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| ms_to_date(created_at_ms));
                 Ok(Some(Purchase {
                     id,
                     vendor_id,
                     vendor_name,
-                    date: date.to_string(),
+                    date,
                     total,
                     user_id,
                     notes,
@@ -435,7 +441,7 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-fn date_to_ms(date: &str) -> i64 {
+pub(crate) fn date_to_ms(date: &str) -> i64 {
     chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map(|d| {
             d.and_time(chrono::NaiveTime::MIN)
@@ -443,6 +449,18 @@ fn date_to_ms(date: &str) -> i64 {
                 .timestamp_millis()
         })
         .unwrap_or_else(|_| now_ms())
+}
+
+pub(crate) fn ms_to_date(ms: i64) -> String {
+    let secs = ms / 1000;
+    let nsec = ((ms.rem_euclid(1_000)) as u32) * 1_000_000;
+    chrono::DateTime::<chrono::Utc>::from_timestamp(secs, nsec)
+        .map(|dt| {
+            dt.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d")
+                .to_string()
+        })
+        .unwrap_or_default()
 }
 
 // -----------------------------------------------------------------------------

@@ -236,7 +236,7 @@ export function LocationsSettings() {
                 <li key={loc.id} className="px-3 py-2">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium">{loc.name}</span>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => void remove(loc)} className="text-destructive hover:bg-destructive/10">
+                    <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${loc.name}`} onClick={() => void remove(loc)} className="text-destructive hover:bg-destructive/10">
                       Remove
                     </Button>
                   </div>

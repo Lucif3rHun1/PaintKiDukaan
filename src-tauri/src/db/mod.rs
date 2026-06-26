@@ -72,6 +72,7 @@ impl Db {
         }
         // Marker table so tooling can recognise a schema_final-bootstrapped DB.
         conn.execute_batch("CREATE TABLE IF NOT EXISTS _schema_final_applied (dummy INTEGER)")?;
+        conn.execute_batch("ANALYZE;")?;
 
         // -- Inline migrations for marker-DBs --------------------------------
         // Marker-DBs skipped the wipe-and-rebootstrap above, so they keep
@@ -128,11 +129,81 @@ impl Db {
             }
         }
 
+        // M-INLINE-003: add `formulas` table for custom shade mixes (ADR-011).
+        // CREATE TABLE IF NOT EXISTS is a no-op when the table already exists.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS formulas (\
+               id                  INTEGER PRIMARY KEY AUTOINCREMENT,\
+               id_code             TEXT    NOT NULL UNIQUE,\
+               name                TEXT,\
+               with_base           INTEGER NOT NULL DEFAULT 0 CHECK(with_base IN (0,1)),\
+               retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),\
+               is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),\
+               created_at          TEXT    NOT NULL DEFAULT (datetime('now','localtime')),\
+               created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION\
+             );\
+             CREATE INDEX IF NOT EXISTS idx_formulas_id_code ON formulas(id_code);\
+             CREATE INDEX IF NOT EXISTS idx_formulas_is_active ON formulas(is_active);",
+        )?;
+
+        // M-INLINE-004: rebuild `sale_items` to make item_id nullable and add
+        // `kind` / `formula_id` / polymorphic CHECK (ADR-011). Idempotent —
+        // skipped when the new `kind` column is already present.
+        {
+            let has_kind: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('sale_items') WHERE name = 'kind'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_kind {
+                // Drop the rebuild target if a previous failed migration left it
+                // behind; the rename would otherwise collide.
+                conn.execute_batch("DROP TABLE IF EXISTS sale_items_new;")?;
+                conn.execute_batch(
+                    "ALTER TABLE sale_items RENAME TO sale_items_old;\
+                     CREATE TABLE sale_items_new (\
+                       id            INTEGER PRIMARY KEY AUTOINCREMENT,\
+                       sale_id       INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,\
+                       kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),\
+                       item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,\
+                       formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,\
+                       qty           INTEGER NOT NULL CHECK(qty > 0),\
+                       price         INTEGER NOT NULL CHECK(price >= 0),\
+                       unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','box')),\
+                       line_discount INTEGER NOT NULL DEFAULT 0,\
+                       shade_note    TEXT,\
+                       line_order    INTEGER NOT NULL DEFAULT 0,\
+                       created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),\
+                       created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,\
+                       CHECK ((item_id IS NOT NULL AND formula_id IS NULL)\
+                           OR (item_id IS NULL     AND formula_id IS NOT NULL))\
+                     );\
+                     INSERT INTO sale_items_new \
+                       (sale_id, kind, item_id, formula_id, qty, price, unit_type,\
+                        line_discount, shade_note, line_order, created_at, created_by)\
+                       SELECT sale_id, 'item', item_id, NULL, qty, price, unit_type,\
+                              line_discount, shade_note, line_order, created_at, created_by\
+                       FROM sale_items_old;\
+                     DROP TABLE sale_items_old;\
+                     ALTER TABLE sale_items_new RENAME TO sale_items;\
+                     CREATE INDEX IF NOT EXISTS idx_sale_items_formula_id ON sale_items(formula_id);",
+                )?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\
-             PRAGMA busy_timeout = 5000;\
-             PRAGMA foreign_keys = ON;",
+              PRAGMA busy_timeout = 5000;\
+              PRAGMA foreign_keys = ON;\
+              PRAGMA cache_size = -64000;\
+              PRAGMA mmap_size = 268435456;\
+              PRAGMA temp_store = MEMORY;\
+              PRAGMA synchronous = NORMAL;\
+              PRAGMA auto_vacuum = INCREMENTAL;\
+              PRAGMA secure_delete = OFF;",
         )?;
 
         Ok(Self {

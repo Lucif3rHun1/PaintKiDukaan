@@ -1,22 +1,34 @@
-// Sales list page — recent sales with search, date filter, and pagination.
+// Sales list page — recent sales with search, date filter, status chips,
+// pagination, and at-a-glance totals (count, value, outstanding due).
 
 import { useMemo, useState } from "react";
 import { Download, Eye, Plus, Printer, Receipt, Share2 } from "lucide-react";
-import { DatePicker } from "../../components/ui/DatePicker";
+import { PeriodDropdown } from "../../components/ui";
 
-import { ActionMenu, Badge, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
+import {
+  ActionMenu,
+  Badge,
+  Button,
+  Card,
+  DataTable,
+  EmptyState,
+  Money,
+  PaginationControls,
+  SearchInput,
+} from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { listSales } from "../api";
 import { usePaginatedQuery } from "../../lib/query";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
-import { formatDateForDisplay } from "../../lib/date";
+import { formatDateForDisplay, shiftDaysLocal, todayLocalYyyymmdd } from "../../lib/date";
 import type { Sale } from "../types";
 import {
   safeDownloadSalePdfById,
   safePrintSaleById,
   safeShareSalePdfById,
 } from "./printOrDownload";
+import { saleStatus } from "./saleStatus";
 
 interface Props {
   onCreate: () => void;
@@ -24,13 +36,12 @@ interface Props {
 
 const PAGE_SIZE = 25;
 
+type PaymentFilter = "all" | "paid" | "partial" | "due";
+
 export function SalesListPage({ onCreate }: Props) {
-  const [from, setFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(() => shiftDaysLocal(6));
+  const [to, setTo] = useState(() => todayLocalYyyymmdd());
+  const [payFilter, setPayFilter] = useState<PaymentFilter>("all");
 
   const {
     data: rows,
@@ -57,62 +68,110 @@ export function SalesListPage({ onCreate }: Props) {
       const term = q.toLowerCase();
       return (
         (sale.no ?? "").toLowerCase().includes(term) ||
-        (sale.customer_name ?? "walk-in").toLowerCase().includes(term) ||
-        (sale.status ?? "").toLowerCase().includes(term)
+        (sale.customer_name ?? "walk-in").toLowerCase().includes(term)
       );
     },
   });
 
+  // Metric cards (computed from full filtered set, not just current page).
+  const metrics = useMemo(() => {
+    const finals = allData.filter((s) => s.status === "final");
+    const totalValue = finals.reduce((sum, s) => sum + s.total, 0);
+    let paidCount = 0;
+    let paidTotal = 0;
+    let partialCount = 0;
+    let partialTotal = 0;
+    let dueCount = 0;
+    let dueTotal = 0;
+    for (const s of finals) {
+      const balance = s.total - s.paid_amount;
+      if (balance <= 0) {
+        paidCount++;
+        paidTotal += s.total;
+      } else if (s.paid_amount > 0) {
+        partialCount++;
+        partialTotal += balance;
+      } else {
+        dueCount++;
+        dueTotal += s.total;
+      }
+    }
+    return { count: allData.length, totalValue, paidCount, paidTotal, partialCount, partialTotal, dueCount, dueTotal };
+  }, [allData]);
+
+  const displayedRows = useMemo(() => {
+    if (payFilter === "all") return rows;
+    return rows.filter((s) => {
+      if (s.status !== "final") return false;
+      const balance = s.total - s.paid_amount;
+      if (payFilter === "paid") return balance <= 0;
+      if (payFilter === "due") return balance > 0 && s.paid_amount <= 0;
+      return balance > 0 && s.paid_amount > 0;
+    });
+  }, [rows, payFilter]);
+
   const columns = useMemo<ColumnDef<Sale>[]>(
     () => [
       {
-        header: "No",
+        id: "date",
+        header: "Date",
+        width: "7rem",
+        cell: (s) => (
+          <span className="text-foreground tabular-nums">{formatDateForDisplay(s.date)}</span>
+        ),
+      },
+      {
+        id: "customer",
+        header: "Customer",
+        width: "minmax(10rem, 1fr)",
+        cell: (s) => (
+          <span className="truncate text-foreground" title={s.customer_name ?? "Walk-in"}>
+            {s.customer_name ?? "Walk-in"}
+          </span>
+        ),
+      },
+      {
+        id: "no",
+        header: "Inv No",
+        width: "8rem",
         cell: (s) => (
           <a
             href={`#/sales/${s.id}`}
-            className="font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
+            onClick={(e) => e.stopPropagation()}
+            className="block max-w-full truncate font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
             aria-label={`Open invoice ${s.no}`}
+            title={s.no}
           >
             {s.no}
           </a>
         ),
       },
       {
-        header: "Date",
-        cell: (s) => (
-          <span className="text-foreground">
-            {formatDateForDisplay(s.date)}
-          </span>
-        ),
-      },
-      {
-        header: "Status",
-        cell: (s) => {
-          const variant = s.status === "final" ? "success" : "info";
-          return (
-            <Badge variant={variant} size="sm">
-              {s.status}
-            </Badge>
-          );
-        },
-      },
-      {
-        header: "Customer",
-        cell: (s) => (
-          <span className="text-foreground">
-            {s.customer_name ?? "Walk-in"}
-          </span>
-        ),
-      },
-      {
+        id: "total",
         header: "Total",
+        width: "7rem",
         align: "right",
         cell: (s) => <Money paise={s.total} />,
       },
       {
+        id: "paid",
         header: "Paid",
+        width: "7rem",
         align: "right",
         cell: (s) => <Money paise={s.paid_amount} />,
+      },
+      {
+        id: "status",
+        header: "Status",
+        width: "10rem",
+        cell: (s) => {
+          const { text, variant } = saleStatus(s);
+          return (
+            <Badge variant={variant} size="sm">
+              {text}
+            </Badge>
+          );
+        },
       },
       {
         header: "",
@@ -181,85 +240,138 @@ export function SalesListPage({ onCreate }: Props) {
   });
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Sales
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {totalItems} {totalItems === 1 ? "sale" : "sales"}
-            {search ? ` matching "${search}"` : ""}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="primary"
-          size="md"
-          icon={Plus}
-          onClick={onCreate}
-          shortcut="F6"
-        >
+    <div className="space-y-3">
+      {/* ── Metric cards ─────────────────────────────────────── */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Invoices</p>
+          <p className="text-2xl font-semibold tabular-nums text-foreground">{metrics.count}</p>
+        </Card>
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total value</p>
+          <Money paise={metrics.totalValue} className="text-2xl font-semibold tabular-nums" />
+        </Card>
+        <Card as="section" className="p-4">
+          <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Payment summary</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-0.5">
+              <p className="text-xs text-success">Paid</p>
+              <p className="text-lg font-semibold tabular-nums text-success">{metrics.paidCount}</p>
+              <Money paise={metrics.paidTotal} className="text-xs tabular-nums text-success" />
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-xs text-warning">Partial</p>
+              <p className="text-lg font-semibold tabular-nums text-warning">{metrics.partialCount}</p>
+              <Money paise={metrics.partialTotal} className="text-xs tabular-nums text-warning" />
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-xs text-destructive">Due</p>
+              <p className="text-lg font-semibold tabular-nums text-destructive">{metrics.dueCount}</p>
+              <Money paise={metrics.dueTotal} className="text-xs tabular-nums text-destructive" />
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Filter bar ───────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by invoice, customer…"
+          ariaLabel="Search sales"
+          data-shortcut="search"
+          className="min-w-[220px] flex-1"
+        />
+        <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
+        <Button type="button" variant="primary" size="sm" icon={Plus} onClick={onCreate} shortcut="F6">
           New Sale
         </Button>
-      </header>
-
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search by invoice, customer, status…"
-            ariaLabel="Search sales"
-            data-shortcut="search"
-            className="min-w-[220px] flex-1"
-          />
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            From
-            <DatePicker value={from} onChange={setFrom} />
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            To
-            <DatePicker value={to} onChange={setTo} />
-          </label>
-        </div>
-
-        <DataTable
-          data={rows}
-          columns={columns}
-          keyExtractor={(s) => s.id}
-          onRowClick={(s) => (window.location.hash = `#/sales/${s.id}`)}
-          loading={isLoading || isFetching}
-          error={error}
-          onRetry={refetch}
-          emptyState={
-            <EmptyState
-              icon={Receipt}
-              title={search ? "No matches" : "No sales yet"}
-              description={
-                search
-                  ? `Nothing matches "${search}". Try a different search.`
-                  : "No sales found for the selected range. Create the first sale to get started."
-              }
-              primary={
-                <Button type="button" onClick={onCreate} icon={Plus}>
-                  New Sale
-                </Button>
-              }
-            />
-          }
-        />
-
-        {!isLoading && allData.length > 0 ? (
-          <PaginationControls
-            page={page}
-            totalPages={totalPages}
-            totalItems={totalItems}
-            pageSize={pageSize}
-            onPageChange={setPage}
-          />
-        ) : null}
       </div>
+
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="tablist"
+        aria-label="Payment status filter"
+        onKeyDown={(e) => {
+          const chips: PaymentFilter[] = ["all", "paid", "partial", "due"];
+          const idx = chips.indexOf(payFilter);
+          if (idx < 0) return;
+          if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+            e.preventDefault();
+            setPayFilter(chips[(idx + 1) % chips.length]);
+          } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+            e.preventDefault();
+            setPayFilter(chips[(idx - 1 + chips.length) % chips.length]);
+          }
+        }}
+      >
+        {(
+          [
+            { id: "all", label: "All" },
+            { id: "paid", label: "Fully paid" },
+            { id: "partial", label: "Partial" },
+            { id: "due", label: "Due" },
+          ] as { id: PaymentFilter; label: string }[]
+        ).map((chip) => {
+          const active = payFilter === chip.id;
+          return (
+            <button
+              key={chip.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              onClick={() => setPayFilter(chip.id)}
+              className={
+                active
+                  ? "rounded-full border border-primary bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                  : "rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              }
+            >
+              {chip.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <DataTable
+        data={displayedRows}
+        columns={columns}
+        keyExtractor={(s) => s.id}
+        onRowClick={(s) => (window.location.hash = `#/sales/${s.id}`)}
+        loading={isLoading || isFetching}
+        error={error}
+        onRetry={refetch}
+        emptyState={
+          <EmptyState
+            icon={Receipt}
+            title={search || payFilter !== "all" ? "No matches" : "No sales yet"}
+            description={
+              search
+                ? `Nothing matches "${search}". Try a different search.`
+                : payFilter !== "all"
+                  ? `No ${payFilter === "paid" ? "fully paid" : payFilter} sales in this range.`
+                  : "No sales found for the selected range. Create the first sale to get started."
+            }
+            primary={
+              <Button type="button" onClick={onCreate} icon={Plus}>
+                New Sale
+              </Button>
+            }
+          />
+        }
+      />
+
+      {!isLoading && allData.length > 0 ? (
+        <PaginationControls
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          onPageChange={setPage}
+        />
+      ) : null}
     </div>
   );
 }

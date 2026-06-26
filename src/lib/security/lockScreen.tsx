@@ -1,12 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tauriInvoke as invoke } from "./tauri";
-import logo from "../../assets/logo-64.png";
+import logo from "../../assets/logo-128.png";
 import { AlertCircle, KeyRound, Loader2, Timer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import type { PinRole } from "../../domain/types";
 import { isAppError } from "../../domain/types";
+import { extractError } from "../../lib/extractError";
 import { type UnlockInput, unlockSchema } from "./pin";
 import { type Role, type Session, type User, useSecurity } from "./state";
 
@@ -27,16 +28,6 @@ function normalizeSession(result: UnlockResponse): Session {
   const user: User | null = result.user === null ? null : { id, name, role };
   const pinRole: PinRole = result.pin_role ?? "real";
   return { user, locked: result.locked ?? false, pinRole };
-}
-
-function extractLockedUntil(message: string): number | null {
-  const match = message.match(/locked out until unix (\d+)/i);
-  return match ? Number(match[1]) : null;
-}
-
-function extractAttemptCount(message: string): number | null {
-  const match = message.match(/(?:attempts?|failed)\D*(\d+)/i);
-  return match ? Number(match[1]) : null;
 }
 
 function formatTimeRemaining(untilSeconds: number): string {
@@ -104,17 +95,17 @@ export function LockScreen() {
         return;
       }
 
-      const message = error instanceof Error ? error.message : String(error);
-      const until = extractLockedUntil(message);
-      if (until) {
-        setLockedUntil(until);
-        setBackendError(null);
-        return;
+      if (isAppError(error) && error.code === "locked_out") {
+        const match = (error.message ?? "").match(/locked out until unix (\d+)/i);
+        if (match) {
+          setLockedUntil(Number(match[1]));
+          setBackendError(null);
+          return;
+        }
       }
 
-      const backendAttempts = extractAttemptCount(message);
-      setFailedAttempts((current) => backendAttempts ?? current + 1);
-      setBackendError(message);
+      setFailedAttempts((current) => current + 1);
+      setBackendError(extractError(error));
     }
   }
 
@@ -127,13 +118,13 @@ export function LockScreen() {
             <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-destructive/10">
               <img src={logo} alt="" className="h-14 w-14 rounded-xl" />
             </div>
-            <p className="text-sm font-semibold uppercase tracking-[3px] text-destructive">Data wiped</p>
+            <p className="text-sm font-semibold uppercase tracking-[3px] text-destructive">Data deleted</p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight">Recovery required</h1>
           </div>
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-5 text-sm leading-6 text-destructive">
-            <p className="font-medium">Too many failed attempts — data has been wiped.</p>
+            <p className="font-medium">Too many failed attempts — data has been deleted.</p>
             <p className="mt-1.5 text-destructive/80">
-              You must use your recovery passphrase to restore your data and set a new PIN.
+              You must use your recovery password to restore your data and set a new PIN.
             </p>
           </div>
           <button
@@ -141,7 +132,7 @@ export function LockScreen() {
             type="button"
             onClick={() => setPhase("restore-recovery")}
           >
-            Use recovery passphrase
+            Use recovery password
           </button>
         </div>
       </main>
@@ -159,7 +150,7 @@ export function LockScreen() {
           <p className="mt-2 text-sm font-medium uppercase tracking-[4px] text-zinc-400">Paint Shop Manager</p>
           <div className="mt-8 flex items-center gap-2 text-xs text-zinc-500">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Secure &amp; Encrypted
+            Secure &amp; Protected
           </div>
         </div>
       </div>
@@ -187,7 +178,7 @@ export function LockScreen() {
             ) : (
               <>
                 <h2 className="text-2xl font-semibold tracking-tight text-foreground">Enter your PIN</h2>
-                <p className="mt-1.5 text-sm text-muted-foreground">Unlock the shop database</p>
+                <p className="mt-1.5 text-sm text-muted-foreground">Enter your PIN to continue</p>
               </>
             )}
           </div>
@@ -205,7 +196,7 @@ export function LockScreen() {
             <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4" role="alert">
               <Timer className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
               <div>
-                <p className="text-sm font-semibold text-warning">Account locked</p>
+                <p className="text-sm font-semibold text-warning">Too many wrong attempts</p>
                 <p className="mt-0.5 text-sm text-warning/80">{timeDisplay}</p>
               </div>
             </div>
@@ -271,7 +262,7 @@ export function LockScreen() {
             type="button"
             onClick={() => setPhase("restore-recovery")}
           >
-            Forgot PIN? Use recovery passphrase
+            Forgot PIN? Use recovery password
           </button>
         </form>
       </div>

@@ -1,17 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, PackagePlus, Search, ScanBarcode } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  PackagePlus,
+  Paintbrush,
+  Search,
+  ScanBarcode,
+} from "lucide-react";
 import { listItems, lookupItem } from "../../domain/items/api";
+import { listFormulas } from "../../domain/formulas/api";
 import { useBarcodeScan } from "../../shell/hooks/useBarcodeScan";
 import { Button } from "../../components/ui";
 import { cn } from "../../components/ui/cn";
 import { toTitleCase } from "../../lib/format/titleCase";
-import type { ItemLookup } from "../../domain/types";
+import type { FormulaSearchHit, ItemLookup } from "../../domain/types";
 import type { ItemSearchHit } from "../types";
 
 interface Props {
-  onPick: (item: ItemSearchHit) => void;
+  onPick: (hit: ItemSearchHit | FormulaSearchHit) => void;
   allowOutOfStock?: boolean;
   onCreateItem?: () => void;
+  onCreateFormula?: () => void;
+  acceptFormula?: boolean;
+}
+
+type SearchHit = ItemSearchHit | FormulaSearchHit;
+
+function isFormula(hit: SearchHit): hit is FormulaSearchHit {
+  return "kind" in hit && hit.kind === "formula";
 }
 
 type StockStatus = "in-stock" | "low" | "out";
@@ -47,9 +63,15 @@ function stockLabel(item: ItemSearchHit, status: StockStatus): string {
   return `${item.current_qty} in stock`;
 }
 
-export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem }: Props) {
+export function ItemSearchInput({
+  onPick,
+  allowOutOfStock = false,
+  onCreateItem,
+  onCreateFormula,
+  acceptFormula = true,
+}: Props) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ItemSearchHit[]>([]);
+  const [results, setResults] = useState<SearchHit[]>([]);
   const [open, setOpen] = useState(false);
   const [scanHint, setScanHint] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -61,31 +83,70 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
       return;
     }
     const timer = setTimeout(() => {
-      listItems({ query: query.trim(), limit: 20 })
-        .then((items) => {
-          const hits: ItemSearchHit[] = items.map((item) => ({
-            id: item.id,
-            sku_code: item.sku_code,
-            barcode: item.barcode,
-            name: item.name,
-            brand: item.brand,
-            retail_price_paise: item.retail_price_paise,
-            unit_id: item.unit_id,
-            unit_code: item.unit_code ?? "",
-            unit_label: item.unit_label ?? "",
-            sell_unit: item.sell_unit,
-            current_qty: item.current_qty,
-            min_qty: item.min_qty ?? 0,
-          }));
-          setResults(hits);
+      const trimmed = query.trim();
+      const promises: [
+        Promise<unknown>,
+        ((value: unknown) => void) | null,
+      ][] = [
+        [
+          listItems({ query: trimmed, limit: 20 }).then((items) => {
+            const hits: ItemSearchHit[] = items.map((item) => ({
+              id: item.id,
+              sku_code: item.sku_code,
+              barcode: item.barcode,
+              name: item.name,
+              brand: item.brand,
+              retail_price_paise: item.retail_price_paise,
+              unit_id: item.unit_id,
+              unit_code: item.unit_code ?? "",
+              unit_label: item.unit_label ?? "",
+              sell_unit: item.sell_unit,
+              current_qty: item.current_qty,
+              min_qty: item.min_qty ?? 0,
+            }));
+            return hits;
+          }),
+          null,
+        ],
+      ];
+      if (acceptFormula) {
+        promises.push([
+          listFormulas({ query: trimmed }).then((rows) =>
+            rows
+              .filter((f) => f.is_active)
+              .slice(0, 8)
+              .map<FormulaSearchHit>((f) => ({
+                kind: "formula",
+                id: f.id,
+                id_code: f.id_code,
+                name: f.name,
+                retail_price_paise: f.retail_price_paise,
+                with_base: f.with_base,
+              })),
+          ),
+          null,
+        ]);
+      }
+      Promise.allSettled(promises.map(([p]) => p))
+        .then((settled) => {
+          const combined: SearchHit[] = [];
+          for (const r of settled) {
+            if (r.status === "fulfilled") combined.push(...(r.value as SearchHit[]));
+          }
+          combined.sort((a, b) => {
+            const aKind = isFormula(a) ? 1 : 0;
+            const bKind = isFormula(b) ? 1 : 0;
+            return aKind - bKind;
+          });
+          setResults(combined);
         })
         .catch((e) => {
-          console.error("[ItemSearchInput] failed to search items", e);
+          console.error("[ItemSearchInput] failed to search", e);
           setResults([]);
         });
     }, 200);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, acceptFormula]);
 
   function lookupToHit(item: ItemLookup): ItemSearchHit | null {
     if (item.scope === "stocker") {
@@ -171,7 +232,9 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
   const activeIndex = useMemo(() => {
     if (results.length === 0) return -1;
     if (allowOutOfStock) return 0;
-    const firstInStock = results.findIndex((r) => stockStatus(r) !== "out");
+    const firstInStock = results.findIndex((r) =>
+      isFormula(r) ? true : stockStatus(r) !== "out",
+    );
     return firstInStock === -1 ? 0 : firstInStock;
   }, [results, allowOutOfStock]);
 
@@ -189,8 +252,8 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  function handlePick(item: ItemSearchHit) {
-    onPick(item);
+  function handlePick(hit: SearchHit) {
+    onPick(hit);
     setQuery("");
     setOpen(false);
     inputRef.current?.focus();
@@ -212,7 +275,7 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
             aria-expanded={open && results.length > 0}
             aria-controls="item-search-listbox"
             aria-autocomplete="list"
-            placeholder="Scan barcode or search item…"
+            placeholder={acceptFormula ? "Scan barcode or search item / shade ID…" : "Scan barcode or search item…"}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -223,13 +286,15 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 if (results.length === 1) {
-                  if (!allowOutOfStock && stockStatus(results[0]) === "out") return;
+                  const r0 = results[0];
+                  if (!allowOutOfStock && !isFormula(r0) && stockStatus(r0) === "out") return;
                   event.preventDefault();
-                  handlePick(results[0]);
+                  handlePick(r0);
                 } else if (activeIndex >= 0 && results[activeIndex]) {
-                  if (!allowOutOfStock && stockStatus(results[activeIndex]) === "out") return;
+                  const r = results[activeIndex];
+                  if (!allowOutOfStock && !isFormula(r) && stockStatus(r) === "out") return;
                   event.preventDefault();
-                  handlePick(results[activeIndex]);
+                  handlePick(r);
                 }
               } else if (event.key === "Escape") {
                 setOpen(false);
@@ -250,13 +315,27 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
         {onCreateItem ? (
           <Button
             type="button"
-            variant="secondary"
+            variant="ghost"
             size="sm"
             icon={PackagePlus}
             onClick={onCreateItem}
-            title="Create a new item (uses the full ItemForm)"
+            title="Create a new item"
+            className="hidden"
           >
             New item
+          </Button>
+        ) : null}
+        {onCreateFormula && acceptFormula ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            icon={Paintbrush}
+            onClick={onCreateFormula}
+            title="Create a new shade formula"
+            className="hidden"
+          >
+            New formula
           </Button>
         ) : null}
       </div>
@@ -277,15 +356,49 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
           role="listbox"
           className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-card shadow-xl"
         >
-          {results.map((item, index) => {
-            const status = stockStatus(item);
+          {results.map((hit, index) => {
+            const isActive = index === activeIndex;
+            if (isFormula(hit)) {
+              const display = hit.name ? `${hit.id_code} — ${hit.name}` : hit.id_code;
+              return (
+                <button
+                  key={`f-${hit.id}`}
+                  type="button"
+                  role="option"
+                  aria-selected={isActive}
+                  onClick={() => handlePick(hit)}
+                  className={cn(
+                    "flex w-full items-start gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0",
+                    isActive ? "bg-muted" : "hover:bg-muted",
+                  )}
+                >
+                  <Paintbrush
+                    className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate font-medium text-foreground">
+                        {toTitleCase(display)}
+                      </span>
+                      <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                        {hit.with_base ? "with base" : "no base"}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span className="font-mono">shade {hit.id_code}</span>
+                    </div>
+                  </div>
+                </button>
+              );
+            }
+            const status = stockStatus(hit);
             const styles = STATUS_STYLES[status];
             const StatusIcon = styles.icon;
-            const isActive = index === activeIndex;
             const isOut = status === "out";
             return (
               <button
-                key={item.id}
+                key={`i-${hit.id}`}
                 type="button"
                 role="option"
                 aria-selected={isActive}
@@ -294,7 +407,7 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
                 title={isOut && !allowOutOfStock ? "Out of stock — cannot be added to the bill" : undefined}
                 onClick={() => {
                   if (!allowOutOfStock && isOut) return;
-                  handlePick(item);
+                  handlePick(hit);
                 }}
                 className={cn(
                   "flex w-full items-start gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0",
@@ -314,7 +427,7 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
                         status === "out" ? "text-muted-foreground line-through" : "text-foreground",
                       )}
                     >
-                      {toTitleCase(item.name)}
+                      {toTitleCase(hit.name)}
                     </span>
                     <span
                       className={cn(
@@ -322,11 +435,11 @@ export function ItemSearchInput({ onPick, allowOutOfStock = false, onCreateItem 
                         styles.pill,
                       )}
                     >
-                      {stockLabel(item, status)}
+                      {stockLabel(hit, status)}
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span className="font-mono">{item.sku_code}</span>
+                    <span className="font-mono">{hit.sku_code}</span>
                   </div>
                 </div>
               </button>

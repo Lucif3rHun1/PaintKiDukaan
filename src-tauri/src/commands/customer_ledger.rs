@@ -165,7 +165,9 @@ pub fn create_customer_credit_invoice_impl(
         .lines
         .into_iter()
         .map(|l| sales::CartLine {
-            item_id: l.item_id,
+            kind: "item".into(),
+            item_id: Some(l.item_id),
+            formula_id: None,
             qty: l.qty,
             price: l.unit_price_paise,
             unit_type: "unit".into(),

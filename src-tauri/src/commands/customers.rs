@@ -263,7 +263,7 @@ fn update_customer_impl(
         if sets.is_empty() {
             return Err(AppError::Validation("no fields to update".into()));
         }
-        sets.push("updated_at = datetime('now')");
+        sets.push("updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000");
         let sql = format!("UPDATE customers SET {} WHERE id = ?", sets.join(", "));
         let mut pvec: Vec<&dyn rusqlite::ToSql> = values
             .iter()

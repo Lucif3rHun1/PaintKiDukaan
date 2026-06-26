@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Money, Button } from "../../components/ui";
+import { extractError } from "../../lib/extractError";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { vendorOutstanding } from "./api";
 import type { Vendor, VendorOutstanding } from "../types";
@@ -19,7 +20,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
   useEffect(() => {
     vendorOutstanding(vendor.id)
       .then((d) => setOutstanding(d ?? null))
-      .catch((e) => setError(e.message ?? "Failed"));
+      .catch((e) => setError(extractError(e)));
   }, [vendor.id]);
 
   return (

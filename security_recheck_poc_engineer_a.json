@@ -1,0 +1,148 @@
+[
+  {
+    "id": "R-1",
+    "title": "HKCU UninstallString command injection (CWE-78)",
+    "status": "FIXED",
+    "reproduction_steps": [
+      "1. Read /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src-tauri/src/security/install_cleanup.rs",
+      "2. Confirm `let uninstall_cmd = \"\";` literal and no `format!(\"cmd /c rmdir...`",
+      "3. Confirm MoveFileExW is used for deferred delete (no shell spawn)",
+      "4. Run /tmp/r1_verify — observes benign empty UninstallString on registry, deferred delete via Win32"
+    ],
+    "observed_output": "UninstallString value written to HKCU = \"\". No user-controlled path interpolation. MoveFileExW schedules the deferred delete on next reboot.",
+    "severity_recommendation": "INFO",
+    "rationale": "The vulnerable format!() pattern is removed. Empty UninstallString + MoveFileExW removes the shell-injection surface. Note: see V-4 for the new DoS angle (empty UninstallString + missing InstallLocation/DisplayIcon).",
+    "poC_artifact": "/tmp/pk_poc/r1_poc.rs",
+    "verifier_output": "/tmp/r1_verify"
+  },
+  {
+    "id": "A-10",
+    "title": "Non-Windows keystore is plaintext SQLite (CWE-312)",
+    "status": "FALSIFIED",
+    "reproduction_steps": [
+      "1. Read /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src-tauri/src/security/dpapi_keystore.rs:225-264",
+      "2. Observe macOS stub: `pub fn dpapi_encrypt(plaintext: &[u8]) -> Result<Vec<u8>, _> { log::error!(...); Ok(plaintext.to_vec()) }`",
+      "3. Observe Linux stub: identical pass-through",
+      "4. Run /tmp/a10_verify4.py — confirms both stubs return plaintext and reference no Keychain/Security/SecretService APIs in code (only in a 'not yet wired' comment)",
+      "5. Live round-trip on macOS dev: writing fake SQLite bytes produces a file sqlite3 can read directly"
+    ],
+    "observed_output": "macOS and Linux stubs both call `plaintext.to_vec()` / `ciphertext.to_vec()`. The fix only added `log::error!` warnings. Bytes on disk are still the original plaintext SQLite. The claim of 'keychain/secret-service' is not implemented.",
+    "severity_recommendation": "HIGH",
+    "rationale": "Although `security-framework` and `secret-service` Cargo deps were added for macOS/Linux (Cargo.toml L107, L111), they are NOT imported anywhere in the source — only mentioned in a `ponytail: ... not yet wired` comment in dpapi_keystore.rs:228. The keystore on disk remains plaintext SQLite on every non-Windows platform.",
+    "poC_artifact": "/tmp/pk_poc/a10_poc.rs",
+    "verifier_output": "/tmp/a10_verify4.py"
+  },
+  {
+    "id": "R-15",
+    "title": "Predictable machine salt enables offline Argon2 brute-force (CWE-330)",
+    "status": "FALSIFIED",
+    "reproduction_steps": [
+      "1. Read /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src-tauri/src/security/dpapi_keystore.rs:344-353 (derive_machine_salt)",
+      "2. Confirm: SHA-256(b\"paintkiduakan-master.machine-salt.v1\" || hostname) — IDENTICAL to the original",
+      "3. Confirm: read_hostname returns COMPUTERNAME/HOSTNAME env var or empty string",
+      "4. Run /tmp/r15_verify.py — derives salt on this host and shows hostname is the only entropy source",
+      "5. Estimate: ~11.57 days single-thread for 6-digit PIN (unchanged)"
+    ],
+    "observed_output": "machine_salt = SHA-256(prefix || COMPUTERNAME/HOSTNAME). No MAC address, no machine-id, no CPU id, no TPM, no OsRng — only the env-var hostname. Brute-force estimate unchanged.",
+    "severity_recommendation": "HIGH",
+    "rationale": "The fix only refactored derive_machine_salt into a function with OnceLock caching. The entropy source is still single-source hostname. Worse: see V-2 — if HOSTNAME is empty (common in stripped Docker/k8s/CI images), the cached salt becomes a single constant shared across all such hosts, enabling amortized brute-force.",
+    "poC_artifact": "/tmp/pk_poc/r15_poc.py",
+    "verifier_output": "/tmp/r15_verify.py"
+  },
+  {
+    "id": "S-6",
+    "title": "roleGuard defaults to 'owner' on null user (CWE-269)",
+    "status": "FIXED",
+    "reproduction_steps": [
+      "1. Read /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src/lib/security/roleGuard.tsx",
+      "2. Observe the FIX: `const currentLevel = currentRole ? (ROLE_HIERARCHY[currentRole] ?? 0) : -1;`",
+      "3. Run /tmp/s6_verify.mjs — null/undefined user yields currentLevel = -1, fails every gate",
+      "4. Run /tmp/pk_poc/s6_poc.js — original PoC still shows old behavior (it hardcodes the vulnerable logic)"
+    ],
+    "observed_output": "roleGuard.tsx denies every gate (owner/cashier/stocker) when currentRole is undefined. Legit users still pass correctly. The original PoC artifact is now a regression test for the old code path.",
+    "severity_recommendation": "MEDIUM",
+    "rationale": "RoleGuard itself is fixed. BUT see V-1: 6 other files (App.tsx, Dashboard.tsx, AppShell.tsx, firstLaunch.tsx, restoreFromRecovery.tsx, lockScreen.tsx) still use the `?? \"owner\"` / `?? \"stocker\"` pattern, so the privilege escalation is partially still exploitable.",
+    "poC_artifact": "/tmp/pk_poc/s6_poc.js",
+    "verifier_output": "/tmp/s6_verify.mjs"
+  },
+  {
+    "id": "NEW-V1",
+    "title": "S-6 fix was incomplete — 6 files still use `?? \"owner\"` null-user elevation",
+    "status": "REGRESSED",
+    "reproduction_steps": [
+      "1. Grep for `?? \"owner\"` / `?? \"stocker\"` across src/ — 6 hits remain",
+      "2. /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src/App.tsx:350 → `const role = user?.role ?? \"stocker\";` → passed to <SalesPage user={{id:0, name:\"Owner\", role}}>",
+      "3. /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src/shell/routes/Dashboard.tsx:126 → `role = session.user?.role ?? \"owner\"` → passed to <AlertBell currentRole={role} />",
+      "4. /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src/shell/AppShell.tsx:445 → display only (lower risk)",
+      "5. /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src/lib/security/{firstLaunch,restoreFromRecovery,lockScreen}.tsx — same pattern at result.user?.role ?? result.role ?? \"owner\"",
+      "6. Run /tmp/new_v1_s6_regression.mjs — reproduces the partial fix"
+    ],
+    "observed_output": "Only roleGuard.tsx was patched. Dashboard.tsx still elevates a null user to 'owner' and passes it to AlertBell. App.tsx fabricates a user object {id:0, name:'Owner', role:'stocker'} for a null user and passes it as the authenticated principal to SalesPage / ReturnPage — IPC calls downstream carry user_id=0, which the backend cannot attribute.",
+    "severity_recommendation": "HIGH",
+    "rationale": "The original S-6 PoC report cited `roleGuard.tsx:17 + App.tsx:320` as the same pattern. The patch touched only the roleGuard file. The Dashboard elevation gives null users AlertBell owner privileges. The App.tsx elevation fabricates a user record used for IPC attribution — if any backend command relies on user.id (not just user.role), this bypasses authorization.",
+    "poC_artifact": "/tmp/new_v1_s6_regression.mjs"
+  },
+  {
+    "id": "NEW-V2",
+    "title": "R-15 fix introduces OnceLock caching — empty HOSTNAME yields a single shared salt",
+    "status": "NEW",
+    "reproduction_steps": [
+      "1. Read dpapi_keystore.rs:319 — `static MACHINE_SALT: OnceLock<[u8; 32]> = OnceLock::new();`",
+      "2. Read dpapi_keystore.rs:328-337 — read_hostname returns empty string when env var unset",
+      "3. Compute SHA-256(b\"paintkiduakan-master.machine-salt.v1\") — the constant for empty hostname",
+      "4. Run /tmp/new_v2_empty_hostname.py — shows the invariant and amortized brute-force math"
+    ],
+    "observed_output": "If HOSTNAME/COMPUTERNAME is unset at process start (common in minimal Docker / k8s / CI runner / busybox / WSL2 default images), the cached MACHINE_SALT becomes SHA-256(b\"paintkiduakan-master.machine-salt.v1\") = bf083ceab29fe4be7edf175f0ba14187083b4c0bce20f6f74f5365c8d2fa956f. This is the SAME salt for every empty-hostname host. Attacker precomputes one brute-force table and amortizes across N stolen keystores.",
+    "severity_recommendation": "HIGH",
+    "rationale": "The OnceLock was introduced by the 'fix'. It freezes whatever hostname (including empty) was seen at first call. Once cached, later HOSTNAME changes don't refresh it. Combined with the unchanged SHA-256(hostname) derivation, every empty-hostname host in the wild is brute-forceable from a single precomputed table. Cost: ~0.01 days per host across 1000 hosts.",
+    "poC_artifact": "/tmp/new_v2_empty_hostname.py"
+  },
+  {
+    "id": "NEW-V3",
+    "title": "A-10 fix is dead code — security::dpapi_keystore never imported by auth.rs",
+    "status": "NEW",
+    "reproduction_steps": [
+      "1. Grep for `\\bencrypt_keystore\\b`, `\\bdecrypt_keystore\\b`, `\\bmachine_salt\\b`, `\\bis_sqlite_plaintext\\b`, `\\bAPP_DPAPI_ENTROPY\\b`, `\\bDpapiError\\b`, `dpapi_keystore::`, `security::dpapi` — across src-tauri/src",
+      "2. Confirmed: 0 hits outside dpapi_keystore.rs itself",
+      "3. Read /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src-tauri/src/commands/auth.rs:115-121 — open_keystore does plain `Connection::open(path)`, no decrypt step",
+      "4. Confirm `security-framework` and `secret-service` Cargo deps for macOS/Linux are NOT used by any .rs file (only mentioned in a 'not yet wired' comment)",
+      "5. Run /tmp/new_v3c.py — confirms dead-code status"
+    ],
+    "observed_output": "Zero call sites reference any symbol from security::dpapi_keystore outside the module file itself. The module compiles, its tests pass, but production auth::open_keystore opens the keystore as a raw SQLite file. The keystore on disk is plaintext on Windows, macOS, and Linux. The A-10 fix gives a false sense of security — added a module + added Cargo deps (security-framework, secret-service) but never wired them.",
+    "severity_recommendation": "CRITICAL",
+    "rationale": "Worse than the original A-10: the fix added dead code AND new dependencies (security-framework, secret-service) that increase the supply-chain attack surface without delivering the promised protection. Reviewers will see 'A-10 fixed' in the changelog while the actual keystore remains plaintext on every platform.",
+    "poC_artifact": "/tmp/new_v3c.py"
+  },
+  {
+    "id": "NEW-V4",
+    "title": "R-1 fix creates uninstall DoS — empty UninstallString + no InstallLocation/DisplayIcon",
+    "status": "NEW",
+    "reproduction_steps": [
+      "1. Read /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src-tauri/src/security/install_cleanup.rs",
+      "2. Confirm: UninstallString = empty literal",
+      "3. Confirm: NO InstallLocation, DisplayIcon, DisplayName, DisplayVersion registry values written",
+      "4. Confirm: MoveFileExW failure is logged as warn, NOT an error (non-fatal)",
+      "5. Run /tmp/new_v4_race.py"
+    ],
+    "observed_output": "After the fix: HKCU UninstallString = \"\", registry has no metadata. Windows Add/Remove Programs shows the app with no icon, no version, no working uninstall command. Revo / Geek / standard Programs & Features cannot uninstall. MoveFileExW failure is silent. The app becomes an orphan until a manual delete by an admin.",
+    "severity_recommendation": "MEDIUM",
+    "rationale": "This is a denial-of-service against the user, not the original cmd-injection. Combined with V-3 (plaintext keystore still extractable) the user's data is recoverable but the app is un-uninstallable through normal Windows means. Race: between MoveFileExW and RegSetValueExA a corporate MSI can corrupt the uninstall string.",
+    "poC_artifact": "/tmp/new_v4_race.py"
+  },
+  {
+    "id": "NEW-V5",
+    "title": "Fix sweep did not close ACL gaps — PDE commands still unauthenticated",
+    "status": "NEW",
+    "reproduction_steps": [
+      "1. Grep COMMAND_ACL in /Users/lucif3rhun1/Windows/Files/Scripts/PaintKiDukaan/src-tauri/src/security/ipc_auth.rs — 49 entries",
+      "2. Check the four PDE commands from the original S-5 report: get_pde_status, provision_decoy_db, change_decoy_pin, change_duress_pin",
+      "3. Confirm: NONE are in the ACL (0 matches)",
+      "4. Note: cmd_print_raw / cmd_print_receipt / cmd_print_receipt_dev WERE added (S-2 was closed), but S-5 was not",
+      "5. Run /tmp/new_v5_deps_acl.py"
+    ],
+    "observed_output": "PDE commands — the core plausible-deniability feature — remain unauthenticated. Any unlocked user can call provision_decoy_db and set attacker-known decoy/duress PINs. The original S-5 report is unchanged by this fix cycle.",
+    "severity_recommendation": "HIGH",
+    "rationale": "The fix closed the printing ACL hole (S-2) but left the PDE ACL hole (S-5) untouched. Combined with V-1 (Dashboard.tsx still elevates null user to owner and renders AlertBell with owner privileges) this is a one-two punch: any unlocked null-user state can reconfigure PDE through the UI.",
+    "poC_artifact": "/tmp/new_v5_deps_acl.py"
+  }
+]

@@ -13,6 +13,7 @@ import { toTitleCase } from "../../lib/format/titleCase";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import type { ItemSearchHit, PaymentSplit, ReturnCartLine } from "../types";
+import type { FormulaSearchHit } from "../../domain/types";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
@@ -73,7 +74,13 @@ export default function ReturnPage({ user, onBack }: Props) {
     (user.role === "owner" || ownerPin.trim().length > 0) &&
     refundAmount <= subtotal;
 
-  function addLineFromItem(item: ItemSearchHit) {
+  function addLineFromItem(hit: ItemSearchHit | FormulaSearchHit) {
+    if ("kind" in hit && hit.kind === "formula") {
+      // Formulas are not returnable (ADR-013). Hit shouldn't appear because
+      // acceptFormula={false} is passed to ItemSearchInput, but guard anyway.
+      return;
+    }
+    const item = hit as ItemSearchHit;
     setLines((prev) => {
       const existing = prev.find((line) => line.item_id === item.id);
       if (existing) {
@@ -344,7 +351,7 @@ loading: "Saving return…",
                 </table>
               </div>
 
-              <ItemSearchInput onPick={addLineFromItem} allowOutOfStock />
+              <ItemSearchInput onPick={addLineFromItem} allowOutOfStock acceptFormula={false} />
             </Card>
           </div>
 

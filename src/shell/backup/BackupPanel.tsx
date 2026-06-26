@@ -26,7 +26,7 @@ export function BackupPanel() {
 
   const onBackup = async () => {
     if (passphrase.length < 8) {
-      setError("Passphrase must be at least 8 characters");
+      setError("Password must be at least 8 characters");
       return;
     }
     setBusy(true);
@@ -61,13 +61,13 @@ export function BackupPanel() {
       </div>
 
       <div className="space-y-1">
-        <div className="text-muted-foreground">Recovery passphrase</div>
+        <div className="text-muted-foreground">Recovery password</div>
         <input
           type="password"
           value={passphrase}
           onChange={(e) => setPassphrase(e.target.value)}
           className="w-full rounded-md border border-input p-2"
-          placeholder="Used to encrypt this backup"
+          placeholder="Used to protect this backup"
         />
       </div>
 

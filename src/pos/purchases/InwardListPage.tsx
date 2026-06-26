@@ -1,14 +1,14 @@
 // Inward list page — recent purchases with search, date filter, pagination.
 
 import { useMemo, useState } from "react";
-import { Plus, Truck } from "lucide-react";
-import { DatePicker } from "../../components/ui/DatePicker";
+import { PackagePlus, Truck } from "lucide-react";
+import { PeriodDropdown } from "../../components/ui";
 
-import { Badge, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
+import { Button, Card, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { listPurchases } from "../api";
 import { usePaginatedQuery } from "../../lib/query";
-import { formatDateForDisplay } from "../../lib/date";
+import { formatDateForDisplay, shiftDaysLocal, todayLocalYyyymmdd } from "../../lib/date";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import type { Purchase } from "../types";
@@ -21,12 +21,8 @@ interface Props {
 const PAGE_SIZE = 25;
 
 export function InwardListPage({ onCreate, onSelect }: Props) {
-  const [from, setFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(() => shiftDaysLocal(6));
+  const [to, setTo] = useState(() => todayLocalYyyymmdd());
 
   const {
     data: rows,
@@ -52,50 +48,69 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
     clientFilter: (p, q) => {
       const term = q.toLowerCase();
       return (
-        (p.purchase_number ?? "").toLowerCase().includes(term) ||
+        String(p.id).includes(term) ||
         (p.vendor_name ?? "").toLowerCase().includes(term) ||
         (p.notes ?? "").toLowerCase().includes(term)
       );
     },
   });
 
+  const metrics = useMemo(() => {
+    const totalValue = allData.reduce((sum, p) => sum + p.total, 0);
+    return {
+      count: allData.length,
+      totalValue,
+      avgOrder: allData.length > 0 ? Math.round(totalValue / allData.length) : 0,
+    };
+  }, [allData]);
+
   const columns = useMemo<ColumnDef<Purchase>[]>(
     () => [
       {
-        header: "No",
+        id: "date",
+        header: "Date",
+        width: "7rem",
+        cell: (p) => (
+          <span className="text-foreground tabular-nums">{formatDateForDisplay(p.date)}</span>
+        ),
+      },
+      {
+        id: "vendor",
+        header: "Vendor",
+        width: "minmax(10rem, 1fr)",
+        cell: (p) => (
+          <span className="truncate text-foreground" title={p.vendor_name ?? "—"}>
+            {p.vendor_name ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "no",
+        header: "INW No",
+        width: "7rem",
         cell: (p) => (
           <a
             href={`#/inward/${p.id}`}
-            className="font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
-            aria-label={`Open inward ${p.purchase_number}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block max-w-full truncate font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
+            aria-label={`Open inward ${p.id}`}
+            title={String(p.id)}
           >
-            {p.purchase_number}
+            #{p.id}
           </a>
         ),
       },
       {
-        header: "Date",
-        cell: (p) => (
-          <span className="text-foreground">{formatDateForDisplay(p.date)}</span>
-        ),
-      },
-      {
-        header: "Status",
-        cell: () => <Badge variant="info" size="sm">inward</Badge>,
-      },
-      {
-        header: "Vendor",
-        cell: (p) => (
-          <span className="text-foreground">{p.vendor_name ?? "—"}</span>
-        ),
-      },
-      {
+        id: "items",
         header: "Items",
+        width: "4rem",
         align: "right",
         cell: (p) => <span className="tabular-nums">{p.items.length}</span>,
       },
       {
+        id: "total",
         header: "Total",
+        width: "7rem",
         align: "right",
         cell: (p) => <Money paise={p.total} />,
       },
@@ -117,88 +132,77 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
   });
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Inward
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {totalItems} {totalItems === 1 ? "inward" : "inwards"}
-            {search ? ` matching "${search}"` : ""}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="primary"
-          size="md"
-          icon={Plus}
-          onClick={onCreate}
-          shortcut="F6"
-        >
+    <div className="space-y-3">
+      {/* ── Metric cards ─────────────────────────────────────── */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Inwards</p>
+          <p className="text-2xl font-semibold tabular-nums text-foreground">{metrics.count}</p>
+        </Card>
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total value</p>
+          <Money paise={metrics.totalValue} className="text-2xl font-semibold tabular-nums" />
+        </Card>
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Avg order</p>
+          <Money paise={metrics.avgOrder} className="text-2xl font-semibold tabular-nums" />
+        </Card>
+      </div>
+
+      {/* ── Filter bar ───────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by vendor, notes…"
+          ariaLabel="Search inwards"
+          data-shortcut="search"
+          className="min-w-[220px] flex-1"
+        />
+        <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
+        <Button type="button" variant="primary" size="sm" icon={PackagePlus} onClick={onCreate} shortcut="F6">
           New Inward
         </Button>
-      </header>
-
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search by INW no, vendor, notes…"
-            ariaLabel="Search inwards"
-            data-shortcut="search"
-            className="min-w-[220px] flex-1"
-          />
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            From
-            <DatePicker value={from} onChange={setFrom} />
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            To
-            <DatePicker value={to} onChange={setTo} />
-          </label>
-        </div>
-
-        <DataTable
-          data={rows}
-          columns={columns}
-          keyExtractor={(p) => p.id}
-          onRowClick={(p) => {
-            if (onSelect) onSelect(p.id);
-            else window.location.hash = `#/inward/${p.id}`;
-          }}
-          loading={isLoading || isFetching}
-          error={error}
-          onRetry={refetch}
-          emptyState={
-            <EmptyState
-              icon={Truck}
-              title={search ? "No matches" : "No inwards yet"}
-              description={
-                search
-                  ? `Nothing matches "${search}". Try a different search.`
-                  : "No inwards found for the selected range. Create the first inward to get started."
-              }
-              primary={
-                <Button type="button" onClick={onCreate} icon={Plus}>
-                  New Inward
-                </Button>
-              }
-            />
-          }
-        />
-
-        {!isLoading && allData.length > 0 ? (
-          <PaginationControls
-            page={page}
-            totalPages={totalPages}
-            totalItems={totalItems}
-            pageSize={pageSize}
-            onPageChange={setPage}
-          />
-        ) : null}
       </div>
+
+      <DataTable
+        data={rows}
+        columns={columns}
+        keyExtractor={(p) => p.id}
+        onRowClick={(p) => {
+          if (onSelect) onSelect(p.id);
+          else window.location.hash = `#/inward/${p.id}`;
+        }}
+        loading={isLoading || isFetching}
+        error={error}
+        onRetry={refetch}
+        emptyState={
+          <EmptyState
+            icon={Truck}
+            title={search ? "No matches" : "No inwards yet"}
+            description={
+              search
+                ? `Nothing matches "${search}". Try a different search.`
+                : "No inwards found for the selected range. Create the first inward to get started."
+            }
+            primary={
+              <Button type="button" onClick={onCreate} icon={PackagePlus}>
+                New Inward
+              </Button>
+            }
+          />
+        }
+      />
+
+      {!isLoading && allData.length > 0 ? (
+        <PaginationControls
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          onPageChange={setPage}
+        />
+      ) : null}
     </div>
   );
 }

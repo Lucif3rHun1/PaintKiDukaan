@@ -33,7 +33,7 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
 
   const runTest = async () => {
     if (!path || !passphrase) {
-      setError("Pick a file and enter the passphrase");
+      setError("Pick a file and enter the password");
       return;
     }
     setBusy(true);
@@ -43,7 +43,7 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
       if (!r.ok) {
         setError(`quick_check: ${r.db_quick_check} — ${r.message}`);
       } else {
-        setError("Test restore OK. Confirm to apply the restore.");
+        setError("Test restore OK. Confirm to apply.");
       }
     } catch (e) {
       setError(extractError(e));
@@ -71,13 +71,13 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
       <InlineDialog
         open={open}
         onClose={close}
-        title="Restore from envelope"
-        description="Pick a .pkb1 file and enter the recovery passphrase. The previous live DB is preserved as db.sqlite.prev."
+        title="Recover from backup file"
+        description="Pick a backup file and enter the recovery password. The previous shop data is saved separately."
         size="md"
       >
         <div className="space-y-4">
           <label className="block text-sm">
-            <span className="mb-1 block font-medium text-foreground">Envelope path</span>
+            <span className="mb-1 block font-medium text-foreground">Backup file path</span>
             <input
               type="text"
               value={path}
@@ -88,7 +88,7 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
           </label>
 
           <label className="block text-sm">
-            <span className="mb-1 block font-medium text-foreground">Recovery passphrase</span>
+            <span className="mb-1 block font-medium text-foreground">Recovery password</span>
             <input
               type="password"
               value={passphrase}
@@ -120,7 +120,7 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
               disabled={busy}
               onClick={runTest}
             >
-              Test restore
+              Test recover
             </Button>
             <Button
               type="button"
@@ -129,7 +129,7 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
               disabled={busy}
               onClick={() => setConfirm(true)}
             >
-              Restore…
+              Recover…
             </Button>
           </div>
         </div>
@@ -137,9 +137,9 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
 
       <ConfirmDialog
         open={confirm}
-        title="Apply restore?"
-        body="The live database will be replaced. The previous live DB is kept as db.sqlite.prev."
-        confirmLabel="Apply restore"
+        title="Apply recovery?"
+        body="The current shop data will be replaced. The previous data is saved separately."
+        confirmLabel="Apply recovery"
         destructive
         onCancel={() => setConfirm(false)}
         onConfirm={() => {

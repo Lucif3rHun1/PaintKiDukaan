@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tauriInvoke as invoke } from "./tauri";
-import logo from "../../assets/logo-64.png";
+import logo from "../../assets/logo-128.png";
 import {
   AlertCircle,
   Eye,
@@ -230,13 +230,13 @@ export function FirstLaunch() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
                 <Lock className="h-4 w-4 text-white" />
               </div>
-              <span>Encrypted PIN protection</span>
+              <span>Protected PIN security</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
                 <FileKey className="h-4 w-4 text-white" />
               </div>
-              <span>Recovery passphrase backup</span>
+              <span>Recovery password backup</span>
             </div>
           </div>
         </div>
@@ -297,7 +297,7 @@ export function FirstLaunch() {
                 <span>
                   <span className="block text-sm font-semibold text-foreground">Set up a new shop</span>
                   <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Start fresh with a new shop. You'll set your shop details, owner PIN, and recovery passphrase.
+                    Start fresh with a new shop. You'll set your shop details, owner PIN, and recovery password.
                   </span>
                 </span>
               </button>
@@ -312,7 +312,7 @@ export function FirstLaunch() {
                 <span>
                   <span className="block text-sm font-semibold text-foreground">Restore from a backup</span>
                   <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Restore from a .pkb1 backup file. Use this if you previously backed up and want to continue.
+                    Restore from a backup file. Use this if you previously backed up and want to continue.
                   </span>
                 </span>
               </button>
@@ -409,13 +409,13 @@ export function FirstLaunch() {
               <div className="rounded-xl border border-warning/30 bg-warning/10 p-3.5">
                 <p className="text-sm font-semibold text-warning">Important — read this first</p>
                 <p className="mt-1 text-xs leading-5 text-warning/80">
-                  Your recovery passphrase is the <strong>only way</strong> to regain access if you
+                  Your recovery password is the <strong>only way</strong> to regain access if you
                   forget your PIN. Write it down and store it somewhere safe (not on this device).
                   We cannot recover it for you.
                 </p>
               </div>
               <div>
-                <label className={labelClass} htmlFor="passphrase">Recovery passphrase</label>
+                <label className={labelClass} htmlFor="passphrase">Recovery password</label>
                 <div className="relative">
                   <input
                     id="passphrase"
@@ -430,7 +430,7 @@ export function FirstLaunch() {
                     className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     type="button"
                     onClick={() => setShowPassphrase((visible) => !visible)}
-                    aria-label={showPassphrase ? "Hide passphrase" : "Show passphrase"}
+                    aria-label={showPassphrase ? "Hide password" : "Show password"}
                   >
                     {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -441,13 +441,13 @@ export function FirstLaunch() {
                 {fieldError(errors.passphrase?.message)}
               </div>
               <div>
-                <label className={labelClass} htmlFor="passphraseConfirm">Confirm recovery passphrase</label>
+                <label className={labelClass} htmlFor="passphraseConfirm">Confirm recovery password</label>
                 <input
                   id="passphraseConfirm"
                   className={inputClass}
                   aria-invalid={Boolean(errors.passphraseConfirm)}
                   autoComplete="off"
-                  placeholder="Re-enter the same passphrase"
+                  placeholder="Re-enter the same password"
                   type={showPassphrase ? "text" : "password"}
                   {...register("passphraseConfirm")}
                 />

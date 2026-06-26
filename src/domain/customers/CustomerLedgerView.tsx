@@ -37,7 +37,7 @@ export function CustomerLedgerView({ customer }: Props) {
     setError(null);
     fetchCustomerLedger(customer.id, 200)
       .then((d) => setLedger(d ?? null))
-      .catch((e: AppError) => setError(e.message ?? "Failed to load ledger"));
+      .catch((e) => setError(extractError(e)));
   }
 
   useEffect(() => {

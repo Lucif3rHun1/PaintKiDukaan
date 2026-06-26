@@ -4,7 +4,8 @@
 import { useState } from "react";
 import { Button } from "../../components/ui";
 import { createVendor, updateVendor } from "./api";
-import type { AppError, NewVendor, Vendor, VendorUpdate } from "../types";
+import { extractError } from "../../lib/extractError";
+import type { NewVendor, Vendor, VendorUpdate } from "../types";
 
 type Mode = "create" | "edit";
 
@@ -54,8 +55,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
         onSaved(v);
       }
     } catch (e) {
-      const err = e as AppError;
-      setError(err.message ?? "Save failed");
+      setError(extractError(e));
     } finally {
       setBusy(false);
     }

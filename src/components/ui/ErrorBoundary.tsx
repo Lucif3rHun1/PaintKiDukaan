@@ -23,11 +23,11 @@ function ErrorFallback({ error, resetErrorBoundary, context }: ErrorFallbackProp
           <div className="min-w-0 flex-1 space-y-3">
             <div>
               <h3 className="font-semibold text-foreground">
-                {context ? `${context} crashed` : "Something went wrong"}
+                {context ? `${context} ran into a problem` : "Something went wrong"}
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                The app hit an unexpected error. You can try again or reload the
-                page if the problem persists.
+                Something went wrong. You can try again or reload the app if
+                the problem continues.
               </p>
             </div>
             <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">

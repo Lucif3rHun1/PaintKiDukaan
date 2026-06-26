@@ -35,7 +35,7 @@ export function BackupSettings() {
   return (
     <RoleGuard minRole="owner">
       <Card>
-        <Section title="Backup" description="Create encrypted backups and manage restore points.">
+        <Section title="Backup" description="Create protected backups and manage restore points.">
           <BackupPanel />
         </Section>
       </Card>
@@ -101,21 +101,21 @@ export function MasterHealthSettings() {
 
           <HealthSection title="App">
             <HealthRow k="Version" v={data?.app.version} />
-            <HealthRow k="WebView2" v={data?.app.webview2} />
-            <HealthRow k="SQLCipher" v={data?.app.sqlcipher} />
+            <HealthRow k="Browser engine" v={data?.app.webview2} />
+            <HealthRow k="Database engine" v={data?.app.sqlcipher} />
             <HealthRow k="Last backup" v={data?.app.last_backup} />
             <HealthRow k="Last test-restore" v={data?.app.last_test_restore} />
           </HealthSection>
 
           <HealthSection title="System">
-            <HealthRow k="BitLocker (C:)" v={data?.system.bitlocker_c_drive} />
+            <HealthRow k="Drive protection (C:)" v={data?.system.bitlocker_c_drive} />
             <HealthRow k="Disk free (GB)" v={data?.system.disk_free_gb?.toFixed(1)} />
             <HealthRow k="Sleep prevented" v={data?.system.sleep_prevented ? "yes" : "no"} />
             <HealthRow k="Auto-lock policy" v={data?.system.auto_lock_policy} />
           </HealthSection>
 
           <HealthSection title="Data">
-            <HealthRow k="DB integrity" v={data?.data.db_integrity} />
+            <HealthRow k="Data health" v={data?.data.db_integrity} />
             <HealthRow
               k="Rows"
               v={data?.data.rows_count
@@ -131,7 +131,7 @@ export function MasterHealthSettings() {
           </HealthSection>
 
           <HealthSection title="Network">
-            <HealthRow k="mDNS active" v={data?.network.mdns_active ? "yes" : "no"} />
+            <HealthRow k="Network discovery" v={data?.network.mdns_active ? "yes" : "no"} />
             <HealthRow k="LAN IP" v={data?.network.lan_ip || "—"} />
             <HealthRow k="Connected devices" v={data?.network.connected_devices != null ? String(data.network.connected_devices) : undefined} />
           </HealthSection>
@@ -194,7 +194,7 @@ function PdeSettingsCard() {
   if (loading) {
     return (
       <Card>
-        <Section title="Plausible Deniability" description="Decoy and duress PIN configuration.">
+        <Section title="Plausible Deniability" description="Decoy and duress PIN setup.">
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
@@ -223,7 +223,7 @@ function PdeSettingsCard() {
     <Card>
       <Section
         title="Plausible Deniability"
-        description="Decoy and duress PIN configuration for hostile environments."
+        description="Decoy and duress PIN setup for emergencies."
         action={
           pdeStatus?.enabled ? (
             <Badge variant="success">Enabled</Badge>
@@ -235,8 +235,8 @@ function PdeSettingsCard() {
         {!pdeStatus?.enabled ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              PDE creates a separate encrypted database with fake shop data. Use the decoy PIN to show
-              plausible data to an intruder, or the duress PIN to silently wipe real data.
+              PDE creates a separate protected shop data store with fake data. Use the decoy PIN to show
+              fake data to an intruder, or the duress PIN to silently delete real data.
             </p>
             <Button onClick={() => setShowWizard(true)}>
               <Shield className="mr-2 h-4 w-4" />
@@ -473,9 +473,9 @@ function SecurityPolicyCard() {
     setSaving(true);
     try {
       await ipc.updateSecurityPolicy(policy);
-      toast.success("Security policy saved");
+      toast.success("Safety settings saved");
     } catch (e) {
-      toast.error("Failed to save security policy", extractError(e));
+      toast.error("Failed to save safety settings", extractError(e));
     } finally {
       setSaving(false);
     }
@@ -484,7 +484,7 @@ function SecurityPolicyCard() {
   if (loading) {
     return (
       <Card>
-        <Section title="Security Policy" description="Hostile environment response and duress behavior.">
+        <Section title="Safety Settings" description="Emergency response and duress behavior.">
           <div className="py-8 flex justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
@@ -496,8 +496,8 @@ function SecurityPolicyCard() {
   return (
     <Card>
       <Section
-        title="Security Policy"
-        description="Hostile environment response and duress behavior."
+        title="Safety Settings"
+        description="Emergency response and duress behavior."
         action={
           <Button onClick={handleSave} loading={saving} size="sm">
             Save
@@ -507,8 +507,8 @@ function SecurityPolicyCard() {
         <div className="space-y-4">
           <label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted p-3">
             <div>
-              <span className="text-sm font-medium text-foreground">Wipe on duress</span>
-              <p className="text-xs text-muted-foreground">Silently erase real data when duress PIN is used.</p>
+              <span className="text-sm font-medium text-foreground">Delete data on duress</span>
+              <p className="text-xs text-muted-foreground">Silently delete real data when duress PIN is used.</p>
             </div>
             <input
               type="checkbox"
@@ -522,7 +522,7 @@ function SecurityPolicyCard() {
 
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground" htmlFor="wipeTimeout">
-              Wipe timeout (minutes)
+              Delete timeout (minutes)
             </label>
             <input
               id="wipeTimeout"
@@ -547,7 +547,7 @@ function SecurityPolicyCard() {
 
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground" htmlFor="hostileResponse">
-              Hostile environment response
+              Emergency response
             </label>
             <Select
               id="hostileResponse"
@@ -561,12 +561,12 @@ function SecurityPolicyCard() {
               options={[
                 { value: "warn", label: "Warn — show alert to user" },
                 { value: "lock", label: "Lock — auto-lock the app immediately" },
-                { value: "wipe", label: "Wipe — secure-erase real data" },
+                { value: "wipe", label: "Delete — erase real data" },
               ]}
               size="md"
             />
             <p className="text-xs text-muted-foreground">
-              What to do when hostile environment indicators are detected (e.g., USB debugging, screen recording).
+              What to do when suspicious activity is detected (e.g., USB debugging, screen recording).
             </p>
           </div>
         </div>
@@ -687,7 +687,7 @@ function SetRecoveryPassphraseForm({ onDone, onCancel }: { onDone: () => void; o
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-lg border border-border bg-muted p-3">
-      <p className="text-sm font-medium text-foreground">Set recovery passphrase</p>
+      <p className="text-sm font-medium text-foreground">Set recovery password</p>
       {error && (
         <p className="flex items-center gap-1.5 text-sm text-destructive" role="alert">
           <AlertCircle className="h-4 w-4" />{error}
@@ -709,7 +709,7 @@ function SetRecoveryPassphraseForm({ onDone, onCancel }: { onDone: () => void; o
         <div className="relative">
           <input
             className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            placeholder="New recovery passphrase"
+            placeholder="New recovery password"
             autoComplete="off"
             type="password"
             {...register("newPassphrase")}
@@ -719,7 +719,7 @@ function SetRecoveryPassphraseForm({ onDone, onCancel }: { onDone: () => void; o
         <div className="relative">
           <input
             className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            placeholder="Confirm recovery passphrase"
+            placeholder="Confirm recovery password"
             autoComplete="off"
             type="password"
             {...register("newPassphraseConfirm")}
@@ -729,7 +729,7 @@ function SetRecoveryPassphraseForm({ onDone, onCancel }: { onDone: () => void; o
       </div>
       <div className="flex gap-2">
         <Button variant="ghost" size="sm" type="button" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" type="submit" loading={isSubmitting}>Set Passphrase</Button>
+        <Button size="sm" type="submit" loading={isSubmitting}>Set Password</Button>
       </div>
     </form>
   );
@@ -742,7 +742,7 @@ function OwnerSecuritySettings() {
   return (
     <RoleGuard minRole="owner">
       <Card>
-        <Section title="Owner Security" description="Change PIN and manage recovery passphrase. Owner access only.">
+        <Section title="Owner Security" description="Change PIN and manage recovery password. Owner access only.">
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-muted p-4">
               <div className="flex items-center justify-between mb-3">
@@ -765,8 +765,8 @@ function OwnerSecuritySettings() {
             <div className="rounded-lg border border-border bg-muted p-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <p className="font-medium text-foreground">Recovery Passphrase</p>
-                  <p className="text-xs text-muted-foreground">Set a strong passphrase for emergency data recovery.</p>
+                  <p className="font-medium text-foreground">Recovery Password</p>
+                  <p className="text-xs text-muted-foreground">Set a strong password for emergency data recovery.</p>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => setShowRecoveryPassphrase(!showRecoveryPassphrase)}>
                   {showRecoveryPassphrase ? "Hide" : "Set"}

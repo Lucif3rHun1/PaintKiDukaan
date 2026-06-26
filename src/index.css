@@ -22,11 +22,11 @@
   --accent-foreground: 222.2 47.4% 11.2%;
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
-  --success: 142 71% 45%;
+  --success: 142 71% 38%;
   --success-foreground: 210 40% 98%;
-  --warning: 38 92% 50%;
+  --warning: 38 82% 38%;
   --warning-foreground: 210 40% 98%;
-  --info: 199 89% 48%;
+  --info: 199 80% 40%;
   --info-foreground: 210 40% 98%;
   --border: 214.3 31.8% 91.4%;
   --input: 214.3 31.8% 91.4%;
@@ -51,7 +51,7 @@
 [data-theme="dark"] {
   --background: 222.2 84% 4.9%;
   --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
+  --card: 222.2 84% 8%;
   --card-foreground: 210 40% 98%;
   --popover: 222.2 84% 4.9%;
   --popover-foreground: 210 40% 98%;
@@ -63,12 +63,12 @@
   --muted-foreground: 215 20.2% 65.1%;
   --accent: 217.2 32.6% 17.5%;
   --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
+  --destructive: 0 72% 51%;
   --destructive-foreground: 210 40% 98%;
   --success: 142 71% 45%;
   --success-foreground: 210 40% 98%;
   --warning: 38 92% 50%;
-  --warning-foreground: 222.2 47.4% 11.2%;
+  --warning-foreground: 20 30% 20%;
   --info: 199 89% 48%;
   --info-foreground: 210 40% 98%;
   --border: 217.2 32.6% 17.5%;
@@ -93,7 +93,7 @@ html, body, #root {
 
 @layer components {
   .input {
-    @apply h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground;
+    @apply h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground;
   }
   /* Hide native spinner arrows globally — QtyInput owns stepper UX; other
      numeric fields only need typing. Opt back in with `data-spinner`. */
@@ -121,26 +121,11 @@ html, body, #root {
   textarea.input {
     @apply min-h-[80px] py-2;
   }
-  .input-dark {
-    @apply h-10 w-full rounded-md border border-white/10 bg-zinc-950 px-3 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:cursor-not-allowed disabled:opacity-50;
-  }
   .btn {
     @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
     @apply btn bg-sky-600 text-white hover:bg-sky-700;
-  }
-  .btn-secondary {
-    @apply btn border border-white/10 bg-zinc-800 text-zinc-100 hover:bg-zinc-700;
-  }
-  .btn-ghost {
-    @apply btn text-zinc-400 hover:bg-white/5 hover:text-zinc-100;
-  }
-  .card {
-    @apply rounded-lg border border-white/10 bg-zinc-900/60 p-4;
-  }
-  .label-text {
-    @apply mb-1 block text-xs font-medium text-zinc-400;
   }
 }
 
@@ -155,4 +140,3 @@ dialog::backdrop {
   background: rgba(15, 23, 42, 0.55);
   backdrop-filter: blur(2px);
 }
-

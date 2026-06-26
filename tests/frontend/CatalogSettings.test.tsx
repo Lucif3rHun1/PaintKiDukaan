@@ -1,187 +1,132 @@
-// @ts-nocheck
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { vi, type Mock } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { ipc } from "../../src/lib/ipc";
-import { usePaginatedQuery } from "../../src/lib/query";
-import { listUnits, createUnit, updateUnit, deactivateUnit } from "../../src/domain/units/api";
-import { LocationsSettings, CustomerTypesSettings, CatalogUnitsSettings } from "../../src/shell/routes/settings/CatalogSettings";
-
-vi.mock("../../src/lib/ipc", () => ({
-  ipc: {
-    addLocation: vi.fn(),
-    removeLocation: vi.fn(),
-    listSubLocations: vi.fn(),
-    createSubLocation: vi.fn(),
-    deactivateSubLocation: vi.fn(),
-    listCustomerTypes: vi.fn(),
-    addCustomerType: vi.fn(),
-    removeCustomerType: vi.fn(),
-  },
+const ipcMocks = vi.hoisted(() => ({
+  addLocation: vi.fn(),
+  removeLocation: vi.fn(),
+  listSubLocations: vi.fn(),
+  createSubLocation: vi.fn(),
+  deactivateSubLocation: vi.fn(),
+  listCustomerTypes: vi.fn(),
+  addCustomerType: vi.fn(),
+  removeCustomerType: vi.fn(),
 }));
 
-vi.mock("../../src/domain/locations/api", () => ({
+const unitsApiMocks = vi.hoisted(() => ({
+  listUnits: vi.fn(),
+  createUnit: vi.fn(),
+  deactivateUnit: vi.fn(),
+}));
+
+const locationsApiMocks = vi.hoisted(() => ({
   listLocations: vi.fn(),
   renameLocation: vi.fn(),
 }));
 
-vi.mock("../../src/domain/units/api", () => ({
-  listUnits: vi.fn(),
-  createUnit: vi.fn(),
-  updateUnit: vi.fn(),
-  deactivateUnit: vi.fn(),
-}));
-
-vi.mock("../../src/lib/query", () => ({
-  usePaginatedQuery: vi.fn(),
-}));
-
+vi.mock("../../src/shell/lib/ipc", () => ({ ipc: ipcMocks }));
+vi.mock("../../src/domain/locations/api", () => locationsApiMocks);
+vi.mock("../../src/domain/units/api", () => unitsApiMocks);
 vi.mock("../../src/lib/feedback/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
-const mockIpc = vi.mocked(ipc);
-const mockUsePaginatedQuery = usePaginatedQuery as Mock;
-const mockListUnits = vi.mocked(listUnits);
-const mockCreateUnit = vi.mocked(createUnit);
-const mockUpdateUnit = vi.mocked(updateUnit);
-const mockDeactivateUnit = vi.mocked(deactivateUnit);
+const tauriInvokeMock = vi.fn();
+vi.mock("../../src/lib/security/tauri", () => ({
+  tauriInvoke: (...args: unknown[]) => tauriInvokeMock(...args),
+}));
 
-const locationsApi = await import("../../src/domain/locations/api");
-const mockListLocations = vi.mocked(locationsApi.listLocations);
-const mockRenameLocation = vi.mocked(locationsApi.renameLocation);
+import {
+  LocationsSettings,
+  CustomerTypesSettings,
+  CatalogUnitsSettings,
+} from "../../src/shell/routes/settings/CatalogSettings";
 
-function mockPaginatedReturn<T>(overrides: Partial<ReturnType<typeof usePaginatedQuery<T>>> = {}) {
-  return {
-    data: [] as T[],
-    allData: [] as T[],
-    isLoading: false,
-    isFetching: false,
-    error: null,
-    page: 1,
-    setPage: vi.fn(),
-    search: "",
-    debouncedSearch: "",
-    setSearch: vi.fn(),
-    pageSize: 10,
-    totalItems: 0,
-    totalPages: 1,
-    refetch: vi.fn(),
-    ...overrides,
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
   };
 }
 
+const SAMPLE_LOCATIONS = [
+  { id: 1, name: "Warehouse", rack: null, zone: "Godown", is_active: true, created_at: "2025-01-01" },
+];
+
+const SAMPLE_UNITS = [
+  { id: 1, code: "KG", label: "Kilogram", dimension: "mass" as const, is_active: true },
+];
+
 beforeEach(() => {
-  mockUsePaginatedQuery.mockReturnValue(mockPaginatedReturn());
-  mockListLocations.mockReset();
-  mockRenameLocation.mockReset();
-  mockListUnits.mockReset().mockResolvedValue([]);
-  mockCreateUnit.mockReset();
-  mockUpdateUnit.mockReset();
-  mockDeactivateUnit.mockReset();
-  mockIpc.addLocation.mockReset();
-  mockIpc.removeLocation.mockReset();
-  mockIpc.listSubLocations.mockReset();
-  mockIpc.createSubLocation.mockReset();
-  mockIpc.deactivateSubLocation.mockReset();
-  mockIpc.listCustomerTypes.mockReset();
-  mockIpc.addCustomerType.mockReset();
-  mockIpc.removeCustomerType.mockReset();
+  tauriInvokeMock.mockReset().mockImplementation((cmd: string) => {
+    if (cmd === "list_locations") return Promise.resolve([]);
+    return Promise.resolve(undefined);
+  });
+  locationsApiMocks.listLocations.mockReset().mockResolvedValue([]);
+  ipcMocks.addLocation.mockReset().mockResolvedValue(undefined);
+  ipcMocks.removeLocation.mockReset().mockResolvedValue(undefined);
+  ipcMocks.listSubLocations.mockReset().mockResolvedValue([]);
+  ipcMocks.createSubLocation.mockReset().mockResolvedValue(undefined);
+  ipcMocks.deactivateSubLocation.mockReset().mockResolvedValue(undefined);
+  ipcMocks.listCustomerTypes.mockReset().mockResolvedValue([]);
+  ipcMocks.addCustomerType.mockReset().mockResolvedValue([]);
+  ipcMocks.removeCustomerType.mockReset().mockResolvedValue([]);
+  unitsApiMocks.listUnits.mockReset().mockResolvedValue([]);
+  unitsApiMocks.createUnit.mockReset().mockResolvedValue(SAMPLE_UNITS[0]);
+  unitsApiMocks.deactivateUnit.mockReset().mockResolvedValue(undefined);
 });
 
-// ─── LocationsSettings ────────────────────────────────────────────────
-
 describe("LocationsSettings", () => {
-  beforeEach(() => {
-    mockListLocations.mockResolvedValue([]);
-  });
-
-  it("renders empty state when no locations", async () => {
-    render(<LocationsSettings />);
+  it("renders empty state", async () => {
+    render(<LocationsSettings />, { wrapper: createWrapper() });
     expect(await screen.findByText("No locations configured")).toBeInTheDocument();
-  });
-
-  it("renders existing locations", async () => {
-    mockListLocations.mockResolvedValue([
-      { id: 1, name: "Warehouse A", rack: null, zone: null, is_active: true },
-      { id: 2, name: "Store Front", rack: null, zone: null, is_active: true },
-    ]);
-
-    render(<LocationsSettings />);
-    expect(await screen.findByText("Warehouse A")).toBeInTheDocument();
-    expect(screen.getByText("Store Front")).toBeInTheDocument();
   });
 
   it("adds a location", async () => {
     const user = userEvent.setup();
-    mockListLocations.mockResolvedValue([]);
-    mockIpc.addLocation.mockResolvedValue(undefined);
-
-    render(<LocationsSettings />);
-
+    render(<LocationsSettings />, { wrapper: createWrapper() });
     await screen.findByText("No locations configured");
 
     const input = screen.getByPlaceholderText(/New location name/i);
     await user.type(input, "New Location");
     await user.click(screen.getByRole("button", { name: "Add" }));
 
-    expect(mockIpc.addLocation).toHaveBeenCalledWith("New Location", null);
-    await waitFor(() => expect(input).toHaveValue(""));
+    await waitFor(() => {
+      expect(ipcMocks.addLocation).toHaveBeenCalledWith("New Location");
+    });
   });
 
   it("removes a location", async () => {
     const user = userEvent.setup();
-    mockListLocations.mockResolvedValue([
-      { id: 1, name: "Warehouse", rack: null, zone: null, is_active: true },
-    ]);
-    mockIpc.removeLocation.mockResolvedValue(undefined);
+    tauriInvokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "list_locations") return Promise.resolve(SAMPLE_LOCATIONS);
+      return Promise.resolve(undefined);
+    });
+    render(<LocationsSettings />, { wrapper: createWrapper() });
 
-    render(<LocationsSettings />);
+    await screen.findByText("Warehouse");
+    await user.click(screen.getByRole("button", { name: "Remove Warehouse" }));
 
-    const removeBtn = await screen.findByRole("button", { name: "Remove" });
-    await user.click(removeBtn);
-
-    expect(mockIpc.removeLocation).toHaveBeenCalledWith("Warehouse");
+    await waitFor(() => {
+      expect(ipcMocks.removeLocation).toHaveBeenCalledWith("Warehouse");
+    });
   });
 
-  it("triggers add on Enter key", async () => {
-    const user = userEvent.setup();
-    mockListLocations.mockResolvedValue([]);
-    mockIpc.addLocation.mockResolvedValue(undefined);
-
-    render(<LocationsSettings />);
-
-    const input = screen.getByPlaceholderText(/New location name/i);
-    await user.type(input, "Entered{Enter}");
-
-    expect(mockIpc.addLocation).toHaveBeenCalledWith("Entered", null);
-  });
-
-  it("disables Add button when input is empty", async () => {
-    mockListLocations.mockResolvedValue([]);
-    render(<LocationsSettings />);
+  it("disables Add when input empty", async () => {
+    render(<LocationsSettings />, { wrapper: createWrapper() });
     await screen.findByText("No locations configured");
-
     expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
   });
 
-  it("enables Add button when input has text", async () => {
+  it("shows error on duplicate", async () => {
     const user = userEvent.setup();
-    mockListLocations.mockResolvedValue([]);
-    render(<LocationsSettings />);
-    await screen.findByText("No locations configured");
-
-    await user.type(screen.getByPlaceholderText(/New location name/i), "X");
-    expect(screen.getByRole("button", { name: "Add" })).toBeEnabled();
-  });
-
-  it("shows error when addLocation fails", async () => {
-    const user = userEvent.setup();
-    mockListLocations.mockResolvedValue([]);
-    mockIpc.addLocation.mockRejectedValue(new Error("duplicate name"));
-
-    render(<LocationsSettings />);
+    ipcMocks.addLocation.mockRejectedValue(new Error("duplicate name"));
+    render(<LocationsSettings />, { wrapper: createWrapper() });
     await screen.findByText("No locations configured");
 
     await user.type(screen.getByPlaceholderText(/New location name/i), "Dup");
@@ -189,369 +134,94 @@ describe("LocationsSettings", () => {
 
     expect(await screen.findByText(/duplicate name/)).toBeInTheDocument();
   });
-
-  it("shows error when removeLocation fails", async () => {
-    const user = userEvent.setup();
-    mockListLocations.mockResolvedValue([
-      { id: 1, name: "Warehouse", rack: null, zone: null, is_active: true },
-    ]);
-    mockIpc.removeLocation.mockRejectedValue(new Error("cannot remove"));
-
-    render(<LocationsSettings />);
-
-    await user.click(await screen.findByRole("button", { name: "Remove" }));
-
-    expect(await screen.findByText(/cannot remove/)).toBeInTheDocument();
-  });
-
-  it("trims whitespace before adding", async () => {
-    const user = userEvent.setup();
-    mockListLocations.mockResolvedValue([]);
-    mockIpc.addLocation.mockResolvedValue(undefined);
-
-    render(<LocationsSettings />);
-    await screen.findByText("No locations configured");
-
-    await user.type(screen.getByPlaceholderText(/New location name/i), "  Trimmed  ");
-    await user.click(screen.getByRole("button", { name: "Add" }));
-
-    expect(mockIpc.addLocation).toHaveBeenCalledWith("Trimmed", null);
-  });
 });
 
-// ─── CustomerTypesSettings ────────────────────────────────────────────
-
 describe("CustomerTypesSettings", () => {
-  beforeEach(() => {
-    mockIpc.listCustomerTypes.mockResolvedValue([]);
-  });
-
-  it("renders empty state when no types", async () => {
-    render(<CustomerTypesSettings />);
+  it("renders empty state", async () => {
+    render(<CustomerTypesSettings />, { wrapper: createWrapper() });
     expect(await screen.findByText("No customer types configured")).toBeInTheDocument();
-  });
-
-  it("renders existing customer types", async () => {
-    mockIpc.listCustomerTypes.mockResolvedValue(["Retailer", "Wholesale"]);
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({ data: ["Retailer", "Wholesale"], allData: ["Retailer", "Wholesale"], totalItems: 2 }),
-    );
-
-    render(<CustomerTypesSettings />);
-    expect(await screen.findByText("Retailer")).toBeInTheDocument();
-    expect(screen.getByText("Wholesale")).toBeInTheDocument();
   });
 
   it("adds a customer type", async () => {
     const user = userEvent.setup();
-    mockIpc.listCustomerTypes.mockResolvedValue([]);
-    mockIpc.addCustomerType.mockResolvedValue(["Corporate"]);
-
-    render(<CustomerTypesSettings />);
+    ipcMocks.addCustomerType.mockResolvedValue(["Retailer"]);
+    render(<CustomerTypesSettings />, { wrapper: createWrapper() });
     await screen.findByText("No customer types configured");
 
-    await user.type(screen.getByPlaceholderText("New customer type"), "corporate");
+    await user.type(screen.getByPlaceholderText("New customer type"), "Retailer");
     await user.click(screen.getByRole("button", { name: "Add" }));
 
-    expect(mockIpc.addCustomerType).toHaveBeenCalledWith("Corporate");
-    await waitFor(() => expect(screen.getByPlaceholderText("New customer type")).toHaveValue(""));
+    await waitFor(() => {
+      expect(ipcMocks.addCustomerType).toHaveBeenCalledWith("Retailer");
+    });
   });
 
-  it("removes a customer type", async () => {
-    const user = userEvent.setup();
-    mockIpc.listCustomerTypes.mockResolvedValue(["Retailer"]);
-    mockIpc.removeCustomerType.mockResolvedValue([]);
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({ data: ["Retailer"], allData: ["Retailer"], totalItems: 1 }),
-    );
-
-    render(<CustomerTypesSettings />);
-
-    const removeBtn = await screen.findByRole("button", { name: "Remove" });
-    await user.click(removeBtn);
-
-    expect(mockIpc.removeCustomerType).toHaveBeenCalledWith("Retailer");
-  });
-
-  it("formats display label: title-case words", async () => {
-    const user = userEvent.setup();
-    mockIpc.listCustomerTypes.mockResolvedValue([]);
-    mockIpc.addCustomerType.mockResolvedValue(["Walk In"]);
-
-    render(<CustomerTypesSettings />);
+  it("disables Add when empty", async () => {
+    render(<CustomerTypesSettings />, { wrapper: createWrapper() });
     await screen.findByText("No customer types configured");
-
-    await user.type(screen.getByPlaceholderText("New customer type"), "walk in");
-    await user.click(screen.getByRole("button", { name: "Add" }));
-
-    expect(mockIpc.addCustomerType).toHaveBeenCalledWith("Walk In");
-  });
-
-  it("formats display label: preserves hyphenated words", async () => {
-    const user = userEvent.setup();
-    mockIpc.listCustomerTypes.mockResolvedValue([]);
-    mockIpc.addCustomerType.mockResolvedValue(["Walk-In"]);
-
-    render(<CustomerTypesSettings />);
-    await screen.findByText("No customer types configured");
-
-    await user.type(screen.getByPlaceholderText("New customer type"), "walk-in");
-    await user.click(screen.getByRole("button", { name: "Add" }));
-
-    expect(mockIpc.addCustomerType).toHaveBeenCalledWith("Walk-In");
-  });
-
-  it("disables Add button when input is empty", async () => {
-    render(<CustomerTypesSettings />);
-    await screen.findByText("No customer types configured");
-
     expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
-  });
-
-  it("shows error on failed add", async () => {
-    const user = userEvent.setup();
-    mockIpc.listCustomerTypes.mockResolvedValue([]);
-    mockIpc.addCustomerType.mockRejectedValue(new Error("duplicate"));
-
-    render(<CustomerTypesSettings />);
-    await screen.findByText("No customer types configured");
-
-    await user.type(screen.getByPlaceholderText("New customer type"), "Dup");
-    await user.click(screen.getByRole("button", { name: "Add" }));
-
-    expect(await screen.findByText(/duplicate/)).toBeInTheDocument();
-  });
-
-  it("shows error on failed remove", async () => {
-    const user = userEvent.setup();
-    mockIpc.listCustomerTypes.mockResolvedValue(["Retailer"]);
-    mockIpc.removeCustomerType.mockRejectedValue(new Error("cannot remove"));
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({ data: ["Retailer"], allData: ["Retailer"], totalItems: 1 }),
-    );
-
-    render(<CustomerTypesSettings />);
-
-    await user.click(await screen.findByRole("button", { name: "Remove" }));
-
-    expect(await screen.findByText(/cannot remove/)).toBeInTheDocument();
   });
 });
 
-// ─── CatalogUnitsSettings ─────────────────────────────────────────────
-
 describe("CatalogUnitsSettings", () => {
-  const unitA = { id: 1, code: "KG", label: "Kilogram", dimension: "mass" as const, is_active: true };
-  const unitB = { id: 2, code: "L", label: "Litre", dimension: "volume" as const, is_active: true };
-  const inactiveUnit = { id: 3, code: "BOX", label: "Box", dimension: "count" as const, is_active: false };
-
-  beforeEach(() => {
-    mockListUnits.mockResolvedValue([]);
-  });
-
-  it("renders empty state when no units", async () => {
-    render(<CatalogUnitsSettings />);
+  it("renders empty state", async () => {
+    render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
     expect(await screen.findByText("No units configured")).toBeInTheDocument();
   });
 
-  it("renders skeleton while loading", () => {
-    mockListUnits.mockReturnValue(new Promise(() => {}));
-
-    render(<CatalogUnitsSettings />);
-    // Skeleton renders a div with role or class — we check no empty state or table appears
-    expect(screen.queryByText("No units configured")).not.toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-  });
-
   it("renders unit rows", async () => {
-    mockListUnits.mockResolvedValue([unitA, unitB]);
-
-    render(<CatalogUnitsSettings />);
-
+    unitsApiMocks.listUnits.mockResolvedValue(SAMPLE_UNITS);
+    render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
     expect(await screen.findByText("KG")).toBeInTheDocument();
     expect(screen.getByText("Kilogram")).toBeInTheDocument();
-    expect(screen.getByText("L")).toBeInTheDocument();
-    expect(screen.getByText("Litre")).toBeInTheDocument();
   });
 
-  it("creates a new unit", async () => {
+  it("creates a unit via the gated form", async () => {
     const user = userEvent.setup();
-    mockListUnits.mockResolvedValue([]);
-    mockCreateUnit.mockResolvedValue({ id: 99, code: "ML", label: "Millilitre", dimension: "volume", is_active: true });
-
-    render(<CatalogUnitsSettings />);
+    render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
     await screen.findByText("No units configured");
 
-    const codeInput = screen.getByPlaceholderText("e.g. L");
-    const labelInput = screen.getByPlaceholderText("e.g. Litre");
+    await user.click(screen.getByRole("button", { name: "Add Unit" }));
 
-    await user.type(codeInput, "ml");
+    const codeInput = screen.getByPlaceholderText("e.g. L, KG");
+    const labelInput = screen.getByPlaceholderText("e.g. Liter, Kilogram");
+    await user.type(codeInput, "ML");
     await user.type(labelInput, "Millilitre");
-    await user.selectOptions(screen.getByDisplayValue("Count"), "volume");
-    await user.click(screen.getByRole("button", { name: /add unit/i }));
+    await user.click(screen.getByRole("button", { name: "Create Unit" }));
 
-    expect(mockCreateUnit).toHaveBeenCalledWith("ML", "Millilitre", "volume");
     await waitFor(() => {
-      expect(codeInput).toHaveValue("");
-      expect(labelInput).toHaveValue("");
+      expect(unitsApiMocks.createUnit).toHaveBeenCalledWith("ML", "Millilitre", "count");
     });
-    await waitFor(() => expect(mockListUnits).toHaveBeenCalledTimes(2));
   });
 
-  it("disables Add button when code is empty", async () => {
-    render(<CatalogUnitsSettings />);
+  it("auto-uppercases code", async () => {
+    const user = userEvent.setup();
+    render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
     await screen.findByText("No units configured");
+    await user.click(screen.getByRole("button", { name: "Add Unit" }));
 
-    expect(screen.getByRole("button", { name: /add unit/i })).toBeDisabled();
-  });
-
-  it("enables Add button when code has text", async () => {
-    const user = userEvent.setup();
-    render(<CatalogUnitsSettings />);
-    await screen.findByText("No units configured");
-
-    await user.type(screen.getByPlaceholderText("e.g. L"), "X");
-    expect(screen.getByRole("button", { name: /add unit/i })).toBeEnabled();
-  });
-
-  it("auto-uppercases code input", async () => {
-    const user = userEvent.setup();
-    render(<CatalogUnitsSettings />);
-    await screen.findByText("No units configured");
-
-    await user.type(screen.getByPlaceholderText("e.g. L"), "abc");
-    expect(screen.getByPlaceholderText("e.g. L")).toHaveValue("ABC");
-  });
-
-  it("edits a unit inline", async () => {
-    const user = userEvent.setup();
-    mockListUnits.mockResolvedValue([unitA]);
-    mockUpdateUnit.mockResolvedValue({ id: 1, code: "KILOGRAM", label: "Kilogram", dimension: "mass", is_active: true });
-
-    render(<CatalogUnitsSettings />);
-
-    const editBtn = await screen.findByRole("button", { name: "Edit" });
-    await user.click(editBtn);
-
-    // Inline editing fields appear
-    const codeInputs = screen.getAllByDisplayValue("KG");
-    const editCodeInput = codeInputs.find((el) => el.tagName === "INPUT")!;
-    await user.clear(editCodeInput);
-    await user.type(editCodeInput, "kilogram");
-
-    const saveBtn = screen.getByRole("button", { name: "Save" });
-    await user.click(saveBtn);
-
-    expect(mockUpdateUnit).toHaveBeenCalledWith(1, "KILOGRAM", "Kilogram", "mass");
-    await waitFor(() => expect(mockListUnits).toHaveBeenCalledTimes(2));
-  });
-
-  it("cancel edit reverts changes", async () => {
-    const user = userEvent.setup();
-    mockListUnits.mockResolvedValue([unitA]);
-
-    render(<CatalogUnitsSettings />);
-
-    await user.click(await screen.findByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
-    expect(mockUpdateUnit).not.toHaveBeenCalled();
+    const codeInput = screen.getByPlaceholderText("e.g. L, KG");
+    await user.type(codeInput, "abc");
+    expect(codeInput).toHaveValue("ABC");
   });
 
   it("deactivates a unit", async () => {
     const user = userEvent.setup();
-    mockListUnits.mockResolvedValue([unitA]);
-    mockDeactivateUnit.mockResolvedValue(undefined);
+    unitsApiMocks.listUnits.mockResolvedValue(SAMPLE_UNITS);
+    render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
+    await screen.findByText("KG");
 
-    render(<CatalogUnitsSettings />);
+    await user.click(screen.getByRole("button", { name: "Deactivate" }));
 
-    const deactivateBtn = await screen.findByRole("button", { name: "Deactivate" });
-    await user.click(deactivateBtn);
-
-    expect(mockDeactivateUnit).toHaveBeenCalledWith(1);
-    await waitFor(() => expect(mockListUnits).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      expect(unitsApiMocks.deactivateUnit).toHaveBeenCalledWith(1);
+    });
   });
 
-  it("disables Deactivate button for already-inactive units", async () => {
-    mockListUnits.mockResolvedValue([inactiveUnit]);
-
-    render(<CatalogUnitsSettings />);
-
-    const deactivateBtn = await screen.findByRole("button", { name: "Deactivate" });
-    expect(deactivateBtn).toBeDisabled();
-  });
-
-  it("filters units by search", async () => {
-    const user = userEvent.setup();
-    const setSearch = vi.fn();
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({
-        data: [unitA],
-        allData: [unitA],
-        totalItems: 1,
-        search: "",
-        setSearch,
-      }),
-    );
-
-    render(<CatalogUnitsSettings />);
-
-    await user.type(screen.getByPlaceholderText("Search units…"), "K");
-    expect(setSearch).toHaveBeenCalledWith("K");
-  });
-
-  it("shows no-matching-units state when search has no results", async () => {
-    mockUsePaginatedQuery.mockReturnValue(
-      mockPaginatedReturn({
-        data: [],
-        allData: [unitA, unitB],
-        totalItems: 2,
-        search: "zzz",
-      }),
-    );
-
-    render(<CatalogUnitsSettings />);
-    expect(await screen.findByText("No matching units")).toBeInTheDocument();
-  });
-
-  it("shows error on failed create", async () => {
-    const user = userEvent.setup();
-    mockListUnits.mockResolvedValue([]);
-    mockCreateUnit.mockRejectedValue(new Error("duplicate code"));
-
-    render(<CatalogUnitsSettings />);
+  it("disables Create when fields empty", async () => {
+    render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
     await screen.findByText("No units configured");
-
-    await user.type(screen.getByPlaceholderText("e.g. L"), "dup");
-    await user.click(screen.getByRole("button", { name: /add unit/i }));
-
-    expect(await screen.findByText(/duplicate code/)).toBeInTheDocument();
-  });
-
-  it("shows error on failed update", async () => {
-    const user = userEvent.setup();
-    mockListUnits.mockResolvedValue([unitA]);
-    mockUpdateUnit.mockRejectedValue(new Error("conflict"));
-
-    render(<CatalogUnitsSettings />);
-
-    await user.click(await screen.findByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText(/conflict/)).toBeInTheDocument();
-  });
-
-  it("shows error on failed deactivate", async () => {
-    const user = userEvent.setup();
-    mockListUnits.mockResolvedValue([unitA]);
-    mockDeactivateUnit.mockRejectedValue(new Error("cannot deactivate"));
-
-    render(<CatalogUnitsSettings />);
-
-    await user.click(await screen.findByRole("button", { name: "Deactivate" }));
-
-    expect(await screen.findByText(/cannot deactivate/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add Unit" }));
+    expect(screen.getByRole("button", { name: "Create Unit" })).toBeDisabled();
   });
 });

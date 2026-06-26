@@ -81,7 +81,7 @@ export function InwardDetailPage({ id, onBack }: Props) {
             Inward
           </Button>
           <h1 className="text-base font-semibold text-foreground">
-            Inward <span className="font-mono tabular-nums">{purchase.purchase_number}</span>
+            Inward #{purchase.id}
           </h1>
           <Badge variant="info" size="sm">inward</Badge>
         </div>
@@ -107,12 +107,12 @@ export function InwardDetailPage({ id, onBack }: Props) {
                       <div className="text-sm font-medium text-foreground">{line.item_name}</div>
                       <div className="font-mono text-[10px] text-muted-foreground">#{line.item_id}</div>
                     </td>
-                    <td className="py-2 tabular-nums">{line.qty} {line.unit_code}</td>
+                    <td className="py-2 tabular-nums">{line.qty}</td>
                     <td className="py-2">
-                      <Money paise={line.retail_price} />
+                      <Money paise={line.unit_price_paise} />
                     </td>
                     <td className="py-2 text-right font-medium">
-                      <Money paise={line.qty * line.cost_price} />
+                      <Money paise={line.qty * line.unit_price_paise} />
                     </td>
                   </tr>
                 ))}

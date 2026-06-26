@@ -2,16 +2,16 @@
 
 import { useMemo, useState } from "react";
 import { Plus, RotateCcw } from "lucide-react";
-import { DatePicker } from "../../components/ui/DatePicker";
+import { PeriodDropdown } from "../../components/ui";
 
-import { Badge, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
+import { Button, Card, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { listSaleReturns } from "../../domain/ipc";
 import type { SaleReturn } from "../../domain/types";
 import { usePaginatedQuery } from "../../lib/query";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
-import { formatDateForDisplay } from "../../lib/date";
+import { formatDateForDisplay, shiftDaysLocal, todayLocalYyyymmdd } from "../../lib/date";
 
 interface Props {
   onCreate: () => void;
@@ -21,12 +21,8 @@ interface Props {
 const PAGE_SIZE = 25;
 
 export function ReturnListPage({ onCreate, onSelect }: Props) {
-  const [from, setFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(() => shiftDaysLocal(6));
+  const [to, setTo] = useState(() => todayLocalYyyymmdd());
 
   const {
     data: rows,
@@ -58,47 +54,66 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
     },
   });
 
+  const metrics = useMemo(() => {
+    const totalRefund = allData.reduce((sum, r) => sum + r.refund_total, 0);
+    const totalRefunded = allData.reduce(
+      (sum, r) => sum + r.payment_modes.reduce((s, m) => s + m.amount, 0),
+      0,
+    );
+    return {
+      count: allData.length,
+      totalRefund,
+      totalRefunded,
+    };
+  }, [allData]);
+
   const columns = useMemo<ColumnDef<SaleReturn>[]>(
     () => [
       {
-        header: "No",
+        id: "date",
+        header: "Date",
+        width: "7rem",
+        cell: (r) => (
+          <span className="text-foreground tabular-nums">{formatDateForDisplay(r.date)}</span>
+        ),
+      },
+      {
+        id: "no",
+        header: "Ret No",
+        width: "8rem",
         cell: (r) => (
           <a
             href={`#/sales/return/${r.id}`}
-            className="font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
+            onClick={(e) => e.stopPropagation()}
+            className="block max-w-full truncate font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
             aria-label={`Open return ${r.no}`}
+            title={r.no}
           >
             {r.no}
           </a>
         ),
       },
       {
-        header: "Date",
-        cell: (r) => (
-          <span className="text-foreground">{formatDateForDisplay(r.date)}</span>
-        ),
-      },
-      {
-        header: "Status",
-        cell: (r) => (
-          <Badge variant="info" size="sm">return</Badge>
-        ),
-      },
-      {
+        id: "reason",
         header: "Reason",
+        width: "minmax(10rem, 1fr)",
         cell: (r) => (
-          <span className="truncate text-foreground">
+          <span className="truncate text-foreground" title={r.reason ?? ""}>
             {r.reason ?? <span className="text-muted-foreground">—</span>}
           </span>
         ),
       },
       {
-        header: "Total",
+        id: "total",
+        header: "Refund",
+        width: "7rem",
         align: "right",
         cell: (r) => <Money paise={r.refund_total} />,
       },
       {
+        id: "refunded",
         header: "Refunded",
+        width: "7rem",
         align: "right",
         cell: (r) => {
           const refunded = r.payment_modes.reduce((sum, m) => sum + m.amount, 0);
@@ -139,88 +154,77 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
   });
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Returns
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {totalItems} {totalItems === 1 ? "return" : "returns"}
-            {search ? ` matching "${search}"` : ""}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="primary"
-          size="md"
-          icon={Plus}
-          onClick={onCreate}
-          shortcut="F6"
-        >
+    <div className="space-y-3">
+      {/* ── Metric cards ─────────────────────────────────────── */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Returns</p>
+          <p className="text-2xl font-semibold tabular-nums text-foreground">{metrics.count}</p>
+        </Card>
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total refund</p>
+          <Money paise={metrics.totalRefund} className="text-2xl font-semibold tabular-nums" />
+        </Card>
+        <Card as="section" className="space-y-1 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Refunded</p>
+          <Money paise={metrics.totalRefunded} className="text-2xl font-semibold tabular-nums" />
+        </Card>
+      </div>
+
+      {/* ── Filter bar ───────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by return no, reason…"
+          ariaLabel="Search returns"
+          data-shortcut="search"
+          className="min-w-[220px] flex-1"
+        />
+        <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
+        <Button type="button" variant="primary" size="sm" icon={Plus} onClick={onCreate} shortcut="F6">
           New Return
         </Button>
-      </header>
-
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search by return no, reason…"
-            ariaLabel="Search returns"
-            data-shortcut="search"
-            className="min-w-[220px] flex-1"
-          />
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            From
-            <DatePicker value={from} onChange={setFrom} />
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            To
-            <DatePicker value={to} onChange={setTo} />
-          </label>
-        </div>
-
-        <DataTable
-          data={rows}
-          columns={columns}
-          keyExtractor={(r) => r.id}
-          onRowClick={(r) => {
-            if (onSelect) onSelect(r.id);
-            else window.location.hash = `#/sales/return/${r.id}`;
-          }}
-          loading={isLoading || isFetching}
-          error={error}
-          onRetry={refetch}
-          emptyState={
-            <EmptyState
-              icon={RotateCcw}
-              title={search ? "No matches" : "No returns yet"}
-              description={
-                search
-                  ? `Nothing matches "${search}". Try a different search.`
-                  : "No returns found for the selected range. Create the first return to get started."
-              }
-              primary={
-                <Button type="button" onClick={onCreate} icon={Plus}>
-                  New Return
-                </Button>
-              }
-            />
-          }
-        />
-
-        {!isLoading && allData.length > 0 ? (
-          <PaginationControls
-            page={page}
-            totalPages={totalPages}
-            totalItems={totalItems}
-            pageSize={pageSize}
-            onPageChange={setPage}
-          />
-        ) : null}
       </div>
+
+      <DataTable
+        data={rows}
+        columns={columns}
+        keyExtractor={(r) => r.id}
+        onRowClick={(r) => {
+          if (onSelect) onSelect(r.id);
+          else window.location.hash = `#/sales/return/${r.id}`;
+        }}
+        loading={isLoading || isFetching}
+        error={error}
+        onRetry={refetch}
+        emptyState={
+          <EmptyState
+            icon={RotateCcw}
+            title={search ? "No matches" : "No returns yet"}
+            description={
+              search
+                ? `Nothing matches "${search}". Try a different search.`
+                : "No returns found for the selected range. Create the first return to get started."
+            }
+            primary={
+              <Button type="button" onClick={onCreate} icon={Plus}>
+                New Return
+              </Button>
+            }
+          />
+        }
+      />
+
+      {!isLoading && allData.length > 0 ? (
+        <PaginationControls
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          onPageChange={setPage}
+        />
+      ) : null}
     </div>
   );
 }

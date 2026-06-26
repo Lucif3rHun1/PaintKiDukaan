@@ -160,7 +160,7 @@ export function UsersSettings() {
     <Card>
       <Section
         title="Users"
-        description="Create local accounts and assign operational roles."
+        description="Create accounts and assign permissions."
       >
         <div className="space-y-4 text-sm">
           {/* user list */}
@@ -249,10 +249,10 @@ export function DevicesSettings() {
     try {
       await ipc.enrollDevice(newName.trim(), newRole);
       setNewName("");
-      toast.success("Device enrolled");
+      toast.success("Device added");
       load();
     } catch (e) {
-      toast.error("Failed to enroll device", extractError(e));
+      toast.error("Failed to add device", extractError(e));
     } finally {
       setEnrolling(false);
     }
@@ -261,16 +261,16 @@ export function DevicesSettings() {
   async function revoke(device: Device) {
     if (
       !window.confirm(
-        `Revoke device "${device.name}"? It will no longer be able to unlock the app.`,
+        `Remove device "${device.name}"? It will no longer be able to unlock the app.`,
       )
     )
       return;
     try {
       await ipc.revokeDevice(device.id);
-      toast.success("Device revoked");
+      toast.success("Device removed");
       load();
     } catch (e) {
-      toast.error("Failed to revoke device", extractError(e));
+      toast.error("Failed to remove device", extractError(e));
     }
   }
 
@@ -280,7 +280,7 @@ export function DevicesSettings() {
     <Card>
       <Section
         title="Trusted devices"
-        description="Devices authorised to unlock this shop database. Each device gets a role-based PIN entry screen."
+        description="Devices allowed to unlock this shop. Each device gets a permissions-based PIN entry screen."
       >
         <div className="space-y-4 text-sm">
           {/* device table */}
@@ -309,7 +309,7 @@ export function DevicesSettings() {
               loading={enrolling}
               disabled={!newName.trim()}
             >
-              Enroll
+              Add device
             </Button>
           </div>
         </div>

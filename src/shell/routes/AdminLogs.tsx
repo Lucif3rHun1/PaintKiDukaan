@@ -3,7 +3,7 @@ export function AdminLogs() {
     <div className="space-y-3">
       <h2 className="text-xl font-semibold">Admin logs</h2>
       <p className="text-sm text-muted-foreground">
-        Tails the Tauri log plugin. Restricted to the owner role.
+        Shows system logs. Restricted to the owner.
       </p>
       <div className="rounded-md border border-border bg-muted p-3 font-mono text-xs text-foreground">
         <div>[info] PaintKiDukaan master started</div>

@@ -3,6 +3,12 @@ import logo from "./assets/logo-64.png";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import {
+  checkForUpdates,
+  downloadAndInstallUpdate,
+  type UpdateInfo,
+  type UpdateProgress,
+} from "./lib/updater";
 
 /* ── Security UI ─────────────────────────────────────────── */
 import { FirstLaunch } from "./lib/security/firstLaunch";
@@ -24,6 +30,7 @@ import { listCustomerTypes } from "./domain/customerTypes/api";
 import { AppShell, type AppShellTab } from "./shell/AppShell";
 import { InlineDialog } from "./components/ui/InlineDialog";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
+import { UpdateOverlay } from "./components/UpdateOverlay";
 import type { Customer, CustomerType, Vendor } from "./domain/types";
 
 /* Route pages are split into per-route Vite chunks via React.lazy so the
@@ -32,11 +39,14 @@ import type { Customer, CustomerType, Vendor } from "./domain/types";
 const ItemList = lazy(() =>
   import("./domain/items/ItemList").then((m) => ({ default: m.ItemList })),
 );
+const FormulasPage = lazy(() =>
+  import("./domain/formulas/FormulasPage").then((m) => ({ default: m.FormulasPage })),
+);
+const FormulaDetailsPage = lazy(() =>
+  import("./domain/formulas/FormulaDetailsPage").then((m) => ({ default: m.FormulaDetailsPage })),
+);
 const BulkLabelsPage = lazy(() =>
   import("./domain/items/BulkLabelsPage").then((m) => ({ default: m.BulkLabelsPage })),
-);
-const BrandAdmin = lazy(() =>
-  import("./domain/items/BrandAdmin").then((m) => ({ default: m.BrandAdmin })),
 );
 const CustomerList = lazy(() =>
   import("./domain/customers/CustomerList").then((m) => ({ default: m.CustomerList })),
@@ -65,7 +75,10 @@ const InwardListPage = lazy(() =>
 const InwardDetailPage = lazy(() =>
   import("./pos/purchases/InwardDetailPage").then((m) => ({ default: m.InwardDetailPage })),
 );
-const SalesReportPage = lazy(() => import("./pos/salesReport/SalesReportPage"));
+const ReportsPage = lazy(() =>
+  import("./pos/salesReport/ReportsPage").then((m) => ({ default: m.default })),
+);
+const DayClosePage = lazy(() => import("./pos/dayClose/DayClosePage"));
 const Dashboard = lazy(() =>
   import("./shell/routes/Dashboard").then((m) => ({ default: m.Dashboard })),
 );
@@ -109,16 +122,19 @@ const HASH_REDIRECTS: Record<string, string> = {
   "#/pos": "#/sales",
   "#/pos/inward": "#/inward",
 
-  "#/pos/dayclose": "#/sales-report",
-  "#/pos/day-close": "#/sales-report",
-  "#/pos/reports": "#/sales-report",
+  "#/pos/dayclose": "#/day-close",
+  "#/pos/day-close": "#/day-close",
+  "#/pos/reports": "#/reports/sales",
+  "#/sales-report": "#/reports/sales",
 };
 
 function readTab(): AppShellTab {
   const h = typeof window !== "undefined" ? window.location.hash : "";
-  if (h.startsWith("#/sales-report")) return "sales-report";
+  if (h.startsWith("#/reports") || h.startsWith("#/sales-report")) return "sales-report";
+  if (h.startsWith("#/day-close")) return "day-close";
   if (h.startsWith("#/inward")) return "inward";
   if (h.startsWith("#/sales")) return "sales";
+  if (h.startsWith("#/formulas")) return "formulas";
   if (h.startsWith("#/barcodes")) return "barcodes";
   if (h.startsWith("#/items")) return "items";
   if (h.startsWith("#/customers")) return "customers";
@@ -127,13 +143,6 @@ function readTab(): AppShellTab {
   if (h.startsWith("#/health")) return "health";
   if (h.startsWith("#/logs")) return "logs";
   return "dashboard";
-}
-
-function readItemsSubRoute(): "list" | "barcodes" {
-  const h = window.location.hash;
-  if (h.startsWith("#/items/barcodes")) return "barcodes";
-  if (h.startsWith("#/barcodes")) return "barcodes";
-  return "list";
 }
 
 function readSalesSubRoute(): "list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail" {
@@ -145,6 +154,12 @@ function readSalesSubRoute(): "list" | "new" | "return" | "return-list" | "retur
   if (detailMatch) return "return-detail";
   const saleDetail = h.match(/^#\/sales\/(\d+)$/);
   if (saleDetail) return "sale-detail";
+  return "list";
+}
+
+function readFormulasSubRoute(): "list" | "detail" {
+  const h = window.location.hash;
+  if (h && /^#\/formulas\/\d+/.test(h)) return "detail";
   return "list";
 }
 
@@ -176,6 +191,7 @@ export default function App() {
   const [tab, setTab] = useState<AppShellTab>(readTab);
   const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail">(readSalesSubRoute);
   const [inwardRoute, setInwardRoute] = useState<"list" | "new" | "detail">(readInwardSubRoute);
+  const [formulasRoute, setFormulasRoute] = useState<"list" | "detail">(readFormulasSubRoute);
 
   /* ── Vendor modal state ───────────────────────────────── */
   const [vendorCreateOpen, setVendorCreateOpen] = useState(false);
@@ -190,6 +206,8 @@ export default function App() {
   const [customerPaymentTarget, setCustomerPaymentTarget] = useState<Customer | null>(null);
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
 
   // Fetch customer types once the app is unlocked
   useEffect(() => {
@@ -211,8 +229,8 @@ export default function App() {
     // the backend is stuck on argon2 key derivation or DB contention.
     const timeout = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error(
-        `Bootstrap timed out after ${BOOTSTRAP_TIMEOUT_MS / 1000}s. ` +
-        "The database may be locked or the key derivation is taking too long."
+        `Startup timed out after ${BOOTSTRAP_TIMEOUT_MS / 1000}s. ` +
+        "The shop data may be locked or the startup is taking too long."
       )), BOOTSTRAP_TIMEOUT_MS);
     });
 
@@ -249,6 +267,21 @@ export default function App() {
     return () => { cancelled = true; };
   }, [setPhase, setSession]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const info = await checkForUpdates();
+      if (cancelled || !info) return;
+      setUpdateInfo(info);
+      await downloadAndInstallUpdate((p) => {
+        if (!cancelled) setUpdateProgress(p);
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   /* ── Hash routing ──────────────────────────────────────── */
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -260,6 +293,7 @@ export default function App() {
       setTab(readTab());
       setSalesRoute(readSalesSubRoute());
       setInwardRoute(readInwardSubRoute());
+      setFormulasRoute(readFormulasSubRoute());
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -323,6 +357,10 @@ export default function App() {
   }
 
   /* ── Security phases ───────────────────────────────────── */
+  if (updateInfo) {
+    return <UpdateOverlay version={updateInfo.version} progress={updateProgress} />;
+  }
+
   if (phase === "loading") {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
@@ -333,7 +371,7 @@ export default function App() {
             className="h-8 w-8 rounded-lg ring-1 ring-inset ring-border/40"
           />
           <Loader2 className="h-5 w-5 animate-spin text-indigo-400" aria-hidden="true" />
-          <p className="text-sm text-zinc-400">Opening secure shop database…</p>
+          <p className="text-sm text-zinc-400">Opening secure shop data…</p>
         </div>
       </main>
     );
@@ -488,10 +526,32 @@ export default function App() {
       })() : null}
       {tab === "sales-report" && (
         <RoleGuard minRole="stocker">
-          <ErrorBoundary context="Sales Report">
+          <ErrorBoundary context="Reports">
             <Suspense fallback={<RouteFallback />}>
               <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-                <SalesReportPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+                {(() => {
+                  const h = window.location.hash;
+                  let section: "sales" | "inventory" | "customers" = "sales";
+                  if (h.startsWith("#/reports/inventory")) section = "inventory";
+                  else if (h.startsWith("#/reports/customers")) section = "customers";
+                  return (
+                    <ReportsPage
+                      user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+                      section={section}
+                    />
+                  );
+                })()}
+              </div>
+            </Suspense>
+          </ErrorBoundary>
+        </RoleGuard>
+      )}
+      {tab === "day-close" && (
+        <RoleGuard minRole="stocker">
+          <ErrorBoundary context="Close Day">
+            <Suspense fallback={<RouteFallback />}>
+              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+                <DayClosePage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
               </div>
             </Suspense>
           </ErrorBoundary>
@@ -510,6 +570,31 @@ export default function App() {
           </ErrorBoundary>
         </div>
       )}
+      {tab === "formulas" && formulasRoute === "list" ? (
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold text-slate-900">Shade formulas</h2>
+          <ErrorBoundary context="Formulas">
+            <Suspense fallback={<RouteFallback />}>
+              <FormulasPage role={role} />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+      ) : null}
+      {tab === "formulas" && formulasRoute === "detail" ? (() => {
+        const match = window.location.hash.match(/^#\/formulas\/(\d+)/);
+        const id = match ? Number(match[1]) : 0;
+        return (
+          <ErrorBoundary context="Formula details">
+            <Suspense fallback={<RouteFallback />}>
+              <FormulaDetailsPage
+                id={id}
+                role={role}
+                onBack={() => (window.location.hash = "#/formulas")}
+              />
+            </Suspense>
+          </ErrorBoundary>
+        );
+      })() : null}
       {tab === "barcodes" && (
         <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
           <div className="flex items-center gap-4">

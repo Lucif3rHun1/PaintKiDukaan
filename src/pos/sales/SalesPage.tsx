@@ -11,6 +11,7 @@ import {
 import {
   ArrowLeft,
   PackagePlus,
+  Paintbrush,
   Printer,
   Save,
   ShoppingCart,
@@ -35,6 +36,8 @@ import { ItemSearchInput } from "./ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
+import { saleStatus } from "./saleStatus";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSecurity } from "../../lib/security/state";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
@@ -43,6 +46,7 @@ import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { ItemForm } from "../../domain/items/ItemForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
+import { FormulaForm } from "../../domain/formulas/FormulaForm";
 import {
   convertQuotation,
   createSale,
@@ -50,7 +54,7 @@ import {
   listSales,
 } from "../api";
 import { formatRupeesFromPaise } from "../../lib/money";
-import { formatDateForDisplay } from "../../lib/date";
+import { formatDateForDisplay, todayLocalYyyymmdd } from "../../lib/date";
 import { ipc } from "../../shell/lib/ipc";
 import {
   printSaleReceipt,
@@ -64,7 +68,7 @@ import type {
   PaymentSplit,
   Sale,
 } from "../types";
-import type { Customer, CustomerType } from "../../domain/types";
+import type { Customer, CustomerType, Formula, FormulaSearchHit } from "../../domain/types";
 
 type Kind = "quotation" | "final";
 
@@ -84,6 +88,7 @@ function isFlagged(c: Customer | null): boolean {
 export default function SalesPage({ user, onExit }: Props) {
   const { isOwner } = useSecurity();
   const canOwner = isOwner();
+  const queryClient = useQueryClient();
 
   const [kind, setKind] = useState<Kind>("final");
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -100,6 +105,7 @@ export default function SalesPage({ user, onExit }: Props) {
 
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
+  const [createFormulaOpen, setCreateFormulaOpen] = useState(false);
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
 
   // ---- Computed totals ----
@@ -126,27 +132,47 @@ export default function SalesPage({ user, onExit }: Props) {
   }, []);
 
   const handleItemPick = useCallback(
-    (item: ItemSearchHit) => {
-      // If already in cart, bump qty
-      const existing = lines.findIndex((l) => l.item_id === item.id);
+    (hit: ItemSearchHit | FormulaSearchHit) => {
+      if ("kind" in hit && hit.kind === "formula") {
+        const formulaLabel = hit.name
+          ? `${hit.id_code} — ${hit.name}`
+          : hit.id_code;
+        const newLine: CartLine = {
+          kind: "formula",
+          item_id: null,
+          formula_id: hit.id,
+          item_name: formulaLabel,
+          qty: 1,
+          price: hit.retail_price_paise,
+          unit_type: "unit",
+          line_discount: 0,
+          shade_note: null,
+        };
+        setLines((prev) => [...prev, newLine]);
+        return;
+      }
+      const item = hit as ItemSearchHit;
+      const existing = lines.findIndex(
+        (l) => l.kind === "item" && l.item_id === item.id,
+      );
       if (existing !== -1) {
         updateLine(existing, { qty: lines[existing].qty + 1 });
         return;
       }
-      setLines((prev) => [
-        ...prev,
-        {
-          item_id: item.id,
-          item_name: item.name,
-          in_stock_at_add: item.current_qty > 0,
-          current_qty_at_add: item.current_qty,
-          qty: 1,
-          price: item.retail_price_paise,
-          unit_type: item.sell_unit === "box" ? "box" : "unit",
-          line_discount: 0,
-          shade_note: null,
-        },
-      ]);
+      const newLine: CartLine = {
+        kind: "item",
+        item_id: item.id,
+        formula_id: null,
+        item_name: item.name,
+        in_stock_at_add: item.current_qty > 0,
+        current_qty_at_add: item.current_qty,
+        qty: 1,
+        price: item.retail_price_paise,
+        unit_type: item.sell_unit === "box" ? "box" : "unit",
+        line_discount: 0,
+        shade_note: null,
+      };
+      setLines((prev) => [...prev, newLine]);
     },
     [lines, updateLine],
   );
@@ -199,6 +225,23 @@ export default function SalesPage({ user, onExit }: Props) {
     toast.success(`Item "${item.name}" created`);
   }
 
+  function handleFormulaCreated(f: Formula) {
+    setCreateFormulaOpen(false);
+    toast.success(`Formula "${f.id_code}" created`);
+    const newLine: CartLine = {
+      kind: "formula",
+      item_id: null,
+      formula_id: f.id,
+      item_name: f.name ? `${f.id_code} — ${f.name}` : f.id_code,
+      qty: 1,
+      price: f.retail_price_paise,
+      unit_type: "unit",
+      line_discount: 0,
+      shade_note: null,
+    };
+    setLines((prev) => [...prev, newLine]);
+  }
+
   // ---- Save sale / quotation ----
   const walkInUnpaid =
     kind === "final" && customer === null && balance > 0;
@@ -224,6 +267,7 @@ export default function SalesPage({ user, onExit }: Props) {
     const payload: NewSale = {
       customer_id: customer?.id ?? null,
       kind,
+      date: todayLocalYyyymmdd(),
       bill_discount: billDiscount,
       paid_amount: finalPaid,
       payment_modes: finalSplits,
@@ -240,6 +284,7 @@ export default function SalesPage({ user, onExit }: Props) {
           setSplits([]);
           setAckFlag(false);
           void refreshRecent();
+          void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
           if (shouldPrintAfterSaveRef.current) {
             shouldPrintAfterSaveRef.current = false;
             void tryPrintReceipt(id);
@@ -314,6 +359,7 @@ export default function SalesPage({ user, onExit }: Props) {
       .then((newId) => {
         toast.success(`Quotation ${sale.no} → Bill #${newId}`);
         void refreshRecent();
+        void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       })
       .catch((e: unknown) => toast.error(extractError(e)))
       .finally(() => setBusy(false));
@@ -368,6 +414,28 @@ export default function SalesPage({ user, onExit }: Props) {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={PackagePlus}
+            onClick={() => setCreateItemOpen(true)}
+            disabled={!canOwner}
+            title="New item"
+          >
+            Item
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={Paintbrush}
+            onClick={() => setCreateFormulaOpen(true)}
+            disabled={!canOwner}
+            title="New formula"
+          >
+            Shade
+          </Button>
         </div>
       </div>
 
@@ -389,12 +457,44 @@ export default function SalesPage({ user, onExit }: Props) {
                 </p>
               </Card.Header>
               <Card.Body className="space-y-2">
-                <CustomerAutocomplete
-                  selectedId={customer?.id ?? null}
-                  selectedCustomer={customer}
-                  onChange={(_id, c) => setCustomer(c)}
-                  onCreate={() => setCreateCustomerOpen(true)}
-                />
+                {customer ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5 truncate text-sm font-medium text-foreground">
+                        <span className="truncate">{toTitleCase(customer.name)}</span>
+                        {!customer.is_active ? (
+                          <Badge variant="danger" size="sm">Inactive</Badge>
+                        ) : null}
+                        {customer.is_flagged ? (
+                          <Badge variant="warning" size="sm">Flagged</Badge>
+                        ) : null}
+                      </div>
+                      {customer.phone ? (
+                        <div className="truncate text-xs text-muted-foreground">{customer.phone}</div>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      icon={X}
+                      onClick={() => {
+                        setCustomer(null);
+                        setAckFlag(false);
+                      }}
+                      title="Change customer"
+                    >
+                      Change
+                    </Button>
+                  </div>
+                ) : (
+                  <CustomerAutocomplete
+                    selectedId={null}
+                    selectedCustomer={null}
+                    onChange={(_id, c) => setCustomer(c)}
+                    onCreate={() => setCreateCustomerOpen(true)}
+                  />
+                )}
                 {isFlagged(customer) ? (
                   <Alert title="Flagged customer">
                     This customer is flagged. Acknowledge before saving.
@@ -422,6 +522,7 @@ export default function SalesPage({ user, onExit }: Props) {
                 <ItemSearchInput
                   onPick={handleItemPick}
                   onCreateItem={canOwner ? () => setCreateItemOpen(true) : undefined}
+                  onCreateFormula={canOwner ? () => setCreateFormulaOpen(true) : undefined}
                 />
 
                 {lines.length === 0 ? (
@@ -643,10 +744,10 @@ export default function SalesPage({ user, onExit }: Props) {
                                 {s.no}
                               </span>
                               <Badge
-                                variant={s.status === "final" ? "success" : "warning"}
+                                variant={saleStatus(s).variant}
                                 size="sm"
                               >
-                                {s.status}
+                                {saleStatus(s).text}
                               </Badge>
                             </div>
                             <div className="truncate text-xs text-muted-foreground">
@@ -706,6 +807,20 @@ export default function SalesPage({ user, onExit }: Props) {
           mode="create"
           onSaved={handleItemCreated}
           onCancel={() => setCreateItemOpen(false)}
+        />
+      </InlineDialog>
+
+      <InlineDialog
+        open={createFormulaOpen}
+        onClose={() => setCreateFormulaOpen(false)}
+        title="New formula"
+        description="Add a shade mix with an ID the cashier can search."
+        size="md"
+      >
+        <FormulaForm
+          mode="create"
+          onSaved={handleFormulaCreated}
+          onCancel={() => setCreateFormulaOpen(false)}
         />
       </InlineDialog>
     </div>

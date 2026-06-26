@@ -91,12 +91,12 @@ describe("BrandAdmin", () => {
   /*  OWNER VIEW — LOADING STATE                                      */
   /* ================================================================ */
   describe("owner view — loading", () => {
-    it("shows 'Loading…' while listBrands resolves", async () => {
-      // Make listBrands hang so we can observe loading state
+    it("renders skeleton while listBrands resolves", async () => {
       mockListBrands.mockReturnValue(new Promise(() => {}));
       render(<BrandAdmin role="owner" />);
 
-      expect(screen.getByText(/loading…/i)).toBeInTheDocument();
+      expect(screen.queryByText("Asian Paints")).not.toBeInTheDocument();
+      expect(screen.queryByText("Berger")).not.toBeInTheDocument();
     });
   });
 

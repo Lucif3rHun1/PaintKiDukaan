@@ -1,21 +1,19 @@
 /**
  * tspl.ts — TSPL (TSC Printer Standard Language) byte builder.
  *
- * Generates raw TSPL commands for TSC thermal label printers
- * (TTP 244 Pro, etc.) at 203 DPI (~8 dots/mm).
+ * Generates raw TSPL commands for TSC thermal label printers (TTP 244 Pro, etc.)
+ * at 203 DPI (~8 dots/mm). Sent via Win32 WritePrinter (cmd_print_raw).
  *
- * TSPL is the native command language for TSC printers (not ZPL).
- * The byte stream is sent via Win32 WritePrinter (cmd_print_raw).
- *
- * Command reference:
- *   SIZE w mm, h mm      — label dimensions
- *   GAP d mm, offset mm  — gap between labels
- *   DIRECTION 0           — normal orientation
- *   CLS                   — clear image buffer
- *   TEXT x,y,...          — draw text (font "3" = 16×24 monotype bitmap)
- *   BARCODE x,y,...       — draw barcode (type "128" = Code128)
- *   PRINT m,n             — print m copies of n sets
+ * TSPL command param counts:
+ *   TEXT x,y,"font",rotation,xmul,ymul,"content"                    — 7 params
+ *   BARCODE x,y,"type",height,human,rotation,narrow,wide,"content"  — 9 params
+ *   LINE x1,y1,x2,y2,lineWidth                                      — 5 params
+ *   PRINT m,n                                                        — 2 params
  */
+
+export type { TsplConfig } from "./tsplConfig";
+export { DEFAULT_TSPL_CONFIG } from "./tsplConfig";
+import { DEFAULT_TSPL_CONFIG, type TsplConfig } from "./tsplConfig";
 
 export interface TsplLabel {
   barcode: string;
@@ -23,60 +21,132 @@ export interface TsplLabel {
   line2?: string;
 }
 
-/**
- * Build a single TSPL document for `qty` identical labels.
- *
- * One SIZE/CLS/TEXT/BARCODE block followed by `PRINT {qty},1` —
- * the printer handles buffering, so we don't repeat the image commands.
- *
- * @returns Raw byte array (ASCII-encoded TSPL) suitable for ipc.printRaw.
- */
-export function buildTsplBytes(
-  label: TsplLabel,
-  widthMm: number,
-  heightMm: number,
-  qty: number,
-): number[] {
+export const DOTS_PER_MM = 8;
+
+// TSC built-in font dimensions in dots (203 DPI, xmul=ymul=1).
+export const FONT: Record<string, { w: number; h: number }> = {
+  "2": { w: 12, h: 20 },
+  "3": { w: 16, h: 24 },
+  "4": { w: 24, h: 32 },
+  "5": { w: 32, h: 48 },
+};
+
+// Fixed hardware constants — not user-configurable.
+const NARROW     = 2;  // bar module width in dots; Code128 at narrow=2 ≈ 41mm for 10-char SKU
+const BAR_HEIGHT = 80; // 10mm — sharp and scannable at 203 DPI
+
+// ── Shared helpers (also used by TsplLabelPreview) ───────────────────────────
+
+export function wordWrap(text: string, maxDots: number, charW: number): string[] {
+  const maxChars = Math.floor(maxDots / charW);
+  if (maxChars <= 0) return [text.slice(0, 1) || ""];
+  const words = text.split(" ");
   const lines: string[] = [];
-
-  const W = widthMm;
-  const H = heightMm;
-
-  lines.push(`SIZE ${W} mm, ${H} mm`);
-  lines.push(`GAP 2 mm, 0 mm`);
-  lines.push(`DIRECTION 0`);
-  lines.push(`CLS`);
-
-  // 1 mm ≈ 8 dots at 203 DPI
-  const dotsPerMm = 8;
-  const centerX = Math.floor((W * dotsPerMm) / 2);
-
-  // Font "3" is 16×24 dot monotype bitmap
-  if (label.line1) {
-    const y = Math.floor(H * dotsPerMm * 0.12); // ~12% from top
-    lines.push(`TEXT ${centerX},${y},"3",0,1,1,1,"${escapeTspl(label.line1)}"`);
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxChars) {
+      current = candidate;
+    } else {
+      if (current) lines.push(current);
+      current = word.length > maxChars ? word.slice(0, maxChars) : word;
+    }
   }
-
-  if (label.line2) {
-    const y = Math.floor(H * dotsPerMm * 0.28); // ~28% from top
-    lines.push(`TEXT ${centerX},${y},"3",0,1,1,1,"${escapeTspl(label.line2)}"`);
-  }
-
-  // Barcode — fills from mid-area to near bottom
-  const barcodeY = Math.floor(H * dotsPerMm * 0.4);
-  const barcodeHeight = Math.floor(H * dotsPerMm * 0.5);
-  lines.push(
-    `BARCODE ${centerX},${barcodeY},"128",${barcodeHeight},0,0,2,2,2,"${escapeTspl(label.barcode)}"`,
-  );
-
-  // Print qty copies (m=qty, n=1 set)
-  lines.push(`PRINT ${qty},1`);
-
-  // TSPL is ASCII-only; TextEncoder produces UTF-8 which is ASCII-compatible
-  return Array.from(new TextEncoder().encode(lines.join("\r\n")));
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
 }
 
-function escapeTspl(s: string): string {
-  // TSPL strings are double-quoted; escape embedded quotes
+export function centerX(elemW: number, xOrigin: number, cellW: number, sidePad: number): number {
+  return Math.max(xOrigin + sidePad, xOrigin + Math.floor((cellW - elemW) / 2));
+}
+
+export function estimateCode128Dots(barcode: string): number {
+  return (barcode.length + 3) * 11 * NARROW + 20;
+}
+
+function fit(text: string, maxDots: number, charW: number): string {
+  const maxChars = Math.floor(maxDots / charW);
+  return text.length > maxChars ? text.slice(0, maxChars) : text;
+}
+
+function esc(s: string): string {
   return s.replace(/"/g, '\\"');
+}
+
+// ── TSPL byte builder ────────────────────────────────────────────────────────
+
+/** Returns the raw TSPL string (for debug display). */
+export function buildTsplString(
+  labels: TsplLabel[],
+  rollWidthMm: number,
+  heightMm: number,
+  labelsPerRow: number,
+  config: TsplConfig = DEFAULT_TSPL_CONFIG,
+): string {
+  const bytes = buildTsplBytes(labels, rollWidthMm, heightMm, labelsPerRow, 1, config);
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+export function buildTsplBytes(
+  labels: TsplLabel[],
+  rollWidthMm: number,
+  heightMm: number,
+  labelsPerRow: number,
+  qty: number,
+  config: TsplConfig = DEFAULT_TSPL_CONFIG,
+): number[] {
+  const d      = DOTS_PER_MM;
+  const totalH = heightMm * d;
+  const totalW = rollWidthMm * d;
+  const cols   = Math.max(1, labelsPerRow);
+  const cellW  = Math.floor(totalW / cols);
+
+  const GAP     = Math.round(config.spacingMm * d);
+  const SIDE    = Math.round(config.sideMarginMm * d);
+  const tf      = FONT[config.font];
+  const sf      = FONT["2"]; // SKU always in smallest font
+  const usableW = cellW - SIDE * 2;
+
+  const out: string[] = [];
+  out.push(`SIZE ${rollWidthMm} mm, ${heightMm} mm`);
+  out.push(`GAP 2 mm, 0 mm`);
+  out.push(`DIRECTION 0`);
+  out.push(`REFERENCE 0,0`);  // reset coordinate origin — prevents printer accumulating offsets
+  out.push(`DENSITY 8`);
+  out.push(`SPEED 2`);
+  out.push(`CLS`);
+
+  for (let col = 0; col < cols; col++) {
+    const label = labels[col];
+    const xOrig = col * cellW;
+
+    if (col > 0) {
+      out.push(`LINE ${xOrig},0,${xOrig},${totalH},1`);
+    }
+
+    if (!label) continue;
+
+    const line1Rows = label.line1 ? wordWrap(label.line1, usableW, tf.w) : [];
+    const line2Rows = label.line2 ? wordWrap(label.line2, usableW, tf.w) : [];
+
+    // y starts at the user-configured top margin — no auto-centering.
+    let y = Math.round(config.topMarginMm * d);
+
+    for (const row of [...line1Rows, ...line2Rows]) {
+      const x = centerX(row.length * tf.w, xOrig, cellW, SIDE);
+      out.push(`TEXT ${x},${y},"${config.font}",0,1,1,"${esc(row)}"`);
+      y += tf.h + GAP;
+    }
+
+    const barcodeW = estimateCode128Dots(label.barcode);
+    const barcodeX = centerX(barcodeW, xOrig, cellW, SIDE);
+    out.push(`BARCODE ${barcodeX},${y},"128",${BAR_HEIGHT},0,0,${NARROW},${NARROW},"${esc(label.barcode)}"`);
+
+    const skuT = fit(label.barcode, usableW, sf.w);
+    const skuX = centerX(skuT.length * sf.w, xOrig, cellW, SIDE);
+    out.push(`TEXT ${skuX},${y + BAR_HEIGHT + GAP},"2",0,1,1,"${esc(skuT)}"`);
+  }
+
+  out.push(`PRINT ${Math.max(1, qty)},1`);
+  return Array.from(new TextEncoder().encode(out.join("\r\n") + "\r\n"));
 }

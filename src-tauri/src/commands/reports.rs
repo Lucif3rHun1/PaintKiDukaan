@@ -12,9 +12,10 @@ use rusqlite::params;
 use serde::Serialize;
 
 use crate::commands::auth::AppState;
-use crate::commands::purchases::StockMovement;
+use crate::commands::purchases::{date_to_ms, StockMovement};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::security::ipc_auth;
 
 // -----------------------------------------------------------------------------
 // Daily sales report.
@@ -387,6 +388,533 @@ pub fn cmd_outstanding_report(state: tauri::State<'_, AppState>) -> AppResult<Ou
 }
 
 // -----------------------------------------------------------------------------
+// Dashboard metrics (R20). 9 functions + 10 cmd_* wrappers (cmd_top_items_sold
+// is reused for cmd_top_items_purchased on the wire via different name).
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PurchaseDayRow {
+    pub date: String,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PurchaseSummary {
+    pub grand_total: i64,
+    pub rows: Vec<PurchaseDayRow>,
+}
+
+pub fn purchase_summary(
+    db: &Db,
+    from_date: &str,
+    to_date: &str,
+) -> Result<PurchaseSummary, ReportsError> {
+    db.with_conn(|c| -> Result<PurchaseSummary, ReportsError> {
+        let from_ms = date_to_ms(from_date);
+        let to_ms = date_to_ms(to_date).saturating_add(86_400_000);
+        let mut stmt = c.prepare(
+            "SELECT date(bill_date/1000, 'unixepoch', 'localtime') AS day,
+                    COALESCE(SUM(total_paise), 0) AS total
+             FROM purchases
+             WHERE bill_date >= ?1 AND bill_date < ?2
+             GROUP BY day ORDER BY day ASC",
+        )?;
+        let rows = stmt.query_map(params![from_ms, to_ms], |r| {
+            Ok(PurchaseDayRow {
+                date: r.get::<_, String>(0)?,
+                total: r.get::<_, i64>(1)?,
+            })
+        })?;
+        let mut out_rows = Vec::new();
+        let mut grand_total: i64 = 0;
+        for r in rows {
+            let row = r?;
+            grand_total += row.total;
+            out_rows.push(row);
+        }
+        Ok(PurchaseSummary {
+            grand_total,
+            rows: out_rows,
+        })
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_purchase_summary(
+    state: tauri::State<'_, AppState>,
+    from_date: String,
+    to_date: String,
+) -> AppResult<PurchaseSummary> {
+    ipc_auth::authorize_err("cmd_purchase_summary", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    purchase_summary(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExpenseSummary {
+    pub grand_total: i64,
+}
+
+pub fn expense_summary(
+    db: &Db,
+    from_date: &str,
+    to_date: &str,
+) -> Result<ExpenseSummary, ReportsError> {
+    db.with_conn(|c| -> Result<ExpenseSummary, ReportsError> {
+        let grand_total: i64 = c
+            .query_row(
+                "SELECT COALESCE(SUM(expenses_paise), 0) FROM day_close WHERE day BETWEEN ?1 AND ?2",
+                params![from_date, to_date],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        Ok(ExpenseSummary { grand_total })
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_expense_summary(
+    state: tauri::State<'_, AppState>,
+    from_date: String,
+    to_date: String,
+) -> AppResult<ExpenseSummary> {
+    ipc_auth::authorize_err("cmd_expense_summary", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    expense_summary(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TopItemRow {
+    pub item_id: i64,
+    pub name: String,
+    pub total_qty: i64,
+    pub total_value: i64,
+}
+
+pub fn top_items_sold(
+    db: &Db,
+    from_date: &str,
+    to_date: &str,
+    limit: i64,
+) -> Result<Vec<TopItemRow>, ReportsError> {
+    db.with_conn(|c| -> Result<Vec<TopItemRow>, ReportsError> {
+        let mut stmt = c.prepare(
+            "SELECT si.item_id, i.name, SUM(si.qty) AS total_qty,
+                    SUM(si.qty * si.price) AS total_value
+             FROM sale_items si
+             JOIN sales s ON s.id = si.sale_id
+             JOIN items i ON i.id = si.item_id
+             WHERE s.status = 'final'
+               AND si.item_id IS NOT NULL
+               AND date(s.date) BETWEEN ?1 AND ?2
+             GROUP BY si.item_id
+             ORDER BY total_qty DESC
+             LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![from_date, to_date, limit], |r| {
+            Ok(TopItemRow {
+                item_id: r.get(0)?,
+                name: r.get(1)?,
+                total_qty: r.get(2)?,
+                total_value: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_top_items_sold(
+    state: tauri::State<'_, AppState>,
+    from_date: String,
+    to_date: String,
+    limit: i64,
+) -> AppResult<Vec<TopItemRow>> {
+    ipc_auth::authorize_err("cmd_top_items_sold", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    top_items_sold(db, &from_date, &to_date, limit).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TopCustomerRow {
+    pub customer_id: Option<i64>,
+    pub name: String,
+    pub total_value: i64,
+    pub bill_count: i64,
+}
+
+pub fn top_customers(
+    db: &Db,
+    from_date: &str,
+    to_date: &str,
+    limit: i64,
+) -> Result<Vec<TopCustomerRow>, ReportsError> {
+    db.with_conn(|c| -> Result<Vec<TopCustomerRow>, ReportsError> {
+        let mut stmt = c.prepare(
+            "SELECT s.customer_id, COALESCE(c.name, 'Walk-in') AS name,
+                    SUM(s.total) AS total_value, COUNT(*) AS bill_count
+             FROM sales s
+             LEFT JOIN customers c ON c.id = s.customer_id
+             WHERE s.status = 'final' AND date(s.date) BETWEEN ?1 AND ?2
+             GROUP BY s.customer_id
+             ORDER BY total_value DESC
+             LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![from_date, to_date, limit], |r| {
+            Ok(TopCustomerRow {
+                customer_id: r.get(0)?,
+                name: r.get(1)?,
+                total_value: r.get(2)?,
+                bill_count: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_top_customers(
+    state: tauri::State<'_, AppState>,
+    from_date: String,
+    to_date: String,
+    limit: i64,
+) -> AppResult<Vec<TopCustomerRow>> {
+    ipc_auth::authorize_err("cmd_top_customers", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    top_customers(db, &from_date, &to_date, limit).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+pub fn top_items_purchased(
+    db: &Db,
+    from_date: &str,
+    to_date: &str,
+    limit: i64,
+) -> Result<Vec<TopItemRow>, ReportsError> {
+    db.with_conn(|c| -> Result<Vec<TopItemRow>, ReportsError> {
+        let from_ms = date_to_ms(from_date);
+        let to_ms = date_to_ms(to_date).saturating_add(86_400_000);
+        let mut stmt = c.prepare(
+            "SELECT pi.item_id, i.name, SUM(pi.qty) AS total_qty,
+                    SUM(pi.line_total_paise) AS total_value
+             FROM purchase_items pi
+             JOIN purchases p ON p.id = pi.purchase_id
+             JOIN items i ON i.id = pi.item_id
+             WHERE p.bill_date >= ?1 AND p.bill_date < ?2
+             GROUP BY pi.item_id
+             ORDER BY total_qty DESC
+             LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![from_ms, to_ms, limit], |r| {
+            Ok(TopItemRow {
+                item_id: r.get(0)?,
+                name: r.get(1)?,
+                total_qty: r.get(2)?,
+                total_value: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_top_items_purchased(
+    state: tauri::State<'_, AppState>,
+    from_date: String,
+    to_date: String,
+    limit: i64,
+) -> AppResult<Vec<TopItemRow>> {
+    ipc_auth::authorize_err("cmd_top_items_purchased", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    top_items_purchased(db, &from_date, &to_date, limit)
+        .map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TopVendorRow {
+    pub vendor_id: Option<i64>,
+    pub name: String,
+    pub total_value: i64,
+}
+
+pub fn top_vendors(
+    db: &Db,
+    from_date: &str,
+    to_date: &str,
+    limit: i64,
+) -> Result<Vec<TopVendorRow>, ReportsError> {
+    db.with_conn(|c| -> Result<Vec<TopVendorRow>, ReportsError> {
+        let from_ms = date_to_ms(from_date);
+        let to_ms = date_to_ms(to_date).saturating_add(86_400_000);
+        let mut stmt = c.prepare(
+            "SELECT p.vendor_id, COALESCE(v.name, 'Unknown') AS name,
+                    SUM(p.total_paise) AS total_value
+             FROM purchases p
+             LEFT JOIN vendors v ON v.id = p.vendor_id
+             WHERE p.bill_date >= ?1 AND p.bill_date < ?2
+             GROUP BY p.vendor_id
+             ORDER BY total_value DESC
+             LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![from_ms, to_ms, limit], |r| {
+            Ok(TopVendorRow {
+                vendor_id: r.get(0)?,
+                name: r.get(1)?,
+                total_value: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_top_vendors(
+    state: tauri::State<'_, AppState>,
+    from_date: String,
+    to_date: String,
+    limit: i64,
+) -> AppResult<Vec<TopVendorRow>> {
+    ipc_auth::authorize_err("cmd_top_vendors", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    top_vendors(db, &from_date, &to_date, limit).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StockHealthSummary {
+    pub total_active_items: i64,
+    pub healthy_count: i64,
+    pub low_count: i64,
+    pub zero_count: i64,
+    pub negative_count: i64,
+    pub retail_value_paise: i64,
+}
+
+pub fn stock_health_summary(db: &Db) -> Result<StockHealthSummary, ReportsError> {
+    db.with_conn(|c| -> Result<StockHealthSummary, ReportsError> {
+        let row = c.query_row(
+            "SELECT
+                COUNT(*) AS total_active_items,
+                SUM(CASE WHEN total_qty > 0 AND (min_qty = 0 OR total_qty > min_qty) THEN 1 ELSE 0 END) AS healthy_count,
+                SUM(CASE WHEN total_qty > 0 AND min_qty > 0 AND total_qty <= min_qty THEN 1 ELSE 0 END) AS low_count,
+                SUM(CASE WHEN total_qty = 0 THEN 1 ELSE 0 END) AS zero_count,
+                SUM(CASE WHEN total_qty < 0 THEN 1 ELSE 0 END) AS negative_count,
+                SUM(CASE WHEN total_qty > 0 THEN total_qty * retail_price_paise ELSE 0 END) AS retail_value_paise
+             FROM (
+                SELECT i.id, i.min_qty, i.retail_price_paise,
+                       COALESCE(SUM(sb.qty), 0) AS total_qty
+                FROM items i
+                LEFT JOIN stock_balances sb ON sb.item_id = i.id
+                WHERE i.is_active = 1
+                GROUP BY i.id
+             )",
+            [],
+            |r| {
+                Ok(StockHealthSummary {
+                    total_active_items: r.get(0)?,
+                    healthy_count: r.get(1)?,
+                    low_count: r.get(2)?,
+                    zero_count: r.get(3)?,
+                    negative_count: r.get(4)?,
+                    retail_value_paise: r.get(5)?,
+                })
+            },
+        )?;
+        Ok(row)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_stock_health_summary(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<StockHealthSummary> {
+    ipc_auth::authorize_err("cmd_stock_health_summary", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    stock_health_summary(db).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeadStockRow {
+    pub item_id: i64,
+    pub name: String,
+    pub current_qty: i64,
+    pub last_inbound_ms: Option<i64>,
+}
+
+pub fn dead_stock(db: &Db, days_idle: i64) -> Result<Vec<DeadStockRow>, ReportsError> {
+    db.with_conn(|c| -> Result<Vec<DeadStockRow>, ReportsError> {
+        let threshold_ms =
+            chrono::Utc::now().timestamp_millis() - days_idle.saturating_mul(86_400_000);
+        let mut stmt = c.prepare(
+            "SELECT i.id, i.name, COALESCE(SUM(sb.qty), 0) AS current_qty,
+                    MAX(sm.created_at) AS last_inbound_ms
+             FROM items i
+             LEFT JOIN stock_balances sb ON sb.item_id = i.id
+             LEFT JOIN stock_movements sm
+                    ON sm.item_id = i.id AND sm.qty > 0 AND sm.created_at >= ?1
+             WHERE i.is_active = 1
+             GROUP BY i.id
+             HAVING current_qty > 0 AND last_inbound_ms IS NULL
+             ORDER BY i.name
+             LIMIT 50",
+        )?;
+        let rows = stmt.query_map(params![threshold_ms], |r| {
+            Ok(DeadStockRow {
+                item_id: r.get(0)?,
+                name: r.get(1)?,
+                current_qty: r.get(2)?,
+                last_inbound_ms: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_dead_stock(
+    state: tauri::State<'_, AppState>,
+    days_idle: i64,
+) -> AppResult<Vec<DeadStockRow>> {
+    ipc_auth::authorize_err("cmd_dead_stock", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    dead_stock(db, days_idle).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InventoryAgingReport {
+    pub bucket_0_30: i64,
+    pub bucket_31_60: i64,
+    pub bucket_61_90: i64,
+    pub bucket_91_plus: i64,
+}
+
+pub fn inventory_aging(db: &Db) -> Result<InventoryAgingReport, ReportsError> {
+    db.with_conn(|c| -> Result<InventoryAgingReport, ReportsError> {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let t30 = now_ms - 30 * 86_400_000;
+        let t60 = now_ms - 60 * 86_400_000;
+        let t90 = now_ms - 90 * 86_400_000;
+        let row = c.query_row(
+            "SELECT
+                SUM(CASE WHEN last_inbound_ms >= ?1 THEN 1 ELSE 0 END) AS b0,
+                SUM(CASE WHEN last_inbound_ms >= ?2 AND last_inbound_ms < ?1 THEN 1 ELSE 0 END) AS b30,
+                SUM(CASE WHEN last_inbound_ms >= ?3 AND last_inbound_ms < ?2 THEN 1 ELSE 0 END) AS b60,
+                SUM(CASE WHEN last_inbound_ms IS NULL OR last_inbound_ms < ?3 THEN 1 ELSE 0 END) AS b90
+             FROM (
+                SELECT i.id, MAX(sm.created_at) AS last_inbound_ms
+                FROM items i
+                LEFT JOIN stock_movements sm ON sm.item_id = i.id AND sm.qty > 0
+                WHERE i.is_active = 1
+                GROUP BY i.id
+             )",
+            params![t30, t60, t90],
+            |r| {
+                Ok(InventoryAgingReport {
+                    bucket_0_30: r.get(0)?,
+                    bucket_31_60: r.get(1)?,
+                    bucket_61_90: r.get(2)?,
+                    bucket_91_plus: r.get(3)?,
+                })
+            },
+        )?;
+        Ok(row)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_inventory_aging(state: tauri::State<'_, AppState>) -> AppResult<InventoryAgingReport> {
+    ipc_auth::authorize_err("cmd_inventory_aging", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    inventory_aging(db).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PaymentSummary {
+    pub received_paise: i64,
+    pub paid_paise: i64,
+}
+
+pub fn payment_summary(
+    db: &Db,
+    from_date: &str,
+    to_date: &str,
+) -> Result<PaymentSummary, ReportsError> {
+    db.with_conn(|c| -> Result<PaymentSummary, ReportsError> {
+        let from_ms = date_to_ms(from_date);
+        let to_ms = date_to_ms(to_date).saturating_add(86_400_000);
+        let received: i64 = c
+            .query_row(
+                "SELECT COALESCE(SUM(amount_paise), 0) FROM customer_payments
+                 WHERE created_at >= ?1 AND created_at < ?2",
+                params![from_ms, to_ms],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let paid: i64 = c
+            .query_row(
+                "SELECT COALESCE(SUM(amount_paise), 0) FROM vendor_payments
+                 WHERE created_at >= ?1 AND created_at < ?2",
+                params![from_ms, to_ms],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        Ok(PaymentSummary {
+            received_paise: received,
+            paid_paise: paid,
+        })
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_payment_summary(
+    state: tauri::State<'_, AppState>,
+    from_date: String,
+    to_date: String,
+) -> AppResult<PaymentSummary> {
+    ipc_auth::authorize_err("cmd_payment_summary", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    payment_summary(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+// -----------------------------------------------------------------------------
 // Unit tests.
 // -----------------------------------------------------------------------------
 
@@ -461,7 +989,9 @@ mod tests {
                 validity_days: None,
                 acknowledge_flag: false,
                 lines: vec![CartLine {
-                    item_id: 1,
+                    kind: "item".into(),
+                    item_id: Some(1),
+                    formula_id: None,
                     qty: 1.0,
                     price: amt,
                     unit_type: "unit".into(),

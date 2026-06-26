@@ -51,8 +51,10 @@ pub struct Sale {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SaleItem {
-    pub item_id: i64,
-    pub item_name: String,
+    pub kind: String, // "item" | "formula"
+    pub item_id: Option<i64>,
+    pub formula_id: Option<i64>,
+    pub display_name: String,
     pub qty: i64, // base units (INTEGER)
     pub price: i64,
     pub unit_type: String, // "unit" | "box"
@@ -69,7 +71,9 @@ pub struct PaymentSplit {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CartLine {
-    pub item_id: i64,
+    pub kind: String, // "item" | "formula"
+    pub item_id: Option<i64>,
+    pub formula_id: Option<i64>,
     pub qty: f64, // BASE units (frontend already converted box → base)
     pub price: i64,
     pub unit_type: String,
@@ -127,6 +131,13 @@ pub enum SaleError {
     NotAQuotation(i64, String),
     #[error("invalid kind: {0} (expected 'quotation' or 'final')")]
     InvalidKind(String),
+    #[error("insufficient stock for item '{item_name}' (id={item_id}): available {available}, need {requested}")]
+    InsufficientStock {
+        item_id: i64,
+        item_name: String,
+        available: i64,
+        requested: i64,
+    },
     #[error("db error: {0}")]
     Db(#[from] rusqlite::Error),
     #[error("{0}")]
@@ -149,7 +160,8 @@ impl From<SaleError> for AppError {
             | SaleError::MustAcknowledgeFlag
             | SaleError::QuotationNotFound(_)
             | SaleError::NotAQuotation(_, _)
-            | SaleError::InvalidKind(_) => AppError::Validation(e.to_string()),
+            | SaleError::InvalidKind(_)
+            | SaleError::InsufficientStock { .. } => AppError::Validation(e.to_string()),
             SaleError::Db(inner) => AppError::from(inner),
             SaleError::Other(inner) => AppError::Internal(inner.to_string()),
         }
@@ -253,11 +265,13 @@ pub fn create_quotation(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sal
         for (i, l) in sale.lines.iter().enumerate() {
             c.execute(
                 "INSERT INTO sale_items
-                    (sale_id,item_id,qty,price,unit_type,line_discount,shade_note,line_order)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                    (sale_id,kind,item_id,formula_id,qty,price,unit_type,line_discount,shade_note,line_order)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                 params![
                     id,
+                    l.kind,
                     l.item_id,
+                    l.formula_id,
                     l.qty.round() as i64,
                     l.price,
                     l.unit_type,
@@ -357,11 +371,13 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
         for (i, l) in sale.lines.iter().enumerate() {
             c.execute(
                 "INSERT INTO sale_items
-                    (sale_id,item_id,qty,price,unit_type,line_discount,shade_note,line_order)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                    (sale_id,kind,item_id,formula_id,qty,price,unit_type,line_discount,shade_note,line_order)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                 params![
                     id,
+                    l.kind,
                     l.item_id,
+                    l.formula_id,
                     (l.qty.round() as i64),
                     l.price,
                     l.unit_type,
@@ -370,19 +386,36 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                     i as i64
                 ],
             )?;
-            c.execute(
-                "INSERT INTO stock_movements
-                    (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
-                 VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
-                params![
-                    l.item_id,
-                    default_location,
-                    -(l.qty.round() as i64),
-                    id,
-                    user_id,
-                    now()
-                ],
-            )?;
+            // Stock movements only for real items, not formula lines.
+            if let Some(item_id) = l.item_id {
+                let requested = l.qty.round() as i64;
+                let available: i64 = c.query_row(
+                    "SELECT COALESCE(qty, 0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                    params![item_id, default_location],
+                    |r| r.get(0),
+                ).unwrap_or(0);
+                if available < requested {
+                    let item_name: String = c.query_row(
+                        "SELECT name FROM items WHERE id = ?1",
+                        params![item_id],
+                        |r| r.get(0),
+                    ).unwrap_or_else(|_| "unknown".into());
+                    return Err(SaleError::InsufficientStock { item_id, item_name, available, requested });
+                }
+                c.execute(
+                    "INSERT INTO stock_movements
+                        (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
+                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
+                    params![
+                        item_id,
+                        default_location,
+                        -requested,
+                        id,
+                        user_id,
+                        now()
+                    ],
+                )?;
+            }
         }
         // Normalize payment splits into sale_payments for cash-summary queries.
         let now_epoch = chrono::Utc::now().timestamp_millis();
@@ -488,25 +521,29 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
             )?;
             // Copy sale_items; insert stock_movements for each line.
             let mut stmt = c.prepare(
-                "SELECT item_id,qty,price,unit_type,line_discount,shade_note,line_order
+                "SELECT kind,item_id,formula_id,qty,price,unit_type,line_discount,shade_note,line_order
              FROM sale_items WHERE sale_id = ?1 ORDER BY line_order",
             )?;
             let mut rows = stmt.query(params![qid])?;
             while let Some(r) = rows.next()? {
-                let item_id: i64 = r.get(0)?;
-                let qty: i64 = r.get(1)?;
-                let price: i64 = r.get(2)?;
-                let unit_type: String = r.get(3)?;
-                let line_discount: i64 = r.get(4)?;
-                let shade_note: Option<String> = r.get(5)?;
-                let line_order: i64 = r.get(6)?;
+                let kind: String = r.get(0)?;
+                let item_id: Option<i64> = r.get(1)?;
+                let formula_id: Option<i64> = r.get(2)?;
+                let qty: i64 = r.get(3)?;
+                let price: i64 = r.get(4)?;
+                let unit_type: String = r.get(5)?;
+                let line_discount: i64 = r.get(6)?;
+                let shade_note: Option<String> = r.get(7)?;
+                let line_order: i64 = r.get(8)?;
                 c.execute(
                     "INSERT INTO sale_items
-                    (sale_id,item_id,qty,price,unit_type,line_discount,shade_note,line_order)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                    (sale_id,kind,item_id,formula_id,qty,price,unit_type,line_discount,shade_note,line_order)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                     params![
                         new_id,
+                        kind,
                         item_id,
+                        formula_id,
                         qty,
                         price,
                         unit_type,
@@ -515,12 +552,28 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                         line_order
                     ],
                 )?;
-                c.execute(
-                    "INSERT INTO stock_movements
-                    (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
-                 VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
-                    params![item_id, default_location, -qty, new_id, user_id, now()],
-                )?;
+                // Stock movements only for real items, not formula lines.
+                if let Some(item_id) = item_id {
+                    let available: i64 = c.query_row(
+                        "SELECT COALESCE(qty, 0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                        params![item_id, default_location],
+                        |r| r.get(0),
+                    ).unwrap_or(0);
+                    if available < qty {
+                        let item_name: String = c.query_row(
+                            "SELECT name FROM items WHERE id = ?1",
+                            params![item_id],
+                            |r| r.get(0),
+                        ).unwrap_or_else(|_| "unknown".into());
+                        return Err(SaleError::InsufficientStock { item_id, item_name, available, requested: qty });
+                    }
+                    c.execute(
+                        "INSERT INTO stock_movements
+                        (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
+                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
+                        params![item_id, default_location, -qty, new_id, user_id, now()],
+                    )?;
+                }
             }
             drop(rows);
             drop(stmt);
@@ -634,23 +687,28 @@ pub fn list(db: &Db, status: Option<&str>, limit: i64) -> anyhow::Result<Vec<Sal
 
 fn load_items(c: &rusqlite::Connection, sale_id: i64) -> anyhow::Result<Vec<SaleItem>> {
     let mut stmt = c.prepare(
-        "SELECT si.item_id,i.name,si.qty,si.price,si.unit_type,si.line_discount,
-                si.shade_note,si.line_order
+        "SELECT si.kind, si.item_id, si.formula_id,
+                COALESCE(i.name, f.id_code, '') AS display_name,
+                si.qty, si.price, si.unit_type, si.line_discount,
+                si.shade_note, si.line_order
          FROM sale_items si
-         JOIN items i ON i.id = si.item_id
+         LEFT JOIN items i ON i.id = si.item_id
+         LEFT JOIN formulas f ON f.id = si.formula_id
          WHERE si.sale_id = ?1
          ORDER BY si.line_order",
     )?;
     let rows = stmt.query_map(params![sale_id], |r| {
         Ok(SaleItem {
-            item_id: r.get(0)?,
-            item_name: r.get(1)?,
-            qty: r.get(2)?,
-            price: r.get(3)?,
-            unit_type: r.get(4)?,
-            line_discount: r.get(5)?,
-            shade_note: r.get(6)?,
-            line_order: r.get(7)?,
+            kind: r.get(0)?,
+            item_id: r.get(1)?,
+            formula_id: r.get(2)?,
+            display_name: r.get(3)?,
+            qty: r.get(4)?,
+            price: r.get(5)?,
+            unit_type: r.get(6)?,
+            line_discount: r.get(7)?,
+            shade_note: r.get(8)?,
+            line_order: r.get(9)?,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1263,7 +1321,9 @@ mod tests {
 
     fn line(qty: f64, price: i64, disc: i64) -> CartLine {
         CartLine {
-            item_id: 1,
+            kind: "item".into(),
+            item_id: Some(1),
+            formula_id: None,
             qty,
             price,
             unit_type: "unit".into(),
