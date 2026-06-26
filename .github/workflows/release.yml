@@ -50,7 +50,7 @@ jobs:
         shell: pwsh
         run: |
           choco install openssl -y
-          echo "OPENSSL_DIR=C:\Program Files\OpenSSL" >> $env:GITHUB_ENV
+          echo "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
