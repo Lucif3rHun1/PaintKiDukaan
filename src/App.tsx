@@ -208,6 +208,7 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
+  const [updateChecked, setUpdateChecked] = useState(false);
 
   // Fetch customer types once the app is unlocked
   useEffect(() => {
@@ -270,12 +271,18 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const info = await checkForUpdates();
-      if (cancelled || !info) return;
-      setUpdateInfo(info);
-      await downloadAndInstallUpdate((p) => {
-        if (!cancelled) setUpdateProgress(p);
-      });
+      try {
+        const info = await checkForUpdates();
+        if (cancelled) return;
+        if (info) {
+          setUpdateInfo(info);
+          await downloadAndInstallUpdate((p) => {
+            if (!cancelled) setUpdateProgress(p);
+          });
+        }
+      } finally {
+        if (!cancelled) setUpdateChecked(true);
+      }
     })();
     return () => {
       cancelled = true;
@@ -357,6 +364,22 @@ export default function App() {
   }
 
   /* ── Security phases ───────────────────────────────────── */
+  if (!updateChecked) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-zinc-900/80 p-8 backdrop-blur">
+          <img
+            src={logo}
+            alt="PaintKiDukaan"
+            className="h-8 w-8 rounded-lg ring-1 ring-inset ring-border/40"
+          />
+          <Loader2 className="h-5 w-5 animate-spin text-indigo-400" aria-hidden="true" />
+          <p className="text-sm text-zinc-400">Checking for updates…</p>
+        </div>
+      </main>
+    );
+  }
+
   if (updateInfo) {
     return <UpdateOverlay version={updateInfo.version} progress={updateProgress} />;
   }
