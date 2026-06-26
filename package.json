@@ -22,12 +22,6 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "core-js"
-    ]
-  },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
     "@tanstack/react-query": "^5.62.0",
