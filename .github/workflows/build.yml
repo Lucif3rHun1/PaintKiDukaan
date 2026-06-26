@@ -1,6 +1,6 @@
-# PaintKiDukaan Master — Build & Release
+# PaintKiDukaan Master — Build
 #
-# Produces native installers for macOS, Windows, and Linux on every tagged release.
+# Produces native installers for macOS and Windows on every tagged release.
 # Triggered by git tags matching v*.*.* or manual workflow_dispatch.
 
 name: build
@@ -12,19 +12,19 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: 'Build target (mac/win/linux/all)'
+        description: 'Build target (mac/win/all)'
         required: true
         default: 'all'
         type: choice
-        options: [mac, win, linux, all]
+        options: [mac, win, all]
 
 permissions:
-  contents: write   # required for creating GitHub releases
+  contents: write
 
 jobs:
   build-macos:
     name: Build macOS (universal)
-    runs-on: macos-14    # Apple Silicon runner; supports universal binary via lipo
+    runs-on: macos-14
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +94,12 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      - name: Install OpenSSL (Windows)
+        shell: pwsh
+        run: |
+          choco install openssl -y
+          echo "OPENSSL_DIR=C:\Program Files\OpenSSL" >> $env:GITHUB_ENV
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
@@ -106,80 +112,3 @@ jobs:
           releaseName: 'PaintKiDukaan Master ${{ github.ref_name }} (Windows)'
           releaseDraft: true
           args: --target x86_64-pc-windows-msvc
-
-  build-linux:
-    name: Build Linux (.deb + .AppImage)
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install Linux build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libudev-dev \
-            libusb-1.0-0-dev
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-
-      - name: Build Tauri bundle
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseDraft: true
-
-  test:
-    name: Test (all platforms)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-22.04]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: cd src-tauri && cargo test --lib
-      - run: cargo run -p xtask --quiet -- check
-      - run: pnpm test

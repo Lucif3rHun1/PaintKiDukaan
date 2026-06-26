@@ -24,10 +24,6 @@ jobs:
             target: aarch64-apple-darwin
             asset_glob: src-tauri/target/release/bundle/macos/*.app.tar.gz
             artifact_name: macos
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            asset_glob: src-tauri/target/release/bundle/deb/*.deb
-            artifact_name: linux
 
     steps:
       - name: Checkout code
@@ -49,20 +45,12 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+      - name: Install OpenSSL (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libudev-dev \
-            libusb-1.0-0-dev
+          choco install openssl -y
+          echo "OPENSSL_DIR=C:\Program Files\OpenSSL" >> $env:GITHUB_ENV
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -133,14 +121,11 @@ jobs:
             tr -d '\n' < "$file"
           }
 
-          linux_asset="$(pick_one 'release-artifacts/linux/*.deb')"
-          linux_sig="$(pick_one 'release-artifacts/linux/*.deb.sig')"
           mac_asset="$(pick_one 'release-artifacts/macos/*.app.tar.gz')"
           mac_sig="$(pick_one 'release-artifacts/macos/*.app.tar.gz.sig')"
           win_asset="$(pick_one 'release-artifacts/windows/*.exe')"
           win_sig="$(pick_one 'release-artifacts/windows/*.exe.sig')"
 
-          linux_name="$(basename "$linux_asset")"
           mac_name="$(basename "$mac_asset")"
           win_name="$(basename "$win_asset")"
 
@@ -150,10 +135,6 @@ jobs:
             "notes": "${notes}",
             "pub_date": "${pub_date}",
             "platforms": {
-              "linux-x86_64": {
-                "signature": "$(read_sig "$linux_sig")",
-                "url": "${release_url}/${linux_name}"
-              },
               "darwin-aarch64": {
                 "signature": "$(read_sig "$mac_sig")",
                 "url": "${release_url}/${mac_name}"
