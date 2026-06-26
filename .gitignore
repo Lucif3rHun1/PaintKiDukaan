@@ -37,6 +37,17 @@ AUDIT-REPORT.md
 DESIGN.md
 security_recheck_poc_engineer_a.json
 
+# AI / tooling artifacts
+.codegraph/
+.impeccable/
+.opencode/
+.claude/
+AGENTS.md
+CONTEXT.md
+PRODUCT.md
+TODO_BACKEND.md
+boneyard.config.json
+
 # TypeScript build info / emitted config files
 *.tsbuildinfo
 .tsbuild-node/
