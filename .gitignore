@@ -29,6 +29,13 @@ Desktop.ini
 .env
 .env.local
 *.log
+.omc/
+.omo/
+omo/
+.playwright-mcp/
+AUDIT-REPORT.md
+DESIGN.md
+security_recheck_poc_engineer_a.json
 
 # TypeScript build info / emitted config files
 *.tsbuildinfo
