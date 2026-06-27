@@ -386,7 +386,7 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                     i as i64
                 ],
             )?;
-            // Stock movements only for real items, not formula lines.
+            // Stock movements for real items AND formulas with a linked base item.
             if let Some(item_id) = l.item_id {
                 let requested = l.qty.round() as i64;
                 let available: i64 = c.query_row(
@@ -415,6 +415,37 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                         now()
                     ],
                 )?;
+            } else if l.kind == "formula" {
+                // Formulas with a linked base item move that base item from stock.
+                if let Some(fid) = l.formula_id {
+                    let base_item_id: Option<i64> = c.query_row(
+                        "SELECT base_item_id FROM formulas WHERE id = ?1",
+                        params![fid],
+                        |r| r.get(0),
+                    ).unwrap_or(None);
+                    if let Some(base_id) = base_item_id {
+                        let requested = l.qty.round() as i64;
+                        let available: i64 = c.query_row(
+                            "SELECT COALESCE(qty, 0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                            params![base_id, default_location],
+                            |r| r.get(0),
+                        ).unwrap_or(0);
+                        if available < requested {
+                            let item_name: String = c.query_row(
+                                "SELECT name FROM items WHERE id = ?1",
+                                params![base_id],
+                                |r| r.get(0),
+                            ).unwrap_or_else(|_| "unknown".into());
+                            return Err(SaleError::InsufficientStock { item_id: base_id, item_name, available, requested });
+                        }
+                        c.execute(
+                            "INSERT INTO stock_movements
+                                (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
+                             VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
+                            params![base_id, default_location, -requested, id, user_id, now()],
+                        )?;
+                    }
+                }
             }
         }
         // Normalize payment splits into sale_payments for cash-summary queries.
@@ -552,7 +583,7 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                         line_order
                     ],
                 )?;
-                // Stock movements only for real items, not formula lines.
+                // Stock movements for real items AND formulas with a linked base item.
                 if let Some(item_id) = item_id {
                     let available: i64 = c.query_row(
                         "SELECT COALESCE(qty, 0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
@@ -573,6 +604,35 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                      VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
                         params![item_id, default_location, -qty, new_id, user_id, now()],
                     )?;
+                } else if kind == "formula" {
+                    if let Some(fid) = formula_id {
+                        let base_item_id: Option<i64> = c.query_row(
+                            "SELECT base_item_id FROM formulas WHERE id = ?1",
+                            params![fid],
+                            |r| r.get(0),
+                        ).unwrap_or(None);
+                        if let Some(base_id) = base_item_id {
+                            let available: i64 = c.query_row(
+                                "SELECT COALESCE(qty, 0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                                params![base_id, default_location],
+                                |r| r.get(0),
+                            ).unwrap_or(0);
+                            if available < qty {
+                                let item_name: String = c.query_row(
+                                    "SELECT name FROM items WHERE id = ?1",
+                                    params![base_id],
+                                    |r| r.get(0),
+                                ).unwrap_or_else(|_| "unknown".into());
+                                return Err(SaleError::InsufficientStock { item_id: base_id, item_name, available, requested: qty });
+                            }
+                            c.execute(
+                                "INSERT INTO stock_movements
+                                (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
+                             VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
+                                params![base_id, default_location, -qty, new_id, user_id, now()],
+                            )?;
+                        }
+                    }
                 }
             }
             drop(rows);
