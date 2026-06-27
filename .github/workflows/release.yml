@@ -65,6 +65,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         run: pnpm tauri build --target ${{ matrix.target }}
 
+      - name: List bundle outputs (debug)
+        shell: bash
+        run: find target/${{ matrix.target }}/release/bundle -type f | sort || true
+
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         env:
