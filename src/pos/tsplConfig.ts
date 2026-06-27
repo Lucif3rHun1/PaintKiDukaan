@@ -1,5 +1,5 @@
 export interface TsplConfig {
-  font: "2" | "3" | "4" | "5";
+  font: "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10";
   topMarginMm: number;  // where the content block starts from the top of the label
   sideMarginMm: number; // minimum horizontal padding from each cell edge before centering
   spacingMm: number;    // uniform gap between every element: lines, text→barcode, barcode→SKU

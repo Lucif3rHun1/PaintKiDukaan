@@ -105,7 +105,7 @@ export function TsplLabelPreview({
   const displayHeight = Math.round(totalH * scale);
 
   return (
-    <div style={{ width: displayWidth, height: displayHeight, position: "relative", overflow: "hidden" }}
+    <div style={{ width: displayWidth, minHeight: displayHeight, position: "relative" }}
       className="rounded border border-border bg-white shadow-sm">
       <div style={{
         width: cellW, height: totalH,

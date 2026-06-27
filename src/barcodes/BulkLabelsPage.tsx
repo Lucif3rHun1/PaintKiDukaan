@@ -27,13 +27,14 @@ import {
   type ThermalSize,
   THERMAL_SIZES,
 } from "../pos/print";
-import { buildTsplBytes, buildTsplString } from "../pos/tspl";
+import { buildTsplBytes, buildTsplString, calcLabelCapacity } from "../pos/tspl";
 import { TsplLabelPreview } from "../pos/TsplLabelPreview";
 import { DEFAULT_TSPL_CONFIG, type TsplConfig } from "../pos/tsplConfig";
 import { Button, Skeleton } from "../components/ui";
 import { useShortcut } from "../lib/shortcuts";
 import { useFocusShortcut } from "../lib/shortcuts/useFocusShortcut";
 import { extractError } from "../lib/extractError";
+import { generateSimpleSequence, type SequenceType } from "./sequence";
 
 type PrinterType = "thermal" | "laser-a4";
 type LaserPerSheet = 21 | 65;
@@ -67,7 +68,7 @@ function configFromFormat(format: string): PrintConfig {
 interface GeneratedRow {
   id: number; // local key for delete
   label: BatchLabel;
-  itemId: number;
+  itemId?: number; // undefined for custom (non-item) labels
   itemName: string;
 }
 
@@ -101,6 +102,20 @@ export function BulkLabelsPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [shopName, setShopName] = useState("");
   const [defaultPrinterName, setDefaultPrinterName] = useState<string | null>(null);
+
+  // Sub-tabs: items vs custom
+  const [activeTab, setActiveTab] = useState<"items" | "custom">("items");
+
+  // Custom label state
+  const [customMode, setCustomMode] = useState<"freetext" | "sequence">("freetext");
+  const [customText, setCustomText] = useState("");
+  const [customCount, setCustomCount] = useState(1);
+  // Sequence fields
+  const [seqType, setSeqType] = useState<SequenceType>("numeric");
+  const [seqPrefix, setSeqPrefix] = useState("");
+  const [seqSuffix, setSeqSuffix] = useState("");
+  const [seqStart, setSeqStart] = useState(1);
+  const [seqCount, setSeqCount] = useState(10);
 
   // Items query — refetches on every mount + on window focus so the
   // barcode picker always reflects the latest items.barcode values
@@ -246,20 +261,65 @@ export function BulkLabelsPage() {
     setActionMsg("Batch cleared.");
   }
 
+  function addCustomFreeText() {
+    if (!customText.trim()) return;
+    const n = Math.max(1, Math.floor(customCount));
+    const rawLines = customText.split("\n").map((l) => l.trim()).filter(Boolean);
+    const lines3: [string, string, string] = [
+      rawLines[0] || "",
+      rawLines[1] || "",
+      rawLines.slice(2).join(" ") || "",
+    ];
+    const rows: GeneratedRow[] = [];
+    for (let i = 0; i < n; i++) {
+      rows.push({
+        id: nextRowId++,
+        label: {
+          line1: lines3[0] || undefined,
+          line2: lines3[1] || undefined,
+          line3: lines3[2] || undefined,
+        },
+        itemName: "Custom",
+      });
+    }
+    setBatch((prev) => [...rows, ...prev]);
+    setActionMsg(`Added ${n} custom label${n === 1 ? "" : "s"} to the batch.`);
+  }
+
+  function addCustomSequence() {
+    const texts = generateSimpleSequence({
+      type: seqType,
+      prefix: seqPrefix,
+      suffix: seqSuffix,
+      start: seqStart,
+      count: Math.max(1, Math.floor(seqCount)),
+    });
+    const rows: GeneratedRow[] = texts.map((text) => ({
+      id: nextRowId++,
+      label: { line1: text || undefined },
+      itemName: "Custom",
+    }));
+    setBatch((prev) => [...rows, ...prev]);
+    setActionMsg(`Added ${rows.length} sequence label${rows.length === 1 ? "" : "s"} to the batch.`);
+  }
+
   async function recordCurrentBatch(format: string) {
+    const itemRows = batch.filter((r) => r.itemId != null);
+    if (itemRows.length === 0) return;
     const grouped = new Map<number, GeneratedRow & { qty: number }>();
-    for (const row of batch) {
-      const existing = grouped.get(row.itemId);
+    for (const row of itemRows) {
+      const id = row.itemId!;
+      const existing = grouped.get(id);
       if (existing) {
         existing.qty += 1;
       } else {
-        grouped.set(row.itemId, { ...row, qty: 1 });
+        grouped.set(id, { ...row, qty: 1 });
       }
     }
     await Promise.all(
       Array.from(grouped.values()).map((row) =>
         recordLabelPrint({
-          itemId: row.itemId,
+          itemId: row.itemId!,
           barcode: row.label.barcode ?? "",
           qty: row.qty,
           format,
@@ -397,6 +457,12 @@ export function BulkLabelsPage() {
     }
   }
 
+  const thermalSize = printer === "thermal" ? THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES] : null;
+  const rollW = thermalSize?.w ?? 100;
+  const rollH = thermalSize?.h ?? 50;
+  const cols = printer === "thermal" ? Math.max(1, labelsPerRow) : 1;
+  const labelCapacity = useMemo(() => calcLabelCapacity(rollW, rollH, cols, tsplConfig), [rollW, rollH, cols, tsplConfig]);
+
   return (
     <div className="grid gap-4 lg:grid-cols-12">
       {/* LEFT: compose — 5 cols */}
@@ -408,7 +474,20 @@ export function BulkLabelsPage() {
           </span>
         </header>
 
+        <div className="flex gap-1 rounded-md border border-border p-0.5">
+          <button type="button" onClick={() => setActiveTab("items")}
+            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${activeTab === "items" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            Items
+          </button>
+          <button type="button" onClick={() => setActiveTab("custom")}
+            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${activeTab === "custom" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            Custom
+          </button>
+        </div>
+
         {/* Item picker */}
+        {activeTab === "items" && (
+        <>
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">Item</label>
           <Select
@@ -490,6 +569,107 @@ export function BulkLabelsPage() {
             className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
           />
         </div>
+        </>
+        )}
+
+        {activeTab === "custom" && (
+        <>
+        <div className="flex gap-1 rounded-md border border-border p-0.5">
+          <button type="button" onClick={() => setCustomMode("freetext")}
+            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${customMode === "freetext" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            Free Text
+          </button>
+          <button type="button" onClick={() => setCustomMode("sequence")}
+            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${customMode === "sequence" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            Sequence
+          </button>
+        </div>
+
+        {customMode === "freetext" && (() => {
+          const rawLines = customText.split("\n").map((l) => l.trim()).filter(Boolean);
+          let totalWrapped = 0;
+          let overflow = false;
+          for (const line of rawLines) {
+            const wrapped = Math.max(1, Math.ceil(line.length / labelCapacity.maxCharsPerLine));
+            totalWrapped += wrapped;
+            if (line.length > labelCapacity.maxCharsPerLine) overflow = true;
+          }
+          if (totalWrapped > labelCapacity.maxLines) overflow = true;
+          const textOverflows = overflow && customText.trim().length > 0;
+          return (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Text</label>
+              <textarea
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                placeholder="Type label text here... (each line becomes a label line)"
+                rows={4}
+                className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Capacity: {labelCapacity.maxCharsPerLine} chars/line, {labelCapacity.maxLines} lines max at font {tsplConfig.font}
+              </p>
+              {textOverflows && (
+                <p className="text-[10px] text-destructive">
+                  Text exceeds label capacity ({labelCapacity.maxCharsPerLine} chars/line, {labelCapacity.maxLines} lines max)
+                </p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Count</label>
+              <input type="number" min={1} max={500} value={customCount}
+                onChange={(e) => setCustomCount(Number(e.target.value) || 1)}
+                className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            </div>
+          </div>
+          );
+        })()}
+
+        {customMode === "sequence" && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Sequence type</label>
+              <Select value={seqType}
+                onChange={(e) => setSeqType(e.target.value as SequenceType)}
+                options={[
+                  { value: "numeric", label: "Numbers (1, 2, 3...)" },
+                  { value: "lowercase", label: "Lowercase (a, b, c...)" },
+                  { value: "uppercase", label: "Uppercase (A, B, C...)" },
+                ]} size="md" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Prefix</label>
+                <input type="text" value={seqPrefix} onChange={(e) => setSeqPrefix(e.target.value)}
+                  placeholder="e.g. SKU-"
+                  className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Suffix</label>
+                <input type="text" value={seqSuffix} onChange={(e) => setSeqSuffix(e.target.value)}
+                  placeholder="e.g. -A"
+                  className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Start</label>
+                <input type="number" min={1} value={seqStart}
+                  onChange={(e) => setSeqStart(Number(e.target.value) || 1)}
+                  className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Count</label>
+                <input type="number" min={1} max={500} value={seqCount}
+                  onChange={(e) => setSeqCount(Number(e.target.value) || 1)}
+                  className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+              </div>
+            </div>
+          </div>
+        )}
+        </>
+        )}
 
         {/* Printer settings */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -540,10 +720,6 @@ export function BulkLabelsPage() {
 
         {/* Label configurator + live TSPL preview */}
         {(() => {
-          const thermalSize = printer === "thermal" ? THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES] : null;
-          const rollW   = thermalSize?.w ?? 100;
-          const rollH   = thermalSize?.h ?? 50;
-          const cols    = printer === "thermal" ? Math.max(1, labelsPerRow) : 1;
           const cellWmm = rollW / cols;
           const previewW = 300;
           const previewH = Math.round(previewW * (rollH / cellWmm));
@@ -584,7 +760,7 @@ export function BulkLabelsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <Spinner
-                  label="Font (2–5)" value={Number(tsplConfig.font)} step={1} min={2} max={5} unit=""
+                  label="Font (2–10)" value={Number(tsplConfig.font)} step={1} min={2} max={10} unit=""
                   onChange={(v) => updateTsplConfig((c) => ({ ...c, font: String(Math.round(v)) as TsplConfig["font"] }))}
                 />
                 <Spinner
@@ -602,49 +778,124 @@ export function BulkLabelsPage() {
               </div>
 
               <div className="flex justify-center pt-1">
-                {selectedItem?.barcode ? (
-                  <TsplLabelPreview
-                    label={{ barcode: selectedItem.barcode, line1: line1.trim() || undefined, line2: line2.trim() || undefined }}
-                    rollWidthMm={rollW} heightMm={rollH} labelsPerRow={cols}
-                    config={tsplConfig} displayWidth={previewW}
-                  />
-                ) : (
-                  <div style={{ width: previewW, height: previewH }}
-                    className="flex items-center justify-center rounded border border-dashed border-border bg-muted/30">
-                    <p className="text-xs text-muted-foreground">Pick an item to preview</p>
-                  </div>
-                )}
+                {(() => {
+                  const customPreviewLabel = customMode === "sequence"
+                    ? (() => {
+                        const texts = generateSimpleSequence({ type: seqType, prefix: seqPrefix, suffix: seqSuffix, start: seqStart, count: 1 });
+                        return texts[0] ? { line1: texts[0] } : null;
+                      })()
+                    : (() => {
+                        const lines = customText.split("\n").map((l) => l.trim()).filter(Boolean);
+                        return {
+                          line1: lines[0] || undefined,
+                          line2: lines[1] || undefined,
+                          line3: lines.slice(2).join(" ") || undefined,
+                        };
+                      })();
+                  const previewLabel = activeTab === "items"
+                    ? (selectedItem?.barcode ? { barcode: selectedItem.barcode, line1: line1.trim() || undefined, line2: line2.trim() || undefined } : null)
+                    : customPreviewLabel;
+                  if (previewLabel) {
+                    return (
+                      <TsplLabelPreview
+                        label={previewLabel}
+                        rollWidthMm={rollW} heightMm={rollH} labelsPerRow={cols}
+                        config={tsplConfig} displayWidth={previewW}
+                      />
+                    );
+                  }
+                  return (
+                    <div style={{ width: previewW, height: previewH }}
+                      className="flex items-center justify-center rounded border border-dashed border-border bg-muted/30">
+                      <p className="text-xs text-muted-foreground">{activeTab === "items" ? "Pick an item to preview" : "Enter text to preview"}</p>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Raw TSPL viewer — shows exactly what gets sent to the printer */}
-              {selectedItem?.barcode && (
-                <details className="group">
-                  <summary className="cursor-pointer select-none text-[10px] text-muted-foreground hover:text-foreground">
-                    Raw TSPL ▸
-                  </summary>
-                  <pre className="mt-1 max-h-48 overflow-auto rounded border border-border bg-muted/30 p-2 font-mono text-[10px] text-foreground leading-relaxed">
-                    {buildTsplString(
-                      [{ barcode: selectedItem.barcode, line1: line1.trim() || undefined, line2: line2.trim() || undefined }],
-                      rollW, rollH, cols, tsplConfig,
-                    )}
-                  </pre>
-                </details>
-              )}
+              {(() => {
+                const rawLabel = activeTab === "items"
+                  ? (selectedItem?.barcode ? { barcode: selectedItem.barcode, line1: line1.trim() || undefined, line2: line2.trim() || undefined } : null)
+                  : (() => {
+                      if (customMode === "sequence") {
+                        const texts = generateSimpleSequence({ type: seqType, prefix: seqPrefix, suffix: seqSuffix, start: seqStart, count: 1 });
+                        return texts[0] ? { line1: texts[0] } : null;
+                      }
+                      const lines = customText.split("\n").map((l) => l.trim()).filter(Boolean);
+                      if (!lines.length) return null;
+                      return {
+                        line1: lines[0] || undefined,
+                        line2: lines[1] || undefined,
+                        line3: lines.slice(2).join(" ") || undefined,
+                      };
+                    })();
+                if (!rawLabel) return null;
+                return (
+                  <details className="group">
+                    <summary className="cursor-pointer select-none text-[10px] text-muted-foreground hover:text-foreground">
+                      Raw TSPL ▸
+                    </summary>
+                    <pre className="mt-1 max-h-48 overflow-auto rounded border border-border bg-muted/30 p-2 font-mono text-[10px] text-foreground leading-relaxed">
+                      {buildTsplString(
+                        [rawLabel],
+                        rollW, rollH, cols, tsplConfig,
+                      )}
+                    </pre>
+                  </details>
+                );
+              })()}
             </div>
           );
         })()}
 
         {/* Add to batch */}
-        <Button
-          type="button"
-          variant="primary"
-          onClick={addToList}
-          disabled={!selectedItem?.barcode}
-          shortcut="F6"
-          className="w-full"
-        >
-          + Add {count} label{count === 1 ? "" : "s"} to batch
-        </Button>
+        {activeTab === "items" && (
+          <Button
+            type="button"
+            variant="primary"
+            onClick={addToList}
+            disabled={!selectedItem?.barcode}
+            shortcut="F6"
+            className="w-full"
+          >
+            + Add {count} label{count === 1 ? "" : "s"} to batch
+          </Button>
+        )}
+        {activeTab === "custom" && customMode === "freetext" && (() => {
+          const rawLines = customText.split("\n").map((l) => l.trim()).filter(Boolean);
+          let totalWrapped = 0;
+          let overflow = false;
+          for (const line of rawLines) {
+            const wrapped = Math.max(1, Math.ceil(line.length / labelCapacity.maxCharsPerLine));
+            totalWrapped += wrapped;
+            if (line.length > labelCapacity.maxCharsPerLine) overflow = true;
+          }
+          if (totalWrapped > labelCapacity.maxLines) overflow = true;
+          const textOverflows = overflow && customText.trim().length > 0;
+          return (
+          <Button
+            type="button"
+            variant="primary"
+            onClick={addCustomFreeText}
+            disabled={!customText.trim() || textOverflows}
+            className="w-full"
+          >
+            + Add {customCount} custom label{customCount === 1 ? "" : "s"} to batch
+          </Button>
+          );
+        })()}
+        {activeTab === "custom" && customMode === "sequence" && (
+          <Button
+            type="button"
+            variant="primary"
+            onClick={addCustomSequence}
+            disabled={seqCount < 1}
+            className="w-full"
+          >
+            + Add {seqCount} sequence label{seqCount === 1 ? "" : "s"} to batch
+          </Button>
+        )}
 
         {actionMsg && (
           <p className="rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{actionMsg}</p>
@@ -688,14 +939,22 @@ export function BulkLabelsPage() {
                   {batch.map((row) => (
                     <tr key={row.id} className="border-b border-border hover:bg-muted/50">
                       <td className="px-2.5 py-1.5">
-                        <BarcodeThumb
-                          value={row.label.barcode ?? ""}
-                          containerWidth={80}
-                          containerHeight={28}
-                        />
-                        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                          {row.label.barcode ?? ""}
-                        </div>
+                        {row.label.barcode ? (
+                          <>
+                            <BarcodeThumb
+                              value={row.label.barcode}
+                              containerWidth={80}
+                              containerHeight={28}
+                            />
+                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                              {row.label.barcode}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="font-mono text-[10px] text-muted-foreground">
+                            {[row.label.line1, row.label.line2, row.label.line3].filter(Boolean).join(" · ") || "(empty)"}
+                          </div>
+                        )}
                       </td>
                       <td className="py-1.5 text-foreground">{row.itemName}</td>
                       <td className="py-1.5 text-right">
@@ -737,10 +996,6 @@ export function BulkLabelsPage() {
 
         {/* Live TSPL batch preview */}
         {(() => {
-          const thermalSize = printer === "thermal" ? THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES] : null;
-          const rollW = thermalSize?.w ?? 100;
-          const rollH = thermalSize?.h ?? 50;
-          const cols  = printer === "thermal" ? Math.max(1, labelsPerRow) : 1;
           // Each cell preview fits inside the right panel; panel ≈ 580px minus padding
           const panelW    = 560;
           const cellPreviewW = Math.floor(panelW / cols);

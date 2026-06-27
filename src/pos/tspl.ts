@@ -26,10 +26,15 @@ export const DOTS_PER_MM = 8;
 
 // TSC built-in font dimensions in dots (203 DPI, xmul=ymul=1).
 export const FONT: Record<string, { w: number; h: number }> = {
-  "2": { w: 12, h: 20 },
-  "3": { w: 16, h: 24 },
-  "4": { w: 24, h: 32 },
-  "5": { w: 32, h: 48 },
+  "2":  { w: 12, h: 20 },
+  "3":  { w: 16, h: 24 },
+  "4":  { w: 24, h: 32 },
+  "5":  { w: 32, h: 48 },
+  "6":  { w: 40, h: 56 },
+  "7":  { w: 48, h: 64 },
+  "8":  { w: 56, h: 72 },
+  "9":  { w: 64, h: 80 },
+  "10": { w: 72, h: 88 },
 };
 
 // Fixed hardware constants — not user-configurable.
@@ -59,6 +64,23 @@ export function wordWrap(text: string, maxDots: number, charW: number): string[]
 
 export function centerX(elemW: number, xOrigin: number, cellW: number, sidePad: number): number {
   return Math.max(xOrigin + sidePad, xOrigin + Math.floor((cellW - elemW) / 2));
+}
+
+export function calcLabelCapacity(
+  rollWidthMm: number, heightMm: number, labelsPerRow: number, config: TsplConfig,
+): { maxCharsPerLine: number; maxLines: number; usableWidth: number } {
+  const d = DOTS_PER_MM;
+  const cellW = Math.floor((rollWidthMm * d) / Math.max(1, labelsPerRow));
+  const SIDE = Math.round(config.sideMarginMm * d);
+  const usableW = cellW - SIDE * 2;
+  const tf = FONT[config.font];
+  const maxCharsPerLine = Math.max(1, Math.floor(usableW / tf.w));
+  const topY = Math.round(config.topMarginMm * d);
+  const GAP = Math.round(config.spacingMm * d);
+  const availH = (heightMm * d) - topY;
+  const lineH = tf.h + GAP;
+  const maxLines = Math.max(1, Math.floor(availH / lineH));
+  return { maxCharsPerLine, maxLines, usableWidth: usableW };
 }
 
 export function estimateCode128Dots(barcode: string): number {
