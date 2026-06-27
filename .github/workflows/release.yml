@@ -69,6 +69,10 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          # Windows code-signing (optional — only active when secrets are set)
+          TAURI_WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          TAURI_WINDOWS_PRIVATE_KEY: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
+          TAURI_WINDOWS_PRIVATE_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: pnpm tauri build --target ${{ matrix.target }}
 
       - name: List bundle outputs (debug)
