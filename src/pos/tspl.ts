@@ -96,12 +96,13 @@ export function calcOptimalFont(
   let best: { font: TsplConfig["font"]; xmul: number; ymul: number } = { font: "2", xmul: 1, ymul: 1 };
   if (!text) return best;
 
+  // Pick the LARGEST font+multiplier that fits vertically.
+  // wordWrap handles width — we don't constrain to one line.
   for (const fk of fontKeys) {
     const base = FONT[fk];
     for (let mul = 1; mul <= 10; mul++) {
-      const effW = base.w * mul;
       const effH = base.h * mul;
-      if (text.length * effW <= usableWidth && effH <= maxHeight) {
+      if (effH <= maxHeight) {
         best = { font: fk, xmul: mul, ymul: mul };
       }
     }
@@ -226,6 +227,7 @@ export function buildTsplBytes(
       const ym = config.ymul ?? 1;
 
       for (const row of [...line1Rows, ...line2Rows]) {
+        if (y + effH > totalH) break;
         const x = centerX(row.length * effW, xOrig, cellW, SIDE);
         out.push(`TEXT ${x},${y},"${config.font}",0,${xm},${ym},"${esc(row)}"`);
         y += effH + GAP;
@@ -241,6 +243,7 @@ export function buildTsplBytes(
         out.push(`TEXT ${skuX},${y + BAR_HEIGHT + GAP},"2",0,1,1,"${esc(skuT)}"`);
       } else if (line3Rows.length > 0) {
         for (const row of line3Rows) {
+          if (y + effH > totalH) break;
           const x = centerX(row.length * effW, xOrig, cellW, SIDE);
           out.push(`TEXT ${x},${y},"${config.font}",0,${xm},${ym},"${esc(row)}"`);
           y += effH + GAP;
