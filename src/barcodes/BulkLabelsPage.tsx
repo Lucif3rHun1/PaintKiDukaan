@@ -14,11 +14,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Printer } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { getSetting, listItems, listLabelPrints, recordLabelPrint } from "@/domain/items/api";
-import type { Item, LabelPrintRecord } from "@/domain/types";
-import { ipc } from "@/shell/lib/ipc";
-import { BarcodeThumb } from "@/components/ui/BarcodeThumb";
-import { Select } from "@/components/ui/Select";
+import { getSetting, listItems, listLabelPrints, recordLabelPrint } from "../domain/items/api";
+import type { Item, LabelPrintRecord } from "../domain/types";
+import { ipc } from "../shell/lib/ipc";
+import { BarcodeThumb } from "../components/ui/BarcodeThumb";
+import { Select } from "../components/ui/Select";
 import {
   LOCKED_FORMAT,
   printLabelBatch,
@@ -26,14 +26,14 @@ import {
   type PrintConfig,
   type ThermalSize,
   THERMAL_SIZES,
-} from "@/pos/print";
-import { buildTsplBytes, buildTsplString } from "@/pos/tspl";
-import { TsplLabelPreview } from "@/pos/TsplLabelPreview";
-import { DEFAULT_TSPL_CONFIG, type TsplConfig } from "@/pos/tsplConfig";
-import { Button, Skeleton } from "@/components/ui";
-import { useShortcut } from "@/lib/shortcuts";
-import { useFocusShortcut } from "@/lib/shortcuts/useFocusShortcut";
-import { extractError } from "@/lib/extractError";
+} from "../pos/print";
+import { buildTsplBytes, buildTsplString } from "../pos/tspl";
+import { TsplLabelPreview } from "../pos/TsplLabelPreview";
+import { DEFAULT_TSPL_CONFIG, type TsplConfig } from "../pos/tsplConfig";
+import { Button, Skeleton } from "../components/ui";
+import { useShortcut } from "../lib/shortcuts";
+import { useFocusShortcut } from "../lib/shortcuts/useFocusShortcut";
+import { extractError } from "../lib/extractError";
 
 type PrinterType = "thermal" | "laser-a4";
 type LaserPerSheet = 21 | 65;
@@ -260,7 +260,7 @@ export function BulkLabelsPage() {
       Array.from(grouped.values()).map((row) =>
         recordLabelPrint({
           itemId: row.itemId,
-          barcode: row.label.barcode,
+          barcode: row.label.barcode ?? "",
           qty: row.qty,
           format,
           line1: row.label.line1 ?? null,
@@ -689,12 +689,12 @@ export function BulkLabelsPage() {
                     <tr key={row.id} className="border-b border-border hover:bg-muted/50">
                       <td className="px-2.5 py-1.5">
                         <BarcodeThumb
-                          value={row.label.barcode}
+                          value={row.label.barcode ?? ""}
                           containerWidth={80}
                           containerHeight={28}
                         />
                         <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                          {row.label.barcode}
+                          {row.label.barcode ?? ""}
                         </div>
                       </td>
                       <td className="py-1.5 text-foreground">{row.itemName}</td>
