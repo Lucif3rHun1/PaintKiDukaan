@@ -39,7 +39,7 @@ const FormulaDetailsPage = lazy(() =>
   import("./domain/formulas/FormulaDetailsPage").then((m) => ({ default: m.FormulaDetailsPage })),
 );
 const BulkLabelsPage = lazy(() =>
-  import("./domain/items/BulkLabelsPage").then((m) => ({ default: m.BulkLabelsPage })),
+  import("./barcodes/BulkLabelsPage").then((m) => ({ default: m.BulkLabelsPage })),
 );
 const CustomerList = lazy(() =>
   import("./domain/customers/CustomerList").then((m) => ({ default: m.CustomerList })),
