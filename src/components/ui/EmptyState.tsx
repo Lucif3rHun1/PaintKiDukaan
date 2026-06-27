@@ -44,7 +44,7 @@ export function EmptyState({
           ))}
         </ul>
       )}
-      <div className="mt-6 flex gap-3">
+      <div className="mt-6 flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
         {secondary}
         {primary}
       </div>
