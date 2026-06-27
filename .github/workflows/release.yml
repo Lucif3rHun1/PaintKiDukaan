@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: build (${{ matrix.os }})
+    name: build (${{ matrix.artifact_name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -19,8 +19,14 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            openssl_triplet: x64-windows
             asset_glob: target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             artifact_name: windows-x86_64
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            openssl_triplet: arm64-windows
+            asset_glob: target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+            artifact_name: windows-aarch64
           - os: macos-latest
             target: aarch64-apple-darwin
             asset_glob: target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
@@ -60,8 +66,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          vcpkg install openssl:x64-windows
-          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows" >> $env:GITHUB_ENV
+          vcpkg install openssl:${{ matrix.openssl_triplet }}
+          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\${{ matrix.openssl_triplet }}" >> $env:GITHUB_ENV
+          echo "OPENSSL_STATIC=1" >> $env:GITHUB_ENV
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -114,7 +121,7 @@ jobs:
     needs: build
     if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
     steps:
-      - name: Submit signing request
+      - name: Submit signing request (x86_64)
         uses: signpath/github-action-submit-signing-request@v1
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -123,32 +130,32 @@ jobs:
           artifact-configuration-slug: paintkiduakan-nsis
           github-artifact-name: windows-x86_64
           wait-for-completion: true
-          output-artifact-directory: signed-windows
+          output-artifact-directory: signed-windows-x86_64
 
-      - name: Upload signed installer to release
+      - name: Submit signing request (aarch64)
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: paintkiduakan-nsis
+          github-artifact-name: windows-aarch64
+          wait-for-completion: true
+          output-artifact-directory: signed-windows-aarch64
+
+      - name: Upload signed installers to release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: signed-windows/**/*.exe
-
-  check-signing-key:
-    name: check signing key
-    runs-on: ubuntu-latest
-    outputs:
-      has-key: ${{ steps.check.outputs.has-key }}
-    steps:
-      - name: Check if signing key exists
-        id: check
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: echo "has-key=${{ env.TAURI_SIGNING_PRIVATE_KEY != '' }}" >> "$GITHUB_OUTPUT"
+          files: |
+            signed-windows-x86_64/**/*.exe
+            signed-windows-aarch64/**/*.exe
 
   latest-json:
     name: publish latest.json
     runs-on: ubuntu-latest
-    needs: [build, check-signing-key]
-    if: ${{ needs.check-signing-key.outputs.has-key == 'true' }}
+    needs: build
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -196,12 +203,15 @@ jobs:
           mac_aarch64_sig="$(pick_one 'macos-aarch64' '*.app.tar.gz.sig')"
           mac_x86_64_asset="$(pick_one 'macos-x86_64' '*.app.tar.gz')"
           mac_x86_64_sig="$(pick_one 'macos-x86_64' '*.app.tar.gz.sig')"
-          win_asset="$(pick_one 'windows-x86_64' '*.exe')"
-          win_sig="$(pick_one 'windows-x86_64' '*.exe.sig')"
+          win_x64_asset="$(pick_one 'windows-x86_64' '*.exe')"
+          win_x64_sig="$(pick_one 'windows-x86_64' '*.exe.sig')"
+          win_arm64_asset="$(pick_one 'windows-aarch64' '*.exe')"
+          win_arm64_sig="$(pick_one 'windows-aarch64' '*.exe.sig')"
 
           mac_aarch64_name="$(basename "$mac_aarch64_asset")"
           mac_x86_64_name="$(basename "$mac_x86_64_asset")"
-          win_name="$(basename "$win_asset")"
+          win_x64_name="$(basename "$win_x64_asset")"
+          win_arm64_name="$(basename "$win_arm64_asset")"
 
           cat > latest.json <<EOF
           {
@@ -218,8 +228,12 @@ jobs:
                 "url": "${release_url}/${mac_x86_64_name}"
               },
               "windows-x86_64": {
-                "signature": "$(read_sig "$win_sig")",
-                "url": "${release_url}/${win_name}"
+                "signature": "$(read_sig "$win_x64_sig")",
+                "url": "${release_url}/${win_x64_name}"
+              },
+              "windows-aarch64": {
+                "signature": "$(read_sig "$win_arm64_sig")",
+                "url": "${release_url}/${win_arm64_name}"
               }
             }
           }

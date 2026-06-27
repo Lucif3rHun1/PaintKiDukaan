@@ -30,6 +30,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  MetricCard,
   Money,
   PaginationControls,
   SearchInput,
@@ -206,7 +207,7 @@ export function ItemList({ role }: Props) {
       if (item.current_qty < 0) stockAnomaly++;
       else if (item.current_qty === 0) outOfStock++;
       else if (item.current_qty <= item.min_qty) lowStock++;
-      totalRetail += (item.current_qty ?? 0) * item.retail_price_paise;
+      totalRetail += Math.max(item.current_qty ?? 0, 0) * item.retail_price_paise;
     }
     return {
       total: allItems.length,
@@ -356,34 +357,43 @@ export function ItemList({ role }: Props) {
       >
         <MetricCard
           label="Total Items"
-          value={metrics.total}
-          icon={<PackagePlus className="h-4 w-4 text-muted-foreground" />}
-        />
+          icon={PackagePlus}
+          tone="info"
+        >
+          <span className="text-lg font-semibold tabular-nums">{metrics.total}</span>
+        </MetricCard>
         <MetricCard
           label="Out of Stock"
-          value={metrics.outOfStock}
-          accent={metrics.outOfStock > 0 ? "red" : undefined}
-          icon={<TrendingDown className="h-4 w-4" />}
-        />
+          icon={TrendingDown}
+          tone="destructive"
+        >
+          <span className="text-lg font-semibold tabular-nums">{metrics.outOfStock}</span>
+        </MetricCard>
         <MetricCard
           label="Low Stock"
-          value={metrics.lowStock}
-          accent={metrics.lowStock > 0 ? "amber" : undefined}
-          icon={<TriangleAlert className="h-4 w-4" />}
-        />
+          icon={TriangleAlert}
+          tone="warning"
+        >
+          <span className="text-lg font-semibold tabular-nums">{metrics.lowStock}</span>
+        </MetricCard>
         {metrics.stockAnomaly > 0 ? (
           <MetricCard
             label="Stock Anomaly"
-            value={metrics.stockAnomaly}
-            accent="red"
-            icon={<TriangleAlert className="h-4 w-4" />}
-          />
+            icon={TriangleAlert}
+            tone="destructive"
+          >
+            <span className="text-lg font-semibold tabular-nums">{metrics.stockAnomaly}</span>
+          </MetricCard>
         ) : null}
         <MetricCard
           label="Total Value"
-          value={formatRupeesFromPaise(metrics.totalRetail)}
-          icon={<IndianRupee className="h-4 w-4 translate-y-[0.1em] text-muted-foreground" />}
-        />
+          icon={IndianRupee}
+          tone="primary"
+        >
+          <span className="text-lg font-semibold tabular-nums">
+            {formatRupeesFromPaise(metrics.totalRetail)}
+          </span>
+        </MetricCard>
       </div>
 
       {/* ── Filter bar ───────────────────────────────────────── */}
@@ -723,39 +733,5 @@ function StockBadges({
       <Badge variant="success">In stock</Badge>
       <span className="text-xs text-muted-foreground">· {currentQty}</span>
     </span>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  icon,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  icon: React.ReactNode;
-  accent?: "red" | "amber" | "green";
-}) {
-  const border =
-    accent === "red"
-      ? "border-destructive/30"
-      : accent === "amber"
-        ? "border-warning/30"
-        : accent === "green"
-          ? "border-success/30"
-          : "border-border";
-  return (
-    <div
-      className={`flex items-baseline gap-3 rounded-lg border ${border} bg-card px-3 py-2.5`}
-    >
-      {icon}
-      <div>
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="text-lg font-semibold text-foreground">{value}</p>
-      </div>
-    </div>
   );
 }

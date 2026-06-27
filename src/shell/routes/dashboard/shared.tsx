@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { Money, Skeleton } from "../../../components/ui";
+import { formatRupeesCompact } from "../../../lib/money";
 
 export function cnTone(...c: string[]): string {
   return c.filter(Boolean).join(" ");
@@ -65,9 +66,15 @@ export function Sparkline({ data, tone }: SparklineProps) {
 interface TwoLineTrendProps {
   sales: number[];
   purchases: number[];
+  labels?: string[];
 }
 
-export function TwoLineTrend({ sales, purchases }: TwoLineTrendProps) {
+function shortDate(label: string): string {
+  const [, month, day] = label.split("-");
+  return month && day ? `${day}/${month}` : label;
+}
+
+export function TwoLineTrend({ sales, purchases, labels = [] }: TwoLineTrendProps) {
   if (sales.length < 2 && purchases.length < 2) return null;
   const len = Math.max(sales.length, purchases.length, 2);
   const series = [
@@ -79,7 +86,13 @@ export function TwoLineTrend({ sales, purchases }: TwoLineTrendProps) {
   const min = Math.min(...all, 0);
   const range = max - min || 1;
   const width = 240;
-  const height = 64;
+  const height = 88;
+  const salesTotal = series[0].reduce((sum, value) => sum + value, 0);
+  const purchaseTotal = series[1].reduce((sum, value) => sum + value, 0);
+  const salesAverage = salesTotal / len;
+  const purchaseAverage = purchaseTotal / len;
+  const firstLabel = labels[0] ? shortDate(labels[0]) : "Start";
+  const lastLabel = labels[len - 1] ? shortDate(labels[len - 1]) : "End";
   const toPoints = (data: number[]) =>
     data
       .map((v, i) => {
@@ -89,13 +102,34 @@ export function TwoLineTrend({ sales, purchases }: TwoLineTrendProps) {
       })
       .join(" ");
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <div className="rounded-lg bg-muted/40 p-2">
+          <p className="text-muted-foreground">Sales</p>
+          <p className="font-semibold tabular-nums text-primary">{formatRupeesCompact(salesTotal)}</p>
+        </div>
+        <div className="rounded-lg bg-muted/40 p-2">
+          <p className="text-muted-foreground">Purchases</p>
+          <p className="font-semibold tabular-nums text-info">{formatRupeesCompact(purchaseTotal)}</p>
+        </div>
+        <div className="rounded-lg bg-muted/40 p-2">
+          <p className="text-muted-foreground">Net</p>
+          <p className="font-semibold tabular-nums">{formatRupeesCompact(salesTotal - purchaseTotal)}</p>
+        </div>
+        <div className="rounded-lg bg-muted/40 p-2">
+          <p className="text-muted-foreground">Avg/day</p>
+          <p className="font-semibold tabular-nums">{formatRupeesCompact(salesAverage - purchaseAverage)}</p>
+        </div>
+      </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="h-16 w-full"
+        className="h-28 w-full"
         preserveAspectRatio="none"
         aria-hidden="true"
       >
+        <line x1="0" y1="0" x2={width} y2="0" className="stroke-border" strokeWidth="1" />
+        <line x1="0" y1={height / 2} x2={width} y2={height / 2} className="stroke-border/60" strokeWidth="1" />
+        <line x1="0" y1={height} x2={width} y2={height} className="stroke-border" strokeWidth="1" />
         <polyline
           fill="none"
           stroke="currentColor"
@@ -115,6 +149,11 @@ export function TwoLineTrend({ sales, purchases }: TwoLineTrendProps) {
           className="text-info"
         />
       </svg>
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>{firstLabel}</span>
+        <span>Daily high {formatRupeesCompact(max)}</span>
+        <span>{lastLabel}</span>
+      </div>
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm bg-primary" />
@@ -153,8 +192,8 @@ export function Donut({ healthy, low, zero, negative }: DonutProps) {
   const segments = [
     { len: healthyLen, color: "stroke-success" },
     { len: lowLen, color: "stroke-warning" },
-    { len: zeroLen, color: "stroke-warning" },
-    { len: negativeLen, color: "stroke-destructive" },
+    { len: zeroLen, color: "stroke-destructive" },
+    { len: negativeLen, color: "stroke-info" },
   ];
   let offset = 0;
   return (
@@ -191,8 +230,8 @@ export function Donut({ healthy, low, zero, negative }: DonutProps) {
       <ul className="space-y-1 text-sm">
         <LegendDot color="bg-success" label="Healthy" count={healthy} />
         <LegendDot color="bg-warning" label="Low" count={low} />
-        <LegendDot color="bg-warning" label="Zero" count={zero} />
-        <LegendDot color="bg-destructive" label="Negative" count={negative} />
+        <LegendDot color="bg-destructive" label="Zero" count={zero} />
+        <LegendDot color="bg-info" label="Negative" count={negative} />
       </ul>
     </div>
   );

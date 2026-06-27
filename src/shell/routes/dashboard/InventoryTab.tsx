@@ -13,7 +13,6 @@ import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import {
   deadStock,
   inventoryAging,
-  listSales,
   stockHealthSummary,
   stockReport,
   topItemsPurchased,
@@ -71,12 +70,6 @@ export function InventoryTab() {
     refetchInterval: STAGGER_INVENTORY,
   });
 
-  const todayBills = useQuery({
-    queryKey: ["dashboard", "sales", "range", fromDate, toDate],
-    queryFn: () => listSales(fromDate || undefined, toDate || undefined, 200),
-    refetchInterval: STAGGER_INVENTORY,
-  });
-
   const health = stockHealth.data;
   const byGroup = stockReportQuery.data?.by_group ?? [];
   const maxGroupValue = Math.max(...byGroup.map((g) => g.total_retail_value), 1);
@@ -122,7 +115,7 @@ export function InventoryTab() {
         <MetricCard
           icon={TrendingUp}
           label="Low Stock"
-          loading={lowStock.isLoading}
+          loading={stockHealth.isLoading}
           tone="warning"
         >
           <span className="text-2xl font-semibold tabular-nums">
@@ -193,9 +186,11 @@ export function InventoryTab() {
                         ? "bg-destructive/15 text-destructive"
                         : "bg-warning/15 text-warning"
                     }`}>
-                      {item.current_qty <= 0
-                        ? `Out of stock (was ${item.current_qty})`
-                        : `${item.current_qty} / min ${item.min_qty}`}
+                      {item.current_qty < 0
+                        ? `Negative stock (${item.current_qty})`
+                        : item.current_qty === 0
+                          ? "Out of stock"
+                          : `${item.current_qty} / min ${item.min_qty}`}
                     </span>
                   </li>
                 ))}
@@ -208,7 +203,7 @@ export function InventoryTab() {
       <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Card>
           <Card.Header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Top Moving Items (7d)</h3>
+            <h3 className="text-sm font-semibold">Top Moving Items</h3>
             <div className="flex gap-1 rounded-md border border-border bg-card p-0.5 text-xs">
               <button
                 type="button"
@@ -229,7 +224,7 @@ export function InventoryTab() {
               <div className="p-6">
                 <EmptyState
                   icon={ShoppingCart}
-                  title="No sales this week"
+                  title="No sales in this range"
                   description="Top sellers will appear here."
                 />
               </div>
@@ -404,7 +399,7 @@ export function InventoryTab() {
                                 ? "h-full rounded-full bg-warning"
                                 : "h-full rounded-full bg-primary"
                           }
-                          style={{ width: `${Math.max(pct, 2)}%` }}
+                          style={{ width: `${pct > 0 ? Math.max(pct, 2) : 0}%` }}
                         />
                       </div>
                     </li>
@@ -418,7 +413,7 @@ export function InventoryTab() {
 
       <Card>
         <Card.Header className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Top Purchased Items (7d)</h3>
+          <h3 className="text-sm font-semibold">Top Purchased Items</h3>
           <a href="#/inward" className="text-xs text-muted-foreground hover:text-foreground">
             View all
           </a>
@@ -432,7 +427,7 @@ export function InventoryTab() {
             <div className="p-6">
               <EmptyState
                 icon={ArrowDownToLine}
-                title="No purchases this week"
+                title="No purchases in this range"
                 description="Top items purchased will appear here."
               />
             </div>
@@ -452,53 +447,6 @@ export function InventoryTab() {
                   <span className="text-xs tabular-nums text-muted-foreground">
                     {r.total_qty} × <Money paise={r.total_value} compact />
                   </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card.Body>
-      </Card>
-
-      <Card>
-        <Card.Header className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Recent Bills</h3>
-          <a href="#/sales" className="text-xs text-muted-foreground hover:text-foreground">
-            View all
-          </a>
-        </Card.Header>
-        <Card.Body className="p-0">
-          {todayBills.isLoading ? (
-            <div className="space-y-2 p-4">
-              <SkeletonRow count={3} />
-            </div>
-          ) : (todayBills.data ?? []).length === 0 ? (
-            <div className="p-6">
-              <EmptyState
-                icon={ShoppingCart}
-                title="No bills yet"
-                description="Finalised sales will show up here."
-              />
-            </div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {(todayBills.data ?? []).slice(0, 6).map((s, i) => (
-                <li
-                  key={s.id}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                  style={{ animationDelay: `${i * 50}ms` }}
-                >
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate font-medium">{s.no}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {s.customer_name || "Walk-in"}
-                    </span>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {formatDateForDisplay(s.date)}
-                    </span>
-                    <Money paise={s.total} compact />
-                  </div>
                 </li>
               ))}
             </ul>

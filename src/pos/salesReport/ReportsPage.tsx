@@ -308,6 +308,11 @@ export default function ReportsPage({ user }: Props) {
       paiseToRupees(r.total_discount),
       paiseToRupees(r.grand_total),
     ]);
+  const mergedSalesTotals = useMemo(() => ({
+    billCount: mergedRows.reduce((sum, row) => sum + row.bill_count, 0),
+    totalDiscount: mergedRows.reduce((sum, row) => sum + row.total_discount, 0),
+    grandTotal: mergedRows.reduce((sum, row) => sum + row.grand_total, 0),
+  }), [mergedRows]);
 
   const inventoryHeaders = ["Name", "SKU", "Location", "Qty", "Reorder Level", "Status"];
   const inventoryRows = filteredByLocation.map((r) => [
@@ -451,12 +456,12 @@ export default function ReportsPage({ user }: Props) {
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-muted/50 px-3 py-2 text-sm font-semibold">
                     <span className="text-foreground">Total</span>
                     <div className="flex flex-wrap gap-4 text-foreground">
-                      <span>{sales.bill_count} bills</span>
+                      <span>{mergedSalesTotals.billCount} bills</span>
                       <span>
-                        Discount <Money paise={sales.total_discount} />
+                        Discount <Money paise={mergedSalesTotals.totalDiscount} />
                       </span>
                       <span>
-                        Total <Money paise={sales.grand_total} />
+                        Total <Money paise={mergedSalesTotals.grandTotal} />
                       </span>
                     </div>
                   </div>

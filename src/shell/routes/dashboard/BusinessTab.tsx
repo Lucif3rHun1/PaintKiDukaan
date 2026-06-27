@@ -229,12 +229,12 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
           </MetricCard>
           <MetricCard
             icon={Percent}
-            label="Quotation Conversion"
+            label="Final Bill Share"
             loading={overviewSalesDetail.isLoading}
             tone="success"
             footer={
               <Badge variant="success" size="sm">
-                {finals.length}/{totalBills} final bills
+                {finals.length}/{totalBills} final or quote bills
               </Badge>
             }
           >
@@ -244,10 +244,11 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
       </section>
 
       <section className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <Card>
+        <Card className="self-start">
           <Card.Header className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold">Sales &amp; Purchase Trends</h3>
+              <h3 className="text-sm font-semibold">Daily Sales vs Purchases</h3>
+              <p className="text-xs text-muted-foreground">Totals, net margin proxy, and daily movement for the selected range.</p>
             </div>
             <PeriodDropdown
               value={{ from: trendFrom, to: trendTo }}
@@ -259,10 +260,10 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
               <Skeleton className="h-24 w-full" />
             ) : salesByDay.every((v) => v === 0) && purchasesByDay.every((v) => v === 0) ? (
               <p className="py-6 text-center text-xs text-muted-foreground">
-                Need at least 2 days of data for a trend.
+                No sales or purchases in this range.
               </p>
             ) : (
-              <TwoLineTrend sales={salesByDay} purchases={purchasesByDay} />
+              <TwoLineTrend sales={salesByDay} purchases={purchasesByDay} labels={rangeDates} />
             )}
           </Card.Body>
         </Card>
@@ -419,7 +420,7 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
               label="Total Purchase"
               value={
                 <Money
-                  paise={weekPurchase.data?.grand_total ?? 0}
+                  paise={todayPurchase.data?.grand_total ?? 0}
                   compact
                 />
               }

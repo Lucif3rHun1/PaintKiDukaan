@@ -442,19 +442,16 @@ async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::Unboun
                 return;
             }
             Ok(Err(e)) => {
-                log::warn!("Update check failed: {e}");
-                let msg = e.to_string().replace('\\', "\\\\").replace('\'', "\\'");
-                let _ = splash.eval(&format!("window.__showError('{msg}')"));
-                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
-                continue;
+                log::warn!("Update check failed (proceeding to app): {e}");
+                let _ = splash.close();
+                show_main(&app);
+                return;
             }
             Err(_) => {
-                log::warn!("Update check timed out after 30 s");
-                let _ = splash.eval(
-                    "window.__showError('Update check timed out. Check your internet connection and retry.')",
-                );
-                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
-                continue;
+                log::warn!("Update check timed out after 30 s (proceeding to app)");
+                let _ = splash.close();
+                show_main(&app);
+                return;
             }
         };
 
