@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Save, Search, Trash2, UserMinus, UserPlus } from "lucide-react";
 
 import { Alert, Badge, Button, Card, InlineDialog, KbdHint, Money, MoneyInput, QtyInput, Select } from "../../components/ui";
+import { DraftBadge } from "../../components/ui/DraftBadge";
+import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
 import { listLocations } from "../../domain/locations/api";
@@ -14,6 +16,8 @@ import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import type { ItemSearchHit, PaymentSplit, ReturnCartLine } from "../types";
 import type { FormulaSearchHit } from "../../domain/types";
+import { deleteDraft } from "../api";
+import { useAutosave, useDirtyForm } from "../hooks";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
@@ -38,6 +42,39 @@ export default function ReturnPage({ user, onBack }: Props) {
   const [ownerPin, setOwnerPin] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [draftRestoreOpen, setDraftRestoreOpen] = useState(false);
+
+  const draftData = useMemo(() => ({
+    customerId,
+    lines,
+    locationId,
+    paymentSplits,
+    reason,
+  }), [customerId, lines, locationId, paymentSplits, reason]);
+
+  const { isDirty, markDirty, resetDirty } = useDirtyForm();
+  const { draft, loading: draftLoading } = useAutosave("return", draftData);
+  const isInitialDraftMount = useRef(true);
+
+  useEffect(() => {
+    if (isInitialDraftMount.current) {
+      isInitialDraftMount.current = false;
+      return;
+    }
+    if (!draftLoading && draftData.lines.length > 0) {
+      markDirty();
+    }
+  }, [draftData, draftLoading, markDirty]);
+
+  useEffect(() => {
+    if (draft && !draftLoading && isInitialDraftMount.current === false) {
+      if (lines.length === 0) {
+        setDraftRestoreOpen(true);
+      }
+    }
+  }, [draft, draftLoading, lines.length]);
 
   useEffect(() => {
     Promise.allSettled([
@@ -141,6 +178,40 @@ export default function ReturnPage({ user, onBack }: Props) {
     setStatus("Return cleared");
   }
 
+  function handleRestoreDraft() {
+    if (!draft) return;
+    try {
+      const data = JSON.parse(draft.data_json);
+      if (data.customerId != null) setCustomerId(data.customerId);
+      if (data.lines) setLines(data.lines);
+      if (data.locationId != null) setLocationId(data.locationId);
+      if (data.paymentSplits) setPaymentSplits(data.paymentSplits);
+      if (data.reason != null) setReason(data.reason);
+    } catch {
+      setStatus("Draft could not be restored");
+    }
+    setDraftRestoreOpen(false);
+    resetDirty();
+  }
+
+  function handleSaveDraftAndExit() {
+    resetDirty();
+    setShowExitModal(false);
+    void deleteDraft("return");
+    onBack();
+  }
+
+  function handleDiscardAndExit() {
+    resetDirty();
+    setShowExitModal(false);
+    void deleteDraft("return");
+    onBack();
+  }
+
+  function handleCancelExit() {
+    setShowExitModal(false);
+  }
+
   async function submit() {
     if (lines.length === 0) return;
     if (refundAmount > subtotal) {
@@ -178,6 +249,8 @@ loading: "Saving return…",
           error: (e) => extractError(e),
         });
       clearAll();
+      void deleteDraft("return");
+      resetDirty();
       setStatus(`Return #${saved} saved`);
     } catch (e) {
       setStatus(`Error: ${extractError(e)}`);
@@ -208,10 +281,23 @@ loading: "Saving return…",
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Button type="button" variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              icon={ArrowLeft}
+              onClick={() => {
+                if (isDirty) {
+                  setShowExitModal(true);
+                } else {
+                  onBack();
+                }
+              }}
+            >
               Returns
             </Button>
             <h1 className="text-base font-semibold text-foreground">New return</h1>
+            <DraftBadge draft={draft} />
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">
@@ -484,6 +570,38 @@ loading: "Saving return…",
           onCancel={() => setAddCustomerOpen(false)}
         />
       </InlineDialog>
+
+      {draftRestoreOpen && draft ? (
+        <InlineDialog
+          open={draftRestoreOpen}
+          onClose={() => setDraftRestoreOpen(false)}
+          title="Restore draft?"
+          description={`You have a saved draft from ${new Date(draft.updated_at).toLocaleString()}.`}
+        >
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setDraftRestoreOpen(false);
+                void deleteDraft("return");
+              }}
+            >
+              Start fresh
+            </Button>
+            <Button type="button" onClick={handleRestoreDraft}>
+              Restore
+            </Button>
+          </div>
+        </InlineDialog>
+      ) : null}
+
+      <UnsavedChangesModal
+        open={showExitModal}
+        onSaveDraft={handleSaveDraftAndExit}
+        onDiscard={handleDiscardAndExit}
+        onCancel={handleCancelExit}
+      />
     </div>
   );
 }
