@@ -31,6 +31,14 @@ const STAGGER_BUSINESS = 32_000;
 const ALL_RANGE_START = "1900-01-01";
 const ALL_RANGE_END = "9999-12-31";
 
+function valuesByDate<T>(rows: readonly T[], dates: readonly string[], dateOf: (row: T) => string, valueOf: (row: T) => number) {
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    map.set(dateOf(row), valueOf(row));
+  }
+  return dates.map((date) => map.get(date) ?? 0);
+}
+
 interface BusinessTabProps {
   todaySalesPaise: number;
   dayCloseOverdue: boolean;
@@ -130,18 +138,10 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
   }, [trendFrom, trendDayCount]);
 
   const salesByDay = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of weekSales.data?.rows ?? []) {
-      map.set(r.date, r.grand_total);
-    }
-    return rangeDates.map((d) => map.get(d) ?? 0);
+    return valuesByDate(weekSales.data?.rows ?? [], rangeDates, (r) => r.date, (r) => r.grand_total);
   }, [weekSales.data, rangeDates]);
   const purchasesByDay = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of weekPurchase.data?.rows ?? []) {
-      map.set(r.date, r.total);
-    }
-    return rangeDates.map((d) => map.get(d) ?? 0);
+    return valuesByDate(weekPurchase.data?.rows ?? [], rangeDates, (r) => r.date, (r) => r.total);
   }, [weekPurchase.data, rangeDates]);
 
   const totalSales = overviewSales.data?.grand_total ?? 0;
