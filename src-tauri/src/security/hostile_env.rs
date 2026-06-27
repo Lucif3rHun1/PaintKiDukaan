@@ -80,7 +80,11 @@ pub fn check_all() -> HostileEnvReport {
 /// Default response is `Lock` (don't auto-wipe).
 pub fn respond(report: &HostileEnvReport, action: HostileResponse) -> ResponseAction {
     // Only trigger action if score exceeds threshold.
-    const THRESHOLD: u8 = 10;
+    // Raised from 10 → 25: hypervisor_cpu alone scores 13 (38 raw * 35 weight / 100)
+    // which was a false positive on any Windows 11 machine with Hyper-V, WSL2, or
+    // Docker Desktop enabled. A threshold of 25 requires at least two independent
+    // signals before locking the session.
+    const THRESHOLD: u8 = 25;
 
     if report.score < THRESHOLD {
         return ResponseAction::Log;
@@ -380,6 +384,8 @@ mod tests {
 
     #[test]
     fn ntdll_hooked_score_triggers_lock() {
+        // ntdll hooks score 100 raw * 15 weight / 100 = 15 weighted. Use a
+        // score above the new threshold (25) to verify the lock fires.
         let report = HostileEnvReport {
             debug: DebugReport::default(),
             vm: VmReport::default(),
@@ -389,7 +395,7 @@ mod tests {
                 hook_count: 3,
                 ..Default::default()
             },
-            score: 15,
+            score: 30,
         };
         assert_eq!(
             respond(&report, HostileResponse::Lock),

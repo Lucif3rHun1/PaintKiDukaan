@@ -158,8 +158,7 @@ impl Db {
                 )
                 .unwrap_or(false);
             if !has_kind {
-                // Drop the rebuild target if a previous failed migration left it
-                // behind; the rename would otherwise collide.
+                // Drop the rebuild target if a previous failed migration left it behind.
                 conn.execute_batch("DROP TABLE IF EXISTS sale_items_new;")?;
                 conn.execute_batch(
                     "ALTER TABLE sale_items RENAME TO sale_items_old;\
@@ -179,14 +178,65 @@ impl Db {
                        created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,\
                        CHECK ((item_id IS NOT NULL AND formula_id IS NULL)\
                            OR (item_id IS NULL     AND formula_id IS NOT NULL))\
-                     );\
-                     INSERT INTO sale_items_new \
-                       (sale_id, kind, item_id, formula_id, qty, price, unit_type,\
-                        line_discount, shade_note, line_order, created_at, created_by)\
-                       SELECT sale_id, 'item', item_id, NULL, qty, price, unit_type,\
-                              line_discount, shade_note, line_order, created_at, created_by\
-                       FROM sale_items_old;\
-                     DROP TABLE sale_items_old;\
+                     );",
+                )?;
+
+                // Defensively check which columns actually exist in the old table
+                // before building the copy SELECT. Early/dev builds used different
+                // column names (unit_price_paise, unit_id, etc.) and the rename
+                // would fail if we blindly assumed the v1 schema.
+                let col_exists = |name: &str| -> bool {
+                    conn.query_row(
+                        &format!(
+                            "SELECT COUNT(*) > 0 FROM pragma_table_info('sale_items_old') \
+                             WHERE name = '{name}'"
+                        ),
+                        [],
+                        |r| r.get::<_, bool>(0),
+                    )
+                    .unwrap_or(false)
+                };
+
+                let has_sale_id    = col_exists("sale_id");
+                let has_item_id    = col_exists("item_id");
+                let has_price      = col_exists("price");
+                let has_unit_type  = col_exists("unit_type");
+                let has_discount   = col_exists("line_discount");
+                let has_shade      = col_exists("shade_note");
+                let has_order      = col_exists("line_order");
+                let has_created_at = col_exists("created_at");
+                let has_created_by = col_exists("created_by");
+
+                // Only copy rows when the old table has the minimum expected columns.
+                // Skipping the copy on an incompatible schema is safe — the app
+                // couldn't have any valid sales data if the schema was that old.
+                if has_sale_id && has_item_id && has_price && has_unit_type {
+                    let discount_expr   = if has_discount   { "line_discount" }        else { "0" };
+                    let shade_expr      = if has_shade      { "shade_note" }            else { "NULL" };
+                    let order_expr      = if has_order      { "line_order" }            else { "0" };
+                    let created_at_expr = if has_created_at { "created_at" }            else { "datetime('now','localtime')" };
+                    let created_by_expr = if has_created_by { "created_by" }            else { "NULL" };
+
+                    conn.execute_batch(&format!(
+                        "INSERT INTO sale_items_new \
+                           (sale_id, kind, item_id, formula_id, qty, price, unit_type, \
+                            line_discount, shade_note, line_order, created_at, created_by) \
+                         SELECT sale_id, 'item', item_id, NULL, qty, price, unit_type, \
+                                {discount_expr}, {shade_expr}, {order_expr}, \
+                                {created_at_expr}, {created_by_expr} \
+                         FROM sale_items_old;"
+                    ))?;
+                } else {
+                    log::warn!(
+                        "db: M-INLINE-004 skipped data copy — \
+                         sale_items_old has incompatible schema \
+                         (sale_id={has_sale_id}, item_id={has_item_id}, \
+                          price={has_price}, unit_type={has_unit_type})"
+                    );
+                }
+
+                conn.execute_batch(
+                    "DROP TABLE sale_items_old;\
                      ALTER TABLE sale_items_new RENAME TO sale_items;\
                      CREATE INDEX IF NOT EXISTS idx_sale_items_formula_id ON sale_items(formula_id);",
                 )?;
