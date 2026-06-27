@@ -23,6 +23,8 @@ pub struct Formula {
     pub id_code: String,
     pub name: Option<String>,
     pub with_base: bool,
+    pub base_item_id: Option<i64>,
+    pub base_item_name: Option<String>,
     pub retail_price_paise: i64,
     pub is_active: bool,
     pub created_at: String,
@@ -44,6 +46,7 @@ pub struct NewFormula {
     pub id_code: String,
     pub name: Option<String>,
     pub with_base: bool,
+    pub base_item_id: Option<i64>,
     pub retail_price_paise: i64,
 }
 
@@ -52,6 +55,7 @@ pub struct UpdateFormula {
     pub id: i64,
     pub name: Option<String>,
     pub with_base: bool,
+    pub base_item_id: Option<i64>,
     pub retail_price_paise: i64,
 }
 
@@ -113,6 +117,8 @@ fn row_to_formula(r: &rusqlite::Row<'_>) -> rusqlite::Result<Formula> {
         created_by_user_id: r.get(7)?,
         sales_count: r.get(8)?,
         last_sold_at: r.get(9)?,
+        base_item_id: r.get(10)?,
+        base_item_name: r.get(11)?,
     })
 }
 
@@ -123,8 +129,11 @@ pub fn list(db: &Db, filter: FormulaFilter) -> AppResult<Vec<Formula>> {
                 (SELECT COUNT(*) FROM sale_items si JOIN sales s ON s.id = si.sale_id \
                   WHERE si.formula_id = f.id AND s.status = 'final') AS sales_count, \
                 (SELECT MAX(s.created_at) FROM sale_items si JOIN sales s ON s.id = si.sale_id \
-                  WHERE si.formula_id = f.id AND s.status = 'final') AS last_sold_at \
-         FROM formulas f WHERE 1=1",
+                  WHERE si.formula_id = f.id AND s.status = 'final') AS last_sold_at, \
+                f.base_item_id, bi.name AS base_item_name \
+         FROM formulas f \
+         LEFT JOIN items bi ON bi.id = f.base_item_id \
+         WHERE 1=1",
     );
     let mut bound: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if let Some(active) = filter.active {
@@ -161,8 +170,11 @@ pub fn get_by_id(db: &Db, id: i64) -> AppResult<Option<Formula>> {
                         (SELECT COUNT(*) FROM sale_items si JOIN sales s ON s.id = si.sale_id \
                           WHERE si.formula_id = f.id AND s.status = 'final') AS sales_count, \
                         (SELECT MAX(s.created_at) FROM sale_items si JOIN sales s ON s.id = si.sale_id \
-                          WHERE si.formula_id = f.id AND s.status = 'final') AS last_sold_at \
-                 FROM formulas f WHERE f.id = ?1",
+                          WHERE si.formula_id = f.id AND s.status = 'final') AS last_sold_at, \
+                        f.base_item_id, bi.name AS base_item_name \
+                 FROM formulas f \
+                 LEFT JOIN items bi ON bi.id = f.base_item_id \
+                 WHERE f.id = ?1",
                 params![id],
                 row_to_formula,
             )
@@ -247,6 +259,14 @@ pub fn create(db: &Db, user_id: i64, new: NewFormula) -> AppResult<i64> {
     let id_code = new.id_code.trim().to_string();
     let name = new.name.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let with_base = new.with_base as i64;
+    // Validate: with_base requires base_item_id; without_base forces None.
+    let base_item_id: Option<i64> = if new.with_base {
+        Some(new.base_item_id.ok_or_else(|| {
+            AppError::Validation("with_base requires base_item_id".into())
+        })?)
+    } else {
+        None // force None when without base
+    };
     db.with_conn_immediate(|c| -> Result<i64, AppError> {
         if let Some(_existing) = c
             .query_row(
@@ -261,9 +281,9 @@ pub fn create(db: &Db, user_id: i64, new: NewFormula) -> AppResult<i64> {
             )));
         }
         let id: i64 = c.query_row(
-            "INSERT INTO formulas (id_code, name, with_base, retail_price_paise, created_by)\
-             VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id",
-            params![id_code, name, with_base, new.retail_price_paise, user_id],
+            "INSERT INTO formulas (id_code, name, with_base, base_item_id, retail_price_paise, created_by)\
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id",
+            params![id_code, name, with_base, base_item_id, new.retail_price_paise, user_id],
             |r| r.get(0),
         )?;
         Ok(id)
@@ -274,11 +294,18 @@ pub fn update(db: &Db, _user_id: i64, upd: UpdateFormula) -> AppResult<()> {
     validate_price(upd.retail_price_paise)?;
     let name = upd.name.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let with_base = upd.with_base as i64;
+    let base_item_id: Option<i64> = if upd.with_base {
+        Some(upd.base_item_id.ok_or_else(|| {
+            AppError::Validation("with_base requires base_item_id".into())
+        })?)
+    } else {
+        None
+    };
     db.with_conn_immediate(|c| -> Result<(), AppError> {
         let changed = c.execute(
-            "UPDATE formulas SET name = ?1, with_base = ?2, retail_price_paise = ?3\
-             WHERE id = ?4 AND is_active = 1",
-            params![name, with_base, upd.retail_price_paise, upd.id],
+            "UPDATE formulas SET name = ?1, with_base = ?2, base_item_id = ?3, retail_price_paise = ?4\
+             WHERE id = ?5 AND is_active = 1",
+            params![name, with_base, base_item_id, upd.retail_price_paise, upd.id],
         )?;
         if changed == 0 {
             return Err(AppError::NotFound(format!(
