@@ -145,7 +145,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   }), [draft, vendorId, notes, autoPrint]);
 
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
-  const { draft: savedDraft, loading: draftLoading } = useAutosave("purchase", draftData);
+  const { draft: savedDraft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("purchase", draftData);
 
   const isInitialDraftMount = useRef(true);
   useEffect(() => {
@@ -330,7 +330,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       setStatus(`Inward #${res.id} saved${res.print_label ? " — label will print" : ""}`);
       setDraft([]);
       setNotes("");
-      void deleteDraft("purchase");
+      void resetDraft();
       resetDirty();
       setRecent(await listPurchases());
     } catch (e) {
@@ -429,7 +429,10 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           </Button>
         ) : null}
 
-        <DraftBadge draft={savedDraft} />
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold text-foreground">New Inward</h1>
+          <DraftBadge status={draftStatus} draft={savedDraft} />
+        </div>
 
         {/* Vendor typeahead — search + add combined into one input */}
         <div className="relative min-w-[200px] flex-1 sm:flex-none sm:w-64">

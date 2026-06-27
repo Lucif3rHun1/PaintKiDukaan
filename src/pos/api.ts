@@ -67,12 +67,12 @@ export const movementsForItem = (itemId: number, limit = 200): Promise<StockMove
     ? tauriInvoke<StockMovement[]>("cmd_movements_for_item", { item_id: itemId, limit })
     : Promise.resolve([]);
 
-export const saveDraft = (formType: string, dataJson: string): Promise<number> =>
-  isTauri() ? tauriInvoke<number>("cmd_save_draft", { formType, dataJson }) : Promise.resolve(0);
+export const saveDraft = (formType: string, dataJson: string): Promise<Draft> =>
+  isTauri() ? tauriInvoke<Draft>("cmd_save_draft", { payload: { form_type: formType, data_json: dataJson } }) : Promise.resolve({ id: 0, user_id: 0, form_type: formType, data_json: dataJson, created_at: 0, updated_at: 0 });
 export const getDraft = (formType: string): Promise<Draft | null> =>
-  isTauri() ? tauriInvoke<Draft | null>("cmd_get_draft", { formType }) : Promise.resolve(null);
+  isTauri() ? tauriInvoke<Draft | null>("cmd_get_draft", { form_type: formType }) : Promise.resolve(null);
 export const deleteDraft = (formType: string): Promise<void> =>
-  isTauri() ? tauriInvoke<void>("cmd_delete_draft", { formType }) : Promise.resolve();
+  isTauri() ? tauriInvoke<void>("cmd_delete_draft", { form_type: formType }) : Promise.resolve();
 
 // ----- Day close -----
 export const cashSalesFor = (userId: number, date: string): Promise<CashSalesSummary> =>

@@ -55,7 +55,7 @@ export default function ReturnPage({ user, onBack }: Props) {
   }), [customerId, lines, locationId, paymentSplits, reason]);
 
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
-  const { draft, loading: draftLoading } = useAutosave("return", draftData);
+  const { draft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("return", draftData);
   const isInitialDraftMount = useRef(true);
 
   useEffect(() => {
@@ -249,7 +249,7 @@ loading: "Saving return…",
           error: (e) => extractError(e),
         });
       clearAll();
-      void deleteDraft("return");
+      void resetDraft();
       resetDirty();
       setStatus(`Return #${saved} saved`);
     } catch (e) {
@@ -297,7 +297,7 @@ loading: "Saving return…",
               Returns
             </Button>
             <h1 className="text-base font-semibold text-foreground">New return</h1>
-            <DraftBadge draft={draft} />
+            <DraftBadge status={draftStatus} draft={draft} />
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">

@@ -127,7 +127,7 @@ export default function SalesPage({ user, onExit }: Props) {
   }), [kind, customer, lines, billDiscount, splits, validityDays, ackFlag]);
 
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
-  const { draft, loading: draftLoading } = useAutosave("sale", draftData);
+  const { draft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("sale", draftData);
 
   const isInitialDraftMount = useRef(true);
   useEffect(() => {
@@ -325,7 +325,7 @@ export default function SalesPage({ user, onExit }: Props) {
           setAckFlag(false);
           void refreshRecent();
           void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-          void deleteDraft("sale");
+          void resetDraft();
           resetDirty();
           if (shouldPrintAfterSaveRef.current) {
             shouldPrintAfterSaveRef.current = false;
@@ -481,10 +481,12 @@ export default function SalesPage({ user, onExit }: Props) {
         >
           Back to sales
         </Button>
-        <DraftBadge draft={draft} />
-        <h1 className="text-lg font-semibold text-foreground">
-          {kind === "final" ? "New Bill" : "New Quotation"}
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold text-foreground">
+            {kind === "final" ? "New Bill" : "New Quotation"}
+          </h1>
+          <DraftBadge status={draftStatus} draft={draft} />
+        </div>
         <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
           {(["final", "quotation"] as const).map((k) => (
             <button
