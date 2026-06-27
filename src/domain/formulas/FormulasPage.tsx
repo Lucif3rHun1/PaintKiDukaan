@@ -217,7 +217,9 @@ export function FormulasPage({ role }: Props) {
                       {f.name ? f.name : <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">
-                      {f.with_base ? "With base" : "No base"}
+                      {f.with_base
+                        ? f.base_item_name ?? "With base"
+                        : "—"}
                     </td>
                     <td className="px-3 py-2 text-right text-foreground">
                       <Money paise={f.retail_price_paise} />

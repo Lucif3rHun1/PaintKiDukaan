@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Archive, Edit3 } from "lucide-react";
+import { ArrowLeft, Archive, Edit3, Copy, MoreHorizontal } from "lucide-react";
+import { ActionMenu } from "../../components/ui/ActionMenu";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -168,28 +169,34 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
           )}
         </div>
         {canEdit ? (
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              size="md"
-              icon={Edit3}
-              onClick={() => setEditing(true)}
-            >
-              Edit
-            </Button>
-            {formula.is_active ? (
-              <Button
-                type="button"
-                variant="danger"
-                size="md"
-                icon={Archive}
-                onClick={() => setConfirmArchive(true)}
-              >
-                Archive
-              </Button>
-            ) : null}
-          </div>
+          <ActionMenu
+            label="Formula actions"
+            items={[
+              {
+                label: "Edit",
+                icon: Edit3,
+                onClick: () => setEditing(true),
+              },
+              {
+                label: "Copy shade ID",
+                icon: Copy,
+                onClick: () => {
+                  void navigator.clipboard.writeText(formula.id_code);
+                  toast.success(`Copied ${formula.id_code}`);
+                },
+              },
+              ...(formula.is_active
+                ? [
+                    {
+                      label: "Archive",
+                      icon: Archive,
+                      danger: true as const,
+                      onClick: () => setConfirmArchive(true),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         ) : null}
       </header>
 
@@ -204,7 +211,11 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
               {formula.name ?? <span className="text-muted-foreground">—</span>}
             </Row>
             <Row label="Base">
-              {formula.with_base ? "With base" : "No base"}
+              {formula.with_base
+                ? formula.base_item_name
+                  ? `With base (${formula.base_item_name})`
+                  : "With base"
+                : "No base"}
             </Row>
             <Row label="Price">
               <Money paise={formula.retail_price_paise} />

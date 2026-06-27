@@ -122,6 +122,7 @@ export function ItemSearchInput({
                 name: f.name,
                 retail_price_paise: f.retail_price_paise,
                 with_base: f.with_base,
+                base_item_name: f.base_item_name,
               })),
           ),
           null,
@@ -382,7 +383,7 @@ export function ItemSearchInput({
                         {toTitleCase(display)}
                       </span>
                       <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                        {hit.with_base ? "with base" : "no base"}
+                        {hit.with_base ? (hit.base_item_name ? `base: ${hit.base_item_name}` : "with base") : "no base"}
                       </span>
                     </div>
                     <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">

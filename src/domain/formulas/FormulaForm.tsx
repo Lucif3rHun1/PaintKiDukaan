@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { Button, MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { extractError } from "../../lib/extractError";
+import { ItemSearchInput } from "../../pos/sales/ItemSearchInput";
 import { createFormula, updateFormula } from "./api";
 import type { Formula, NewFormula, UpdateFormula } from "./api";
+import type { ItemSearchHit } from "../../pos/types";
 
 type Mode = "create" | "edit";
 
@@ -19,6 +22,8 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
   const [idCode, setIdCode] = useState(initial?.id_code ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [withBase, setWithBase] = useState(initial?.with_base ?? false);
+  const [baseItemId, setBaseItemId] = useState<number | null>(initial?.base_item_id ?? null);
+  const [baseItemName, setBaseItemName] = useState<string>(initial?.base_item_name ?? "");
   const [price, setPrice] = useState(initial?.retail_price_paise ?? 0);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -29,6 +34,8 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
       setIdCode(initial.id_code);
       setName(initial.name ?? "");
       setWithBase(initial.with_base);
+      setBaseItemId(initial.base_item_id ?? null);
+      setBaseItemName(initial.base_item_name ?? "");
       setPrice(initial.retail_price_paise);
     }
   }, [mode, initial]);
@@ -36,6 +43,7 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
   function validate(): boolean {
     const e: Record<string, string> = {};
     if (mode === "create" && !idCode.trim()) e.id_code = "Required";
+    if (withBase && !baseItemId) e.base_item_id = "Pick a base item";
     if (price < 0) e.retail_price_paise = "Cannot be negative";
     setFieldErrors(e);
     return Object.keys(e).length === 0;
@@ -52,6 +60,7 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
           id_code: idCode.trim(),
           name: name.trim() || null,
           with_base: withBase,
+          base_item_id: withBase ? baseItemId : null,
           retail_price_paise: price,
         };
         const saved = await toast.promise(createFormula(payload), {
@@ -64,6 +73,7 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
         const patch: UpdateFormula = {
           name: name.trim() || null,
           with_base: withBase,
+          base_item_id: withBase ? baseItemId : null,
           retail_price_paise: price,
         };
         const saved = await toast.promise(updateFormula(initial.id, patch), {
@@ -129,11 +139,47 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
           <input
             type="checkbox"
             checked={withBase}
-            onChange={(e) => setWithBase(e.target.checked)}
+            onChange={(e) => {
+              setWithBase(e.target.checked);
+              if (!e.target.checked) {
+                setBaseItemId(null);
+                setBaseItemName("");
+              }
+            }}
             className="h-4 w-4"
           />
           Mixed on a base (white / neutral / deep)
         </label>
+        {withBase ? (
+          <div className="space-y-1">
+            {baseItemId ? (
+              <div className="flex items-center gap-2 rounded border border-border bg-muted/40 px-2 py-1.5 text-sm">
+                <span className="flex-1 truncate">{baseItemName}</span>
+                <button
+                  type="button"
+                  onClick={() => { setBaseItemId(null); setBaseItemName(""); }}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Clear base item"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <ItemSearchInput
+                onPick={(hit) => {
+                  if ("sku_code" in hit) {
+                    setBaseItemId(hit.id);
+                    setBaseItemName(hit.name);
+                  }
+                }}
+                onCreateItem={undefined}
+              />
+            )}
+            {fieldErrors.base_item_id ? (
+              <span className="text-[10px] text-destructive">{fieldErrors.base_item_id}</span>
+            ) : null}
+          </div>
+        ) : null}
         <Field
           label="Retail price (₹)"
           required
