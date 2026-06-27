@@ -7,23 +7,24 @@
 // compatibility; it shows the sales section by default.
 
 import { useEffect, useMemo, useState } from "react";
-import { Download } from "lucide-react";
 import {
-  Badge,
   Card,
   DataTable,
+  DownloadMenu,
   Money,
   Section,
   Skeleton,
   ShortcutsHint,
+  StockStatusBadge,
 } from "../../components/ui";
 import { PeriodDropdown } from "../../components/ui/PeriodDropdown";
 import type { ColumnDef } from "../../components/ui";
 import { useShortcut } from "../../lib/shortcuts";
 import { formatDateForDisplay, todayLocalYyyymmdd, shiftDaysLocal } from "../../lib/date";
-import { jsPDF } from "jspdf";
-import { downloadSpreadsheet } from "../../lib/spreadsheet";
-import { dailySales, stockReport, outstandingReport, listDayClose } from "../api";
+import { listCustomers } from "../../domain/customers/api";
+import { listItems } from "../../domain/items/api";
+import type { Customer, Item } from "../../domain/types";
+import { dailySales, stockReport, outstandingReport, listDayClose, listSales } from "../api";
 import type {
   DailySalesRow,
   DailySalesReport,
@@ -31,6 +32,7 @@ import type {
   StockReport,
   StockRow,
   DayClose,
+  Sale,
 } from "../types";
 
 type Section = "sales" | "inventory" | "customers";
@@ -70,9 +72,32 @@ const salesColumns: ColumnDef<DailySalesRow>[] = [
 ];
 
 function stockBadge(row: StockRow) {
-  if (row.qty <= 0) return <Badge variant="danger" size="sm">Out of stock</Badge>;
-  if (row.qty <= row.reorder_level) return <Badge variant="warning" size="sm">Low · {row.qty} left</Badge>;
-  return <Badge variant="success" size="sm">{row.qty} in stock</Badge>;
+  return <StockStatusBadge qty={row.qty} reorderLevel={row.reorder_level} />;
+}
+
+function AnalyticsCard({ title, headers, rows }: { title: string; headers: string[]; rows: (string | number)[][] }) {
+  return (
+    <Card>
+      <Card.Header>
+        <h3 className="text-sm font-semibold">{title}</h3>
+      </Card.Header>
+      <Card.Body className="p-0">
+        <DataTable
+          data={rows}
+          columns={headers.map((header, index) => ({
+            header,
+            align: index === headers.length - 1 ? "right" : "left",
+            cell: (row: (string | number)[]) => (
+              <span className="tabular-nums text-foreground">{row[index] ?? "—"}</span>
+            ),
+          }))}
+          keyExtractor={(row, index) => `${row[0] ?? title}-${index}`}
+          emptyState={<p className="px-3 py-3 text-center text-muted-foreground">No data in this range.</p>}
+          className="rounded-none border-0"
+        />
+      </Card.Body>
+    </Card>
+  );
 }
 
 function ReportSubNav({ active, onSelect }: { active: Section; onSelect: (s: Section) => void }) {
@@ -114,9 +139,6 @@ function ReportSubNav({ active, onSelect }: { active: Section; onSelect: (s: Sec
   );
 }
 
-const exportBtnCls =
-  "inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors";
-
 export default function ReportsPage({ user }: Props) {
   const [from, setFrom] = useState(() => shiftDaysLocal(7));
   const [to, setTo] = useState(() => todayLocalYyyymmdd());
@@ -125,6 +147,9 @@ export default function ReportsPage({ user }: Props) {
   const [stock, setStock] = useState<StockReport | null>(null);
   const [out, setOut] = useState<OutstandingReport | null>(null);
   const [closes, setCloses] = useState<DayClose[]>([]);
+  const [salesDetail, setSalesDetail] = useState<Sale[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [customersList, setCustomersList] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
   const [stockSearch, setStockSearch] = useState("");
@@ -148,12 +173,18 @@ export default function ReportsPage({ user }: Props) {
       stockReport(),
       outstandingReport(),
       listDayClose(60),
+      listSales(from, to, 2000),
+      listItems(),
+      listCustomers(),
     ])
-      .then(([s, st, o, c]) => {
+      .then(([s, st, o, c, detail, itemRows, customerRows]) => {
         setSales(s);
         setStock(st);
         setOut(o);
         setCloses(c ?? []);
+        setSalesDetail(detail ?? []);
+        setItems(itemRows ?? []);
+        setCustomersList(customerRows ?? []);
       })
       .catch((e) => setStatus(`Failed: ${e}`))
       .finally(() => setLoading(false));
@@ -236,126 +267,81 @@ export default function ReportsPage({ user }: Props) {
     return out.vendors.filter((v) => v.name.toLowerCase().includes(q));
   }, [out, outstandingSearch]);
 
-  // ── export helpers ──────────────────────────────────────────────
-
   const paiseToRupees = (p: number) => (p / 100).toFixed(2);
 
-  const downloadSalesExport = (format: "csv" | "xlsx" = "csv") => {
-    if (!sales) return;
-    const headers = ["Date", "Bills", "Discount (₹)", "Total (₹)"];
-    const rows = mergedRows.map((r) => [
+  const salesHeaders = ["Date", "Bills", "Discount (₹)", "Total (₹)"];
+  const salesRows = mergedRows.map((r) => [
       r.date,
-      String(r.bill_count),
+      r.bill_count,
       paiseToRupees(r.total_discount),
       paiseToRupees(r.grand_total),
     ]);
-    downloadSpreadsheet(headers, rows, `sales-report-${from}-${to}`, format);
-  };
 
-  const downloadInventoryExport = (format: "csv" | "xlsx" = "csv") => {
-    if (!stock) return;
-    const headers = ["Name", "SKU", "Location", "Qty", "Reorder Level", "Status"];
-    const statusLabel = (r: StockRow) =>
-      r.qty <= 0 ? "Out of stock" : r.qty <= r.reorder_level ? "Low" : "In stock";
-    const rows = filteredByLocation.map((r) => [
+  const inventoryHeaders = ["Name", "SKU", "Location", "Qty", "Reorder Level", "Status"];
+  const inventoryRows = filteredByLocation.map((r) => [
       r.name,
       r.sku_code ?? "",
       r.location_name ?? "",
-      String(r.qty),
-      String(r.reorder_level),
-      statusLabel(r),
+      r.qty,
+      r.reorder_level,
+      r.qty <= 0 ? "Out of stock" : r.qty <= r.reorder_level ? "Low" : "In stock",
     ]);
-    downloadSpreadsheet(headers, rows, `inventory-report-${todayLocalYyyymmdd()}`, format);
-  };
 
-  const downloadOutstandingExport = (format: "csv" | "xlsx" = "csv") => {
-    if (!out) return;
-    const headers = ["Name", "Type", "Outstanding (₹)"];
-    const rows: string[][] = [
+  const outstandingHeaders = ["Name", "Type", "Outstanding (₹)"];
+  const outstandingRows = out
+    ? [
       ...out.customers.map((c) => [c.name, "Customer", paiseToRupees(c.outstanding)]),
       ...out.vendors.map((v) => [v.name, "Vendor", paiseToRupees(v.outstanding)]),
-    ];
-    downloadSpreadsheet(headers, rows, `outstanding-report-${todayLocalYyyymmdd()}`, format);
-  };
+    ]
+    : [];
 
-  // ── PDF export ─────────────────────────────────────────────────
-
-  function buildPdf(headers: string[], rows: string[][], title: string): jsPDF {
-    const doc = new jsPDF({ orientation: headers.length > 5 ? "landscape" : "portrait" });
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text(title, 14, 20);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text(`${formatDateForDisplay(from)} — ${formatDateForDisplay(to)}`, 14, 27);
-
-    const colW = Math.min(40, (doc.internal.pageSize.getWidth() - 28) / headers.length);
-    const startX = 14;
-    let y = 34;
-
-    doc.setFont("helvetica", "bold");
-    for (let i = 0; i < headers.length; i++) {
-      doc.text(headers[i], startX + i * colW, y);
-    }
-    y += 6;
-
-    doc.setFont("helvetica", "normal");
-    for (const row of rows) {
-      if (y > doc.internal.pageSize.getHeight() - 14) {
-        doc.addPage();
-        y = 20;
-        doc.setFont("helvetica", "bold");
-        for (let i = 0; i < headers.length; i++) {
-          doc.text(headers[i], startX + i * colW, y);
-        }
-        y += 6;
-        doc.setFont("helvetica", "normal");
+  const paymentModeTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const row of mergedRows) {
+      for (const mode of row.by_mode) {
+        totals.set(mode.mode, (totals.get(mode.mode) ?? 0) + mode.amount);
       }
-      for (let i = 0; i < row.length; i++) {
-        doc.text(row[i], startX + i * colW, y);
-      }
-      y += 5;
     }
-    return doc;
-  }
+    return [...totals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([mode, amount]) => [mode.toUpperCase(), paiseToRupees(amount)]);
+  }, [mergedRows]);
 
-  const downloadSalesPdf = () => {
-    if (!sales) return;
-    const headers = ["Date", "Bills", "Discount (₹)", "Total (₹)"];
-    const rows = mergedRows.map((r) => [
-      r.date,
-      String(r.bill_count),
-      paiseToRupees(r.total_discount),
-      paiseToRupees(r.grand_total),
-    ]);
-    buildPdf(headers, rows, "Sales Report").save(`sales-report-${from}-${to}.pdf`);
-  };
+  const salesByBrand = useMemo(() => {
+    const itemById = new Map(items.map((item) => [item.id, item]));
+    const totals = new Map<string, { qty: number; amount: number }>();
+    for (const sale of salesDetail) {
+      if (sale.status !== "final") continue;
+      for (const line of sale.items) {
+        const brand = line.item_id ? itemById.get(line.item_id)?.brand : null;
+        const key = brand || "Unbranded";
+        const current = totals.get(key) ?? { qty: 0, amount: 0 };
+        current.qty += line.qty;
+        current.amount += line.price * line.qty - line.line_discount;
+        totals.set(key, current);
+      }
+    }
+    return [...totals.entries()]
+      .sort((a, b) => b[1].amount - a[1].amount)
+      .map(([brand, value]) => [brand, value.qty, paiseToRupees(value.amount)]);
+  }, [items, salesDetail]);
 
-  const downloadInventoryPdf = () => {
-    if (!stock) return;
-    const headers = ["Name", "SKU", "Location", "Qty", "Reorder", "Status"];
-    const statusLabel = (r: StockRow) =>
-      r.qty <= 0 ? "Out" : r.qty <= r.reorder_level ? "Low" : "In";
-    const rows = filteredByLocation.map((r) => [
-      r.name,
-      r.sku_code ?? "",
-      r.location_name ?? "",
-      String(r.qty),
-      String(r.reorder_level),
-      statusLabel(r),
-    ]);
-    buildPdf(headers, rows, "Inventory Report").save(`inventory-report-${todayLocalYyyymmdd()}.pdf`);
-  };
-
-  const downloadOutstandingPdf = () => {
-    if (!out) return;
-    const headers = ["Name", "Type", "Outstanding (₹)"];
-    const rows: string[][] = [
-      ...out.customers.map((c) => [c.name, "Customer", paiseToRupees(c.outstanding)]),
-      ...out.vendors.map((v) => [v.name, "Vendor", paiseToRupees(v.outstanding)]),
-    ];
-    buildPdf(headers, rows, "Outstanding Report").save(`outstanding-report-${todayLocalYyyymmdd()}.pdf`);
-  };
+  const salesByCustomerType = useMemo(() => {
+    const customerById = new Map(customersList.map((customer) => [customer.id, customer]));
+    const totals = new Map<string, { bills: number; amount: number }>();
+    for (const sale of salesDetail) {
+      if (sale.status !== "final") continue;
+      const customer = sale.customer_id ? customerById.get(sale.customer_id) : null;
+      const key = customer?.type_name || "Walk-in";
+      const current = totals.get(key) ?? { bills: 0, amount: 0 };
+      current.bills += 1;
+      current.amount += sale.total;
+      totals.set(key, current);
+    }
+    return [...totals.entries()]
+      .sort((a, b) => b[1].amount - a[1].amount)
+      .map(([type, value]) => [type, value.bills, paiseToRupees(value.amount)]);
+  }, [customersList, salesDetail]);
 
   // ── shortcuts ───────────────────────────────────────────────────
 
@@ -404,18 +390,13 @@ export default function ReportsPage({ user }: Props) {
           action={
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
-              <button type="button" onClick={() => downloadSalesExport("csv")} className={exportBtnCls}>
-                <Download className="h-3.5 w-3.5" />
-                Export CSV
-              </button>
-              <button type="button" onClick={() => downloadSalesExport("xlsx")} className={exportBtnCls}>
-                <Download className="h-3.5 w-3.5" />
-                XLSX
-              </button>
-              <button type="button" onClick={downloadSalesPdf} className={exportBtnCls}>
-                <Download className="h-3.5 w-3.5" />
-                PDF
-              </button>
+              <DownloadMenu
+                headers={salesHeaders}
+                rows={salesRows}
+                filename={`sales-report-${from}-${to}`}
+                title="Sales Report"
+                subtitle={`${formatDateForDisplay(from)} — ${formatDateForDisplay(to)}`}
+              />
             </div>
           }
         >
@@ -451,6 +432,25 @@ export default function ReportsPage({ user }: Props) {
               </div>
             )}
           </Card>
+          {!loading ? (
+            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <AnalyticsCard
+                title="Payment Modes"
+                headers={["Mode", "Value (₹)"]}
+                rows={paymentModeTotals}
+              />
+              <AnalyticsCard
+                title="Sales by Brand"
+                headers={["Brand", "Qty", "Value (₹)"]}
+                rows={salesByBrand}
+              />
+              <AnalyticsCard
+                title="Sales by Customer Type"
+                headers={["Customer Type", "Bills", "Value (₹)"]}
+                rows={salesByCustomerType}
+              />
+            </div>
+          ) : null}
         </Section>
       ) : null}
 
@@ -464,18 +464,12 @@ export default function ReportsPage({ user }: Props) {
           }
           action={
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => downloadInventoryExport("csv")} className={exportBtnCls}>
-                <Download className="h-3.5 w-3.5" />
-                Export CSV
-              </button>
-              <button type="button" onClick={() => downloadInventoryExport("xlsx")} className={exportBtnCls}>
-                <Download className="h-3.5 w-3.5" />
-                XLSX
-              </button>
-              <button type="button" onClick={downloadInventoryPdf} className={exportBtnCls}>
-                <Download className="h-3.5 w-3.5" />
-                PDF
-              </button>
+              <DownloadMenu
+                headers={inventoryHeaders}
+                rows={inventoryRows}
+                filename={`inventory-report-${todayLocalYyyymmdd()}`}
+                title="Inventory Report"
+              />
             </div>
           }
         >
@@ -579,18 +573,12 @@ export default function ReportsPage({ user }: Props) {
           description="Unpaid customer credit and vendor payables."
           action={
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => downloadOutstandingExport("csv")} className={exportBtnCls}>
-                <Download className="h-3.5 w-3.5" />
-                Export CSV
-              </button>
-              <button type="button" onClick={() => downloadOutstandingExport("xlsx")} className={exportBtnCls}>
-                <Download className="h-3.5 w-3.5" />
-                XLSX
-              </button>
-              <button type="button" onClick={downloadOutstandingPdf} className={exportBtnCls}>
-                <Download className="h-3.5 w-3.5" />
-                PDF
-              </button>
+              <DownloadMenu
+                headers={outstandingHeaders}
+                rows={outstandingRows}
+                filename={`outstanding-report-${todayLocalYyyymmdd()}`}
+                title="Outstanding Report"
+              />
             </div>
           }
         >
