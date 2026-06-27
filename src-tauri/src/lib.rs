@@ -1,6 +1,6 @@
 use tauri::Manager;
-use tauri_plugin_process::ProcessExt;
 use tauri_plugin_updater::UpdaterExt;
+use std::sync::mpsc;
 
 pub mod commands;
 pub mod crypto;
@@ -19,6 +19,10 @@ pub mod sys_tool;
 pub use error::AppError;
 
 pub mod obs;
+
+struct UpdateGateState {
+    retry_tx: mpsc::Sender<()>,
+}
 
 const ALLOWED_LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 const MAX_LOG_MSG_LEN: usize = 4096;
@@ -55,6 +59,16 @@ fn log_frontend(level: String, message: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn retry_update(state: tauri::State<'_, UpdateGateState>) -> Result<(), String> {
+    state.retry_tx.send(()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(1);
+}
+
 pub fn run() {
     // ── Session log setup ────────────────────────────────────────────
     // Compute the app data directory using `dirs` (available before Tauri builder).
@@ -71,7 +85,9 @@ pub fn run() {
     let prev_log = log_dir.join(crate::obs!("session.prev.log"));
     let _ = std::fs::rename(&log_file, &prev_log);
 
-    tauri::Builder::default()
+    let (retry_tx, retry_rx) = mpsc::channel::<()>();
+
+    let app = tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::default()
                 .target(tauri_plugin_log::Target::new(
@@ -97,8 +113,9 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(UpdateGateState { retry_tx })
         .manage(commands::auth::AppState::default())
-        .setup(|app| {
+        .setup(move |app| {
             log::info!("=== PaintKiDukaan session started ===");
 
             if let Ok(app_data) = app.path().app_data_dir() {
@@ -170,11 +187,26 @@ pub fn run() {
 
             security::run_security_init(&handle, &app_state);
 
+            if cfg!(debug_assertions) {
+                if let Some(main) = app.get_webview_window("main") {
+                    let _ = main.show();
+                }
+            }
+
+            if !cfg!(debug_assertions) {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    run_update_gate_async(app_handle, retry_rx).await;
+                });
+            }
+
             log::info!("Setup complete");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             log_frontend,
+            retry_update,
+            quit_app,
             // Auth & security (Slice A)
             commands::auth::app_bootstrap,
             commands::auth::unlock,
@@ -366,121 +398,120 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building PaintKiDukaan");
 
-    if cfg!(debug_assertions) {
-        if let Some(main) = app.get_webview_window("main") {
-            let _ = main.show();
-        }
-    } else {
-        run_update_gate(&app);
-    }
-
     app.run(|_, _| {});
 }
 
-fn run_update_gate(app: &tauri::App) {
-    let splash = match tauri::WebviewWindowBuilder::new(
-        app,
-        "splash",
-        tauri::WebviewUrl::App("splash.html".into()),
-    )
-    .inner_size(480.0, 320.0)
-    .decorations(false)
-    .center()
-    .always_on_top(true)
-    .build()
-    {
-        Ok(w) => w,
-        Err(e) => {
-            log::warn!("Failed to create splash window: {e}");
-            show_main(app);
-            return;
-        }
-    };
-
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => {
-            log::warn!("Failed to create tokio runtime: {e}");
-            let _ = splash.close();
-            show_main(app);
-            return;
-        }
-    };
-
-    rt.block_on(async {
-        let updater = app.updater();
-
-        // ── 30s check timeout ─────────────────────────────────────
-        let check_outcome = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            updater.check(),
+async fn run_update_gate_async(app: tauri::AppHandle, retry_rx: mpsc::Receiver<()>) {
+    loop {
+        let splash = match tauri::WebviewWindowBuilder::new(
+            &app,
+            "splash",
+            tauri::WebviewUrl::App("splash.html".into()),
         )
-        .await;
+        .inner_size(480.0, 320.0)
+        .decorations(false)
+        .center()
+        .always_on_top(true)
+        .build()
+        {
+            Ok(w) => w,
+            Err(e) => {
+                log::warn!("Failed to create splash window: {e}");
+                show_main(&app);
+                return;
+            }
+        };
+
+        let updater = match app.updater() {
+            Ok(u) => u,
+            Err(e) => {
+                log::warn!("Updater plugin unavailable: {e}");
+                let _ = splash.close();
+                show_main(&app);
+                return;
+            }
+        };
+
+        let check_outcome = tokio::time::timeout(std::time::Duration::from_secs(30), updater.check()).await;
 
         let update = match check_outcome {
-            Ok(Ok(Some(u))) => u,
-            Ok(Ok(None)) => return, // no update → fall through to show main
+            Ok(Ok(Some(update))) => update,
+            Ok(Ok(None)) => {
+                let _ = splash.close();
+                show_main(&app);
+                return;
+            }
             Ok(Err(e)) => {
                 log::warn!("Update check failed: {e}");
                 let msg = e.to_string().replace('\\', "\\\\").replace('\'', "\\'");
-                let _ = splash.eval(&format!(
-                    "window.__showError('{msg}')"
-                ));
-                // Give user a moment to see the error before we close splash
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                return;
+                let _ = splash.eval(&format!("window.__showError('{msg}')"));
+                wait_for_retry_or_quit(&app, &splash, &retry_rx);
+                continue;
             }
             Err(_) => {
                 log::warn!("Update check timed out after 30 s");
                 let _ = splash.eval(
                     "window.__showError('Update check timed out. Check your internet connection and retry.')",
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                return;
+                wait_for_retry_or_quit(&app, &splash, &retry_rx);
+                continue;
             }
         };
 
-        // ── Update available → download with 5-minute timeout ─────
         let downloaded = std::sync::atomic::AtomicU64::new(0);
         let splash_cb = splash.clone();
 
         let dl_outcome = tokio::time::timeout(
             std::time::Duration::from_secs(300),
-            update.download_and_install(move |chunk_len, total| {
-                let so_far = downloaded
-                    .fetch_add(chunk_len as u64, std::sync::atomic::Ordering::Relaxed)
-                    + chunk_len as u64;
-                let total_val = total.unwrap_or(0);
-                let _ = splash_cb.eval(&format!(
-                    "window.__updateProgress({{stage:'downloading', downloaded:{so_far}, total:{total_val}}})"
-                ));
-            }),
+            update.download_and_install(
+                move |chunk_len, total| {
+                    let so_far = downloaded
+                        .fetch_add(chunk_len as u64, std::sync::atomic::Ordering::Relaxed)
+                        + chunk_len as u64;
+                    let total_val = total.unwrap_or(0);
+                    let _ = splash_cb.eval(&format!(
+                        "window.__updateProgress({{stage:'downloading', downloaded:{so_far}, total:{total_val}}})"
+                    ));
+                },
+                || {},
+            ),
         )
         .await;
+
+        let _ = splash.close();
 
         match dl_outcome {
             Ok(Ok(())) => {
                 log::info!("Update installed — restarting");
-                app.handle().restart();
+                app.restart();
             }
             Ok(Err(e)) => {
                 log::warn!("Download/install failed: {e}");
+                show_main(&app);
+                return;
             }
             Err(_) => {
                 log::warn!("Download/install timed out after 5 min");
+                show_main(&app);
+                return;
             }
         }
-    });
-
-    // Reached only if no restart happened (no update, error, or timeout)
-    let _ = splash.close();
-    show_main(app);
+    }
 }
 
-fn show_main(app: &tauri::App) {
+fn wait_for_retry_or_quit(app: &tauri::AppHandle, splash: &tauri::WebviewWindow, retry_rx: &mpsc::Receiver<()>) {
+    match retry_rx.recv() {
+        Ok(()) => {
+            let _ = splash.close();
+        }
+        Err(_) => {
+            let _ = splash.close();
+            app.exit(1);
+        }
+    }
+}
+
+fn show_main(app: &tauri::AppHandle) {
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.show();
     }
