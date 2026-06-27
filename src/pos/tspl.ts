@@ -58,7 +58,11 @@ export function wordWrap(text: string, maxDots: number, charW: number): string[]
   return lines.length ? lines : [""];
 }
 
-export function centerX(elemW: number, xOrigin: number, cellW: number, sidePad: number): number {
+export function centerX(
+  elemW: number, xOrigin: number, cellW: number, sidePad: number,
+  align: "left" | "center" = "center",
+): number {
+  if (align === "left") return xOrigin + sidePad;
   return Math.max(xOrigin + sidePad, xOrigin + Math.floor((cellW - elemW) / 2));
 }
 
@@ -103,6 +107,37 @@ export function calcOptimalFont(
     for (let mul = 1; mul <= 10; mul++) {
       const effH = base.h * mul;
       if (effH <= maxHeight) {
+        best = { font: fk, xmul: mul, ymul: mul };
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Find the largest font + multiplier where the text fits on ONE line within `usableWidth`
+ * AND the height fits within `maxHeight`. Used for sequence labels that should fill
+ * the entire label area with a single line of text.
+ * Returns the LAST (largest) combination where both width and height constraints hold.
+ */
+export function calcOptimalFontFill(
+  text: string,
+  usableWidth: number,
+  maxHeight: number,
+): { font: TsplConfig["font"]; xmul: number; ymul: number } {
+  const fontKeys: TsplConfig["font"][] = ["2", "3", "4", "5"];
+  let best: { font: TsplConfig["font"]; xmul: number; ymul: number } = { font: "2", xmul: 1, ymul: 1 };
+  if (!text) return best;
+
+  for (const fk of fontKeys) {
+    const base = FONT[fk];
+    for (let mul = 1; mul <= 10; mul++) {
+      const effW = base.w * mul;
+      const effH = base.h * mul;
+      const charWidth = effW; // one char = one font cell width
+      const lineFits = text.length * charWidth <= usableWidth;
+      const heightFits = effH <= maxHeight;
+      if (lineFits && heightFits) {
         best = { font: fk, xmul: mul, ymul: mul };
       }
     }
@@ -226,9 +261,10 @@ export function buildTsplBytes(
       const xm = config.xmul ?? 1;
       const ym = config.ymul ?? 1;
 
+      const textAlign = SIDE > 0 ? "left" as const : "center" as const;
       for (const row of [...line1Rows, ...line2Rows]) {
         if (y + effH > totalH) break;
-        const x = centerX(row.length * effW, xOrig, cellW, SIDE);
+        const x = centerX(row.length * effW, xOrig, cellW, SIDE, textAlign);
         out.push(`TEXT ${x},${y},"${config.font}",0,${xm},${ym},"${esc(row)}"`);
         y += effH + GAP;
       }
@@ -244,7 +280,7 @@ export function buildTsplBytes(
       } else if (line3Rows.length > 0) {
         for (const row of line3Rows) {
           if (y + effH > totalH) break;
-          const x = centerX(row.length * effW, xOrig, cellW, SIDE);
+          const x = centerX(row.length * effW, xOrig, cellW, SIDE, textAlign);
           out.push(`TEXT ${x},${y},"${config.font}",0,${xm},${ym},"${esc(row)}"`);
           y += effH + GAP;
         }

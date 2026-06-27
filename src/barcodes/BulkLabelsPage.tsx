@@ -27,7 +27,7 @@ import {
   type ThermalSize,
   THERMAL_SIZES,
 } from "../pos/print";
-import { buildTsplBytes, buildTsplString, calcLabelCapacity, calcOptimalFont } from "../pos/tspl";
+import { buildTsplBytes, buildTsplString, calcLabelCapacity, calcOptimalFont, calcOptimalFontFill } from "../pos/tspl";
 import { TsplLabelPreview } from "../pos/TsplLabelPreview";
 import { DEFAULT_TSPL_CONFIG, type TsplConfig } from "../pos/tsplConfig";
 import { Button, Skeleton } from "../components/ui";
@@ -758,14 +758,24 @@ export function BulkLabelsPage() {
           }
 
           function autoFit() {
-            const text = customMode === "freetext"
-              ? (customText.split("\n").map((l) => l.trim()).find(Boolean) ?? "")
-              : (() => { const seq = generateSimpleSequence({ type: seqType, prefix: seqPrefix, suffix: seqSuffix, start: seqStart, count: Math.max(seqCount, 1) }); return seq[seq.length - 1] ?? ""; })();
-            if (!text) return;
-            const usableW = Math.floor((rollW * 8) / cols) - Math.round(tsplConfig.sideMarginMm * 8) * 2;
-            const availH = Math.max(0, rollH * 8 - Math.round(tsplConfig.topMarginMm * 8));
-            const opt = calcOptimalFont(text, usableW, availH);
-            updateTsplConfig((c) => ({ ...c, font: opt.font, xmul: opt.xmul, ymul: opt.ymul }));
+            if (customMode === "freetext") {
+              // Free text: pick largest font by height, wordWrap handles width
+              const text = customText.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+              if (!text) return;
+              const usableW = Math.floor((rollW * 8) / cols) - Math.round(tsplConfig.sideMarginMm * 8) * 2;
+              const availH = Math.max(0, rollH * 8 - Math.round(tsplConfig.topMarginMm * 8));
+              const opt = calcOptimalFont(text, usableW, availH);
+              updateTsplConfig((c) => ({ ...c, font: opt.font, xmul: opt.xmul, ymul: opt.ymul }));
+            } else {
+              // Sequence: fill entire label with the longest sequence entry
+              const seq = generateSimpleSequence({ type: seqType, prefix: seqPrefix, suffix: seqSuffix, start: seqStart, count: Math.max(seqCount, 1) });
+              const text = seq[seq.length - 1] ?? "";
+              if (!text) return;
+              const usableW = Math.floor((rollW * 8) / cols) - Math.round(tsplConfig.sideMarginMm * 8) * 2;
+              const availH = Math.max(0, rollH * 8 - Math.round(tsplConfig.topMarginMm * 8));
+              const opt = calcOptimalFontFill(text, usableW, availH);
+              updateTsplConfig((c) => ({ ...c, font: opt.font, xmul: opt.xmul, ymul: opt.ymul }));
+            }
           }
 
           return (

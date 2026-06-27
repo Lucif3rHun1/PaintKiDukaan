@@ -89,8 +89,9 @@ export function TsplLabelPreview({
     ctx.fillStyle = "#000";
 
     // line1 + line2 text rows.
+    const textAlign = SIDE > 0 ? "left" as const : "center" as const;
     for (const row of [...line1Rows, ...line2Rows]) {
-      const x = centerX(row.length * effW, 0, cellW, SIDE);
+      const x = centerX(row.length * effW, 0, cellW, SIDE, textAlign);
       ctx.font = `${effH}px monospace`;
       ctx.fillText(row, x, y + effH); // fillText y = baseline
       y += effH + GAP;
@@ -114,7 +115,7 @@ export function TsplLabelPreview({
     } else if (line3Rows.length > 0) {
       // Text-only mode — line3 rows.
       for (const row of line3Rows) {
-        const x = centerX(row.length * effW, 0, cellW, SIDE);
+        const x = centerX(row.length * effW, 0, cellW, SIDE, textAlign);
         ctx.font = `${effH}px monospace`;
         ctx.fillText(row, x, y + effH);
         y += effH + GAP;
