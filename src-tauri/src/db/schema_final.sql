@@ -353,13 +353,14 @@ CREATE INDEX idx_items_primary_location_id ON items(primary_location_id) WHERE i
 -- serves: "fast partial barcode prefix match" (e.g. typeahead scan)
 CREATE INDEX idx_items_is_active_barcode ON items(barcode) WHERE is_active = 1 AND barcode IS NOT NULL;
 
--- D5. Formulas (custom shade mixes sold on demand — no stock movement)
+-- D5. Formulas (custom shade mixes sold on demand — base items move stock when with_base=1)
 -- See ADR-011 (first-class entity) and ADR-012 (id_code as primary identifier).
 CREATE TABLE formulas (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   id_code             TEXT    NOT NULL UNIQUE,
   name                TEXT,
   with_base           INTEGER NOT NULL DEFAULT 0 CHECK(with_base IN (0,1)),
+  base_item_id        INTEGER REFERENCES items(id) ON DELETE SET NULL,
   retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),
   is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at          TEXT    NOT NULL DEFAULT (datetime('now','localtime')),

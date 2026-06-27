@@ -137,6 +137,7 @@ impl Db {
                id_code             TEXT    NOT NULL UNIQUE,\
                name                TEXT,\
                with_base           INTEGER NOT NULL DEFAULT 0 CHECK(with_base IN (0,1)),\
+               base_item_id        INTEGER REFERENCES items(id) ON DELETE SET NULL,\
                retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),\
                is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),\
                created_at          TEXT    NOT NULL DEFAULT (datetime('now','localtime')),\
@@ -267,6 +268,23 @@ impl Db {
                 conn.execute_batch(
                     "ALTER TABLE sale_items_new RENAME TO sale_items;\
                      CREATE INDEX IF NOT EXISTS idx_sale_items_formula_id ON sale_items(formula_id);",
+                )?;
+            }
+        }
+
+        // M-INLINE-005: add `base_item_id` column to `formulas` table so formulas
+        // with_base=1 can link to an inventory item for automatic stock deduction.
+        {
+            let has_base_item: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('formulas') WHERE name = 'base_item_id'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_base_item {
+                conn.execute_batch(
+                    "ALTER TABLE formulas ADD COLUMN base_item_id INTEGER REFERENCES items(id) ON DELETE SET NULL;",
                 )?;
             }
         }
