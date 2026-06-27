@@ -3,16 +3,19 @@ import {
   ArrowDownToLine,
   ArrowUpRight,
   Banknote,
+  BarChart3,
+  Percent,
   Receipt,
   ShoppingCart,
   TrendingUp,
   Users,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, EmptyState, Money, PeriodDropdown, Skeleton } from "../../../components/ui";
+import { Badge, Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton } from "../../../components/ui";
 import {
   dailySales,
   expenseSummary,
+  listSales,
   outstandingReport,
   paymentSummary,
   purchaseSummary,
@@ -21,7 +24,7 @@ import {
   topItemsSold,
 } from "../../../pos/api";
 import { todayLocalYyyymmdd, shiftDaysLocal } from "../../../lib/date";
-import { MetricCard, Row, TwoLineTrend } from "./shared";
+import { Row, TwoLineTrend } from "./shared";
 import { QuickActionsBar } from "./QuickActionsBar";
 
 const STAGGER_BUSINESS = 32_000;
@@ -78,6 +81,11 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
   const overviewSales = useQuery({
     queryKey: ["dashboard", "sales", "daily", "overview", overviewFrom, overviewTo],
     queryFn: () => dailySales(oFrom, oTo),
+    refetchInterval: STAGGER_BUSINESS,
+  });
+  const overviewSalesDetail = useQuery({
+    queryKey: ["dashboard", "sales", "range", overviewFrom, overviewTo],
+    queryFn: () => listSales(oFrom, oTo, 500),
     refetchInterval: STAGGER_BUSINESS,
   });
 
@@ -137,6 +145,15 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
   }, [weekPurchase.data, rangeDates]);
 
   const totalSales = overviewSales.data?.grand_total ?? 0;
+  const avgTxnValue = overviewSales.data
+    ? overviewSales.data.bill_count > 0
+      ? overviewSales.data.grand_total / overviewSales.data.bill_count
+      : 0
+    : 0;
+  const finals = (overviewSalesDetail.data ?? []).filter((sale) => sale.status === "final");
+  const quotations = (overviewSalesDetail.data ?? []).filter((sale) => sale.status === "quotation");
+  const totalBills = finals.length + quotations.length;
+  const quotationRate = totalBills > 0 ? Math.round((finals.length / totalBills) * 100) : 0;
   const totalExpense = todayExpense.data?.grand_total ?? 0;
   const receivableTone = (outstanding.data?.customer_total ?? 0) > 0 ? "text-destructive" : undefined;
   const payableTone = (outstanding.data?.vendor_total ?? 0) > 0 ? "text-destructive" : undefined;
@@ -155,7 +172,7 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
             onChange={(f, t) => { setOverviewFrom(f); setOverviewTo(t); }}
           />
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             icon={Banknote}
             label={isOverviewToday ? "Total Sales (today)" : "Total Sales"}
@@ -201,6 +218,27 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
               paise={todayPayments.data?.paid_paise ?? 0}
               className="text-xl font-semibold"
             />
+          </MetricCard>
+          <MetricCard
+            icon={BarChart3}
+            label="Avg Transaction"
+            loading={overviewSales.isLoading}
+            tone="info"
+          >
+            <Money paise={avgTxnValue} className="text-xl font-semibold" />
+          </MetricCard>
+          <MetricCard
+            icon={Percent}
+            label="Quotation Conversion"
+            loading={overviewSalesDetail.isLoading}
+            tone="success"
+            footer={
+              <Badge variant="success" size="sm">
+                {finals.length}/{totalBills} final bills
+              </Badge>
+            }
+          >
+            <span className="text-xl font-semibold tabular-nums">{quotationRate}%</span>
           </MetricCard>
         </div>
       </section>
