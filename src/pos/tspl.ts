@@ -137,48 +137,62 @@ export function buildTsplBytes(
   out.push(`REFERENCE 0,0`);  // reset coordinate origin — prevents printer accumulating offsets
   out.push(`DENSITY 8`);
   out.push(`SPEED 2`);
-  out.push(`CLS`);
 
-  for (let col = 0; col < cols; col++) {
-    const label = labels[col];
-    const xOrig = col * cellW;
+  const printQty = Math.max(1, qty);
 
-    if (col > 0) {
-      out.push(`LINE ${xOrig},0,${xOrig},${totalH},1`);
-    }
+  if (labels.length === 0) {
+    // Preserve original no-label behavior: one blank strip + one print command.
+    out.push(`CLS`);
+    out.push(`PRINT ${printQty},1`);
+    return Array.from(new TextEncoder().encode(out.join("\r\n") + "\r\n"));
+  }
 
-    if (!label) continue;
+  for (let i = 0; i < labels.length; i += cols) {
+    const chunk = labels.slice(i, i + cols);
+    out.push(`CLS`);
 
-    const line1Rows = label.line1 ? wordWrap(label.line1, usableW, tf.w) : [];
-    const line2Rows = label.line2 ? wordWrap(label.line2, usableW, tf.w) : [];
+    for (let col = 0; col < chunk.length; col++) {
+      const label = chunk[col];
+      const xOrig = col * cellW;
 
-    // y starts at the user-configured top margin — no auto-centering.
-    let y = Math.round(config.topMarginMm * d);
+      if (col > 0) {
+        out.push(`LINE ${xOrig},0,${xOrig},${totalH},1`);
+      }
 
-    for (const row of [...line1Rows, ...line2Rows]) {
-      const x = centerX(row.length * tf.w, xOrig, cellW, SIDE);
-      out.push(`TEXT ${x},${y},"${config.font}",0,1,1,"${esc(row)}"`);
-      y += tf.h + GAP;
-    }
+      if (!label) continue;
 
-    if (label.barcode) {
-      const barcodeW = estimateCode128Dots(label.barcode);
-      const barcodeX = centerX(barcodeW, xOrig, cellW, SIDE);
-      out.push(`BARCODE ${barcodeX},${y},"128",${BAR_HEIGHT},0,0,${NARROW},${NARROW},"${esc(label.barcode)}"`);
+      const line1Rows = label.line1 ? wordWrap(label.line1, usableW, tf.w) : [];
+      const line2Rows = label.line2 ? wordWrap(label.line2, usableW, tf.w) : [];
 
-      const skuT = fit(label.barcode, usableW, sf.w);
-      const skuX = centerX(skuT.length * sf.w, xOrig, cellW, SIDE);
-      out.push(`TEXT ${skuX},${y + BAR_HEIGHT + GAP},"2",0,1,1,"${esc(skuT)}"`);
-    } else if (label.line3) {
-      const line3Rows = wordWrap(label.line3, usableW, tf.w);
-      for (const row of line3Rows) {
+      // y starts at the user-configured top margin — no auto-centering.
+      let y = Math.round(config.topMarginMm * d);
+
+      for (const row of [...line1Rows, ...line2Rows]) {
         const x = centerX(row.length * tf.w, xOrig, cellW, SIDE);
         out.push(`TEXT ${x},${y},"${config.font}",0,1,1,"${esc(row)}"`);
         y += tf.h + GAP;
       }
+
+      if (label.barcode) {
+        const barcodeW = estimateCode128Dots(label.barcode);
+        const barcodeX = centerX(barcodeW, xOrig, cellW, SIDE);
+        out.push(`BARCODE ${barcodeX},${y},"128",${BAR_HEIGHT},0,0,${NARROW},${NARROW},"${esc(label.barcode)}"`);
+
+        const skuT = fit(label.barcode, usableW, sf.w);
+        const skuX = centerX(skuT.length * sf.w, xOrig, cellW, SIDE);
+        out.push(`TEXT ${skuX},${y + BAR_HEIGHT + GAP},"2",0,1,1,"${esc(skuT)}"`);
+      } else if (label.line3) {
+        const line3Rows = wordWrap(label.line3, usableW, tf.w);
+        for (const row of line3Rows) {
+          const x = centerX(row.length * tf.w, xOrig, cellW, SIDE);
+          out.push(`TEXT ${x},${y},"${config.font}",0,1,1,"${esc(row)}"`);
+          y += tf.h + GAP;
+        }
+      }
     }
+
+    out.push(`PRINT ${printQty},1`);
   }
 
-  out.push(`PRINT ${Math.max(1, qty)},1`);
   return Array.from(new TextEncoder().encode(out.join("\r\n") + "\r\n"));
 }
