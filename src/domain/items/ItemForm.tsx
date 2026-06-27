@@ -13,7 +13,7 @@ import { listLocations, listSubLocations } from "../locations/api";
 import { createInward } from "../../pos/api";
 import type { NewPurchase } from "../../pos/types";
 import { listCategories } from "../categories/api";
-import { BarcodeThumb } from "./BarcodeThumb";
+import { BarcodeThumb } from "@/components/ui/BarcodeThumb";
 import type {
   AppError,
   Brand,

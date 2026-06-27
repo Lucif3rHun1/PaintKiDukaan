@@ -531,10 +531,7 @@ export default function App() {
       )}
       {tab === "items" && (
         <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
-          <div className="flex items-center gap-4">
-            <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
-            <ItemSubNav active="items" />
-          </div>
+          <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
           <ErrorBoundary context="Inventory">
             <Suspense fallback={<RouteFallback />}>
               <ItemList role={role} />
@@ -569,10 +566,7 @@ export default function App() {
       })() : null}
       {tab === "barcodes" && (
         <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
-          <div className="flex items-center gap-4">
-            <h2 className="text-lg font-semibold text-slate-900">Barcode Labels</h2>
-            <ItemSubNav active="barcodes" />
-          </div>
+          <h2 className="text-lg font-semibold text-slate-900">Barcode Labels</h2>
           <ErrorBoundary context="Barcode Labels">
             <Suspense fallback={<RouteFallback />}>
               <BulkLabelsPage />
@@ -760,30 +754,5 @@ export default function App() {
         )}
       </InlineDialog>
     </AppShell>
-  );
-}
-
-function ItemSubNav({ active }: { active: "items" | "barcodes" }) {
-  const tabs: ReadonlyArray<{ id: "items" | "barcodes"; label: string; href: string }> = [
-    { id: "items", label: "Items", href: "#/items" },
-    { id: "barcodes", label: "Barcode Labels", href: "#/barcodes" },
-  ];
-  return (
-    <div className="flex gap-1 border-b border-slate-200">
-      {tabs.map((t) => (
-        <a
-          key={t.id}
-          href={t.href}
-          aria-current={active === t.id ? "page" : undefined}
-          className={`rounded-t-md border border-b-0 px-3 py-1.5 text-sm whitespace-nowrap outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-            active === t.id
-              ? "border-slate-200 bg-white font-medium text-slate-900"
-              : "border-transparent text-slate-500 hover:bg-white hover:text-slate-700"
-          }`}
-        >
-          {t.label}
-        </a>
-      ))}
-    </div>
   );
 }
