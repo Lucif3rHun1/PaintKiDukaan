@@ -21,28 +21,47 @@ describe("dashboard shared charts", () => {
     expect(screen.getByText("Negative").previousSibling).toHaveClass("bg-info");
   });
 
-  it("renders sales and purchase trend lines from uneven series", () => {
-    // Given: sales and purchases cover different day counts.
+  it("renders guarded actual trend lines before forecast threshold", () => {
+    // Given: enough history to show actual trend lines, but not enough to forecast.
     render(
       <TwoLineTrend
-        sales={[10000, 20000, 15000]}
-        purchases={[5000]}
-        labels={["2026-06-25", "2026-06-26", "2026-06-27"]}
+        sales={[10000, 20000, 15000, 12000, 11000, 13000, 14000]}
+        purchases={[5000, 8000, 7000, 6000, 5000, 4000, 3000]}
+        labels={["2026-06-21", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-27"]}
       />,
     );
 
     // When: the trend chart renders.
     const lines = document.querySelectorAll("polyline");
 
-    // Then: both series are present and labelled for users.
+    // Then: both actual series are present and forecast remains gated.
     expect(lines).toHaveLength(2);
     expect(lines[0]).toHaveClass("text-primary");
     expect(lines[1]).toHaveClass("text-info");
-    expect(screen.getAllByText("Sales")).toHaveLength(2);
-    expect(screen.getAllByText("Purchases")).toHaveLength(2);
-    expect(screen.getByText("Net")).toBeInTheDocument();
-    expect(screen.getByText("Avg/day")).toBeInTheDocument();
-    expect(screen.getByText("25/06")).toBeInTheDocument();
+    expect(screen.getAllByText("Sales")).toHaveLength(1);
+    expect(screen.getAllByText("Purchases")).toHaveLength(1);
+    expect(screen.getByText(/Forecast needs at least 14 daily points/)).toBeInTheDocument();
+    expect(screen.getByText("21/06")).toBeInTheDocument();
     expect(screen.getByText("27/06")).toBeInTheDocument();
+  });
+
+  it("renders a dashed forecast only after enough daily history", () => {
+    // Given: enough regular sales history for forecast guardrails to pass.
+    render(
+      <TwoLineTrend
+        sales={Array.from({ length: 30 }, (_value, index) => 10000 + index * 2000)}
+        purchases={Array.from({ length: 30 }, () => 5000)}
+        labels={Array.from({ length: 30 }, (_value, index) => `2026-06-${String(index + 1).padStart(2, "0")}`)}
+      />,
+    );
+
+    // When: the trend chart renders.
+    const lines = document.querySelectorAll("polyline");
+
+    // Then: actual sales, actual purchases, and dashed forecast are separate.
+    expect(lines).toHaveLength(3);
+    expect(lines[2]).toHaveAttribute("stroke-dasharray", "5 5");
+    expect(screen.getByText("Sales forecast")).toBeInTheDocument();
+    expect(screen.getByText(/confidence forecast/)).toBeInTheDocument();
   });
 });

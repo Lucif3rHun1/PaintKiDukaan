@@ -1,11 +1,6 @@
 import { type ReactNode } from "react";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
-import { Money, Skeleton } from "../../../components/ui";
+import { forecastDailySeries, type DataPoint } from "../../../analytics/forecast";
 import { formatRupeesCompact } from "../../../lib/money";
-
-export function cnTone(...c: string[]): string {
-  return c.filter(Boolean).join(" ");
-}
 
 interface RowProps {
   icon: React.ElementType<{ className?: string }>;
@@ -25,44 +20,6 @@ export function Row({ icon: Icon, label, value }: RowProps) {
   );
 }
 
-interface SparklineProps {
-  data: number[];
-  tone: string;
-}
-
-export function Sparkline({ data, tone }: SparklineProps) {
-  if (data.length < 2) return null;
-  const max = Math.max(...data, 1);
-  const min = Math.min(...data, 0);
-  const range = max - min || 1;
-  const width = 96;
-  const height = 28;
-  const points = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * width;
-      const y = height - ((v - min) / range) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className={cnTone("h-7 w-24", tone)}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <polyline
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-    </svg>
-  );
-}
-
 interface TwoLineTrendProps {
   sales: number[];
   purchases: number[];
@@ -75,86 +32,93 @@ function shortDate(label: string): string {
 }
 
 export function TwoLineTrend({ sales, purchases, labels = [] }: TwoLineTrendProps) {
-  if (sales.length < 2 && purchases.length < 2) return null;
-  const len = Math.max(sales.length, purchases.length, 2);
-  const series = [
-    sales.length < len ? [...sales, ...Array(len - sales.length).fill(0)] : sales,
-    purchases.length < len ? [...purchases, ...Array(len - purchases.length).fill(0)] : purchases,
-  ];
-  const all = [...series[0], ...series[1]];
+  const len = Math.max(sales.length, purchases.length, labels.length);
+  if (len === 0) return null;
+  const safeLen = Math.max(len, 1);
+  const salesSeries = normalizeSeries(sales, labels, safeLen);
+  const purchaseSeries = normalizeSeries(purchases, labels, safeLen);
+  const forecast = forecastDailySeries(salesSeries);
+  const forecastSales = forecast.kind === "forecast" ? forecast.points.filter((point) => point.isForecast) : [];
+  const all = [...salesSeries.map((point) => point.value), ...purchaseSeries.map((point) => point.value), ...forecastSales.map((point) => point.value)];
   const max = Math.max(...all, 1);
   const min = Math.min(...all, 0);
   const range = max - min || 1;
   const width = 240;
-  const height = 88;
-  const salesTotal = series[0].reduce((sum, value) => sum + value, 0);
-  const purchaseTotal = series[1].reduce((sum, value) => sum + value, 0);
-  const salesAverage = salesTotal / len;
-  const purchaseAverage = purchaseTotal / len;
-  const firstLabel = labels[0] ? shortDate(labels[0]) : "Start";
-  const lastLabel = labels[len - 1] ? shortDate(labels[len - 1]) : "End";
-  const toPoints = (data: number[]) =>
+  const height = 72;
+  const chartLen = safeLen + forecastSales.length;
+  const salesTotal = salesSeries.reduce((sum, point) => sum + point.value, 0);
+  const purchaseTotal = purchaseSeries.reduce((sum, point) => sum + point.value, 0);
+  const firstLabel = shortDate(salesSeries[0]?.date ?? "Start");
+  const lastActualLabel = shortDate(salesSeries[salesSeries.length - 1]?.date ?? "End");
+  const toPoints = (data: readonly DataPoint[], startIndex = 0) =>
     data
       .map((v, i) => {
-        const x = (i / (len - 1)) * width;
-        const y = height - ((v - min) / range) * height;
+        const denominator = Math.max(chartLen - 1, 1);
+        const x = ((i + startIndex) / denominator) * width;
+        const y = height - ((v.value - min) / range) * height;
         return `${x},${y}`;
       })
       .join(" ");
+  const forecastLine = forecast.kind === "forecast" ? [salesSeries[salesSeries.length - 1], ...forecastSales].filter(Boolean) : [];
+
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-        <div className="rounded-lg bg-muted/40 p-2">
-          <p className="text-muted-foreground">Sales</p>
-          <p className="font-semibold tabular-nums text-primary">{formatRupeesCompact(salesTotal)}</p>
-        </div>
-        <div className="rounded-lg bg-muted/40 p-2">
-          <p className="text-muted-foreground">Purchases</p>
-          <p className="font-semibold tabular-nums text-info">{formatRupeesCompact(purchaseTotal)}</p>
-        </div>
-        <div className="rounded-lg bg-muted/40 p-2">
-          <p className="text-muted-foreground">Net</p>
-          <p className="font-semibold tabular-nums">{formatRupeesCompact(salesTotal - purchaseTotal)}</p>
-        </div>
-        <div className="rounded-lg bg-muted/40 p-2">
-          <p className="text-muted-foreground">Avg/day</p>
-          <p className="font-semibold tabular-nums">{formatRupeesCompact(salesAverage - purchaseAverage)}</p>
-        </div>
-      </div>
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        className="h-28 w-full"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <line x1="0" y1="0" x2={width} y2="0" className="stroke-border" strokeWidth="1" />
-        <line x1="0" y1={height / 2} x2={width} y2={height / 2} className="stroke-border/60" strokeWidth="1" />
-        <line x1="0" y1={height} x2={width} y2={height} className="stroke-border" strokeWidth="1" />
-        <polyline
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={toPoints(series[0])}
-          className="text-primary"
-        />
-        <polyline
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={toPoints(series[1])}
-          className="text-info"
-        />
-      </svg>
-      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{firstLabel}</span>
-        <span>Daily high {formatRupeesCompact(max)}</span>
-        <span>{lastLabel}</span>
-      </div>
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
+        Sales <span className="font-medium text-primary">{formatRupeesCompact(salesTotal)}</span> · Purchases{" "}
+        <span className="font-medium text-info">{formatRupeesCompact(purchaseTotal)}</span> · Difference{" "}
+        <span className="font-medium text-foreground">{formatRupeesCompact(salesTotal - purchaseTotal)}</span> across {safeLen} days.
+      </p>
+      {forecast.kind === "insufficient" ? (
+        <p className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">{forecast.message}</p>
+      ) : (
+        <>
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="h-24 w-full"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label="Daily sales and purchases trend"
+          >
+            <line x1="0" y1={height / 2} x2={width} y2={height / 2} className="stroke-border/60" strokeWidth="1" />
+            <polyline
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              points={toPoints(salesSeries)}
+              className="text-primary"
+            />
+            <polyline
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              points={toPoints(purchaseSeries)}
+              className="text-info"
+            />
+            {forecastLine.length > 1 ? (
+              <polyline
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeDasharray="5 5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                points={toPoints(forecastLine, safeLen - 1)}
+                className="text-primary"
+                opacity="0.55"
+              />
+            ) : null}
+          </svg>
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>{firstLabel}</span>
+            <span>{lastActualLabel}</span>
+          </div>
+        </>
+      )}
+      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm bg-primary" />
           Sales
@@ -163,9 +127,23 @@ export function TwoLineTrend({ sales, purchases, labels = [] }: TwoLineTrendProp
           <span className="inline-block h-2 w-3 rounded-sm bg-info" />
           Purchases
         </span>
+        {forecast.kind === "forecast" ? (
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-0.5 w-4 border-t border-dashed border-primary" />
+            Sales forecast
+          </span>
+        ) : null}
       </div>
+      {forecast.kind === "actuals" || forecast.kind === "forecast" ? <p className="text-xs text-muted-foreground">{forecast.message}</p> : null}
     </div>
   );
+}
+
+function normalizeSeries(values: readonly number[], labels: readonly string[], length: number): readonly DataPoint[] {
+  return Array.from({ length }, (_value, index) => ({
+    date: labels[index] ?? `Day ${index + 1}`,
+    value: Math.max(values[index] ?? 0, 0),
+  }));
 }
 
 interface DonutProps {
@@ -244,27 +222,5 @@ function LegendDot({ color, label, count }: { color: string; label: string; coun
       <span className="flex-1 text-muted-foreground">{label}</span>
       <span className="tabular-nums font-medium">{count}</span>
     </li>
-  );
-}
-
-interface DeltaProps {
-  value: number;
-  prefix: string;
-  absolute?: boolean;
-  loading?: boolean;
-}
-
-export function Delta({ value, prefix, absolute, loading }: DeltaProps) {
-  if (loading) return <Skeleton className="h-4 w-24" />;
-  const isPositive = value >= 0;
-  const display = absolute ? Math.abs(value) : value;
-  const Icon = isPositive ? ArrowUpRight : ArrowDownRight;
-  const tone = isPositive ? "text-success" : "text-destructive";
-  return (
-    <span className={cnTone("flex items-center gap-1 text-xs", tone)}>
-      <Icon className="h-3 w-3" />
-      {absolute ? display : <Money paise={display} compact />}
-      <span className="text-muted-foreground">{prefix}</span>
-    </span>
   );
 }

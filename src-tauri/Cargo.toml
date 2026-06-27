@@ -1,6 +1,6 @@
 [package]
 name = "paintkiduakan-master"
-version = "0.1.5"
+version = "0.1.6"
 description = "PaintKiDukaan Master — paint shop inventory + billing system"
 authors = ["PaintKiDukaan"]
 edition = "2021"

@@ -3,10 +3,12 @@
 // line into the draft. Save finalizes all accumulated lines.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PackagePlus, Search, Truck, X } from "lucide-react";
+import { ArrowLeft, PackagePlus, Search, Truck, X } from "lucide-react";
 import { EmptyState, Skeleton } from "../../components/ui";
 
 import { Button, InlineDialog, Money, MoneyInput, QtyInput } from "../../components/ui";
+import { DraftBadge } from "../../components/ui/DraftBadge";
+import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
@@ -20,13 +22,15 @@ import { VendorForm } from "../../domain/vendors/VendorForm";
 import { listVendors } from "../../domain/vendors/api";
 import { outstandingReport } from "../api";
 import type { Item, Location, Vendor } from "../../domain/types";
-import { createInward, lastCost, lastRetail, listPurchases } from "../api";
+import { createInward, deleteDraft, lastCost, lastRetail, listPurchases } from "../api";
+import { useAutosave, useDirtyForm } from "../hooks";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay } from "../../lib/date";
 import type { InwardLine, NewPurchase, Purchase } from "../types";
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
+  onExit?: () => void;
 }
 
 interface DraftLine {
@@ -42,6 +46,51 @@ interface DraftLine {
   retail_overridden: boolean;
   location_id: number;
   item_query: string;
+}
+
+interface PurchaseDraftData {
+  readonly draftLines?: DraftLine[];
+  readonly vendorId?: number | null;
+  readonly notes?: string;
+  readonly autoPrint?: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isDraftLine(value: unknown): value is DraftLine {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.row_id === "string" &&
+    typeof value.item_id === "number" &&
+    typeof value.qty === "number" &&
+    (value.unit_type === "unit" || value.unit_type === "box") &&
+    typeof value.unit_id === "number" &&
+    typeof value.unit_code === "string" &&
+    typeof value.cost_price === "number" &&
+    typeof value.retail_price === "number" &&
+    (typeof value.last_retail === "number" || value.last_retail === null) &&
+    typeof value.retail_overridden === "boolean" &&
+    typeof value.location_id === "number" &&
+    typeof value.item_query === "string"
+  );
+}
+
+function parsePurchaseDraft(dataJson: string): PurchaseDraftData | null {
+  const parsed: unknown = JSON.parse(dataJson);
+  if (!isRecord(parsed)) return null;
+  return {
+    draftLines: Array.isArray(parsed.draftLines)
+      ? parsed.draftLines.filter(isDraftLine)
+      : undefined,
+    vendorId:
+      typeof parsed.vendorId === "number" || parsed.vendorId === null
+        ? parsed.vendorId
+        : undefined,
+    notes: typeof parsed.notes === "string" ? parsed.notes : undefined,
+    autoPrint: typeof parsed.autoPrint === "boolean" ? parsed.autoPrint : undefined,
+  };
 }
 
 function newRowId(): string {
@@ -65,7 +114,7 @@ function emptyEntry(locationId: number): DraftLine {
   };
 }
 
-export default function InwardPage({ user: _user }: Props) {
+export default function InwardPage({ user: _user, onExit }: Props) {
   const [draft, setDraft] = useState<DraftLine[]>([]);
   const [entry, setEntry] = useState<DraftLine>(() => emptyEntry(0));
   const [vendorId, setVendorId] = useState<number | null>(null);
@@ -84,6 +133,38 @@ export default function InwardPage({ user: _user }: Props) {
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [vendorOutstandings, setVendorOutstandings] = useState<Record<number, number>>({});
   const [initialLoading, setInitialLoading] = useState(true);
+
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [draftRestoreOpen, setDraftRestoreOpen] = useState(false);
+
+  const draftData = useMemo(() => ({
+    draftLines: draft,
+    vendorId,
+    notes,
+    autoPrint,
+  }), [draft, vendorId, notes, autoPrint]);
+
+  const { isDirty, markDirty, resetDirty } = useDirtyForm();
+  const { draft: savedDraft, loading: draftLoading } = useAutosave("purchase", draftData);
+
+  const isInitialDraftMount = useRef(true);
+  useEffect(() => {
+    if (isInitialDraftMount.current) {
+      isInitialDraftMount.current = false;
+      return;
+    }
+    if (!draftLoading && draftData.draftLines.length > 0) {
+      markDirty();
+    }
+  }, [draftData, draftLoading, markDirty]);
+
+  useEffect(() => {
+    if (savedDraft && !draftLoading && isInitialDraftMount.current === false) {
+      if (draft.length === 0) {
+        setDraftRestoreOpen(true);
+      }
+    }
+  }, [savedDraft, draftLoading, draft.length]);
 
   const entrySearchRef = useRef<HTMLInputElement>(null);
 
@@ -249,6 +330,8 @@ export default function InwardPage({ user: _user }: Props) {
       setStatus(`Inward #${res.id} saved${res.print_label ? " — label will print" : ""}`);
       setDraft([]);
       setNotes("");
+      void deleteDraft("purchase");
+      resetDirty();
       setRecent(await listPurchases());
     } catch (e) {
       setStatus(`Error: ${extractError(e)}`);
@@ -282,10 +365,72 @@ export default function InwardPage({ user: _user }: Props) {
 
   useGlobalShortcuts({ onSave: () => void submit() });
 
+  function handleExit() {
+    if (!onExit) return;
+    if (isDirty) {
+      setShowExitModal(true);
+    } else {
+      onExit();
+    }
+  }
+
+  function handleRestoreDraft() {
+    if (!savedDraft) return;
+    try {
+      const data = parsePurchaseDraft(savedDraft.data_json);
+      if (!data) {
+        toast.warning("Saved purchase draft could not be restored");
+      } else {
+        if (data.draftLines) setDraft(data.draftLines);
+        if (data.vendorId !== undefined) setVendorId(data.vendorId);
+        if (data.notes !== undefined) setNotes(data.notes);
+        if (data.autoPrint !== undefined) setAutoPrint(data.autoPrint);
+      }
+    } catch (e: unknown) {
+      console.warn("[InwardPage] corrupt purchase draft", e);
+      toast.warning("Saved purchase draft could not be restored");
+    }
+    setDraftRestoreOpen(false);
+    resetDirty();
+  }
+
+  function handleSaveDraftAndExit() {
+    resetDirty();
+    setShowExitModal(false);
+    void deleteDraft("purchase");
+    onExit?.();
+  }
+
+  function handleDiscardAndExit() {
+    resetDirty();
+    setShowExitModal(false);
+    void deleteDraft("purchase");
+    onExit?.();
+  }
+
+  function handleCancelExit() {
+    setShowExitModal(false);
+  }
+
   return (
     <div className="space-y-4">
       {/* ── Sticky toolbar: meta + new-item + save ─────────── */}
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card/95 px-4 py-2.5 backdrop-blur">
+        {onExit ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            icon={ArrowLeft}
+            onClick={handleExit}
+            className="!h-8 !px-2 !text-xs"
+          >
+            Back to inward
+          </Button>
+        ) : null}
+
+        <DraftBadge draft={savedDraft} />
+
         {/* Vendor typeahead — search + add combined into one input */}
         <div className="relative min-w-[200px] flex-1 sm:flex-none sm:w-64">
           <Truck className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -731,6 +876,38 @@ export default function InwardPage({ user: _user }: Props) {
           onCancel={() => setAddItemOpen(false)}
         />
       </InlineDialog>
+
+      <UnsavedChangesModal
+        open={showExitModal}
+        onSaveDraft={handleSaveDraftAndExit}
+        onDiscard={handleDiscardAndExit}
+        onCancel={handleCancelExit}
+      />
+
+      {draftRestoreOpen && savedDraft && (
+        <InlineDialog
+          open={draftRestoreOpen}
+          onClose={() => setDraftRestoreOpen(false)}
+          title="Restore draft?"
+          description={`You have a saved draft from ${new Date(savedDraft.updated_at).toLocaleString()}.`}
+        >
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setDraftRestoreOpen(false);
+                void deleteDraft("purchase");
+              }}
+            >
+              Start fresh
+            </Button>
+            <Button type="button" variant="primary" onClick={handleRestoreDraft}>
+              Restore
+            </Button>
+          </div>
+        </InlineDialog>
+      )}
     </div>
   );
 }

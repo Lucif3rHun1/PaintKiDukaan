@@ -31,6 +31,8 @@ import {
   Skeleton,
   cn,
 } from "../../components/ui";
+import { DraftBadge } from "../../components/ui/DraftBadge";
+import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
@@ -50,9 +52,11 @@ import { FormulaForm } from "../../domain/formulas/FormulaForm";
 import {
   convertQuotation,
   createSale,
+  deleteDraft,
   getSale,
   listSales,
 } from "../api";
+import { useAutosave, useDirtyForm } from "../hooks";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay, todayLocalYyyymmdd } from "../../lib/date";
 import { ipc } from "../../shell/lib/ipc";
@@ -107,6 +111,42 @@ export default function SalesPage({ user, onExit }: Props) {
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createFormulaOpen, setCreateFormulaOpen] = useState(false);
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
+
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
+  const [draftRestoreOpen, setDraftRestoreOpen] = useState(false);
+
+  const draftData = useMemo(() => ({
+    kind,
+    customerId: customer?.id ?? null,
+    lines,
+    billDiscount,
+    splits,
+    validityDays,
+    ackFlag,
+  }), [kind, customer, lines, billDiscount, splits, validityDays, ackFlag]);
+
+  const { isDirty, markDirty, resetDirty } = useDirtyForm();
+  const { draft, loading: draftLoading } = useAutosave("sale", draftData);
+
+  const isInitialDraftMount = useRef(true);
+  useEffect(() => {
+    if (isInitialDraftMount.current) {
+      isInitialDraftMount.current = false;
+      return;
+    }
+    if (!draftLoading && draftData.lines.length > 0) {
+      markDirty();
+    }
+  }, [draftData, draftLoading, markDirty]);
+
+  useEffect(() => {
+    if (draft && !draftLoading && isInitialDraftMount.current === false) {
+      if (lines.length === 0) {
+        setDraftRestoreOpen(true);
+      }
+    }
+  }, [draft, draftLoading, lines.length]);
 
   // ---- Computed totals ----
   const subtotal = useMemo(
@@ -285,6 +325,8 @@ export default function SalesPage({ user, onExit }: Props) {
           setAckFlag(false);
           void refreshRecent();
           void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+          void deleteDraft("sale");
+          resetDirty();
           if (shouldPrintAfterSaveRef.current) {
             shouldPrintAfterSaveRef.current = false;
             void tryPrintReceipt(id);
@@ -378,6 +420,46 @@ export default function SalesPage({ user, onExit }: Props) {
     refreshRecent();
   }, [refreshRecent]);
 
+  function handleRestoreDraft() {
+    if (!draft) return;
+    try {
+      const data = JSON.parse(draft.data_json);
+      if (data.kind) setKind(data.kind);
+      if (data.lines) setLines(data.lines);
+      if (data.billDiscount != null) setBillDiscount(data.billDiscount);
+      if (data.splits) setSplits(data.splits);
+      if (data.validityDays != null) setValidityDays(data.validityDays);
+      if (data.ackFlag != null) setAckFlag(data.ackFlag);
+    } catch {
+      void 0;
+    }
+    setDraftRestoreOpen(false);
+    resetDirty();
+  }
+
+  function handleSaveDraftAndExit() {
+    const exit = pendingExit ?? onExit;
+    resetDirty();
+    setShowExitModal(false);
+    setPendingExit(null);
+    void deleteDraft("sale");
+    exit();
+  }
+
+  function handleDiscardAndExit() {
+    const exit = pendingExit ?? onExit;
+    resetDirty();
+    setShowExitModal(false);
+    setPendingExit(null);
+    void deleteDraft("sale");
+    exit();
+  }
+
+  function handleCancelExit() {
+    setShowExitModal(false);
+    setPendingExit(null);
+  }
+
   // ---- Render ----
   return (
     <div className="space-y-4">
@@ -388,10 +470,18 @@ export default function SalesPage({ user, onExit }: Props) {
           variant="ghost"
           size="sm"
           icon={ArrowLeft}
-          onClick={onExit}
+          onClick={() => {
+            if (isDirty) {
+              setPendingExit(() => onExit);
+              setShowExitModal(true);
+            } else {
+              onExit();
+            }
+          }}
         >
           Back to sales
         </Button>
+        <DraftBadge draft={draft} />
         <h1 className="text-lg font-semibold text-foreground">
           {kind === "final" ? "New Bill" : "New Quotation"}
         </h1>
@@ -823,6 +913,38 @@ export default function SalesPage({ user, onExit }: Props) {
           onCancel={() => setCreateFormulaOpen(false)}
         />
       </InlineDialog>
+
+      <UnsavedChangesModal
+        open={showExitModal}
+        onSaveDraft={handleSaveDraftAndExit}
+        onDiscard={handleDiscardAndExit}
+        onCancel={handleCancelExit}
+      />
+
+      {draftRestoreOpen && draft && (
+        <InlineDialog
+          open={draftRestoreOpen}
+          onClose={() => setDraftRestoreOpen(false)}
+          title="Restore draft?"
+          description={`You have a saved draft from ${new Date(draft.updated_at).toLocaleString()}.`}
+        >
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setDraftRestoreOpen(false);
+                void deleteDraft("sale");
+              }}
+            >
+              Start fresh
+            </Button>
+            <Button type="button" variant="primary" onClick={handleRestoreDraft}>
+              Restore
+            </Button>
+          </div>
+        </InlineDialog>
+      )}
     </div>
   );
 }

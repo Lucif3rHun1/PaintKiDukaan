@@ -463,7 +463,10 @@ export default function App() {
         <ErrorBoundary context="Inward — new">
           <Suspense fallback={<RouteFallback />}>
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-              <InwardPage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
+              <InwardPage
+                user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+                onExit={() => (window.location.hash = "#/inward")}
+              />
             </div>
           </Suspense>
         </ErrorBoundary>

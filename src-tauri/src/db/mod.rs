@@ -289,6 +289,30 @@ impl Db {
             }
         }
 
+        // M-INLINE-006: drafts table for autosave
+        {
+            let has_drafts = conn
+                .prepare("PRAGMA table_info(drafts)")
+                .and_then(|mut p| {
+                    let mut rows = p.query([])?;
+                    Ok(rows.next()?.is_some())
+                })
+                .unwrap_or(false);
+            if !has_drafts {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS drafts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+                form_type  TEXT    NOT NULL CHECK(form_type IN ('sale','purchase','return')),
+                data_json  TEXT    NOT NULL DEFAULT '{}',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(user_id, form_type)
+            );",
+                )?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\

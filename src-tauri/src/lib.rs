@@ -305,6 +305,9 @@ pub fn run() {
             commands::sales::cmd_list_sale_payments,
             commands::sales::cmd_record_sale_payment,
             commands::sales::cmd_void_sale,
+            commands::drafts::cmd_save_draft,
+            commands::drafts::cmd_get_draft,
+            commands::drafts::cmd_delete_draft,
             // Purchases (Slice C)
             commands::purchases::cmd_create_inward,
             commands::purchases::cmd_last_cost,

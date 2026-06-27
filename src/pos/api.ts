@@ -3,7 +3,7 @@
 // UI can still be exercised during development.
 
 import { tauriInvoke } from "../lib/security/tauri";
-import type { ImportResult } from "../domain/types";
+import type { Draft, ImportResult } from "../domain/types";
 import type {
   BackupGate,
   CashSalesSummary,
@@ -66,6 +66,13 @@ export const movementsForItem = (itemId: number, limit = 200): Promise<StockMove
   isTauri()
     ? tauriInvoke<StockMovement[]>("cmd_movements_for_item", { item_id: itemId, limit })
     : Promise.resolve([]);
+
+export const saveDraft = (formType: string, dataJson: string): Promise<number> =>
+  isTauri() ? tauriInvoke<number>("cmd_save_draft", { formType, dataJson }) : Promise.resolve(0);
+export const getDraft = (formType: string): Promise<Draft | null> =>
+  isTauri() ? tauriInvoke<Draft | null>("cmd_get_draft", { formType }) : Promise.resolve(null);
+export const deleteDraft = (formType: string): Promise<void> =>
+  isTauri() ? tauriInvoke<void>("cmd_delete_draft", { formType }) : Promise.resolve();
 
 // ----- Day close -----
 export const cashSalesFor = (userId: number, date: string): Promise<CashSalesSummary> =>

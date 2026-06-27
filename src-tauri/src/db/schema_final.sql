@@ -914,6 +914,20 @@ INSERT OR IGNORE INTO brands (name, prefix, created_at, updated_at) VALUES
 INSERT OR IGNORE INTO brand_sequences (brand_id, prefix, next_seq, padding, updated_at)
   SELECT id, prefix, 1, 4, 0 FROM brands;
 
+-- =====================================================================
+-- SECTION M — Drafts (autosave)
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS drafts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+  form_type  TEXT    NOT NULL CHECK(form_type IN ('sale','purchase','return')),
+  data_json  TEXT    NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(user_id, form_type)
+);
+
 -- ============================================================
 -- FTS5 full-text search index for items
 -- Indexes: name, sku_code, barcode, brand (denormalized text)
@@ -949,3 +963,14 @@ END;
 -- (no-op on fresh DB; catches data on schema re-apply/migration)
 INSERT INTO items_fts(rowid, name, sku_code, barcode, brand)
   SELECT id, name, sku_code, barcode, brand FROM items;
+
+-- SECTION M: Drafts (autosave-as-draft for POS forms)
+CREATE TABLE IF NOT EXISTS drafts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+  form_type  TEXT    NOT NULL CHECK(form_type IN ('sale','purchase','return')),
+  data_json  TEXT    NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(user_id, form_type)
+);

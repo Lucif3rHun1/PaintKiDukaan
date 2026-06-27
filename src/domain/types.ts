@@ -361,6 +361,15 @@ export interface UnitConversion {
   factor: number;
 }
 
+export interface Draft {
+  id: number;
+  user_id: number;
+  form_type: string;
+  data_json: string;
+  updated_at: number;
+  created_at: number;
+}
+
 export interface AppError {
   code:
     | "db"

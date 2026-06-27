@@ -62,6 +62,23 @@ jobs:
           workspaces: src-tauri -> target
           key: ${{ matrix.target }}
 
+      - name: Setup ARM64 MSVC tools (Windows ARM64)
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          # Install the ARM64 build tools so cargo can link for aarch64
+          choco install visualstudio2022-workload-vctools -y --params "--quiet --wait" 2>$null
+          # Add ARM64 MSVC host tools to PATH
+          $vcInstallDir = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          if ($vcInstallDir) {
+            $arm64Bin = Join-Path $vcInstallDir "VC\Tools\MSVC\*\bin\Hostx64\arm64"
+            $arm64Path = Get-Item $arm64Bin | Select-Object -First 1 -ExpandProperty FullName
+            if ($arm64Path) {
+              echo "$arm64Path" >> $env:GITHUB_PATH
+              Write-Host "Added ARM64 MSVC tools to PATH: $arm64Path"
+            }
+          }
+
       - name: Install OpenSSL (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -77,10 +94,6 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
-          # Windows code-signing (optional — only active when secrets are set)
-          TAURI_WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
-          TAURI_WINDOWS_PRIVATE_KEY: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
-          TAURI_WINDOWS_PRIVATE_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: pnpm tauri build --target ${{ matrix.target }}
 
       - name: List bundle outputs (debug)
@@ -106,15 +119,6 @@ jobs:
             target/${{ matrix.target }}/release/bundle/*/*.sig
 
   # ── Windows code-signing via SignPath (free for OSS) ─────────────────────
-  # To activate:
-  #   1. Apply at https://signpath.io/product/open-source (public repo required)
-  #   2. Once approved, add repo secrets:
-  #        SIGNPATH_API_TOKEN       – API token from SignPath dashboard
-  #   3. Add repo variables:
-  #        SIGNPATH_ORGANIZATION_ID – from SignPath dashboard
-  #   4. Create artifact config "paintkiduakan-nsis" and signing policy
-  #      "release-signing" in the SignPath dashboard pointing at the .exe
-  # SignPath will re-upload a signed .exe to the release automatically.
   sign-windows:
     name: sign Windows installer (SignPath)
     runs-on: ubuntu-latest
@@ -152,10 +156,104 @@ jobs:
             signed-windows-x86_64/**/*.exe
             signed-windows-aarch64/**/*.exe
 
+      - name: Upload signed installers as GitHub artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-windows-x86_64
+          path: signed-windows-x86_64/**/*.exe
+
+      - name: Upload signed installers as GitHub artifacts (aarch64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-windows-aarch64
+          path: signed-windows-aarch64/**/*.exe
+
+  # ── Regenerate updater signatures after external signing ──────────────────
+  # .sig files are generated BEFORE SignPath signs, so they become invalid.
+  # This job re-signs the signed .exe with the Tauri updater key so the
+  # auto-updater can verify the download.
+  regenerate-updater-signatures:
+    name: regenerate updater signatures
+    runs-on: ubuntu-latest
+    needs: [build, sign-windows]
+    if: always() && needs.build.result == 'success' && (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Download build outputs
+        uses: actions/download-artifact@v4
+        with:
+          path: build-artifacts
+
+      - name: Re-sign updater artifacts
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: |
+          set -euo pipefail
+
+          # Install the Tauri CLI to get `cargo tauri signer`
+          cargo install tauri-cli --version "^2" || true
+
+          re_sign() {
+            local exe="$1"
+            local sig_file="${exe}.sig"
+            echo "Re-signing: $exe"
+            # Remove the stale .sig
+            rm -f "$sig_file"
+            # Generate fresh .sig from the (now signed) .exe
+            cargo tauri signer sign \
+              -k "$TAURI_SIGNING_PRIVATE_KEY" \
+              -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+              "$exe"
+            if [[ -f "$sig_file" ]]; then
+              echo "OK: $(basename "$sig_file") ($(wc -c < "$sig_file") bytes)"
+            else
+              echo "ERROR: .sig not created for $exe" >&2
+              exit 1
+            fi
+          }
+
+          # Prefer signed installer if SignPath ran; fall back to original
+          for arch in x86_64 aarch64; do
+            signed_dir="build-artifacts/signed-windows-${arch}"
+            original_dir="build-artifacts/windows-${arch}"
+
+            if [[ -d "$signed_dir" ]]; then
+              exe="$(find "$signed_dir" -name '*.exe' -type f | head -n 1)"
+            else
+              exe="$(find "$original_dir" -name '*.exe' -type f | head -n 1)"
+            fi
+
+            if [[ -n "$exe" ]]; then
+              re_sign "$exe"
+              # Upload .sig to release
+              sig="${exe}.sig"
+              if [[ -f "$sig" ]]; then
+                gh release upload "${{ github.ref_name }}" "$sig" --clobber || true
+              fi
+            else
+              echo "WARNING: No .exe found for ${arch}, skipping" >&2
+            fi
+          done
+
+      - name: Upload regenerated signatures
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-sigs
+          path: |
+            build-artifacts/**/*.exe.sig
+
   latest-json:
     name: publish latest.json
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, regenerate-updater-signatures]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -164,6 +262,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+
+      - name: Download regenerated signatures
+        uses: actions/download-artifact@v4
+        with:
+          name: regenerated-sigs
+          path: release-artifacts/regenerated-sigs
 
       - name: Generate latest.json
         shell: bash
@@ -179,8 +283,6 @@ jobs:
           repo="${GITHUB_REPOSITORY}"
           release_url="https://github.com/${repo}/releases/download/${GITHUB_REF_NAME}"
 
-          # upload-artifact@v4 preserves full workspace-relative paths, so we
-          # search by filename (-name) rather than by flat path (-path).
           pick_one() {
             local artifact_dir="$1"
             local name_glob="$2"
@@ -194,6 +296,21 @@ jobs:
             printf '%s' "$file"
           }
 
+          # Prefer regenerated .sig over original
+          find_sig() {
+            local artifact_dir="$1"
+            local name_glob="$2"
+            # Try regenerated first
+            local regen
+            regen="$(find "release-artifacts/regenerated-sigs" -type f -name "${name_glob}" 2>/dev/null | sort | head -n 1)"
+            if [[ -n "$regen" ]]; then
+              echo "$regen"
+              return
+            fi
+            # Fall back to original
+            find "release-artifacts/$artifact_dir" -type f -name "${name_glob}" | sort | head -n 1
+          }
+
           read_sig() {
             local file="$1"
             tr -d '\n' < "$file"
@@ -204,9 +321,9 @@ jobs:
           mac_x86_64_asset="$(pick_one 'macos-x86_64' '*.app.tar.gz')"
           mac_x86_64_sig="$(pick_one 'macos-x86_64' '*.app.tar.gz.sig')"
           win_x64_asset="$(pick_one 'windows-x86_64' '*.exe')"
-          win_x64_sig="$(pick_one 'windows-x86_64' '*.exe.sig')"
+          win_x64_sig="$(find_sig 'windows-x86_64' '*.exe.sig')"
           win_arm64_asset="$(pick_one 'windows-aarch64' '*.exe')"
-          win_arm64_sig="$(pick_one 'windows-aarch64' '*.exe.sig')"
+          win_arm64_sig="$(find_sig 'windows-aarch64' '*.exe.sig')"
 
           mac_aarch64_name="$(basename "$mac_aarch64_asset")"
           mac_x86_64_name="$(basename "$mac_x86_64_asset")"

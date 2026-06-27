@@ -22,6 +22,7 @@ pub mod purchases;
 pub mod reports;
 pub mod sales;
 pub mod sequences;
+pub mod drafts;
 
 // CSV import
 pub mod import;
