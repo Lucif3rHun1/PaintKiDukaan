@@ -1,4 +1,6 @@
 use tauri::Manager;
+use tauri_plugin_process::ProcessExt;
+use tauri_plugin_updater::UpdaterExt;
 
 pub mod commands;
 pub mod crypto;
@@ -94,6 +96,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(commands::auth::AppState::default())
         .setup(|app| {
             log::info!("=== PaintKiDukaan session started ===");
@@ -360,8 +363,127 @@ pub fn run() {
             scan::set_scan_target,
             scan::scan_target,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running PaintKiDukaan");
+        .build(tauri::generate_context!())
+        .expect("error while building PaintKiDukaan");
+
+    if cfg!(debug_assertions) {
+        if let Some(main) = app.get_webview_window("main") {
+            let _ = main.show();
+        }
+    } else {
+        run_update_gate(&app);
+    }
+
+    app.run(|_, _| {});
+}
+
+fn run_update_gate(app: &tauri::App) {
+    let splash = match tauri::WebviewWindowBuilder::new(
+        app,
+        "splash",
+        tauri::WebviewUrl::App("splash.html".into()),
+    )
+    .inner_size(480.0, 320.0)
+    .decorations(false)
+    .center()
+    .always_on_top(true)
+    .build()
+    {
+        Ok(w) => w,
+        Err(e) => {
+            log::warn!("Failed to create splash window: {e}");
+            show_main(app);
+            return;
+        }
+    };
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            log::warn!("Failed to create tokio runtime: {e}");
+            let _ = splash.close();
+            show_main(app);
+            return;
+        }
+    };
+
+    rt.block_on(async {
+        let updater = app.updater();
+
+        // ── 30s check timeout ─────────────────────────────────────
+        let check_outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            updater.check(),
+        )
+        .await;
+
+        let update = match check_outcome {
+            Ok(Ok(Some(u))) => u,
+            Ok(Ok(None)) => return, // no update → fall through to show main
+            Ok(Err(e)) => {
+                log::warn!("Update check failed: {e}");
+                let msg = e.to_string().replace('\\', "\\\\").replace('\'', "\\'");
+                let _ = splash.eval(&format!(
+                    "window.__showError('{msg}')"
+                ));
+                // Give user a moment to see the error before we close splash
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                return;
+            }
+            Err(_) => {
+                log::warn!("Update check timed out after 30 s");
+                let _ = splash.eval(
+                    "window.__showError('Update check timed out. Check your internet connection and retry.')",
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                return;
+            }
+        };
+
+        // ── Update available → download with 5-minute timeout ─────
+        let downloaded = std::sync::atomic::AtomicU64::new(0);
+        let splash_cb = splash.clone();
+
+        let dl_outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(300),
+            update.download_and_install(move |chunk_len, total| {
+                let so_far = downloaded
+                    .fetch_add(chunk_len as u64, std::sync::atomic::Ordering::Relaxed)
+                    + chunk_len as u64;
+                let total_val = total.unwrap_or(0);
+                let _ = splash_cb.eval(&format!(
+                    "window.__updateProgress({{stage:'downloading', downloaded:{so_far}, total:{total_val}}})"
+                ));
+            }),
+        )
+        .await;
+
+        match dl_outcome {
+            Ok(Ok(())) => {
+                log::info!("Update installed — restarting");
+                app.handle().restart();
+            }
+            Ok(Err(e)) => {
+                log::warn!("Download/install failed: {e}");
+            }
+            Err(_) => {
+                log::warn!("Download/install timed out after 5 min");
+            }
+        }
+    });
+
+    // Reached only if no restart happened (no update, error, or timeout)
+    let _ = splash.close();
+    show_main(app);
+}
+
+fn show_main(app: &tauri::App) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+    }
 }
 
 #[cfg(test)]
