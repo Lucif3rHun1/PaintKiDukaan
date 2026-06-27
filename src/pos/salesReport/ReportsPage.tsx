@@ -13,6 +13,7 @@ import {
   DownloadMenu,
   Money,
   Section,
+  SearchInput,
   Skeleton,
   ShortcutsHint,
   StockStatusBadge,
@@ -97,6 +98,37 @@ function AnalyticsCard({ title, headers, rows }: { title: string; headers: strin
         />
       </Card.Body>
     </Card>
+  );
+}
+
+function OutstandingList({
+  title,
+  total,
+  rows,
+  hasSearch,
+}: {
+  title: string;
+  total: number;
+  rows: readonly { id: number; name: string; outstanding: number }[];
+  hasSearch: boolean;
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-xs uppercase text-muted-foreground">
+        {title} · total <Money paise={total} negative={total > 0} />
+      </p>
+      <ul className="text-sm text-muted-foreground">
+        {rows.map((row) => (
+          <li key={row.id} className="flex items-center justify-between border-b border-border py-1">
+            <span className="truncate pr-2">{row.name}</span>
+            <Money paise={row.outstanding} negative={row.outstanding > 0} />
+          </li>
+        ))}
+        {rows.length === 0 && (
+          <li className="text-muted-foreground">{hasSearch ? "No matches." : "All clear."}</li>
+        )}
+      </ul>
+    </div>
   );
 }
 
@@ -587,58 +619,25 @@ export default function ReportsPage({ user }: Props) {
               <Skeleton variant="card" className="h-32" />
             ) : (
               <div className="space-y-4">
-                <input
-                  type="text"
-                  placeholder="Search customers or vendors..."
+                <SearchInput
+                  placeholder="Search customers or vendors…"
                   value={outstandingSearch}
-                  onChange={(e) => setOutstandingSearch(e.target.value)}
-                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  onChange={setOutstandingSearch}
+                  className="w-full"
                 />
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <div>
-                    <p className="mb-2 text-xs uppercase text-muted-foreground">
-                      Customers · total{" "}
-                      <Money paise={out?.customer_total ?? 0} negative={(out?.customer_total ?? 0) > 0} />
-                    </p>
-                    <ul className="text-sm text-muted-foreground">
-                      {filteredCustomers.map((c) => (
-                        <li
-                          key={c.customer_id}
-                          className="flex items-center justify-between border-b border-border py-1"
-                        >
-                          <span className="truncate pr-2">{c.name}</span>
-                          <Money paise={c.outstanding} negative={c.outstanding > 0} />
-                        </li>
-                      ))}
-                      {filteredCustomers.length === 0 && (
-                        <li className="text-muted-foreground">
-                          {outstandingSearch ? "No matches." : "All clear."}
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs uppercase text-muted-foreground">
-                      Vendors · total{" "}
-                      <Money paise={out?.vendor_total ?? 0} negative={(out?.vendor_total ?? 0) > 0} />
-                    </p>
-                    <ul className="text-sm text-muted-foreground">
-                      {filteredVendors.map((v) => (
-                        <li
-                          key={v.vendor_id}
-                          className="flex items-center justify-between border-b border-border py-1"
-                        >
-                          <span className="truncate pr-2">{v.name}</span>
-                          <Money paise={v.outstanding} negative={v.outstanding > 0} />
-                        </li>
-                      ))}
-                      {filteredVendors.length === 0 && (
-                        <li className="text-muted-foreground">
-                          {outstandingSearch ? "No matches." : "All clear."}
-                        </li>
-                      )}
-                    </ul>
-                  </div>
+                  <OutstandingList
+                    title="Customers"
+                    total={out?.customer_total ?? 0}
+                    rows={filteredCustomers.map((c) => ({ id: c.customer_id, name: c.name, outstanding: c.outstanding }))}
+                    hasSearch={outstandingSearch.trim().length > 0}
+                  />
+                  <OutstandingList
+                    title="Vendors"
+                    total={out?.vendor_total ?? 0}
+                    rows={filteredVendors.map((v) => ({ id: v.vendor_id, name: v.name, outstanding: v.outstanding }))}
+                    hasSearch={outstandingSearch.trim().length > 0}
+                  />
                 </div>
               </div>
             )}
