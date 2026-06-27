@@ -160,8 +160,13 @@ impl From<SaleError> for AppError {
             | SaleError::MustAcknowledgeFlag
             | SaleError::QuotationNotFound(_)
             | SaleError::NotAQuotation(_, _)
-            | SaleError::InvalidKind(_)
-            | SaleError::InsufficientStock { .. } => AppError::Validation(e.to_string()),
+            | SaleError::InvalidKind(_) => AppError::Validation(e.to_string()),
+            SaleError::InsufficientStock { item_name, available, requested, .. } => {
+                let avail = available.max(0);
+                AppError::Validation(format!(
+                    "Not enough stock for '{item_name}'. Only {avail} available, you need {requested}."
+                ))
+            }
             SaleError::Db(inner) => AppError::from(inner),
             SaleError::Other(inner) => AppError::Internal(inner.to_string()),
         }

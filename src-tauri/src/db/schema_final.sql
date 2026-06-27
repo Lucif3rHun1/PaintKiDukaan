@@ -229,21 +229,6 @@ CREATE TABLE customers (
 -- serves: "customer picker / search"
 CREATE INDEX idx_customers_is_active_name ON customers(is_active, name);
 
--- Label print audit log
-CREATE TABLE label_print_log (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
-  barcode    TEXT    NOT NULL,
-  qty        INTEGER NOT NULL CHECK(qty > 0),
-  format     TEXT    NOT NULL,
-  line1      TEXT,
-  line2      TEXT,
-  user_id    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX idx_label_print_log_item_created ON label_print_log(item_id, created_at DESC);
-CREATE INDEX idx_label_print_log_created     ON label_print_log(created_at DESC);
-
 -- serves: "lookup by phone at billing time"
 CREATE INDEX idx_customers_phone ON customers(phone) WHERE phone IS NOT NULL AND is_active = 1;
 
@@ -364,7 +349,8 @@ CREATE TABLE formulas (
   retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),
   is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at          TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
-  created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION
+  created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  CHECK(with_base = 0 OR base_item_id IS NOT NULL)
 );
 
 -- serves: "search by id_code prefix on POS search bar"
@@ -378,6 +364,7 @@ CREATE INDEX idx_formulas_is_active ON formulas(is_active);
 -- =====================================================================
 
 -- E1. Stock movement kinds (lookup; new kinds are INSERTs, never schema changes)
+-- sign: -1=outbound, 0=adjustment/recount (no direction), 1=inbound
 CREATE TABLE stock_movement_kinds (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   code       TEXT    NOT NULL UNIQUE,
@@ -723,6 +710,9 @@ CREATE TABLE day_close (
 -- serves: "show day-close history for this location"
 CREATE INDEX idx_day_close_location_day ON day_close(location_id, day DESC);
 
+-- serves: "show day-close history for this user"
+CREATE INDEX idx_day_close_user_id ON day_close(user_id);
+
 -- =====================================================================
 -- SECTION J — Daily counters (M005)
 -- =====================================================================
@@ -730,7 +720,7 @@ CREATE INDEX idx_day_close_location_day ON day_close(location_id, day DESC);
 -- J1. Invoice / quotation / return numbering
 CREATE TABLE daily_counters (
   prefix       TEXT    NOT NULL,
-  date         TEXT    NOT NULL,                  -- 'DD-MM-YYYY'
+  date         TEXT    NOT NULL,                  -- 'YYYY-MM-DD'
   last_serial  INTEGER NOT NULL DEFAULT 0 CHECK(last_serial >= 0),
   PRIMARY KEY (prefix, date)
 );
@@ -819,6 +809,21 @@ CREATE TABLE printer_mappings (
 
 CREATE UNIQUE INDEX idx_printers_default_per_usecase
   ON printers(use_case) WHERE is_default = 1;
+
+-- Label print audit log
+CREATE TABLE label_print_log (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  barcode    TEXT    NOT NULL,
+  qty        INTEGER NOT NULL CHECK(qty > 0),
+  format     TEXT    NOT NULL,
+  line1      TEXT,
+  line2      TEXT,
+  user_id    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_label_print_log_item_created ON label_print_log(item_id, created_at DESC);
+CREATE INDEX idx_label_print_log_created     ON label_print_log(created_at DESC);
 
 -- =====================================================================
 -- SEED DATA — reference lookups only
