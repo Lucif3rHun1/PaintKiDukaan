@@ -68,12 +68,26 @@ export function TsplLabelPreview({
 
   const line1Rows = label.line1 ? wordWrap(label.line1, usableW, tf.w) : [];
   const line2Rows = label.line2 ? wordWrap(label.line2, usableW, tf.w) : [];
+  const line3Rows = !label.barcode && label.line3 ? wordWrap(label.line3, usableW, tf.w) : [];
+  const numText   = line1Rows.length + line2Rows.length;
+
+  // Mirror buildTsplBytes clamping — keeps preview accurate to what prints.
+  let contentH: number;
+  if (label.barcode) {
+    contentH = numText * (tf.h + GAP) + BAR_HEIGHT + GAP + sf.h;
+  } else if (line3Rows.length > 0) {
+    contentH = numText * (tf.h + GAP)
+      + line3Rows.length * tf.h
+      + Math.max(0, line3Rows.length - 1) * GAP;
+  } else {
+    contentH = numText * tf.h + Math.max(0, numText - 1) * GAP;
+  }
+  const yDesired = Math.round(config.topMarginMm * d);
+  let y = Math.max(0, Math.min(yDesired, Math.max(0, totalH - contentH)));
 
   type El = { kind: "text"; x: number; y: number; font: string; text: string }
            | { kind: "barcode"; x: number; y: number; w: number; h: number; value: string };
   const elements: El[] = [];
-
-  let y = Math.round(config.topMarginMm * d);
 
   for (const row of [...line1Rows, ...line2Rows]) {
     const x = centerX(row.length * tf.w, 0, cellW, SIDE);
@@ -90,14 +104,11 @@ export function TsplLabelPreview({
     const skuT = label.barcode.length > skuMaxChars ? label.barcode.slice(0, skuMaxChars) : label.barcode;
     const skuX = centerX(skuT.length * sf.w, 0, cellW, SIDE);
     elements.push({ kind: "text", x: skuX, y: y + BAR_HEIGHT + GAP, font: "2", text: skuT });
-  } else {
-    if (label.line3) {
-      const line3Rows = wordWrap(label.line3, usableW, tf.w);
-      for (const row of line3Rows) {
-        const x = centerX(row.length * tf.w, 0, cellW, SIDE);
-        elements.push({ kind: "text", x, y, font: config.font, text: row });
-        y += tf.h + GAP;
-      }
+  } else if (line3Rows.length > 0) {
+    for (const row of line3Rows) {
+      const x = centerX(row.length * tf.w, 0, cellW, SIDE);
+      elements.push({ kind: "text", x, y, font: config.font, text: row });
+      y += tf.h + GAP;
     }
   }
 
@@ -111,7 +122,7 @@ export function TsplLabelPreview({
         width: cellW, height: totalH,
         position: "absolute", top: 0, left: 0,
         transformOrigin: "top left", transform: `scale(${scale})`,
-        background: "#ffffff",
+        background: "#ffffff", overflow: "hidden",
       }}>
         {elements.map((el, i) => {
           if (el.kind === "text") {

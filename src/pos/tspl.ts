@@ -77,7 +77,7 @@ export function calcLabelCapacity(
   const maxCharsPerLine = Math.max(1, Math.floor(usableW / tf.w));
   const topY = Math.round(config.topMarginMm * d);
   const GAP = Math.round(config.spacingMm * d);
-  const availH = (heightMm * d) - topY;
+  const availH = Math.max(0, heightMm * d - topY);
   const lineH = tf.h + GAP;
   const maxLines = Math.max(1, Math.floor(availH / lineH));
   return { maxCharsPerLine, maxLines, usableWidth: usableW };
@@ -172,9 +172,27 @@ export function buildTsplBytes(
 
       const line1Rows = label.line1 ? wordWrap(label.line1, usableW, tf.w) : [];
       const line2Rows = label.line2 ? wordWrap(label.line2, usableW, tf.w) : [];
+      const line3Rows = !label.barcode && label.line3 ? wordWrap(label.line3, usableW, tf.w) : [];
+      const numText   = line1Rows.length + line2Rows.length;
 
-      // y starts at the user-configured top margin — no auto-centering.
-      let y = Math.round(config.topMarginMm * d);
+      // Compute total content height so y_start can be clamped.
+      // Without clamping, large fonts or high top-margins push content past
+      // totalH and the printer silently ignores the commands → blank label.
+      let contentH: number;
+      if (label.barcode) {
+        // text rows → gap → barcode → gap → SKU text
+        contentH = numText * (tf.h + GAP) + BAR_HEIGHT + GAP + sf.h;
+      } else if (line3Rows.length > 0) {
+        contentH = numText * (tf.h + GAP)
+          + line3Rows.length * tf.h
+          + Math.max(0, line3Rows.length - 1) * GAP;
+      } else {
+        // text only: last row has no trailing gap
+        contentH = numText * tf.h + Math.max(0, numText - 1) * GAP;
+      }
+
+      const yDesired = Math.round(config.topMarginMm * d);
+      let y = Math.max(0, Math.min(yDesired, Math.max(0, totalH - contentH)));
 
       for (const row of [...line1Rows, ...line2Rows]) {
         const x = centerX(row.length * tf.w, xOrig, cellW, SIDE);
@@ -190,8 +208,7 @@ export function buildTsplBytes(
         const skuT = fit(label.barcode, usableW, sf.w);
         const skuX = centerX(skuT.length * sf.w, xOrig, cellW, SIDE);
         out.push(`TEXT ${skuX},${y + BAR_HEIGHT + GAP},"2",0,1,1,"${esc(skuT)}"`);
-      } else if (label.line3) {
-        const line3Rows = wordWrap(label.line3, usableW, tf.w);
+      } else if (line3Rows.length > 0) {
         for (const row of line3Rows) {
           const x = centerX(row.length * tf.w, xOrig, cellW, SIDE);
           out.push(`TEXT ${x},${y},"${config.font}",0,1,1,"${esc(row)}"`);
