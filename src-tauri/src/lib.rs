@@ -1,6 +1,6 @@
 use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
-use std::sync::mpsc;
+use tokio::sync::mpsc;
 
 pub mod commands;
 pub mod crypto;
@@ -21,7 +21,7 @@ pub use error::AppError;
 pub mod obs;
 
 struct UpdateGateState {
-    retry_tx: mpsc::Sender<()>,
+    retry_tx: mpsc::UnboundedSender<()>,
 }
 
 const ALLOWED_LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
@@ -61,7 +61,7 @@ fn log_frontend(level: String, message: String) -> Result<(), String> {
 
 #[tauri::command]
 fn retry_update(state: tauri::State<'_, UpdateGateState>) -> Result<(), String> {
-    state.retry_tx.send(()).map_err(|e| e.to_string())
+    state.retry_tx.send(()).map_err(|_| "update gate closed".into())
 }
 
 #[tauri::command]
@@ -85,7 +85,7 @@ pub fn run() {
     let prev_log = log_dir.join(crate::obs!("session.prev.log"));
     let _ = std::fs::rename(&log_file, &prev_log);
 
-    let (retry_tx, retry_rx) = mpsc::channel::<()>();
+    let (retry_tx, retry_rx) = mpsc::unbounded_channel::<()>();
 
     let app = tauri::Builder::default()
         .plugin(
@@ -401,7 +401,7 @@ pub fn run() {
     app.run(|_, _| {});
 }
 
-async fn run_update_gate_async(app: tauri::AppHandle, retry_rx: mpsc::Receiver<()>) {
+async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::UnboundedReceiver<()>) {
     loop {
         let splash = match tauri::WebviewWindowBuilder::new(
             &app,
@@ -445,7 +445,7 @@ async fn run_update_gate_async(app: tauri::AppHandle, retry_rx: mpsc::Receiver<(
                 log::warn!("Update check failed: {e}");
                 let msg = e.to_string().replace('\\', "\\\\").replace('\'', "\\'");
                 let _ = splash.eval(&format!("window.__showError('{msg}')"));
-                wait_for_retry_or_quit(&app, &splash, &retry_rx);
+                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
                 continue;
             }
             Err(_) => {
@@ -453,7 +453,7 @@ async fn run_update_gate_async(app: tauri::AppHandle, retry_rx: mpsc::Receiver<(
                 let _ = splash.eval(
                     "window.__showError('Update check timed out. Check your internet connection and retry.')",
                 );
-                wait_for_retry_or_quit(&app, &splash, &retry_rx);
+                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
                 continue;
             }
         };
@@ -499,12 +499,12 @@ async fn run_update_gate_async(app: tauri::AppHandle, retry_rx: mpsc::Receiver<(
     }
 }
 
-fn wait_for_retry_or_quit(app: &tauri::AppHandle, splash: &tauri::WebviewWindow, retry_rx: &mpsc::Receiver<()>) {
-    match retry_rx.recv() {
-        Ok(()) => {
+async fn wait_for_retry_or_quit(app: &tauri::AppHandle, splash: &tauri::WebviewWindow, retry_rx: &mut mpsc::UnboundedReceiver<()>) {
+    match retry_rx.recv().await {
+        Some(()) => {
             let _ = splash.close();
         }
-        Err(_) => {
+        None => {
             let _ = splash.close();
             app.exit(1);
         }

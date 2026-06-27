@@ -49,6 +49,13 @@
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "displayLanguageSelector": false,
+        "languages": ["English"],
+        "installMode": "currentUser",
+        "startMenuFolder": "PaintKiDukaan",
+        "compression": "lzma"
       }
     }
   }

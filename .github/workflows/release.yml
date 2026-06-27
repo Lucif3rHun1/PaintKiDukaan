@@ -123,12 +123,16 @@ jobs:
           repo="${GITHUB_REPOSITORY}"
           release_url="https://github.com/${repo}/releases/download/${GITHUB_REF_NAME}"
 
+          # upload-artifact@v4 preserves full workspace-relative paths, so we
+          # search by filename (-name) rather than by flat path (-path).
           pick_one() {
-            local pattern="$1"
+            local artifact_dir="$1"
+            local name_glob="$2"
             local file
-            file="$(find release-artifacts -type f -path "$pattern" | sort | head -n 1)"
+            file="$(find "release-artifacts/$artifact_dir" -type f -name "$name_glob" | sort | head -n 1)"
             if [[ -z "$file" ]]; then
-              echo "missing artifact for pattern: $pattern" >&2
+              echo "ERROR: no file matching '$name_glob' under release-artifacts/$artifact_dir" >&2
+              find "release-artifacts/$artifact_dir" -type f >&2 || true
               exit 1
             fi
             printf '%s' "$file"
@@ -139,12 +143,12 @@ jobs:
             tr -d '\n' < "$file"
           }
 
-          mac_aarch64_asset="$(pick_one 'release-artifacts/macos-aarch64/*.app.tar.gz')"
-          mac_aarch64_sig="$(pick_one 'release-artifacts/macos-aarch64/*.app.tar.gz.sig')"
-          mac_x86_64_asset="$(pick_one 'release-artifacts/macos-x86_64/*.app.tar.gz')"
-          mac_x86_64_sig="$(pick_one 'release-artifacts/macos-x86_64/*.app.tar.gz.sig')"
-          win_asset="$(pick_one 'release-artifacts/windows-x86_64/*.exe')"
-          win_sig="$(pick_one 'release-artifacts/windows-x86_64/*.exe.sig')"
+          mac_aarch64_asset="$(pick_one 'macos-aarch64' '*.app.tar.gz')"
+          mac_aarch64_sig="$(pick_one 'macos-aarch64' '*.app.tar.gz.sig')"
+          mac_x86_64_asset="$(pick_one 'macos-x86_64' '*.app.tar.gz')"
+          mac_x86_64_sig="$(pick_one 'macos-x86_64' '*.app.tar.gz.sig')"
+          win_asset="$(pick_one 'windows-x86_64' '*.exe')"
+          win_sig="$(pick_one 'windows-x86_64' '*.exe.sig')"
 
           mac_aarch64_name="$(basename "$mac_aarch64_asset")"
           mac_x86_64_name="$(basename "$mac_x86_64_asset")"
