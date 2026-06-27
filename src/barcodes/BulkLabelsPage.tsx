@@ -27,7 +27,7 @@ import {
   type ThermalSize,
   THERMAL_SIZES,
 } from "../pos/print";
-import { buildTsplBytes, buildTsplString, calcLabelCapacity } from "../pos/tspl";
+import { buildTsplBytes, buildTsplString, calcLabelCapacity, calcOptimalFont } from "../pos/tspl";
 import { TsplLabelPreview } from "../pos/TsplLabelPreview";
 import { DEFAULT_TSPL_CONFIG, type TsplConfig } from "../pos/tsplConfig";
 import { Button, Skeleton } from "../components/ui";
@@ -757,6 +757,17 @@ export function BulkLabelsPage() {
             );
           }
 
+          function autoFit() {
+            const text = customMode === "freetext"
+              ? (customText.split("\n").map((l) => l.trim()).find(Boolean) ?? "")
+              : (() => { const seq = generateSimpleSequence({ type: seqType, prefix: seqPrefix, suffix: seqSuffix, start: seqStart, count: Math.max(seqCount, 1) }); return seq[seq.length - 1] ?? ""; })();
+            if (!text) return;
+            const usableW = Math.floor((rollW * 8) / cols) - Math.round(tsplConfig.sideMarginMm * 8) * 2;
+            const availH = Math.max(0, rollH * 8 - Math.round(tsplConfig.topMarginMm * 8));
+            const opt = calcOptimalFont(text, usableW, availH);
+            updateTsplConfig((c) => ({ ...c, font: opt.font, xmul: opt.xmul, ymul: opt.ymul }));
+          }
+
           return (
             <div className="space-y-3 rounded-lg border border-border bg-background p-3">
               <div className="flex items-center justify-between">
@@ -770,9 +781,18 @@ export function BulkLabelsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <Spinner
-                  label="Font (2–10)" value={Number(tsplConfig.font)} step={1} min={2} max={10} unit=""
+                  label="Font (2–5)" value={Number(tsplConfig.font)} step={1} min={2} max={5} unit=""
                   onChange={(v) => updateTsplConfig((c) => ({ ...c, font: String(Math.round(v)) as TsplConfig["font"] }))}
                 />
+                <Spinner
+                  label="Size ×" value={tsplConfig.xmul} step={1} min={1} max={10} unit=""
+                  onChange={(v) => updateTsplConfig((c) => ({ ...c, xmul: v, ymul: v }))}
+                />
+                <div className="space-y-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">Auto-fit</span>
+                  <button type="button" onClick={autoFit}
+                    className="flex h-7 items-center rounded border border-border bg-muted px-2 text-[10px] font-semibold text-muted-foreground hover:text-foreground active:scale-95">Auto</button>
+                </div>
                 <Spinner
                   label="Spacing" value={tsplConfig.spacingMm} step={0.5} min={0} max={10}
                   onChange={(v) => updateTsplConfig((c) => ({ ...c, spacingMm: v }))}

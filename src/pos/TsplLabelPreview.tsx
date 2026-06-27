@@ -57,23 +57,27 @@ export function TsplLabelPreview({
     const SIDE    = Math.round(config.sideMarginMm * d);
     const tf      = FONT[config.font];
     const sf      = FONT["2"];
+    const xm      = config.xmul ?? 1;
+    const ym      = config.ymul ?? 1;
+    const effW    = tf.w * xm;
+    const effH    = tf.h * ym;
     const usableW = cellW - SIDE * 2;
 
-    const line1Rows = label.line1 ? wordWrap(label.line1, usableW, tf.w) : [];
-    const line2Rows = label.line2 ? wordWrap(label.line2, usableW, tf.w) : [];
-    const line3Rows = !label.barcode && label.line3 ? wordWrap(label.line3, usableW, tf.w) : [];
+    const line1Rows = label.line1 ? wordWrap(label.line1, usableW, effW) : [];
+    const line2Rows = label.line2 ? wordWrap(label.line2, usableW, effW) : [];
+    const line3Rows = !label.barcode && label.line3 ? wordWrap(label.line3, usableW, effW) : [];
     const numText   = line1Rows.length + line2Rows.length;
 
     // Content height clamping — same as buildTsplBytes.
     let contentH: number;
     if (label.barcode) {
-      contentH = numText * (tf.h + GAP) + BAR_HEIGHT + GAP + sf.h;
+      contentH = numText * (effH + GAP) + BAR_HEIGHT + GAP + sf.h;
     } else if (line3Rows.length > 0) {
-      contentH = numText * (tf.h + GAP)
-        + line3Rows.length * tf.h
+      contentH = numText * (effH + GAP)
+        + line3Rows.length * effH
         + Math.max(0, line3Rows.length - 1) * GAP;
     } else {
-      contentH = numText * tf.h + Math.max(0, numText - 1) * GAP;
+      contentH = numText * effH + Math.max(0, numText - 1) * GAP;
     }
 
     const yDesired = Math.round(config.topMarginMm * d);
@@ -86,10 +90,10 @@ export function TsplLabelPreview({
 
     // line1 + line2 text rows.
     for (const row of [...line1Rows, ...line2Rows]) {
-      const x = centerX(row.length * tf.w, 0, cellW, SIDE);
-      ctx.font = `${tf.h}px monospace`;
-      ctx.fillText(row, x, y + tf.h); // fillText y = baseline
-      y += tf.h + GAP;
+      const x = centerX(row.length * effW, 0, cellW, SIDE);
+      ctx.font = `${effH}px monospace`;
+      ctx.fillText(row, x, y + effH); // fillText y = baseline
+      y += effH + GAP;
     }
 
     if (label.barcode) {
@@ -110,10 +114,10 @@ export function TsplLabelPreview({
     } else if (line3Rows.length > 0) {
       // Text-only mode — line3 rows.
       for (const row of line3Rows) {
-        const x = centerX(row.length * tf.w, 0, cellW, SIDE);
-        ctx.font = `${tf.h}px monospace`;
-        ctx.fillText(row, x, y + tf.h);
-        y += tf.h + GAP;
+        const x = centerX(row.length * effW, 0, cellW, SIDE);
+        ctx.font = `${effH}px monospace`;
+        ctx.fillText(row, x, y + effH);
+        y += effH + GAP;
       }
     }
   }, [label, cellW, totalH, config, d]);
