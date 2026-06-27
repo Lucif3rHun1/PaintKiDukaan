@@ -7,6 +7,7 @@ import {
   Building2,
   ChevronDown,
   ClipboardCheck,
+  Activity,
   HardDrive,
   LayoutDashboard,
   Lock,
@@ -211,6 +212,19 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
   });
   const [showShortcuts, setShowShortcuts] = useState(false);
 
+  const shopNameQuery = useQuery({
+    queryKey: ["app", "shopName"],
+    queryFn: () => ipc.getSetting("shop_name"),
+    refetchInterval: 60_000,
+  });
+  const backupQuery = useQuery({
+    queryKey: ["app", "backup"],
+    queryFn: () => ipc.backupStatus(),
+    refetchInterval: 45_000,
+  });
+  const shopName = shopNameQuery.data || "PaintKiDukaan";
+  const displayRole = toTitleCase(user?.role ?? "owner");
+
   useShortcut({ key: "1", alt: true, scope: "global", description: "Dashboard", onMatch: () => onNavigate("dashboard") });
   useShortcut({ key: "2", alt: true, scope: "global", description: "Sales", onMatch: () => onNavigate("sales", "#/sales") });
   useShortcut({ key: "3", alt: true, scope: "global", description: "Inward", onMatch: () => onNavigate("inward", "#/inward") });
@@ -362,6 +376,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
 
         <AccountMenu
           user={user}
+          shopName={shopNameQuery.data ?? null}
           collapsed={collapsed}
           onLock={onLock}
           onLogout={onLogout ?? onLock}
@@ -374,9 +389,15 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
         <header className="hidden md:flex h-14 items-center justify-between border-b border-border bg-background px-4 sticky top-0 z-40">
           <div className="text-sm font-semibold text-foreground tracking-tight">
             {tabTitle(activeTab)}
+            {activeTab === "dashboard" ? (
+              <span className="font-normal text-muted-foreground">
+                {" · "}{shopName}{" · "}{displayRole}
+              </span>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <AlertBell currentRole={user?.role as Role | undefined} />
+            <BackupActivity backupAge={backupQuery.data?.backup_age_hours ?? null} />
             <button
               type="button"
               onClick={onLock}
@@ -391,10 +412,14 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
         <header className="flex items-center justify-between border-b border-border bg-card px-4 py-3 md:hidden">
           <div className="flex items-center gap-2">
             <img src={LOGO_64} alt="PaintKiDukaan" width={28} height={28} className="h-7 w-7 rounded-md object-contain" />
-            <span className="text-sm font-semibold text-sidebar-foreground">PaintKiDukaan</span>
+            <span className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold text-sidebar-foreground">{shopName}</span>
+              <span className="text-[11px] text-muted-foreground">{displayRole}</span>
+            </span>
           </div>
           <div className="flex items-center gap-1">
             <AlertBell currentRole={user?.role as Role | undefined} />
+            <BackupActivity backupAge={backupQuery.data?.backup_age_hours ?? null} />
             <button
               type="button"
               onClick={onLock}
@@ -517,7 +542,22 @@ function tabTitle(tab: AppShellTab): string {
   }
 }
 
-function AccountMenu({ user, collapsed, onLock, onLogout, onSwitchUser }: { user: AppShellUser | null; collapsed: boolean; onLock: () => void; onLogout: () => void; onSwitchUser: () => void }) {
+function BackupActivity({ backupAge }: { backupAge: number | null }) {
+  const tone = backupAge === null ? "text-muted-foreground" : backupAge > 24 ? "text-destructive" : backupAge > 12 ? "text-warning" : "text-success";
+  const status = backupAge === null ? "Backup status unknown" : backupAge > 24 ? "Backup overdue" : backupAge > 12 ? "Backup aging" : "Backup healthy";
+  return (
+    <div className="group relative">
+      <Activity className={cn("h-4 w-4", tone)} aria-label={status} />
+      <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 whitespace-nowrap rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100">
+        <div className="font-medium">Backup Status</div>
+        <div>{status}</div>
+        <div>Age: {backupAge === null ? "Unknown" : `${Math.round(backupAge)}h`}</div>
+      </div>
+    </div>
+  );
+}
+
+function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser }: { user: AppShellUser | null; shopName?: string | null; collapsed: boolean; onLock: () => void; onLogout: () => void; onSwitchUser: () => void }) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -581,7 +621,7 @@ function AccountMenu({ user, collapsed, onLock, onLogout, onSwitchUser }: { user
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium text-foreground">{displayName}</div>
-              <div className="truncate text-xs text-muted-foreground">{displayRole}</div>
+              <div className="truncate text-xs text-muted-foreground">{shopName || "PaintKiDukaan"} · {displayRole}</div>
             </div>
           </div>
 
