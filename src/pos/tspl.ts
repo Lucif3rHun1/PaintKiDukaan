@@ -16,9 +16,10 @@ export { DEFAULT_TSPL_CONFIG } from "./tsplConfig";
 import { DEFAULT_TSPL_CONFIG, type TsplConfig } from "./tsplConfig";
 
 export interface TsplLabel {
-  barcode: string;
+  barcode?: string;
   line1?: string;
   line2?: string;
+  line3?: string;
 }
 
 export const DOTS_PER_MM = 8;
@@ -138,13 +139,22 @@ export function buildTsplBytes(
       y += tf.h + GAP;
     }
 
-    const barcodeW = estimateCode128Dots(label.barcode);
-    const barcodeX = centerX(barcodeW, xOrig, cellW, SIDE);
-    out.push(`BARCODE ${barcodeX},${y},"128",${BAR_HEIGHT},0,0,${NARROW},${NARROW},"${esc(label.barcode)}"`);
+    if (label.barcode) {
+      const barcodeW = estimateCode128Dots(label.barcode);
+      const barcodeX = centerX(barcodeW, xOrig, cellW, SIDE);
+      out.push(`BARCODE ${barcodeX},${y},"128",${BAR_HEIGHT},0,0,${NARROW},${NARROW},"${esc(label.barcode)}"`);
 
-    const skuT = fit(label.barcode, usableW, sf.w);
-    const skuX = centerX(skuT.length * sf.w, xOrig, cellW, SIDE);
-    out.push(`TEXT ${skuX},${y + BAR_HEIGHT + GAP},"2",0,1,1,"${esc(skuT)}"`);
+      const skuT = fit(label.barcode, usableW, sf.w);
+      const skuX = centerX(skuT.length * sf.w, xOrig, cellW, SIDE);
+      out.push(`TEXT ${skuX},${y + BAR_HEIGHT + GAP},"2",0,1,1,"${esc(skuT)}"`);
+    } else if (label.line3) {
+      const line3Rows = wordWrap(label.line3, usableW, tf.w);
+      for (const row of line3Rows) {
+        const x = centerX(row.length * tf.w, xOrig, cellW, SIDE);
+        out.push(`TEXT ${x},${y},"${config.font}",0,1,1,"${esc(row)}"`);
+        y += tf.h + GAP;
+      }
+    }
   }
 
   out.push(`PRINT ${Math.max(1, qty)},1`);

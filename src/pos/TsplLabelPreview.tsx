@@ -81,14 +81,25 @@ export function TsplLabelPreview({
     y += tf.h + GAP;
   }
 
-  const barcodeW = estimateCode128Dots(label.barcode);
-  const barcodeX = centerX(barcodeW, 0, cellW, SIDE);
-  elements.push({ kind: "barcode", x: barcodeX, y, w: barcodeW, h: BAR_HEIGHT, value: label.barcode });
+  if (label.barcode) {
+    const barcodeW = estimateCode128Dots(label.barcode);
+    const barcodeX = centerX(barcodeW, 0, cellW, SIDE);
+    elements.push({ kind: "barcode", x: barcodeX, y, w: barcodeW, h: BAR_HEIGHT, value: label.barcode });
 
-  const skuMaxChars = Math.floor(usableW / sf.w);
-  const skuT = label.barcode.length > skuMaxChars ? label.barcode.slice(0, skuMaxChars) : label.barcode;
-  const skuX = centerX(skuT.length * sf.w, 0, cellW, SIDE);
-  elements.push({ kind: "text", x: skuX, y: y + BAR_HEIGHT + GAP, font: "2", text: skuT });
+    const skuMaxChars = Math.floor(usableW / sf.w);
+    const skuT = label.barcode.length > skuMaxChars ? label.barcode.slice(0, skuMaxChars) : label.barcode;
+    const skuX = centerX(skuT.length * sf.w, 0, cellW, SIDE);
+    elements.push({ kind: "text", x: skuX, y: y + BAR_HEIGHT + GAP, font: "2", text: skuT });
+  } else {
+    if (label.line3) {
+      const line3Rows = wordWrap(label.line3, usableW, tf.w);
+      for (const row of line3Rows) {
+        const x = centerX(row.length * tf.w, 0, cellW, SIDE);
+        elements.push({ kind: "text", x, y, font: config.font, text: row });
+        y += tf.h + GAP;
+      }
+    }
+  }
 
   const scale         = displayWidth / cellW;
   const displayHeight = Math.round(totalH * scale);

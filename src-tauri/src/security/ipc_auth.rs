@@ -61,12 +61,12 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (139 total).
+/// Complete ACL table for every command registered in `invoke_handler` (155 total).
 ///
 /// Classification:
 /// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.
 /// - **Stocker+** (12): read-only reference data — items, brands, units, locations, types.
-/// - **Cashier+** (81): operational — sales, purchases, day-close, CRUD, reports, alerts.
+/// - **Cashier+** (91): operational — sales, purchases, day-close, CRUD, reports, alerts.
 /// - **Owner-only** (39): admin — unlock, user mgmt, settings writes, backup, hardening, void, printers, import, PDE, categories.
 pub const COMMAND_ACL: &[CommandAcl] = &[
     // ── Public (7) ─────────────────────────────────────────────────────
@@ -537,6 +537,46 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "cmd_outstanding_report",
         min_role: Role::Cashier,
     },
+    CommandAcl {
+        name: "cmd_purchase_summary",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_expense_summary",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_top_items_sold",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_top_customers",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_top_items_purchased",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_top_vendors",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_stock_health_summary",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_dead_stock",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_inventory_aging",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_payment_summary",
+        min_role: Role::Cashier,
+    },
     // Sequences
     CommandAcl {
         name: "cmd_mint_next_sale_no",
@@ -816,8 +856,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            145,
-            "ACL has {} entries, expected 145",
+            155,
+            "ACL has {} entries, expected 155",
             COMMAND_ACL.len()
         );
     }

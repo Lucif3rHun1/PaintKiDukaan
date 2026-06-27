@@ -284,9 +284,10 @@ export async function printReceipt(spec: ReceiptSpec): Promise<void> {
 }
 
 export interface BatchLabel {
-  barcode: string;
+  barcode?: string;
   line1?: string;
   line2?: string;
+  line3?: string;
   sku?: string;
 }
 
@@ -384,6 +385,18 @@ async function buildLabelPdfBlobInner(
       const label = batch[i];
       const x = col * w;
 
+      const renderCenteredTextLines = (lines: Array<string | undefined>, textWidth: number) => {
+        const presentLines = lines.filter(Boolean) as string[];
+        if (!presentLines.length) return;
+        const lineH = nameFontSize * 0.35;
+        const totalTextH = presentLines.length * lineH;
+        const startY = (h - totalTextH) / 2;
+        doc.setFontSize(nameFontSize);
+        presentLines.forEach((line, idx) => {
+          doc.text(line.slice(0, textWidth), x + w / 2, startY + idx * lineH, { align: "center" });
+        });
+      };
+
       if (isLarge) {
         // 100x50 / 100x70: 4-row stacked layout with generous spacing
         const line1Y = 8;
@@ -392,18 +405,22 @@ async function buildLabelPdfBlobInner(
         const barcodeH = h - 32;
         const skuY = h - 6;
 
-        doc.setFontSize(nameFontSize);
-        if (label.line1) doc.text(label.line1.slice(0, 48), x + w / 2, line1Y, { align: "center" });
-        doc.setFontSize(nameFontSize - 2);
-        if (label.line2) doc.text(label.line2.slice(0, 48), x + w / 2, line2Y, { align: "center" });
+        if (!label.barcode) {
+          renderCenteredTextLines([label.line1, label.line2, label.line3], 48);
+        } else {
+          doc.setFontSize(nameFontSize);
+          if (label.line1) doc.text(label.line1.slice(0, 48), x + w / 2, line1Y, { align: "center" });
+          doc.setFontSize(nameFontSize - 2);
+          if (label.line2) doc.text(label.line2.slice(0, 48), x + w / 2, line2Y, { align: "center" });
 
-        const bcW = w - padding * 2;
-        const png = await makeBarcodePng(label.barcode);
-        doc.addImage(png, "PNG", x + padding, barcodeY, bcW, barcodeH);
+          const bcW = w - padding * 2;
+          const png = await makeBarcodePng(label.barcode);
+          doc.addImage(png, "PNG", x + padding, barcodeY, bcW, barcodeH);
 
-        if (label.sku) {
-          doc.setFontSize(skuFontSize);
-          doc.text(label.sku, x + w / 2, skuY, { align: "center" });
+          if (label.sku) {
+            doc.setFontSize(skuFontSize);
+            doc.text(label.sku, x + w / 2, skuY, { align: "center" });
+          }
         }
       } else if (isMedium) {
         // 40x30 / 50x50: 3-row layout
@@ -412,16 +429,20 @@ async function buildLabelPdfBlobInner(
         const barcodeH = h - 16;
         const skuY = h - 3;
 
-        doc.setFontSize(nameFontSize);
-        if (label.line1) doc.text(label.line1.slice(0, 36), x + w / 2, line1Y, { align: "center" });
+        if (!label.barcode) {
+          renderCenteredTextLines([label.line1, label.line2, label.line3], 36);
+        } else {
+          doc.setFontSize(nameFontSize);
+          if (label.line1) doc.text(label.line1.slice(0, 36), x + w / 2, line1Y, { align: "center" });
 
-        const bcW = w - padding * 2;
-        const png = await makeBarcodePng(label.barcode);
-        doc.addImage(png, "PNG", x + padding, barcodeY, bcW, barcodeH);
+          const bcW = w - padding * 2;
+          const png = await makeBarcodePng(label.barcode);
+          doc.addImage(png, "PNG", x + padding, barcodeY, bcW, barcodeH);
 
-        if (label.sku) {
-          doc.setFontSize(skuFontSize);
-          doc.text(label.sku, x + w / 2, skuY, { align: "center" });
+          if (label.sku) {
+            doc.setFontSize(skuFontSize);
+            doc.text(label.sku, x + w / 2, skuY, { align: "center" });
+          }
         }
       } else {
         // 25x25 / 38x25 / 50x25: compact 2-row layout (barcode + SKU only)
@@ -429,13 +450,17 @@ async function buildLabelPdfBlobInner(
         const barcodeH = h - 8;
         const skuY = h - 2;
 
-        const bcW = w - padding * 2;
-        const png = await makeBarcodePng(label.barcode);
-        doc.addImage(png, "PNG", x + padding, barcodeY, bcW, barcodeH);
+        if (!label.barcode) {
+          renderCenteredTextLines([label.line1, label.line2, label.line3], 48);
+        } else {
+          const bcW = w - padding * 2;
+          const png = await makeBarcodePng(label.barcode);
+          doc.addImage(png, "PNG", x + padding, barcodeY, bcW, barcodeH);
 
-        if (label.sku) {
-          doc.setFontSize(skuFontSize);
-          doc.text(label.sku, x + w / 2, skuY, { align: "center" });
+          if (label.sku) {
+            doc.setFontSize(skuFontSize);
+            doc.text(label.sku, x + w / 2, skuY, { align: "center" });
+          }
         }
       }
     }
@@ -460,10 +485,21 @@ async function buildLabelPdfBlobInner(
       const margin = 1.5;
       const bcW = layout.w - margin * 2;
       const bcH = layout.h - 13;
-      if (label.line1) doc.text(label.line1.slice(0, 32), x + layout.w / 2, y + 5, { align: "center" });
-      if (label.line2) doc.text(label.line2.slice(0, 32), x + layout.w / 2, y + 9, { align: "center" });
-      const png = await makeBarcodePng(label.barcode);
-      doc.addImage(png, "PNG", x + margin, y + 11, bcW, bcH);
+      if (!label.barcode) {
+        const lines = [label.line1, label.line2, label.line3].filter(Boolean) as string[];
+        const lineH = 4;
+        const totalTextH = lines.length * lineH;
+        const startY = y + (layout.h - totalTextH) / 2;
+        doc.setFontSize(6);
+        lines.forEach((line, idx) => {
+          doc.text(line.slice(0, 32), x + layout.w / 2, startY + idx * lineH, { align: "center" });
+        });
+      } else {
+        if (label.line1) doc.text(label.line1.slice(0, 32), x + layout.w / 2, y + 5, { align: "center" });
+        if (label.line2) doc.text(label.line2.slice(0, 32), x + layout.w / 2, y + 9, { align: "center" });
+        const png = await makeBarcodePng(label.barcode);
+        doc.addImage(png, "PNG", x + margin, y + 11, bcW, bcH);
+      }
     }
   }
 
