@@ -3,12 +3,6 @@ import logo from "./assets/logo-64.png";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import {
-  checkForUpdates,
-  downloadAndInstallUpdate,
-  type UpdateInfo,
-  type UpdateProgress,
-} from "./lib/updater";
 
 /* ── Security UI ─────────────────────────────────────────── */
 import { FirstLaunch } from "./lib/security/firstLaunch";
@@ -30,7 +24,6 @@ import { listCustomerTypes } from "./domain/customerTypes/api";
 import { AppShell, type AppShellTab } from "./shell/AppShell";
 import { InlineDialog } from "./components/ui/InlineDialog";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
-import { UpdateOverlay } from "./components/UpdateOverlay";
 import type { Customer, CustomerType, Vendor } from "./domain/types";
 
 /* Route pages are split into per-route Vite chunks via React.lazy so the
@@ -206,9 +199,6 @@ export default function App() {
   const [customerPaymentTarget, setCustomerPaymentTarget] = useState<Customer | null>(null);
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
-  const [updateChecked, setUpdateChecked] = useState(false);
 
   // Fetch customer types once the app is unlocked
   useEffect(() => {
@@ -267,27 +257,6 @@ export default function App() {
       });
     return () => { cancelled = true; };
   }, [setPhase, setSession]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const info = await checkForUpdates();
-        if (cancelled) return;
-        if (info) {
-          setUpdateInfo(info);
-          await downloadAndInstallUpdate((p) => {
-            if (!cancelled) setUpdateProgress(p);
-          });
-        }
-      } finally {
-        if (!cancelled) setUpdateChecked(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   /* ── Hash routing ──────────────────────────────────────── */
   useEffect(() => {
@@ -364,26 +333,6 @@ export default function App() {
   }
 
   /* ── Security phases ───────────────────────────────────── */
-  if (!updateChecked) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-zinc-900/80 p-8 backdrop-blur">
-          <img
-            src={logo}
-            alt="PaintKiDukaan"
-            className="h-8 w-8 rounded-lg ring-1 ring-inset ring-border/40"
-          />
-          <Loader2 className="h-5 w-5 animate-spin text-indigo-400" aria-hidden="true" />
-          <p className="text-sm text-zinc-400">Checking for updates…</p>
-        </div>
-      </main>
-    );
-  }
-
-  if (updateInfo) {
-    return <UpdateOverlay version={updateInfo.version} progress={updateProgress} />;
-  }
-
   if (phase === "loading") {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
