@@ -187,5 +187,5 @@ export async function listFormulaSales(
   id: number,
   opts: { query?: string; from_date?: string; to_date?: string } = {},
 ): Promise<FormulaSaleRow[]> {
-  return invoke<FormulaSaleRow[]>("cmd_list_formula_sales", { id, ...opts });
+  return invoke<FormulaSaleRow[]>("cmd_list_formula_sales", { formula_id: id, ...opts });
 }

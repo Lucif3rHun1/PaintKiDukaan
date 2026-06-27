@@ -519,6 +519,8 @@ export interface Formula {
   id_code: string;
   name: string | null;
   with_base: boolean;
+  base_item_id: number | null;
+  base_item_name: string | null;
   retail_price_paise: number;
   is_active: boolean;
   created_at: string;
@@ -536,12 +538,14 @@ export interface NewFormula {
   id_code: string;
   name?: string | null;
   with_base: boolean;
+  base_item_id?: number | null;
   retail_price_paise: number;
 }
 
 export interface UpdateFormula {
   name?: string | null;
   with_base?: boolean;
+  base_item_id?: number | null;
   retail_price_paise?: number;
   is_active?: boolean;
 }
@@ -565,4 +569,5 @@ export interface FormulaSearchHit {
   name: string | null;
   retail_price_paise: number;
   with_base: boolean;
+  base_item_name: string | null;
 }
