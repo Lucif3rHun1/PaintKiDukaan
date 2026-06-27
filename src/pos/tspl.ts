@@ -24,17 +24,13 @@ export interface TsplLabel {
 
 export const DOTS_PER_MM = 8;
 
-// TSC built-in font dimensions in dots (203 DPI, xmul=ymul=1).
+// TSC built-in bitmap font dimensions in dots (203 DPI, xmul=ymul=1).
+// Only fonts "2"–"5" are real bitmap fonts on TSC printers.
 export const FONT: Record<string, { w: number; h: number }> = {
   "2":  { w: 12, h: 20 },
   "3":  { w: 16, h: 24 },
   "4":  { w: 24, h: 32 },
   "5":  { w: 32, h: 48 },
-  "6":  { w: 40, h: 56 },
-  "7":  { w: 48, h: 64 },
-  "8":  { w: 56, h: 72 },
-  "9":  { w: 64, h: 80 },
-  "10": { w: 72, h: 88 },
 };
 
 // Fixed hardware constants — not user-configurable.
@@ -74,13 +70,43 @@ export function calcLabelCapacity(
   const SIDE = Math.round(config.sideMarginMm * d);
   const usableW = cellW - SIDE * 2;
   const tf = FONT[config.font];
-  const maxCharsPerLine = Math.max(1, Math.floor(usableW / tf.w));
+  const effW = tf.w * (config.xmul ?? 1);
+  const effH = tf.h * (config.ymul ?? 1);
+  const maxCharsPerLine = Math.max(1, Math.floor(usableW / effW));
   const topY = Math.round(config.topMarginMm * d);
   const GAP = Math.round(config.spacingMm * d);
   const availH = Math.max(0, heightMm * d - topY);
-  const lineH = tf.h + GAP;
+  const lineH = effH + GAP;
   const maxLines = Math.max(1, Math.floor(availH / lineH));
   return { maxCharsPerLine, maxLines, usableWidth: usableW };
+}
+
+/**
+ * Find the largest font + multiplier that fits `text` on one line within `usableWidth` dots
+ * and whose height fits within `maxHeight` dots.
+ * Iterates fonts 2→5 (small→large), multipliers 1→10, returns the LAST combination that fits.
+ * Falls back to font "2", mul=1 if nothing fits.
+ */
+export function calcOptimalFont(
+  text: string,
+  usableWidth: number,
+  maxHeight: number,
+): { font: TsplConfig["font"]; xmul: number; ymul: number } {
+  const fontKeys: TsplConfig["font"][] = ["2", "3", "4", "5"];
+  let best: { font: TsplConfig["font"]; xmul: number; ymul: number } = { font: "2", xmul: 1, ymul: 1 };
+  if (!text) return best;
+
+  for (const fk of fontKeys) {
+    const base = FONT[fk];
+    for (let mul = 1; mul <= 10; mul++) {
+      const effW = base.w * mul;
+      const effH = base.h * mul;
+      if (text.length * effW <= usableWidth && effH <= maxHeight) {
+        best = { font: fk, xmul: mul, ymul: mul };
+      }
+    }
+  }
+  return best;
 }
 
 export function estimateCode128Dots(barcode: string): number {
@@ -133,6 +159,8 @@ export function buildTsplBytes(
   const SIDE    = Math.round(config.sideMarginMm * d);
   const tf      = FONT[config.font];
   const sf      = FONT["2"]; // SKU always in smallest font
+  const effW    = tf.w * (config.xmul ?? 1);
+  const effH    = tf.h * (config.ymul ?? 1);
   const usableW = cellW - SIDE * 2;
 
   function stripQty(stripIndex: number): number {
@@ -170,9 +198,9 @@ export function buildTsplBytes(
 
       if (!label) continue;
 
-      const line1Rows = label.line1 ? wordWrap(label.line1, usableW, tf.w) : [];
-      const line2Rows = label.line2 ? wordWrap(label.line2, usableW, tf.w) : [];
-      const line3Rows = !label.barcode && label.line3 ? wordWrap(label.line3, usableW, tf.w) : [];
+      const line1Rows = label.line1 ? wordWrap(label.line1, usableW, effW) : [];
+      const line2Rows = label.line2 ? wordWrap(label.line2, usableW, effW) : [];
+      const line3Rows = !label.barcode && label.line3 ? wordWrap(label.line3, usableW, effW) : [];
       const numText   = line1Rows.length + line2Rows.length;
 
       // Compute total content height so y_start can be clamped.
@@ -181,23 +209,26 @@ export function buildTsplBytes(
       let contentH: number;
       if (label.barcode) {
         // text rows → gap → barcode → gap → SKU text
-        contentH = numText * (tf.h + GAP) + BAR_HEIGHT + GAP + sf.h;
+        contentH = numText * (effH + GAP) + BAR_HEIGHT + GAP + sf.h;
       } else if (line3Rows.length > 0) {
-        contentH = numText * (tf.h + GAP)
-          + line3Rows.length * tf.h
+        contentH = numText * (effH + GAP)
+          + line3Rows.length * effH
           + Math.max(0, line3Rows.length - 1) * GAP;
       } else {
         // text only: last row has no trailing gap
-        contentH = numText * tf.h + Math.max(0, numText - 1) * GAP;
+        contentH = numText * effH + Math.max(0, numText - 1) * GAP;
       }
 
       const yDesired = Math.round(config.topMarginMm * d);
       let y = Math.max(0, Math.min(yDesired, Math.max(0, totalH - contentH)));
 
+      const xm = config.xmul ?? 1;
+      const ym = config.ymul ?? 1;
+
       for (const row of [...line1Rows, ...line2Rows]) {
-        const x = centerX(row.length * tf.w, xOrig, cellW, SIDE);
-        out.push(`TEXT ${x},${y},"${config.font}",0,1,1,"${esc(row)}"`);
-        y += tf.h + GAP;
+        const x = centerX(row.length * effW, xOrig, cellW, SIDE);
+        out.push(`TEXT ${x},${y},"${config.font}",0,${xm},${ym},"${esc(row)}"`);
+        y += effH + GAP;
       }
 
       if (label.barcode) {
@@ -210,9 +241,9 @@ export function buildTsplBytes(
         out.push(`TEXT ${skuX},${y + BAR_HEIGHT + GAP},"2",0,1,1,"${esc(skuT)}"`);
       } else if (line3Rows.length > 0) {
         for (const row of line3Rows) {
-          const x = centerX(row.length * tf.w, xOrig, cellW, SIDE);
-          out.push(`TEXT ${x},${y},"${config.font}",0,1,1,"${esc(row)}"`);
-          y += tf.h + GAP;
+          const x = centerX(row.length * effW, xOrig, cellW, SIDE);
+          out.push(`TEXT ${x},${y},"${config.font}",0,${xm},${ym},"${esc(row)}"`);
+          y += effH + GAP;
         }
       }
     }
