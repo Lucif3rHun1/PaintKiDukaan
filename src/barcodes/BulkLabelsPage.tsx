@@ -410,19 +410,29 @@ export function BulkLabelsPage() {
           const flatLabels = batch.map((r) => r.label);
 
           if (cols === 1) {
-            // Single-column: group identical labels into one job — avoids queue flooding.
-            // PRINT qty,1 lets the printer repeat internally.
-            const grouped = new Map<string, { label: BatchLabel; qty: number }>();
+            // Run-length encode consecutive identical labels so PRINT qty,1 is used
+            // for repeated copies of the same label. All strips go into ONE print job
+            // (one printRaw call) to avoid spooler flooding that causes empty labels.
+            function labelKey(l: BatchLabel): string {
+              return `${l.barcode ?? ""}\x00${l.line1 ?? ""}\x00${l.line2 ?? ""}\x00${l.line3 ?? ""}`;
+            }
+            const runs: { label: BatchLabel; qty: number }[] = [];
             for (const l of flatLabels) {
-              const key = `${l.barcode}\x00${l.line1 ?? ""}\x00${l.line2 ?? ""}`;
-              const existing = grouped.get(key);
-              if (existing) existing.qty++;
-              else grouped.set(key, { label: l, qty: 1 });
+              const key = labelKey(l);
+              const last = runs.at(-1);
+              if (last && labelKey(last.label) === key) {
+                last.qty++;
+              } else {
+                runs.push({ label: l, qty: 1 });
+              }
             }
-            for (const { label, qty } of grouped.values()) {
-              const bytes = buildTsplBytes([label], widthMm, heightMm, 1, qty, tsplConfig);
-              await ipc.printRaw(defaultPrinterName, bytes);
-            }
+            const bytes = buildTsplBytes(
+              runs.map((r) => r.label),
+              widthMm, heightMm, 1,
+              runs.map((r) => r.qty),
+              tsplConfig,
+            );
+            await ipc.printRaw(defaultPrinterName, bytes);
           } else {
             // Multi-column: chunk batch into strips of `cols` labels, one job per strip.
             // SIZE stays at physical roll width (widthMm); cells are rollWidth/cols each.

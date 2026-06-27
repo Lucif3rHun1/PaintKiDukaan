@@ -110,12 +110,17 @@ export function buildTsplString(
   return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
+/**
+ * qty may be a single number (same for all strips) or an array (one entry per
+ * strip, indexed by strip order). Pass an array when consecutive strips in one
+ * job need different repeat counts (e.g. run-length-encoded identical labels).
+ */
 export function buildTsplBytes(
   labels: TsplLabel[],
   rollWidthMm: number,
   heightMm: number,
   labelsPerRow: number,
-  qty: number,
+  qty: number | number[],
   config: TsplConfig = DEFAULT_TSPL_CONFIG,
 ): number[] {
   const d      = DOTS_PER_MM;
@@ -130,6 +135,11 @@ export function buildTsplBytes(
   const sf      = FONT["2"]; // SKU always in smallest font
   const usableW = cellW - SIDE * 2;
 
+  function stripQty(stripIndex: number): number {
+    if (Array.isArray(qty)) return Math.max(1, qty[stripIndex] ?? 1);
+    return Math.max(1, qty);
+  }
+
   const out: string[] = [];
   out.push(`SIZE ${rollWidthMm} mm, ${heightMm} mm`);
   out.push(`GAP 2 mm, 0 mm`);
@@ -138,15 +148,14 @@ export function buildTsplBytes(
   out.push(`DENSITY 8`);
   out.push(`SPEED 2`);
 
-  const printQty = Math.max(1, qty);
-
   if (labels.length === 0) {
     // Preserve original no-label behavior: one blank strip + one print command.
     out.push(`CLS`);
-    out.push(`PRINT ${printQty},1`);
+    out.push(`PRINT ${stripQty(0)},1`);
     return Array.from(new TextEncoder().encode(out.join("\r\n") + "\r\n"));
   }
 
+  let stripIndex = 0;
   for (let i = 0; i < labels.length; i += cols) {
     const chunk = labels.slice(i, i + cols);
     out.push(`CLS`);
@@ -191,7 +200,8 @@ export function buildTsplBytes(
       }
     }
 
-    out.push(`PRINT ${printQty},1`);
+    out.push(`PRINT ${stripQty(stripIndex)},1`);
+    stripIndex++;
   }
 
   return Array.from(new TextEncoder().encode(out.join("\r\n") + "\r\n"));
