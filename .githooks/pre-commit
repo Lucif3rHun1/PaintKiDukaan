@@ -8,6 +8,9 @@
 
 set -u
 
+# 0. Auto-stage all new & modified files so nothing gets forgotten.
+git add -A
+
 STASH_AGE_DAYS="${STASH_AGE_DAYS:-7}"
 WARN_ONLY="${PKB_PRE_COMMIT_WARN_ONLY:-1}"   # 1 = warn, 0 = block
 
@@ -32,8 +35,6 @@ if git rev-parse --verify --quiet refs/stash >/dev/null 2>&1; then
         fi
     fi
 fi
-
-exit 0
 
 # 2. Scratch-file guard
 # Refuse to commit anything under .opencode/scratch/ — that's where agents
