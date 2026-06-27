@@ -55,8 +55,7 @@
         "languages": ["English"],
         "installMode": "currentUser",
         "startMenuFolder": "PaintKiDukaan",
-        "compression": "lzma",
-        "allowDowngrades": true
+        "compression": "lzma"
       }
     }
   }
