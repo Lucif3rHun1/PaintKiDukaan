@@ -1,7 +1,6 @@
 import { type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Card } from "../../../components/ui";
-import { MetricCard } from "./shared";
+import { Card, MetricCard } from "../../../components/ui";
 
 export type TopMetricTone = NonNullable<
   React.ComponentProps<typeof MetricCard>["tone"]

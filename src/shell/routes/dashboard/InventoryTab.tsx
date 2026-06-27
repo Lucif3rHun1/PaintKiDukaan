@@ -8,7 +8,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, EmptyState, Money, PeriodDropdown, Skeleton } from "../../../components/ui";
+import { Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import {
   deadStock,
@@ -21,7 +21,7 @@ import {
 } from "../../../pos/api";
 import { listItems } from "../../../domain/items/api";
 import { formatDateForDisplay, todayLocalYyyymmdd, shiftDaysLocal } from "../../../lib/date";
-import { Donut, MetricCard } from "./shared";
+import { Donut } from "./shared";
 
 const STAGGER_INVENTORY = 32_000;
 
