@@ -25,6 +25,7 @@ interface Props {
 
 function buildDraftLine(item: SaleItem, saleId: number): ReturnCartLine {
   return {
+    sale_item_id: item.id,
     item_id: item.item_id ?? 0,
     item_name: item.display_name,
     qty: item.qty,

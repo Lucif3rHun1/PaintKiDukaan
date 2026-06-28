@@ -114,15 +114,6 @@ jobs:
         shell: bash
         run: find target/${{ matrix.target }}/release/bundle -type f | sort || true
 
-      - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: |
-            ${{ matrix.asset_glob }}
-            target/${{ matrix.target }}/release/bundle/*/*.sig
-
       - name: Upload build outputs
         uses: actions/upload-artifact@v4
         with:
@@ -160,15 +151,6 @@ jobs:
           github-artifact-name: windows-aarch64
           wait-for-completion: true
           output-artifact-directory: signed-windows-aarch64
-
-      - name: Upload signed installers to release
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: |
-            signed-windows-x86_64/**/*.exe
-            signed-windows-aarch64/**/*.exe
 
       - name: Upload signed installers as GitHub artifacts
         uses: actions/upload-artifact@v4
@@ -251,11 +233,6 @@ jobs:
 
             if [[ -n "$exe" ]]; then
               re_sign "$exe"
-              # Upload .sig to release
-              sig="${exe}.sig"
-              if [[ -f "$sig" ]]; then
-                gh release upload "${{ github.ref_name }}" "$sig" --clobber || true
-              fi
             else
               echo "WARNING: No .exe found for ${arch}, skipping" >&2
             fi
@@ -356,10 +333,29 @@ jobs:
           win_arm64_asset="$(pick_windows_exe 'aarch64')"
           win_arm64_sig="$(find_sig 'windows-aarch64' '*.exe.sig')"
 
-          mac_aarch64_name="$(basename "$mac_aarch64_asset")"
-          mac_x86_64_name="$(basename "$mac_x86_64_asset")"
+          release_dir="release-files"
+          rm -rf "$release_dir"
+          mkdir -p "$release_dir"
+
+          copy_release() {
+            local source="$1"
+            local name="$2"
+            cp "$source" "$release_dir/$name"
+          }
+
+          mac_aarch64_name="PaintKiDukaan_${version}_aarch64.app.tar.gz"
+          mac_x86_64_name="PaintKiDukaan_${version}_x64.app.tar.gz"
           win_x64_name="$(basename "$win_x64_asset")"
           win_arm64_name="$(basename "$win_arm64_asset")"
+
+          copy_release "$mac_aarch64_asset" "$mac_aarch64_name"
+          copy_release "$mac_aarch64_sig" "${mac_aarch64_name}.sig"
+          copy_release "$mac_x86_64_asset" "$mac_x86_64_name"
+          copy_release "$mac_x86_64_sig" "${mac_x86_64_name}.sig"
+          copy_release "$win_x64_asset" "$win_x64_name"
+          copy_release "$win_x64_sig" "${win_x64_name}.sig"
+          copy_release "$win_arm64_asset" "$win_arm64_name"
+          copy_release "$win_arm64_sig" "${win_arm64_name}.sig"
 
           cat > latest.json <<EOF
           {
@@ -387,9 +383,13 @@ jobs:
           }
           EOF
 
-      - name: Upload latest.json
-        uses: softprops/action-gh-release@v2
+      - name: Upload release assets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: latest.json
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "$tag" --notes "Release $tag"
+          fi
+          gh release upload "$tag" latest.json release-files/* --clobber

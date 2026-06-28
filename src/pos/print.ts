@@ -90,6 +90,16 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.setTextColor(...DARK);
+  if (spec.header) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...PRIMARY);
+    doc.text(spec.header, pageW / 2, y, { align: "center" });
+    y += 6;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(...DARK);
+  }
   doc.text("INVOICE", margin, y);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
@@ -291,7 +301,14 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   doc.setFont("helvetica", "italic");
   doc.setFontSize(10);
   doc.setTextColor(...PRIMARY);
-  doc.text("Thank You For Your Business !", pageW / 2, 285, { align: "center" });
+  const footerText = spec.footer || "Thank You For Your Business !";
+  doc.text(footerText, pageW / 2, 285, { align: "center" });
+  if (spec.terms) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text(spec.terms, pageW / 2, 290, { align: "center" });
+  }
 
   return doc;
 }
@@ -346,6 +363,16 @@ export function buildReturnReceiptPdf(spec: ReturnReceiptSpec): jsPDF {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.setTextColor(...DARK);
+  if (spec.header) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...PRIMARY);
+    doc.text(spec.header, pageW / 2, y, { align: "center" });
+    y += 6;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(...DARK);
+  }
   doc.text("CREDIT NOTE", margin, y);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
@@ -413,7 +440,7 @@ export function buildReturnReceiptPdf(spec: ReturnReceiptSpec): jsPDF {
       doc.text(nameLines[i], tableX + 2, y + i * 4);
     }
     doc.text(String(line.qty), colQty, y, { align: "right" });
-    doc.text(paiseToPdfRupees(line.refund_paise), colAmt, y, { align: "right" });
+    doc.text(paiseToPdfRupees(line.qty * line.refund_paise), colAmt, y, { align: "right" });
     y += rowH;
   }
   y += 2;
@@ -442,6 +469,19 @@ export function buildReturnReceiptPdf(spec: ReturnReceiptSpec): jsPDF {
       doc.text(paiseToPdfRupees(m.amount), valueX, y, { align: "right" });
       y += 4;
     }
+  }
+
+  y += 8;
+  if (spec.footer) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    doc.text(spec.footer, pageW / 2, y, { align: "center" });
+    y += 5;
+  }
+  if (spec.terms) {
+    doc.setFontSize(7);
+    doc.text(spec.terms, pageW / 2, y, { align: "center" });
   }
 
   return doc;

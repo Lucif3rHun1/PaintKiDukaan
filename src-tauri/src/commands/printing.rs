@@ -29,6 +29,7 @@ pub struct ReceiptItem {
     pub unit: String,
     pub unit_price: String,
     pub line_total: String,
+    pub line_discount: Option<String>,
 }
 
 /// Everything the backend needs to lay out a receipt in ESC/POS.
@@ -225,6 +226,11 @@ fn build_receipt(data: ReceiptData) -> Vec<u8> {
             sanitize(&it.unit_price, MAX_FIELD_LEN)
         );
         e.two_col(&left, &sanitize(&it.line_total, MAX_FIELD_LEN));
+        if let Some(ref disc) = it.line_discount {
+            if !disc.is_empty() && disc != "Rs.0.00" {
+                e.two_col("  discount", &format!("-{}", sanitize(disc, MAX_FIELD_LEN)));
+            }
+        }
     }
     e.separator();
 
@@ -489,6 +495,7 @@ mod tests {
                 unit: "L".into(),
                 unit_price: "Rs.100.00".into(),
                 line_total: "Rs.100.00".into(),
+                line_discount: None,
             }],
             subtotal: "Rs.100.00".into(),
             discount: "Rs.0.00".into(),
@@ -551,6 +558,7 @@ mod tests {
                 unit: "L".into(),
                 unit_price: "Rs.100.00".into(),
                 line_total: "Rs.100.00".into(),
+                line_discount: None,
             }],
             subtotal: "Rs.100.00".into(),
             discount: "Rs.0.00".into(),

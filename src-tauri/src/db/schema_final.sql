@@ -301,8 +301,7 @@ CREATE TABLE items (
   unit_code           TEXT    NOT NULL,           -- denormalized for cashier projection
   unit_label          TEXT    NOT NULL,           -- denormalized for cashier projection
   unit                TEXT    NOT NULL DEFAULT 'pc',  -- denormalized unit code (legacy compat)
-  sell_unit           TEXT    NOT NULL DEFAULT 'unit', -- "unit" or "box"
-  sell_unit_id        INTEGER REFERENCES units(id) ON DELETE NO ACTION,
+  sell_unit           TEXT    NOT NULL DEFAULT 'unit', -- "unit", "mtr", or "kg"
   retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),
   cost_paise          INTEGER NOT NULL CHECK(cost_paise >= 0),
   promo_price_paise   INTEGER CHECK(promo_price_paise >= 0),
@@ -310,7 +309,6 @@ CREATE TABLE items (
   label_line2         TEXT,
   primary_location_id INTEGER REFERENCES locations(id) ON DELETE NO ACTION,
   min_qty             INTEGER NOT NULL DEFAULT 0 CHECK(min_qty >= 0),
-  min_stock           REAL    NOT NULL DEFAULT 0 CHECK(min_stock >= 0),
   barcode_format      TEXT,
   units_per_pack      INTEGER NOT NULL DEFAULT 1 CHECK(units_per_pack >= 1),
   sub_location_id     INTEGER REFERENCES sub_locations(id) ON DELETE NO ACTION,
@@ -381,7 +379,7 @@ CREATE TABLE stock_movements (
   item_id      INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
   location_id  INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
   kind_id      INTEGER NOT NULL REFERENCES stock_movement_kinds(id) ON DELETE NO ACTION,
-  qty          INTEGER NOT NULL CHECK(qty <> 0),  -- sign comes from kinds, but we still ban 0
+  qty          REAL NOT NULL CHECK(qty <> 0),  -- sign comes from kinds, but we still ban 0
   unit_id      INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
   ref_kind     TEXT    CHECK(ref_kind IN ('sale','purchase','return','adjustment') OR ref_kind IS NULL),
   ref_id       INTEGER,
@@ -406,7 +404,7 @@ CREATE INDEX idx_stock_movements_kind_id ON stock_movements(kind_id);
 CREATE TABLE stock_balances (
   item_id          INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
   location_id      INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
-  qty              INTEGER NOT NULL DEFAULT 0,
+  qty              REAL NOT NULL DEFAULT 0,
   last_movement_id INTEGER REFERENCES stock_movements(id) ON DELETE NO ACTION,
   updated_at       INTEGER NOT NULL,
   PRIMARY KEY (item_id, location_id)
@@ -486,7 +484,7 @@ CREATE TABLE purchase_items (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
   purchase_id        INTEGER NOT NULL REFERENCES purchases(id) ON DELETE NO ACTION,
   item_id            INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
-  qty                INTEGER NOT NULL CHECK(qty > 0),
+  qty                REAL NOT NULL CHECK(qty > 0),
   unit_id            INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
   unit_price_paise   INTEGER NOT NULL CHECK(unit_price_paise >= 0),
   line_discount_paise INTEGER NOT NULL DEFAULT 0 CHECK(line_discount_paise >= 0),
@@ -574,9 +572,9 @@ CREATE TABLE sale_items (
   kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),
   item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,
   formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
-  qty           INTEGER NOT NULL CHECK(qty > 0),
+  qty           REAL NOT NULL CHECK(qty > 0),
   price         INTEGER NOT NULL CHECK(price >= 0),
-  unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','box')),
+  unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),
   line_discount INTEGER NOT NULL DEFAULT 0,
   shade_note    TEXT,
   line_order    INTEGER NOT NULL DEFAULT 0,
@@ -1069,6 +1067,11 @@ ALTER TABLE items ADD COLUMN min_stock REAL NOT NULL DEFAULT 0;
 
 -- N11. Migrate min_qty to min_stock
 UPDATE items SET min_stock = CAST(min_qty AS REAL) WHERE min_qty IS NOT NULL;
+
+-- Drop triggers before dropping tables they reference
+DROP TRIGGER IF EXISTS stock_movements_ai;
+DROP TRIGGER IF EXISTS stock_movements_bu;
+DROP TRIGGER IF EXISTS stock_movements_bd;
 
 -- N12. Recreate stock_balances with REAL qty
 CREATE TABLE IF NOT EXISTS stock_balances_new (

@@ -195,7 +195,7 @@ impl Db {
                        kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),\
                        item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,\
                        formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,\
-                       qty           INTEGER NOT NULL CHECK(qty > 0),\
+                       qty           REAL NOT NULL CHECK(qty > 0),\
                        price         INTEGER NOT NULL CHECK(price >= 0),\
                        unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),\
                        line_discount INTEGER NOT NULL DEFAULT 0,\
@@ -431,6 +431,40 @@ impl Db {
                         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
                         UNIQUE(item_id, purchase_unit_id)
                      );",
+                )?;
+            }
+        }
+
+        // M-INLINE-010: add `date` column to `sale_returns` for user-provided
+        // logical return date (YYYY-MM-DD). Fresh DBs get it from schema_final.
+        {
+            let has_date: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('sale_returns') WHERE name = 'date'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_date {
+                conn.execute_batch(
+                    "ALTER TABLE sale_returns ADD COLUMN date TEXT;",
+                )?;
+            }
+        }
+
+        // M-INLINE-011: add `shade_note` column to `sale_return_lines` so
+        // return lines can carry the shade/formula note from the original sale.
+        {
+            let has_shade_note: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('sale_return_lines') WHERE name = 'shade_note'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_shade_note {
+                conn.execute_batch(
+                    "ALTER TABLE sale_return_lines ADD COLUMN shade_note TEXT;",
                 )?;
             }
         }

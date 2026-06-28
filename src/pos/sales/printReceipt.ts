@@ -198,6 +198,8 @@ export function printerMatchesUseCase(
 }
 
 export function buildReturnReceiptData(ret: SaleReturn, settings: ReceiptPrintSettings) {
+  const refundTotal = ret.refund_total ?? 0;
+  const paidAmount = refundTotal;
   return {
     shop_name: settings.shopName,
     shop_address: settings.shopAddress,
@@ -205,18 +207,25 @@ export function buildReturnReceiptData(ret: SaleReturn, settings: ReceiptPrintSe
     shop_gstin: settings.shopGstin,
     header: settings.receiptHeader,
     footer: settings.receiptFooter,
+    terms: settings.receiptTerms,
     paper_size: settings.receiptPaperSize?.startsWith("thermal-")
       ? settings.receiptPaperSize
       : undefined,
-    return_number: ret.no,
+    sale_number: `RET ${ret.no}`,
     created_at: ret.date,
-    reason: ret.reason,
+    customer_name: null,
     items: ret.lines.map((it) => ({
       name: it.item_name,
       qty: formatQty(it.qty),
-      refund: formatRupeesForThermal(it.refund_paise),
+      unit: "pc",
+      unit_price: formatRupeesForThermal(it.refund_paise),
+      line_total: formatRupeesForThermal(it.qty * it.refund_paise),
     })),
-    total: formatRupeesForThermal(ret.refund_total),
+    subtotal: formatRupeesForThermal(refundTotal),
+    discount: formatRupeesForThermal(0),
+    total: formatRupeesForThermal(refundTotal),
+    paid: formatRupeesForThermal(paidAmount),
+    due: formatRupeesForThermal(0),
     payments: ret.payment_modes.map((p) => ({
       mode: p.mode,
       amount: formatRupeesForThermal(p.amount),

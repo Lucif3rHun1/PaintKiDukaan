@@ -178,6 +178,7 @@ export default function ReturnPage({ user, onBack }: Props) {
       return [
         ...prev,
         {
+          sale_item_id: 0,
           item_id: item.id,
           item_name: item.name,
           qty: 1,
@@ -277,9 +278,9 @@ export default function ReturnPage({ user, onBack }: Props) {
     const payload: CreateSaleReturnPayload = {
       sale_id: derivedSaleId,
       lines: returnLines.map((line) => ({
-        sale_item_id: line.item_id,
+        sale_item_id: line.sale_item_id,
         qty: line.qty,
-        refund_paise: Math.round(line.qty * line.price),
+        refund_paise: Math.round(line.price),
         shade_note: undefined,
       })),
       payment_modes: paymentSplits.map((split) => ({

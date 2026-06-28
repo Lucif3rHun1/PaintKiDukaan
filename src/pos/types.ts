@@ -28,6 +28,7 @@ export interface NewSalePayment {
 }
 
 export interface SaleItem {
+  id: number;
   kind: "item" | "formula";
   item_id: number | null;
   formula_id: number | null;
@@ -60,6 +61,7 @@ export interface Sale {
 }
 
 export interface ReturnCartLine {
+  sale_item_id: number;
   item_id: number;
   item_name: string;
   qty: number;

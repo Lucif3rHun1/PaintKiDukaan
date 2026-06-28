@@ -51,6 +51,7 @@ pub struct Sale {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SaleItem {
+    pub id: i64, // sale_items primary key (for returns FK)
     pub kind: String, // "item" | "formula"
     pub item_id: Option<i64>,
     pub formula_id: Option<i64>,
@@ -795,7 +796,7 @@ pub fn list(db: &Db, status: Option<&str>, limit: i64) -> anyhow::Result<Vec<Sal
 
 fn load_items(c: &rusqlite::Connection, sale_id: i64) -> anyhow::Result<Vec<SaleItem>> {
     let mut stmt = c.prepare(
-        "SELECT si.kind, si.item_id, si.formula_id,
+        "SELECT si.id, si.kind, si.item_id, si.formula_id,
                 COALESCE(i.name, f.id_code, '') AS display_name,
                 si.qty, si.price, si.unit_type, si.line_discount,
                 si.shade_note, si.line_order
@@ -807,16 +808,17 @@ fn load_items(c: &rusqlite::Connection, sale_id: i64) -> anyhow::Result<Vec<Sale
     )?;
     let rows = stmt.query_map(params![sale_id], |r| {
         Ok(SaleItem {
-            kind: r.get(0)?,
-            item_id: r.get(1)?,
-            formula_id: r.get(2)?,
-            display_name: r.get(3)?,
-            qty: r.get(4)?,
-            price: r.get(5)?,
-            unit_type: r.get(6)?,
-            line_discount: r.get(7)?,
-            shade_note: r.get(8)?,
-            line_order: r.get(9)?,
+            id: r.get(0)?,
+            kind: r.get(1)?,
+            item_id: r.get(2)?,
+            formula_id: r.get(3)?,
+            display_name: r.get(4)?,
+            qty: r.get(5)?,
+            price: r.get(6)?,
+            unit_type: r.get(7)?,
+            line_discount: r.get(8)?,
+            shade_note: r.get(9)?,
+            line_order: r.get(10)?,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1058,6 +1060,11 @@ pub fn create_sale_return(
         }
     }
 
+    // Mint return number BEFORE transaction to avoid reentrant mutex deadlock.
+    let no = sequences::mint_next_sale_no(db, sequences::Kind::SaleRet)
+        .map_err(ReturnError::Other)?;
+    let logical_date = payload.date.unwrap_or_else(today);
+
     let new_id = db.with_conn_immediate(|c| -> Result<i64, ReturnError> {
         let row = c
             .query_row(
@@ -1156,9 +1163,6 @@ pub fn create_sale_return(
             )
             .unwrap_or(default_location);
 
-        let no = sequences::mint_next_sale_no(db, sequences::Kind::SaleRet)
-            .map_err(ReturnError::Other)?;
-        let logical_date = payload.date.unwrap_or_else(today);
         let created_at = now();
         let reason = payload.reason.clone();
 
