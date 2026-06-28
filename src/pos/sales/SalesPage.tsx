@@ -509,7 +509,6 @@ export default function SalesPage({ user, onExit }: Props) {
     resetDirty();
     setShowExitModal(false);
     setPendingExit(null);
-    void deleteDraft("sale");
     exit();
   }
 

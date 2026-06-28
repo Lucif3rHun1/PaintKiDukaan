@@ -230,7 +230,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     };
   }, [draftStatus, savedDraft]);
 
-  const entrySearchRef = useRef<HTMLInputElement>(null);
+  // ponytail: removed dead entrySearchRef — was never attached to DOM
 
   useEffect(() => {
     Promise.allSettled([
@@ -457,13 +457,18 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     return item.sku_code ? `${item.name} · ${item.sku_code}` : item.name;
   }
 
+  function itemSellUnit(id: number): string {
+    const item = items.find((i) => i.id === id);
+    return item?.sell_unit || "unit";
+  }
+
   async function submit() {
     const filled = draft.filter((l) => l.item_id > 0);
     const lines: InwardLine[] = filled.map((l) => ({
       item_id: l.item_id,
       qty: l.qty * l.qty_per_purchase_unit,
       unit_type: l.unit_type as InwardLine["unit_type"],
-      unit_price_paise: Math.round(l.cost_price * 100),
+      unit_price_paise: l.cost_price,
       location_id: l.location_id,
     }));
     if (lines.length === 0) {
@@ -512,6 +517,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       if (draft.length === 0) return;
       setDraft([]);
       setEntry(emptyEntry(defaultLocationId));
+      void resetDraft();
       setStatus("Draft cleared");
     },
   });
@@ -545,7 +551,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   function handleSaveDraftAndExit() {
     resetDirty();
     setShowExitModal(false);
-    void deleteDraft("purchase");
     onExit?.();
   }
 
@@ -759,6 +764,9 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-semibold text-foreground">
                 {editingIndex != null ? "Editing: " : "Selected: "}{itemName(entry.item_id)}
+                <span className="ml-2 inline-block rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                  {itemSellUnit(entry.item_id)}
+                </span>
               </p>
               {editingIndex != null && (
                 <button
@@ -792,6 +800,18 @@ export default function InwardPage({ user: _user, onExit }: Props) {
               </div>
 
               <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Quantity</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={entry.unit_type === "unit" ? 1 : 0.001}
+                  value={entry.qty}
+                  onChange={(e) => setEntry((p) => ({ ...p, qty: Math.max(0, Number(e.target.value)) }))}
+                  className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
+                />
+              </div>
+
+              <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Units/pkg</label>
                 <input
                   type="number"
@@ -807,18 +827,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                       void setItemPackaging(entry.item_id, entry.purchase_unit_id, entry.qty_per_purchase_unit).catch(() => {});
                     }
                   }}
-                  className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Quantity</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={entry.unit_type === "unit" ? 1 : 0.001}
-                  value={entry.qty}
-                  onChange={(e) => setEntry((p) => ({ ...p, qty: Math.max(0, Number(e.target.value)) }))}
                   className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
                 />
               </div>
@@ -911,9 +919,9 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
-                        <div>{l.qty}</div>
+                        <div>{l.qty * l.qty_per_purchase_unit}</div>
                         {l.qty_per_purchase_unit !== 1 ? (
-                          <div className="text-xs text-muted-foreground">× {l.qty_per_purchase_unit} pkg</div>
+                          <div className="text-xs text-muted-foreground">{l.qty} × {l.qty_per_purchase_unit}</div>
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
@@ -1032,7 +1040,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             );
             setAddItemOpen(false);
             void selectItemForEntry(it.id);
-            entrySearchRef.current?.focus();
           }}
           onCancel={() => setAddItemOpen(false)}
         />

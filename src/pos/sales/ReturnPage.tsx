@@ -197,7 +197,6 @@ export default function ReturnPage({ user, onBack }: Props) {
   function handleSaveDraftAndExit() {
     resetDirty();
     setShowExitModal(false);
-    void deleteDraft("return");
     onBack();
   }
 
