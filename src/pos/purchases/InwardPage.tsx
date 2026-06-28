@@ -208,13 +208,13 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       draftRestored.current = true;
       try {
         const data = parsePurchaseDraft(savedDraft.data_json);
-        if (!data) return;
+        if (!data) { void resetDraft(); return; }
         if (data.draftLines) setDraft(data.draftLines);
         if (data.vendorId !== undefined) setVendorId(data.vendorId);
         if (data.notes !== undefined) setNotes(data.notes);
         if (data.autoPrint !== undefined) setAutoPrint(data.autoPrint);
       } catch {
-        return;
+        void resetDraft();
       }
     }
   }, [savedDraft, draftLoading]);
