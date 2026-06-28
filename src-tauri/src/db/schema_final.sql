@@ -974,3 +974,219 @@ CREATE TABLE IF NOT EXISTS drafts (
   updated_at INTEGER NOT NULL,
   UNIQUE(user_id, form_type)
 );
+
+-- =====================================================================
+-- MIGRATION: 3-unit system (unit/mtr/kg)
+-- =====================================================================
+-- Replaces the old 10-unit system (pc, box, bundle, roll, kg, g, L, ml, sqft, sqm)
+-- with 3 sale units: unit, mtr, kg.
+--
+-- Key changes:
+--   * New sale_units / purchase_units / item_purchase_packaging tables
+--   * Items sell_unit migrated: pc/box/bundle/roll/L/ml → unit, kg/g → kg, sqft/sqm → mtr
+--   * Box items: prices divided by units_per_pack, units_per_pack set to 1
+--   * stock_balances.qty, stock_movements.qty, sale_items.qty, purchase_items.qty: INTEGER → REAL
+--   * sale_items.unit_type CHECK: 'unit','box' → 'unit','mtr','kg'
+--   * New columns on items: sell_unit_id, min_stock (REAL)
+--   * unit_conversions table dropped
+-- =====================================================================
+
+-- N1. Sale units lookup table
+CREATE TABLE IF NOT EXISTS sale_units (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,
+  quantity_precision INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT OR IGNORE INTO sale_units (code, label, quantity_precision) VALUES
+  ('unit', 'Unit', 0),
+  ('mtr', 'Metre', 3),
+  ('kg', 'Kg', 3);
+
+-- N2. Purchase units lookup table (packaging labels)
+CREATE TABLE IF NOT EXISTS purchase_units (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  label TEXT NOT NULL UNIQUE,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT OR IGNORE INTO purchase_units (label) VALUES
+  ('Carton'), ('Roll'), ('Sack'), ('Piece'), ('Box'), ('Bundle');
+
+-- N3. Per-item purchase packaging (how items are bought)
+CREATE TABLE IF NOT EXISTS item_purchase_packaging (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  purchase_unit_id INTEGER NOT NULL REFERENCES purchase_units(id),
+  qty_per_purchase_unit REAL NOT NULL DEFAULT 1.0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(item_id, purchase_unit_id)
+);
+
+-- N4. Migrate items.sell_unit to new values
+-- pc/box/bundle/roll/L/ml → unit, kg/g → kg, sqft/sqm → mtr
+UPDATE items SET sell_unit = 'unit'
+  WHERE sell_unit IN ('pc','box','bundle','roll','L','ml') OR sell_unit IS NULL;
+UPDATE items SET sell_unit = 'kg'
+  WHERE sell_unit IN ('kg','g');
+UPDATE items SET sell_unit = 'mtr'
+  WHERE sell_unit IN ('sqft','sqm');
+
+-- N5. For old box items (sell_unit was 'box' and units_per_pack > 1):
+--     divide retail_price_paise and cost_paise by units_per_pack,
+--     set units_per_pack = 1
+UPDATE items
+  SET retail_price_paise = CAST(retail_price_paise / units_per_pack AS INTEGER),
+      cost_paise = CAST(cost_paise / units_per_pack AS INTEGER),
+      units_per_pack = 1
+  WHERE sell_unit = 'unit' AND units_per_pack > 1
+    AND retail_price_paise > 0;
+
+-- N6. Seed purchase_units from distinct unit_code values in items
+INSERT OR IGNORE INTO purchase_units (label)
+  SELECT DISTINCT unit_code FROM items WHERE unit_code IS NOT NULL AND unit_code != '';
+
+-- N7. Seed item_purchase_packaging for items with units_per_pack > 1
+-- (after N5 these should all be 1, but for safety handle any remaining)
+INSERT OR IGNORE INTO item_purchase_packaging (item_id, purchase_unit_id, qty_per_purchase_unit)
+  SELECT i.id, pu.id, CAST(i.units_per_pack AS REAL)
+  FROM items i
+  JOIN purchase_units pu ON pu.label = i.unit_code
+  WHERE i.units_per_pack > 1;
+
+-- N8. Add sell_unit_id to items table
+ALTER TABLE items ADD COLUMN sell_unit_id INTEGER REFERENCES sale_units(id);
+
+-- N9. Set sell_unit_id from sale_units where code matches items.sell_unit
+UPDATE items SET sell_unit_id = (
+  SELECT id FROM sale_units WHERE code = items.sell_unit
+);
+
+-- N10. Add min_stock (REAL) to items table
+ALTER TABLE items ADD COLUMN min_stock REAL NOT NULL DEFAULT 0;
+
+-- N11. Migrate min_qty to min_stock
+UPDATE items SET min_stock = CAST(min_qty AS REAL) WHERE min_qty IS NOT NULL;
+
+-- N12. Recreate stock_balances with REAL qty
+CREATE TABLE IF NOT EXISTS stock_balances_new (
+  item_id          INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  location_id      INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+  qty              REAL NOT NULL DEFAULT 0,
+  last_movement_id INTEGER REFERENCES stock_movements(id) ON DELETE NO ACTION,
+  updated_at       INTEGER NOT NULL,
+  PRIMARY KEY (item_id, location_id)
+);
+INSERT INTO stock_balances_new (item_id, location_id, qty, last_movement_id, updated_at)
+  SELECT item_id, location_id, CAST(qty AS REAL), last_movement_id, updated_at FROM stock_balances;
+DROP TABLE stock_balances;
+ALTER TABLE stock_balances_new RENAME TO stock_balances;
+CREATE INDEX idx_stock_balances_item ON stock_balances(item_id);
+CREATE INDEX idx_stock_balances_item_qty ON stock_balances(item_id, qty);
+
+-- N13. Recreate stock_movements with REAL qty
+CREATE TABLE IF NOT EXISTS stock_movements_new (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id      INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  location_id  INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+  kind_id      INTEGER NOT NULL REFERENCES stock_movement_kinds(id) ON DELETE NO ACTION,
+  qty          REAL NOT NULL CHECK(qty <> 0),
+  unit_id      INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  ref_kind     TEXT    CHECK(ref_kind IN ('sale','purchase','return','adjustment') OR ref_kind IS NULL),
+  ref_id       INTEGER,
+  note         TEXT,
+  created_at   INTEGER NOT NULL,
+  created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+INSERT INTO stock_movements_new (id, item_id, location_id, kind_id, qty, unit_id, ref_kind, ref_id, note, created_at, created_by)
+  SELECT id, item_id, location_id, kind_id, CAST(qty AS REAL), unit_id, ref_kind, ref_id, note, created_at, created_by FROM stock_movements;
+DROP TABLE stock_movements;
+ALTER TABLE stock_movements_new RENAME TO stock_movements;
+CREATE INDEX idx_stock_movements_item_loc_created ON stock_movements(item_id, location_id, created_at DESC);
+CREATE INDEX idx_stock_movements_loc_created ON stock_movements(location_id, created_at DESC);
+CREATE INDEX idx_stock_movements_ref ON stock_movements(ref_kind, ref_id) WHERE ref_id IS NOT NULL;
+CREATE INDEX idx_stock_movements_kind_id ON stock_movements(kind_id);
+
+-- Recreate the stock_movements_ai trigger for REAL qty
+CREATE TRIGGER IF NOT EXISTS stock_movements_ai
+AFTER INSERT ON stock_movements
+FOR EACH ROW
+BEGIN
+  INSERT INTO stock_balances (item_id, location_id, qty, last_movement_id, updated_at)
+  VALUES (NEW.item_id, NEW.location_id, NEW.qty, NEW.id, NEW.created_at)
+  ON CONFLICT(item_id, location_id) DO UPDATE SET
+    qty            = stock_balances.qty + excluded.qty,
+    last_movement_id = excluded.last_movement_id,
+    updated_at     = excluded.updated_at;
+END;
+
+-- Recreate the append-only triggers
+CREATE TRIGGER IF NOT EXISTS stock_movements_bu
+BEFORE UPDATE ON stock_movements
+BEGIN
+  SELECT RAISE(ABORT, 'stock_movements is append-only; insert a corrective movement instead');
+END;
+
+CREATE TRIGGER IF NOT EXISTS stock_movements_bd
+BEFORE DELETE ON stock_movements
+BEGIN
+  SELECT RAISE(ABORT, 'stock_movements is append-only');
+END;
+
+-- N14. Recreate sale_items with REAL qty and new unit_type CHECK
+CREATE TABLE IF NOT EXISTS sale_items_new (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_id       INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
+  kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),
+  item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,
+  formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
+  qty           REAL NOT NULL CHECK(qty > 0),
+  price         INTEGER NOT NULL CHECK(price >= 0),
+  unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),
+  line_discount INTEGER NOT NULL DEFAULT 0,
+  shade_note    TEXT,
+  line_order    INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+  created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  CHECK ((item_id IS NOT NULL AND formula_id IS NULL)
+      OR (item_id IS NULL AND formula_id IS NOT NULL))
+);
+INSERT INTO sale_items_new (id, sale_id, kind, item_id, formula_id, qty, price, unit_type, line_discount, shade_note, line_order, created_at, created_by)
+  SELECT id, sale_id, kind, item_id, formula_id, CAST(qty AS REAL), price,
+         CASE WHEN unit_type = 'box' THEN 'unit' ELSE 'unit' END,
+         line_discount, shade_note, line_order, created_at, created_by
+  FROM sale_items;
+DROP TABLE sale_items;
+ALTER TABLE sale_items_new RENAME TO sale_items;
+CREATE INDEX idx_sale_items_sale_id ON sale_items(sale_id);
+CREATE INDEX idx_sale_items_item_id ON sale_items(item_id);
+CREATE INDEX idx_sale_items_formula_id ON sale_items(formula_id);
+
+-- N15. Recreate purchase_items with REAL qty
+CREATE TABLE IF NOT EXISTS purchase_items_new (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  purchase_id        INTEGER NOT NULL REFERENCES purchases(id) ON DELETE NO ACTION,
+  item_id            INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
+  qty                REAL NOT NULL CHECK(qty > 0),
+  unit_id            INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  unit_price_paise   INTEGER NOT NULL CHECK(unit_price_paise >= 0),
+  line_discount_paise INTEGER NOT NULL DEFAULT 0 CHECK(line_discount_paise >= 0),
+  line_total_paise   INTEGER NOT NULL CHECK(line_total_paise >= 0),
+  created_at         INTEGER NOT NULL,
+  created_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION
+);
+INSERT INTO purchase_items_new (id, purchase_id, item_id, qty, unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at, created_by)
+  SELECT id, purchase_id, item_id, CAST(qty AS REAL), unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at, created_by
+  FROM purchase_items;
+DROP TABLE purchase_items;
+ALTER TABLE purchase_items_new RENAME TO purchase_items;
+CREATE INDEX idx_purchase_items_purchase_id ON purchase_items(purchase_id);
+CREATE INDEX idx_purchase_items_item_id ON purchase_items(item_id);
+
+-- N16. Drop unit_conversions table (no longer needed with 3 fixed units)
+DROP TABLE IF EXISTS unit_conversions;
