@@ -2,8 +2,8 @@
 // Entry pad at top (search → packaging → qty → cost → amount → retail → Enter)
 // pushes a read-only line into the draft. Save finalizes all accumulated lines.
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, PackagePlus, Search, Truck, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, PackagePlus, Truck, X } from "lucide-react";
 import { EmptyState, Skeleton } from "../../components/ui";
 
 import { Button, InlineDialog, Money, MoneyInput, QtyInput } from "../../components/ui";
@@ -20,29 +20,31 @@ import { listLocations } from "../../domain/locations/api";
 import { VendorForm } from "../../domain/vendors/VendorForm";
 import { listVendors } from "../../domain/vendors/api";
 import { outstandingReport } from "../api";
-import type { Item, Location, Vendor, PurchaseUnit, ItemPurchasePackaging } from "../../domain/types";
+import type { FormulaSearchHit, Item, Location, Vendor, PurchaseUnit, ItemPurchasePackaging } from "../../domain/types";
 import { createInward, deleteDraft, lastCost, lastRetail, listPurchases } from "../api";
 import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay } from "../../lib/date";
-import type { InwardLine, NewPurchase, Purchase } from "../types";
-import { tauriInvoke } from "../../lib/security/tauri";
+import { ItemSearchInput } from "../sales/ItemSearchInput";
+import type { InwardLine, ItemSearchHit, NewPurchase, Purchase } from "../types";
 
-// ponytail: packaging APIs — will move to domain/units/api.ts when the other agent adds them
+// ponytail: packaging APIs — import from shared module
+import {
+  listPurchaseUnits as listPurchaseUnitsApi,
+  getItemPackaging as getItemPackagingApi,
+  setItemPackaging as setItemPackagingApi,
+} from "../../domain/units/api";
+
 function getItemPackaging(itemId: number): Promise<ItemPurchasePackaging[]> {
-  return tauriInvoke<ItemPurchasePackaging[]>("get_item_purchase_packaging", { item_id: itemId });
+  return getItemPackagingApi(itemId);
 }
 
 function setItemPackaging(itemId: number, purchaseUnitId: number, qtyPerPurchaseUnit: number): Promise<void> {
-  return tauriInvoke<void>("set_item_purchase_packaging", {
-    item_id: itemId,
-    purchase_unit_id: purchaseUnitId,
-    qty_per_purchase_unit: qtyPerPurchaseUnit,
-  });
+  return setItemPackagingApi(itemId, purchaseUnitId, qtyPerPurchaseUnit);
 }
 
 function listPurchaseUnits(): Promise<PurchaseUnit[]> {
-  return tauriInvoke<PurchaseUnit[]>("list_purchase_units");
+  return listPurchaseUnitsApi(false);
 }
 
 interface Props {
@@ -372,6 +374,11 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     );
   }
 
+  const handleInwardItemPick = useCallback((hit: ItemSearchHit | FormulaSearchHit) => {
+    if ("kind" in hit && hit.kind === "formula") return;
+    void selectItemForEntry(hit.id);
+  }, [selectItemForEntry]);
+
   function handleEntryPkgChange(purchaseUnitId: number) {
     const option = entryPkgOptions.find((o) => o.purchase_unit_id === purchaseUnitId);
     const newQtyPerPkg = option?.qty_per_purchase_unit ?? 1;
@@ -400,7 +407,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   function commitEntry() {
     if (entry.item_id === 0) {
       toast.warning("Pick an item first");
-      entrySearchRef.current?.focus();
       return;
     }
     if (entry.qty <= 0) {
@@ -418,7 +424,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       setDraft((p) => [...p, { ...entry, row_id: newRowId(), item_query: "" }]);
     }
     setEntry(emptyEntry(defaultLocationId));
-    entrySearchRef.current?.focus();
   }
 
   function startEdit(index: number) {
@@ -426,7 +431,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     if (!line) return;
     setEditingIndex(index);
     setEntry({ ...line, item_query: "" });
-    entrySearchRef.current?.focus();
     // Ensure packaging data is loaded for this item
     if (line.item_id > 0 && !itemPackagingMap.has(line.item_id)) {
       void getItemPackaging(line.item_id)
@@ -523,7 +527,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
 
   useFocusShortcut({
     key: "F2",
-    selector: "[data-shortcut='inward-item']",
+    selector: "[data-shortcut='scan']",
     description: "Focus entry pad item search",
   });
 
@@ -738,17 +742,28 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             {editingIndex != null ? "Enter to update" : "Enter to add"}
           </span>
         </div>
+        {!initialLoading && (
+          <div className="border-b border-border px-4 py-2">
+            <ItemSearchInput
+              onPick={handleInwardItemPick}
+              allowOutOfStock
+              onCreateItem={() => setAddItemOpen(true)}
+              acceptFormula={false}
+            />
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr className="border-b border-border">
                 <th className="px-4 py-2 font-medium">Item</th>
                 <th className="px-3 py-2 font-medium">Pkg</th>
-                <th className="px-3 py-2 font-medium">Qty</th>
-                <th className="px-3 py-2 font-medium">Cost</th>
-                <th className="px-3 py-2 font-medium">Amount</th>
-                <th className="px-3 py-2 font-medium">Retail</th>
-                <th className="px-3 py-2 font-medium"></th>
+                <th className="px-3 py-2 text-right font-medium">Qty</th>
+                <th className="px-3 py-2 text-right font-medium">₹/Unit</th>
+                <th className="px-3 py-2 text-right font-medium">Total ₹</th>
+                <th className="px-3 py-2 text-right font-medium">MRP ₹</th>
+                <th className="px-3 py-2 text-center font-medium">✓</th>
               </tr>
             </thead>
             <tbody>
@@ -769,161 +784,109 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                 </tr>
               ) : (
                 <>
-                  {/* ── Entry pad: single always-present row ── */}
-                  <tr className="border-b-2 border-primary/30 bg-primary/5 align-top">
-                    <td className="px-4 py-2">
-                      <div className="relative flex-1">
-                        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                        <input
-                          ref={entrySearchRef}
-                          type="text"
-                          data-shortcut="inward-item"
-                          list="inward-entry-items"
-                          value={entry.item_query}
+                  {/* ── Entry row (inline form) ── */}
+                  {entry.item_id > 0 && (
+                    <tr className="border-b border-primary/20 bg-primary/5" data-testid="inward-entry">
+                      <td className="px-4 py-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {editingIndex != null ? "✏️ " : ""}{itemName(entry.item_id)}
+                        </p>
+                        {editingIndex != null && (
+                          <button
+                            type="button"
+                            onClick={() => { setEditingIndex(null); setEntry(emptyEntry(defaultLocationId)); }}
+                            className="mt-0.5 text-xs text-muted-foreground underline hover:text-foreground"
+                          >
+                            cancel
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={entry.purchase_unit_id ?? ""}
                           onChange={(e) => {
-                            const value = e.target.value;
-                            setEntry((p) => ({ ...p, item_query: value }));
-                            const nameMatch = value.match(/^(.+?)\s*\(([^)]+)\)$/);
-                            let matched: Item | undefined;
-                            if (nameMatch) {
-                              const namePart = nameMatch[1].trim();
-                              matched = items.find(
-                                (it) =>
-                                  it.name.toLowerCase() === namePart.toLowerCase() ||
-                                  it.sku_code.toLowerCase() ===
-                                    nameMatch[2].trim().toLowerCase(),
-                              );
-                            } else {
-                              matched = items.find(
-                                (it) =>
-                                  it.name.toLowerCase() === value.toLowerCase() ||
-                                  it.sku_code.toLowerCase() === value.toLowerCase() ||
-                                  (it.barcode ?? "").toLowerCase() === value.toLowerCase(),
-                              );
-                            }
-                            if (matched) {
-                              void selectItemForEntry(matched.id);
-                              setEntry((p) => ({ ...p, item_query: "" }));
-                            }
+                            const v = Number(e.target.value);
+                            if (v > 0) handleEntryPkgChange(v);
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              commitEntry();
-                            }
-                          }}
-                          placeholder="Type item name or SKU…"
-                          className="input h-9 w-full py-2 pl-7 pr-2 text-sm"
-                          data-testid="inward-entry-search"
-                        />
-                        <datalist id="inward-entry-items">
-                          {items.map((it) => (
-                            <option
-                              key={it.id}
-                              value={it.name + (it.sku_code ? ` (${it.sku_code})` : "")}
-                            >
-                              {`#${it.id}`}
+                          className="h-8 w-full rounded border border-border bg-card px-1.5 text-xs"
+                          disabled={entryPkgOptions.length === 0}
+                        >
+                          {entryPkgOptions.map((o) => (
+                            <option key={o.purchase_unit_id} value={o.purchase_unit_id}>
+                              {o.label}
                             </option>
                           ))}
-                        </datalist>
-                      </div>
-                      {entry.item_id > 0 && !entry.item_query && (
-                        <p
-                          className="mt-0.5 text-xs font-medium text-primary"
-                          data-testid="inward-entry-selected-name"
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            step={entry.unit_type === "unit" ? 1 : 0.001}
+                            value={entry.qty}
+                            onChange={(e) => setEntry((p) => ({ ...p, qty: Math.max(0, Number(e.target.value)) }))}
+                            className="h-8 w-16 rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
+                            title="Quantity"
+                          />
+                          <span className="text-xs text-muted-foreground">×</span>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={entry.qty_per_purchase_unit}
+                            onChange={(e) => {
+                              const v = Math.max(1, Number(e.target.value) || 1);
+                              setEntry((p) => ({ ...p, qty_per_purchase_unit: v }));
+                            }}
+                            onBlur={() => {
+                              if (entry.item_id > 0 && entry.purchase_unit_id) {
+                                void setItemPackaging(entry.item_id, entry.purchase_unit_id, entry.qty_per_purchase_unit).catch(() => {});
+                              }
+                            }}
+                            className="h-8 w-14 rounded border border-border bg-card px-2 text-right text-xs tabular-nums"
+                            title="Units per package"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={(entry.cost_price / 100).toFixed(2)}
+                          onChange={(e) => setEntry((p) => ({ ...p, cost_price: Math.round(Math.max(0, Number(e.target.value)) * 100) }))}
+                          className="h-8 w-24 rounded border border-border bg-card pl-5 pr-2 text-right text-sm tabular-nums"
+                          title="Cost per base unit"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
+                        <Money paise={entryAmountPaise} />
+                      </td>
+                      <td className="px-3 py-2 relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={(entry.retail_price / 100).toFixed(2)}
+                          onChange={(e) => setEntry((p) => ({ ...p, retail_price: Math.round(Math.max(0, Number(e.target.value)) * 100), retail_overridden: true }))}
+                          className="h-8 w-24 rounded border border-border bg-card pl-5 pr-2 text-right text-sm tabular-nums"
+                          title="MRP per base unit"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          type="button"
+                          onClick={commitEntry}
+                          className="inline-flex h-7 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                         >
-                          {itemName(entry.item_id)}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      <select
-                        value={entry.purchase_unit_id ?? ""}
-                        onChange={(e) => {
-                          const puId = Number(e.target.value);
-                          if (puId > 0) handleEntryPkgChange(puId);
-                        }}
-                        disabled={entry.item_id <= 0 || entryPkgOptions.length === 0}
-                        className="input h-9 w-24 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                        aria-label="Purchase unit"
-                        data-testid="inward-entry-pkg-unit"
-                      >
-                        {entryPkgOptions.length === 0 ? (
-                          <option value="">—</option>
-                        ) : (
-                          entryPkgOptions.map((opt) => (
-                            <option key={opt.purchase_unit_id} value={opt.purchase_unit_id}>
-                              {opt.label}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <QtyInput
-                        value={entry.qty}
-                        step={0.5}
-                        min={0}
-                        onChange={(v) => setEntry((p) => ({ ...p, qty: v }))}
-                        ariaLabel="Quantity"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MoneyInput
-                        min={0}
-                        value={entry.cost_price}
-                        onChange={(cost_price) =>
-                          setEntry((p) => ({ ...p, cost_price }))
-                        }
-                        className="w-24"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MoneyInput
-                        min={0}
-                        value={entryAmountPaise}
-                        onChange={(amountPaise) => {
-                          const rate = entry.qty_per_purchase_unit * entry.cost_price;
-                          if (rate > 0 && entry.unit_type !== "unit") {
-                            const newQty = Math.round((amountPaise / rate) * 100) / 100;
-                            if (newQty > 0) {
-                              setEntry((p) => ({ ...p, qty: newQty }));
-                            }
-                          }
-                        }}
-                        disabled={entry.unit_type === "unit"}
-                        className="w-24"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MoneyInput
-                        min={0}
-                        value={entry.retail_price}
-                        onChange={(retail_price) =>
-                          setEntry((p) => ({
-                            ...p,
-                            retail_price,
-                            retail_overridden: true,
-                          }))
-                        }
-                        className="w-24"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <Button
-                        type="button"
-                        variant="primary"
-                        size="sm"
-                        onClick={commitEntry}
-                        disabled={entry.item_id === 0}
-                        className="!h-7 !px-2 !text-xs"
-                        data-testid="inward-entry-add"
-                      >
-                        {editingIndex != null ? "Update" : "Add"}
-                      </Button>
-                    </td>
-                  </tr>
+                          {editingIndex != null ? "Update" : "Add"}
+                        </button>
+                      </td>
+                    </tr>
+                  )}
 
                   {/* ── Accumulated lines: clickable for editing ── */}
                   {draft.map((l, idx) => (
@@ -938,26 +901,29 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                           {itemName(l.item_id)}
                         </p>
                       </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">
-                        {pkgLabelForLine(l)}
-                      </td>
-                      <td className="px-3 py-2 text-sm tabular-nums text-foreground">
-                        {l.qty}{" "}
-                        <span className="text-xs text-muted-foreground">
+                      <td className="px-3 py-2 text-sm text-foreground">
+                        <span className="inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                           {pkgLabelForLine(l)}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-sm tabular-nums text-foreground">
-                        <Money paise={l.cost_price} />
-                        <span className="text-xs text-muted-foreground">/unit</span>
+                      <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
+                        <div>{l.qty}</div>
+                        {l.qty_per_purchase_unit !== 1 ? (
+                          <div className="text-xs text-muted-foreground">
+                            × {l.qty_per_purchase_unit}
+                          </div>
+                        ) : null}
                       </td>
-                      <td className="px-3 py-2 text-sm tabular-nums text-foreground">
+                      <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
+                        <Money paise={l.cost_price} />
+                      </td>
+                      <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
                         <Money paise={lineTotalPaise(l)} />
                       </td>
-                      <td className="px-3 py-2 text-sm tabular-nums text-foreground">
+                      <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
                         <Money paise={l.retail_price} />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 text-center">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -979,7 +945,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                         <EmptyState
                           icon={PackagePlus}
                           title="No items yet"
-                          description="Type an item name above and press Enter to add. Repeat for each item in this inward."
+                          description="Search or scan an item above, choose packaging, then add it to this inward."
                         />
                       </td>
                     </tr>
