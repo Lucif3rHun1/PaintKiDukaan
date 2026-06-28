@@ -12,6 +12,7 @@ pub mod formulas;
 pub mod items;
 pub mod label_log;
 pub mod locations;
+pub mod sale_purchase_units;
 pub mod sub_locations;
 pub mod units;
 pub mod vendors;

@@ -110,6 +110,7 @@ export function ItemSearchInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const listboxRef = useRef<HTMLDivElement>(null);
   const quickNameRef = useRef<HTMLInputElement>(null);
+  const quickSearchSkipRef = useRef(false);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -186,9 +187,7 @@ export function ItemSearchInput({
     return () => clearTimeout(timer);
   }, [query, acceptFormula]);
 
-  useEffect(() => {
-    setQuickName(query);
-  }, [query]);
+
 
   useEffect(() => {
     let mounted = true;
@@ -211,6 +210,7 @@ export function ItemSearchInput({
   }, [open, query, searching, results.length, onCreateItem]);
 
   useEffect(() => {
+    if (quickSearchSkipRef.current) { quickSearchSkipRef.current = false; return; }
     if (!quickName.trim()) {
       setQuickSuggestions([]);
       return;
@@ -589,6 +589,7 @@ export function ItemSearchInput({
                         key={`qs-${s.id}`}
                         type="button"
                         onClick={() => {
+                          quickSearchSkipRef.current = true;
                           setQuickName(s.name);
                           setQuickPrice(s.retail_price_paise);
                           setQuickUnitId(s.unit_id || null);
@@ -609,7 +610,7 @@ export function ItemSearchInput({
                   ref={quickNameRef}
                   type="text"
                   value={quickName}
-                  onChange={(e) => setQuickName(e.target.value)}
+                  onChange={(e) => { quickSearchSkipRef.current = false; setQuickName(e.target.value); }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();

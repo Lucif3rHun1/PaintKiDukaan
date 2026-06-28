@@ -155,28 +155,32 @@ export function CategoryAdmin({ role }: Props) {
       )}
 
       {/* Add category form */}
-      <div className="flex items-end gap-3 rounded border border-border bg-card p-3">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void addCategory();
+        }}
+        className="flex items-end gap-3 rounded border border-border bg-card p-3"
+      >
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-muted-foreground">Category name</span>
           <input
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addCategory(); } }}
             placeholder="Interior Paints"
             maxLength={60}
             className="rounded border border-border bg-card px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
           />
         </label>
         <button
-          type="button"
-          onClick={addCategory}
+          type="submit"
           disabled={addDisabled}
           className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           Add category
         </button>
-      </div>
+      </form>
 
       {/* Category table */}
       <CategoryTable

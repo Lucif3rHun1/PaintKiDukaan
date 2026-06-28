@@ -271,6 +271,16 @@ pub fn run() {
             commands::units::create_unit_conversion,
             commands::units::update_unit,
             commands::units::deactivate_unit,
+            // Sale/Purchase Units (Slice B)
+            commands::sale_purchase_units::list_sale_units,
+            commands::sale_purchase_units::create_sale_unit,
+            commands::sale_purchase_units::update_sale_unit,
+            commands::sale_purchase_units::deactivate_sale_unit,
+            commands::sale_purchase_units::list_purchase_units,
+            commands::sale_purchase_units::create_purchase_unit,
+            commands::sale_purchase_units::update_purchase_unit,
+            commands::sale_purchase_units::get_item_packaging,
+            commands::sale_purchase_units::set_item_packaging,
             // Customers (Slice B)
             commands::customers::create_customer,
             commands::customers::create_customer_inline,

@@ -3,12 +3,13 @@
  * Unifies to dark zinc theme consistent with the rest of the app shell.
  * Keyboard: Enter submits, Esc cancels (except inside <textarea>).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { Button, MoneyInput, Select } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
-import { createItem, listBrands, updateItem, previewNextBarcode } from "./api";
+import { createItem, listBrands, listItems, updateItem, previewNextBarcode } from "./api";
 import { listLocations, listSubLocations } from "../locations/api";
 import { createInward } from "../../pos/api";
 import type { NewPurchase } from "../../pos/types";
@@ -68,6 +69,8 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     initial?.barcode ?? "",
   );
   const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [nameSuggestions, setNameSuggestions] = useState<Item[]>([]);
+  const nameDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [openingStock, setOpeningStock] = useState("0");
 
   useEffect(() => {
@@ -132,6 +135,20 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       .finally(() => setBarcodeLoading(false));
   }, [brandId, name, mode]);
 
+  useEffect(() => {
+    if (mode !== "create" || !name.trim() || name.trim().length < 2) {
+      setNameSuggestions([]);
+      return;
+    }
+    clearTimeout(nameDebounceRef.current);
+    nameDebounceRef.current = setTimeout(() => {
+      listItems({ query: name.trim(), limit: 5 })
+        .then((items) => setNameSuggestions(items))
+        .catch(() => setNameSuggestions([]));
+    }, 300);
+    return () => clearTimeout(nameDebounceRef.current);
+  }, [name, mode]);
+
   const selectedBrand = brands.find((b) => b.id === brandId) ?? null;
 
   function validate(): boolean {
@@ -149,6 +166,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     e?.preventDefault();
     setError(null);
     if (!validate()) return;
+    setNameSuggestions([]);
     setBusy(true);
     try {
       const base = {
@@ -222,7 +240,14 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       onSubmit={(e) => void submit(e)}
       className="mx-auto w-full max-w-3xl space-y-6"
     >
-      <header className="flex items-center justify-between border-b border-border pb-4">
+      <header className="flex items-center gap-3 border-b border-border pb-4">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md p-1 text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
         <h2 className="text-lg font-semibold text-foreground">
           {mode === "create" ? "New item" : `Edit ${initial?.sku_code ?? ""}`}
         </h2>
@@ -237,6 +262,44 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             onChange={(e) => setName(e.target.value)}
             className="input"
           />
+          {nameSuggestions.length > 0 && (
+            <div className="mt-1 rounded-md border border-border bg-popover shadow-md">
+              {nameSuggestions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setName(item.name);
+                    if (item.category) setCategory(item.category);
+                    if (item.unit_id) setUnitId(item.unit_id);
+                    setRetailPricePaise(item.retail_price_paise);
+                    setCostPaise(item.cost_paise);
+                    if (item.promo_price_paise != null) setPromoPricePaise(item.promo_price_paise);
+                    if (item.primary_location_id) setPrimaryLocationId(item.primary_location_id);
+                    if (item.sub_location_id != null) setSubLocationId(item.sub_location_id);
+                    if (item.position) setPosition(item.position);
+                    setMinQty(item.min_qty?.toString() ?? "1");
+                    setNameSuggestions([]);
+                  }}
+                  className="flex w-full items-center gap-3 border-b border-border/50 px-3 py-2 text-left last:border-b-0 hover:bg-muted/50"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-foreground">{item.name}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{item.sku_code}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      {item.brand && <span>{item.brand}</span>}
+                      {item.unit_code && <span>· {item.unit_code}</span>}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-xs font-medium text-foreground">
+                    ₹{(item.retail_price_paise / 100).toFixed(2)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Brand">

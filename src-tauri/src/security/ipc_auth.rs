@@ -347,6 +347,43 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "deactivate_unit",
         min_role: Role::Cashier,
     },
+    // Sale/Purchase Units (write)
+    CommandAcl {
+        name: "list_sale_units",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "create_sale_unit",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "update_sale_unit",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "deactivate_sale_unit",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "list_purchase_units",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "create_purchase_unit",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "update_purchase_unit",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "get_item_packaging",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "set_item_packaging",
+        min_role: Role::Cashier,
+    },
     // Customers
     CommandAcl {
         name: "create_customer",

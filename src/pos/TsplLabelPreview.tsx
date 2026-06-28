@@ -4,6 +4,7 @@
  * Mirrors buildTsplBytes layout exactly so the preview matches the physical print.
  */
 
+import JsBarcode from "jsbarcode";
 import { useEffect, useRef } from "react";
 import {
   centerX,
@@ -16,7 +17,6 @@ import {
   wordWrap,
 } from "./tspl";
 
-const NARROW     = 2;
 const BAR_HEIGHT = 80;
 
 interface Props {
@@ -98,12 +98,27 @@ export function TsplLabelPreview({
     }
 
     if (label.barcode) {
-      // Barcode simulation — alternating thin bars.
+      // Render Code128 via JsBarcode offscreen, draw scaled to dot resolution.
       const barcodeW = estimateCode128Dots(label.barcode);
       const barcodeX = centerX(barcodeW, 0, cellW, SIDE);
-      const numBars = Math.floor(barcodeW / (NARROW * 2));
-      for (let i = 0; i < numBars; i++) {
-        ctx.fillRect(barcodeX + i * NARROW * 2, y, NARROW, BAR_HEIGHT);
+
+      const offscreen = document.createElement("canvas");
+      offscreen.width = barcodeW;
+      offscreen.height = BAR_HEIGHT;
+      try {
+        JsBarcode(offscreen, label.barcode, {
+          format: "CODE128",
+          width: 1.5,
+          height: BAR_HEIGHT,
+          displayValue: false,
+          margin: 0,
+          background: "#ffffff",
+          lineColor: "#000000",
+        });
+        ctx.drawImage(offscreen, barcodeX, y, barcodeW, BAR_HEIGHT);
+      } catch {
+        // Fallback: draw a thin placeholder if encoding fails
+        ctx.fillRect(barcodeX, y, barcodeW, 2);
       }
 
       // SKU text below barcode.
