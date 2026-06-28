@@ -1,4 +1,5 @@
 import { tauriInvoke as invoke } from "./lib/security/tauri";
+import { toast } from "./lib/feedback/toast";
 import logo from "./assets/logo-64.png";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -707,7 +708,7 @@ export default function App() {
         <CustomerForm
           mode="create"
           types={customerTypes}
-          onSaved={(c) => { setCustomerCreateOpen(false); setRefreshKey((k) => k + 1); setCustomerEditTarget(c); }}
+          onSaved={() => { setCustomerCreateOpen(false); setRefreshKey((k) => k + 1); toast.success("Customer created"); }}
           onCancel={() => setCustomerCreateOpen(false)}
         />
       </InlineDialog>

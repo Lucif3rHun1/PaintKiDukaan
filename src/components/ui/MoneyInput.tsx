@@ -19,7 +19,7 @@ export interface MoneyInputProps {
 }
 
 function formatEditableValue(paise: number): string {
-  if (!Number.isFinite(paise) || paise === 0) return "";
+  if (!Number.isFinite(paise) || paise === 0) return "0.00";
   return EDIT_FORMAT.format(paise / 100);
 }
 
@@ -42,7 +42,7 @@ export function MoneyInput({
   function commitValue() {
     if (display.trim() === "") {
       onChange(0);
-      setDisplay("");
+      setDisplay("0.00");
       return;
     }
 

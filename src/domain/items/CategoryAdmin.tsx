@@ -162,6 +162,7 @@ export function CategoryAdmin({ role }: Props) {
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addCategory(); } }}
             placeholder="Interior Paints"
             maxLength={60}
             className="rounded border border-border bg-card px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"

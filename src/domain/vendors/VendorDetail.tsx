@@ -3,6 +3,8 @@ import { Money, Button } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { vendorOutstanding } from "./api";
+import { VendorForm } from "./VendorForm";
+import { VendorPaymentForm } from "./VendorPaymentForm";
 import type { Vendor, VendorOutstanding } from "../types";
 
 interface Props {
@@ -12,39 +14,78 @@ interface Props {
 }
 
 export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
+  const [vendorData, setVendorData] = useState(vendor);
   const [outstanding, setOutstanding] = useState<VendorOutstanding | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   useEffect(() => {
-    vendorOutstanding(vendor.id)
+    setVendorData(vendor);
+  }, [vendor]);
+
+  useEffect(() => {
+    setError(null);
+    vendorOutstanding(vendorData.id)
       .then((d) => setOutstanding(d ?? null))
       .catch((e) => setError(extractError(e)));
-  }, [vendor.id]);
+  }, [vendorData.id]);
+
+  if (editing) {
+    return (
+      <VendorForm
+        mode="edit"
+        initial={vendorData}
+        onSaved={(v) => {
+          setVendorData(v);
+          setEditing(false);
+          setError(null);
+          vendorOutstanding(v.id)
+            .then((d) => setOutstanding(d ?? null))
+            .catch((e) => setError(extractError(e)));
+        }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
+
+  if (paying) {
+    return (
+      <VendorPaymentForm
+        vendor={vendorData}
+        onSaved={(out) => {
+          setOutstanding(out);
+          setPaying(false);
+        }}
+        onCancel={() => setPaying(false)}
+      />
+    );
+  }
 
   return (
     <div>
       <div className="mb-4 flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-semibold">{toTitleCase(vendor.name)}</h2>
+          <h2 className="text-xl font-semibold">{toTitleCase(vendorData.name)}</h2>
           <p className="font-mono text-sm text-muted-foreground">
-            {vendor.phone ?? "—"}
+            {vendorData.phone ?? "—"}
           </p>
-          {vendor.contact_person && (
+          {vendorData.contact_person && (
             <p className="text-sm text-muted-foreground">
-              Contact: {vendor.contact_person}
+              Contact: {vendorData.contact_person}
             </p>
           )}
         </div>
         <div className="flex gap-2">
           {onEdit && (
-            <Button variant="secondary" size="sm" onClick={() => onEdit(vendor)}>
+            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
               Edit
             </Button>
           )}
           {onRecordPayment && (
-            <Button size="sm" onClick={() => onRecordPayment(vendor)}>
+            <Button size="sm" onClick={() => setPaying(true)}>
               Record payment
             </Button>
           )}
@@ -58,7 +99,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
       )}
 
       <dl className="mb-4 grid grid-cols-3 gap-3 text-sm">
-        <Row label="Opening" value={<Money paise={(vendor.opening_balance ?? 0) * 100} />} />
+        <Row label="Opening" value={<Money paise={(vendorData.opening_balance ?? 0) * 100} />} />
         <Row label="Total purchases" value={outstanding ? <Money paise={outstanding.total_purchases} /> : "…"} />
         <Row label="Total payments" value={outstanding ? <Money paise={outstanding.total_payments} /> : "…"} />
       </dl>
@@ -70,11 +111,11 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
         </p>
       </div>
 
-      {vendor.notes && (
+      {vendorData.notes && (
         <div className="mb-4">
           <p className="text-xs uppercase text-muted-foreground">Notes</p>
           <p className="whitespace-pre-wrap text-sm text-foreground">
-            {vendor.notes}
+            {vendorData.notes}
           </p>
         </div>
       )}

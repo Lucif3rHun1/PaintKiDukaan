@@ -607,10 +607,9 @@ export function ItemList({ role }: Props) {
                             {item.min_qty}
                           </td>
                           <td className="px-3 py-2">
-                            <StockBadges
+                            <StockDisplay
                               currentQty={item.current_qty}
                               minQty={item.min_qty}
-                              role={role}
                             />
                           </td>
                           <td
@@ -685,53 +684,18 @@ export function ItemList({ role }: Props) {
   );
 }
 
-function StockBadges({
+function StockDisplay({
   currentQty,
   minQty,
-  role,
 }: {
   currentQty: number;
   minQty: number;
-  role: "owner" | "cashier" | "stocker";
 }) {
-  const stockAnomaly = currentQty < 0;
-  const isOut = !stockAnomaly && currentQty === 0;
-  const isLow = !isOut && !stockAnomaly && currentQty <= minQty;
-  if (role === "cashier") {
-    if (stockAnomaly) return <Badge variant="danger">Out of stock</Badge>;
-    if (isOut) return <Badge variant="danger">Out of stock</Badge>;
-    if (isLow) return <Badge variant="warning">Low in stock</Badge>;
-    return <Badge variant="success">In stock</Badge>;
-  }
-  if (stockAnomaly) {
-    return (
-      <span className="inline-flex items-center gap-1" data-testid="stock-anomaly">
-        <TriangleAlert className="h-4 w-4 text-destructive" aria-hidden="true" />
-        <Badge variant="danger">Stock anomaly · {currentQty}</Badge>
-      </span>
-    );
-  }
-  if (isOut)
-    return (
-      <Badge variant="danger" data-testid="stock-out">
-        Out of stock
-      </Badge>
-    );
-  if (isLow) {
-    return (
-      <span className="inline-flex items-center gap-1" data-testid="stock-low">
-        <TriangleAlert
-          className="h-4 w-4 text-warning"
-          aria-hidden="true"
-        />
-        <Badge variant="warning">Low · {currentQty}</Badge>
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1" data-testid="stock-in">
-      <Badge variant="success">In stock</Badge>
-      <span className="text-xs text-muted-foreground">· {currentQty}</span>
-    </span>
-  );
+  const color =
+    currentQty <= 0
+      ? "text-red-500"
+      : currentQty <= minQty
+        ? "text-amber-500"
+        : "text-emerald-500";
+  return <span className={`text-sm font-medium ${color}`}>{currentQty}</span>;
 }

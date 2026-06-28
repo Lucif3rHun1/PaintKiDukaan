@@ -7,13 +7,17 @@ import {
   Search,
   ScanBarcode,
 } from "lucide-react";
-import { listItems, lookupItem } from "../../domain/items/api";
+import { createItem, listItems, lookupItem } from "../../domain/items/api";
 import { listFormulas } from "../../domain/formulas/api";
+import { listUnits } from "../../domain/units/api";
+import { listLocations } from "../../domain/locations/api";
 import { useBarcodeScan } from "../../shell/hooks/useBarcodeScan";
-import { Button } from "../../components/ui";
+import { Button, MoneyInput } from "../../components/ui";
 import { cn } from "../../components/ui/cn";
 import { toTitleCase } from "../../lib/format/titleCase";
-import type { FormulaSearchHit, ItemLookup } from "../../domain/types";
+import { toast } from "../../lib/feedback/toast";
+import { extractError } from "../../lib/extractError";
+import type { FormulaSearchHit, Item, ItemLookup, Location, Unit } from "../../domain/types";
 import type { ItemSearchHit } from "../types";
 
 interface Props {
@@ -63,6 +67,23 @@ function stockLabel(item: ItemSearchHit, status: StockStatus): string {
   return `${item.current_qty} in stock`;
 }
 
+function itemToSearchHit(item: Item): ItemSearchHit {
+  return {
+    id: item.id,
+    sku_code: item.sku_code,
+    barcode: item.barcode ?? "",
+    name: item.name,
+    brand: item.brand,
+    retail_price_paise: item.retail_price_paise,
+    unit_id: item.unit_id,
+    unit_code: item.unit_code ?? "",
+    unit_label: item.unit_label ?? "",
+    sell_unit: item.sell_unit === "box" ? "box" : "unit",
+    current_qty: item.current_qty,
+    min_qty: item.min_qty,
+  };
+}
+
 export function ItemSearchInput({
   onPick,
   allowOutOfStock = false,
@@ -74,14 +95,24 @@ export function ItemSearchInput({
   const [results, setResults] = useState<SearchHit[]>([]);
   const [open, setOpen] = useState(false);
   const [scanHint, setScanHint] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [quickName, setQuickName] = useState("");
+  const [quickPrice, setQuickPrice] = useState(0);
+  const [quickBusy, setQuickBusy] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listboxRef = useRef<HTMLDivElement>(null);
+  const quickNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!query.trim()) {
       setResults([]);
+      setSearching(false);
       return;
     }
+    setSearching(true);
     const timer = setTimeout(() => {
       const trimmed = query.trim();
       const promises: [
@@ -144,10 +175,35 @@ export function ItemSearchInput({
         .catch((e) => {
           console.error("[ItemSearchInput] failed to search", e);
           setResults([]);
-        });
+        })
+        .finally(() => setSearching(false));
     }, 200);
     return () => clearTimeout(timer);
   }, [query, acceptFormula]);
+
+  useEffect(() => {
+    setQuickName(query);
+  }, [query]);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.allSettled([listUnits(), listLocations(false)]).then((settled) => {
+      if (!mounted) return;
+      const [unitsResult, locationsResult] = settled;
+      if (unitsResult.status === "fulfilled") setUnits(unitsResult.value);
+      if (locationsResult.status === "fulfilled") setLocations(locationsResult.value);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const showQuickCreate = open && query.trim() && !searching && results.length === 0 && onCreateItem;
+    if (showQuickCreate) {
+      quickNameRef.current?.focus();
+    }
+  }, [open, query, searching, results.length, onCreateItem]);
 
   function lookupToHit(item: ItemLookup): ItemSearchHit | null {
     if (item.scope === "stocker") {
@@ -260,6 +316,52 @@ export function ItemSearchInput({
     inputRef.current?.focus();
   }
 
+  async function handleQuickSave() {
+    const name = quickName.trim();
+    if (!name) {
+      setQuickError("Name is required");
+      return;
+    }
+    if (quickPrice < 0) {
+      setQuickError("Price cannot be negative");
+      return;
+    }
+    const location = locations[0];
+    if (!location) {
+      setQuickError("No location configured");
+      return;
+    }
+    const unit =
+      units.find((u) => u.is_active && u.code === "pc") ??
+      units.find((u) => u.is_active);
+    if (!unit) {
+      setQuickError("No unit configured");
+      return;
+    }
+    setQuickBusy(true);
+    setQuickError(null);
+    try {
+      const item = await toast.promise(
+        createItem({
+          name,
+          retail_price_paise: quickPrice,
+          cost_paise: 0,
+          min_qty: 0,
+          primary_location_id: location.id,
+          unit_id: unit.id,
+        }),
+        {
+          loading: "Saving item…",
+          success: (it) => `Added ${it.name}`,
+          error: (err) => extractError(err),
+        },
+      );
+      handlePick(itemToSearchHit(item));
+    } finally {
+      setQuickBusy(false);
+    }
+  }
+
   return (
     <div className="relative">
       <div className="flex gap-2">
@@ -273,7 +375,7 @@ export function ItemSearchInput({
             data-shortcut="scan"
             type="text"
             role="combobox"
-            aria-expanded={open && results.length > 0}
+            aria-expanded={open && query.trim().length > 0}
             aria-controls="item-search-listbox"
             aria-autocomplete="list"
             placeholder={acceptFormula ? "Scan barcode or search item / shade ID…" : "Scan barcode or search item…"}
@@ -350,102 +452,156 @@ export function ItemSearchInput({
           <span className="font-mono">{scanHint}</span>
         </div>
       ) : null}
-      {open && results.length > 0 ? (
+      {open && query.trim() ? (
         <div
           id="item-search-listbox"
           ref={listboxRef}
-          role="listbox"
+          role={results.length > 0 ? "listbox" : undefined}
           className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-card shadow-xl"
         >
-          {results.map((hit, index) => {
-            const isActive = index === activeIndex;
-            if (isFormula(hit)) {
-              const display = hit.name ? `${hit.id_code} — ${hit.name}` : hit.id_code;
+          {searching ? (
+            <div className="p-3 text-xs text-muted-foreground">Searching…</div>
+          ) : results.length > 0 ? (
+            results.map((hit, index) => {
+              const isActive = index === activeIndex;
+              if (isFormula(hit)) {
+                const display = hit.name ? `${hit.id_code} — ${hit.name}` : hit.id_code;
+                return (
+                  <button
+                    key={`f-${hit.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={isActive}
+                    onClick={() => handlePick(hit)}
+                    className={cn(
+                      "flex w-full items-start gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0",
+                      isActive ? "bg-muted" : "hover:bg-muted",
+                    )}
+                  >
+                    <Paintbrush
+                      className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                      aria-hidden="true"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate font-medium text-foreground">
+                          {toTitleCase(display)}
+                        </span>
+                        <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                          {hit.with_base ? (hit.base_item_name ? `base: ${hit.base_item_name}` : "with base") : "no base"}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                        <span className="font-mono">shade {hit.id_code}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              }
+              const status = stockStatus(hit);
+              const styles = STATUS_STYLES[status];
+              const StatusIcon = styles.icon;
+              const isOut = status === "out";
               return (
                 <button
-                  key={`f-${hit.id}`}
+                  key={`i-${hit.id}`}
                   type="button"
                   role="option"
                   aria-selected={isActive}
-                  onClick={() => handlePick(hit)}
+                  aria-disabled={!allowOutOfStock && isOut}
+                  disabled={!allowOutOfStock && isOut}
+                  title={isOut && !allowOutOfStock ? "Out of stock — cannot be added to the bill" : undefined}
+                  onClick={() => {
+                    if (!allowOutOfStock && isOut) return;
+                    handlePick(hit);
+                  }}
                   className={cn(
                     "flex w-full items-start gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0",
-                    isActive ? "bg-muted" : "hover:bg-muted",
+                    isActive && !(isOut && !allowOutOfStock) ? "bg-muted" : "hover:bg-muted",
+                    isOut && !allowOutOfStock && "cursor-not-allowed opacity-60",
                   )}
                 >
-                  <Paintbrush
-                    className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                  <StatusIcon
+                    className={cn("mt-0.5 h-4 w-4 shrink-0", styles.text)}
                     aria-hidden="true"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate font-medium text-foreground">
-                        {toTitleCase(display)}
+                      <span
+                        className={cn(
+                          "truncate font-medium",
+                          status === "out" ? "text-muted-foreground line-through" : "text-foreground",
+                        )}
+                      >
+                        {toTitleCase(hit.name)}
                       </span>
-                      <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                        {hit.with_base ? (hit.base_item_name ? `base: ${hit.base_item_name}` : "with base") : "no base"}
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                          styles.pill,
+                        )}
+                      >
+                        {stockLabel(hit, status)}
                       </span>
                     </div>
                     <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span className="font-mono">shade {hit.id_code}</span>
+                      <span className="font-mono">{hit.sku_code}</span>
                     </div>
                   </div>
                 </button>
               );
-            }
-            const status = stockStatus(hit);
-            const styles = STATUS_STYLES[status];
-            const StatusIcon = styles.icon;
-            const isOut = status === "out";
-            return (
-              <button
-                key={`i-${hit.id}`}
-                type="button"
-                role="option"
-                aria-selected={isActive}
-                aria-disabled={!allowOutOfStock && isOut}
-                disabled={!allowOutOfStock && isOut}
-                title={isOut && !allowOutOfStock ? "Out of stock — cannot be added to the bill" : undefined}
-                onClick={() => {
-                  if (!allowOutOfStock && isOut) return;
-                  handlePick(hit);
-                }}
-                className={cn(
-                  "flex w-full items-start gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0",
-                  isActive && !(isOut && !allowOutOfStock) ? "bg-muted" : "hover:bg-muted",
-                  isOut && !allowOutOfStock && "cursor-not-allowed opacity-60",
-                )}
-              >
-                <StatusIcon
-                  className={cn("mt-0.5 h-4 w-4 shrink-0", styles.text)}
-                  aria-hidden="true"
+            })
+          ) : onCreateItem ? (
+            <div className="p-3">
+              <p className="mb-2 text-xs text-muted-foreground">No items found</p>
+              <div className="flex items-start gap-2">
+                <input
+                  ref={quickNameRef}
+                  type="text"
+                  value={quickName}
+                  onChange={(e) => setQuickName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleQuickSave();
+                    }
+                  }}
+                  placeholder="Item name"
+                  className="input h-9 flex-1"
                 />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span
-                      className={cn(
-                        "truncate font-medium",
-                        status === "out" ? "text-muted-foreground line-through" : "text-foreground",
-                      )}
-                    >
-                      {toTitleCase(hit.name)}
-                    </span>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                        styles.pill,
-                      )}
-                    >
-                      {stockLabel(hit, status)}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span className="font-mono">{hit.sku_code}</span>
-                  </div>
-                </div>
+                <MoneyInput
+                  value={quickPrice}
+                  onChange={setQuickPrice}
+                  min={0}
+                  className="w-28"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void handleQuickSave()}
+                  loading={quickBusy}
+                  disabled={quickBusy}
+                >
+                  Save
+                </Button>
+              </div>
+              {quickError ? (
+                <p className="mt-2 text-xs text-destructive">{quickError}</p>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onCreateItem();
+                }}
+                className="mt-2 text-xs text-primary hover:underline"
+              >
+                More details
               </button>
-            );
-          })}
+            </div>
+          ) : (
+            <div className="p-3 text-xs text-muted-foreground">No items found</div>
+          )}
         </div>
       ) : null}
     </div>

@@ -116,6 +116,7 @@ function emptyEntry(locationId: number): DraftLine {
 export default function InwardPage({ user: _user, onExit }: Props) {
   const [draft, setDraft] = useState<DraftLine[]>([]);
   const [entry, setEntry] = useState<DraftLine>(() => emptyEntry(0));
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [vendorId, setVendorId] = useState<number | null>(null);
   const [vendorQuery, setVendorQuery] = useState("");
   const [vendorMenuOpen, setVendorMenuOpen] = useState(false);
@@ -294,9 +295,38 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       toast.warning("Quantity must be positive");
       return;
     }
-    setDraft((p) => [...p, { ...entry, row_id: newRowId(), item_query: "" }]);
+    if (editingIndex != null) {
+      setDraft((p) => {
+        const next = [...p];
+        next[editingIndex] = { ...entry, item_query: "" };
+        return next;
+      });
+      setEditingIndex(null);
+    } else {
+      setDraft((p) => [...p, { ...entry, row_id: newRowId(), item_query: "" }]);
+    }
     setEntry(emptyEntry(defaultLocationId));
     entrySearchRef.current?.focus();
+  }
+
+  function startEdit(index: number) {
+    const line = draft[index];
+    if (!line) return;
+    setEditingIndex(index);
+    setEntry({ ...line, item_query: "" });
+    entrySearchRef.current?.focus();
+  }
+
+  function removeLine(rowId: string) {
+    const idx = draft.findIndex((x) => x.row_id === rowId);
+    if (idx === -1) return;
+    setDraft((p) => p.filter((x) => x.row_id !== rowId));
+    setEditingIndex((cur) => {
+      if (cur === null) return cur;
+      if (cur === idx) return null;
+      if (cur > idx) return cur - 1;
+      return cur;
+    });
   }
 
   function itemName(id: number): string {
@@ -589,7 +619,9 @@ export default function InwardPage({ user: _user, onExit }: Props) {
               </span>
             )}
           </h2>
-          <span className="text-xs text-muted-foreground">Enter to add</span>
+          <span className="text-xs text-muted-foreground">
+            {editingIndex != null ? "Enter to update" : "Enter to add"}
+          </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -732,16 +764,17 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                         className="!h-7 !px-2 !text-xs"
                         data-testid="inward-entry-add"
                       >
-                        Add
+                        {editingIndex != null ? "Update" : "Add"}
                       </Button>
                     </td>
                   </tr>
 
-                  {/* ── Accumulated lines: read-only display ── */}
-                  {draft.map((l) => (
+                  {/* ── Accumulated lines: clickable for editing ── */}
+                  {draft.map((l, idx) => (
                     <tr
                       key={l.row_id}
-                      className="border-b border-border align-top transition-colors hover:bg-muted/60"
+                      onClick={() => startEdit(idx)}
+                      className="cursor-pointer border-b border-border align-top transition-colors hover:bg-muted/60"
                       data-testid="inward-line"
                     >
                       <td className="px-4 py-2">
@@ -764,9 +797,10 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                       <td className="px-3 py-2">
                         <button
                           type="button"
-                          onClick={() =>
-                            setDraft((p) => p.filter((x) => x.row_id !== l.row_id))
-                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeLine(l.row_id);
+                          }}
                           aria-label={`Remove line ${itemName(l.item_id)}`}
                           className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                         >

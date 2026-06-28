@@ -27,9 +27,9 @@ export function Money({ paise, compact, muted, negative, className }: MoneyProps
   );
 }
 
-// ponytail: keep inner structure (₹ shrink-0 + value flex-1 justify-end) in sync
-// with MoneyInput — that's what guarantees ₹-column alignment across editable and
-// read-only money cells. Don't simplify to a single text span.
+// ponytail: keep inner structure (value flex-1 justify-end) in sync with
+// MoneyInput — read-only text gets ₹ from formatRupeesFromPaise(), not a second
+// prefix span. Don't simplify to a single text span.
 export interface MoneyStaticProps {
   paise: number;
   className?: string;
@@ -43,9 +43,6 @@ export function MoneyStatic({
 }: MoneyStaticProps) {
   return (
     <div className={cn("flex items-center justify-end gap-1.5", className)}>
-      <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
-        ₹
-      </span>
       <span
         className={cn(
           "tabular-nums",

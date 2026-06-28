@@ -288,7 +288,15 @@ export function BrandAdmin({ role }: Props) {
           <input
             type="text"
             value={newName}
-            onChange={(e) => setNewName(e.target.value)}
+            onChange={(e) => {
+              const name = e.target.value;
+              setNewName(name);
+              if (!name.trim()) {
+                setNewPrefix("");
+              } else if (!newPrefix.trim()) {
+                setNewPrefix(name.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase());
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();

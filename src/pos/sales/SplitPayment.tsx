@@ -1,5 +1,6 @@
-import { Plus, X } from "lucide-react";
-import { Button, MoneyInput, Select } from "../../components/ui";
+import { useEffect, useRef } from "react";
+import { X } from "lucide-react";
+import { Button, MoneyInput } from "../../components/ui";
 import type { PaymentMode, PaymentSplit } from "../types";
 
 interface Props {
@@ -8,34 +9,86 @@ interface Props {
   onChange: (splits: PaymentSplit[]) => void;
 }
 
-const MODE_OPTIONS = [
+type QuickPaymentMode = Extract<PaymentMode, "cash" | "upi" | "bank">;
+
+const PAYMENT_MODE_BUTTONS: readonly {
+  readonly value: QuickPaymentMode;
+  readonly label: string;
+}[] = [
   { value: "cash", label: "Cash" },
   { value: "upi", label: "UPI" },
-  { value: "card", label: "Card" },
   { value: "bank", label: "Bank" },
-  { value: "cheque", label: "Cheque" },
-] as const;
+];
+
+const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
+  cash: "Cash",
+  upi: "UPI",
+  card: "Card",
+  bank: "Bank",
+  cheque: "Cheque",
+};
 
 export function SplitPayment({ total, splits, onChange }: Props) {
-  function addSplit() {
-    const defaultMode = splits.length === 0 ? "cash" : "upi";
-    onChange([...splits, { mode: defaultMode, amount: 0 }]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pendingFocusIndex = useRef<number | null>(null);
+  const initializedDefaultSplit = useRef(false);
+
+  useEffect(() => {
+    if (!initializedDefaultSplit.current) {
+      initializedDefaultSplit.current = true;
+      if (total > 0 && splits.length === 0) {
+        onChange([{ mode: "cash", amount: total }]);
+      }
+      return;
+    }
+
+    if (
+      splits.length === 1 &&
+      splits[0]?.mode === "cash" &&
+      splits[0].amount !== total
+    ) {
+      onChange([{ ...splits[0], amount: total }]);
+    }
+  }, [onChange, splits, total]);
+
+  useEffect(() => {
+    const index = pendingFocusIndex.current;
+    if (index === null) return;
+    focusAmountInput(index);
+    pendingFocusIndex.current = null;
+  }, [splits.length]);
+
+  function focusAmountInput(index: number) {
+    const input = rootRef.current?.querySelectorAll<HTMLInputElement>(
+      "[data-payment-amount] input",
+    )[index];
+    input?.focus();
+    input?.select();
+  }
+
+  function addOrFocusSplit(mode: QuickPaymentMode) {
+    const existingIndex = splits.findIndex((split) => split.mode === mode);
+    if (existingIndex >= 0) {
+      focusAmountInput(existingIndex);
+      return;
+    }
+
+    pendingFocusIndex.current = splits.length;
+    // First split gets full amount; subsequent splits start empty.
+    const amount = splits.length === 0 ? total : 0;
+    onChange([...splits, { mode, amount }]);
   }
 
   function handleChange(index: number, patch: Partial<PaymentSplit>) {
     const next = splits.map((s, i) => (i === index ? { ...s, ...patch } : s));
-    // Last split acts as the running remainder — re-fill it whenever an
-    // earlier split changes. Editing the last split itself is a direct commit.
-    if (
-      next.length > 1 &&
-      index !== next.length - 1 &&
-      patch.amount !== undefined
-    ) {
+    // First split is the running remainder — re-fill it whenever any
+    // later split changes. Editing the first split itself is a direct commit.
+    if (next.length > 1 && index !== 0 && patch.amount !== undefined) {
       const others = next
-        .slice(0, -1)
+        .slice(1)
         .reduce((sum, s) => sum + s.amount, 0);
-      next[next.length - 1] = {
-        ...next[next.length - 1],
+      next[0] = {
+        ...next[0],
         amount: Math.max(0, total - others),
       };
     }
@@ -47,44 +100,47 @@ export function SplitPayment({ total, splits, onChange }: Props) {
   }
 
   return (
-    <div className="space-y-2">
+    <div ref={rootRef} className="space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-foreground">Payments</p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          icon={Plus}
-          onClick={addSplit}
-        >
-          Add
-        </Button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {PAYMENT_MODE_BUTTONS.map((mode) => (
+          <Button
+            key={mode.value}
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-pressed={splits.some((split) => split.mode === mode.value)}
+            className="rounded-full border border-border bg-background px-3"
+            onClick={() => addOrFocusSplit(mode.value)}
+          >
+            {mode.label}
+          </Button>
+        ))}
       </div>
 
       {splits.map((split, index) => (
         <div
           key={index}
-          className="grid grid-cols-[7rem_minmax(0,1fr)_2.25rem] items-center gap-2"
+          className="grid grid-cols-[auto_9rem_auto] items-center gap-2"
         >
-          <Select
-            value={split.mode}
-            onChange={(e) =>
-              handleChange(index, { mode: e.target.value as PaymentMode })
-            }
-            options={MODE_OPTIONS as unknown as { value: string; label: string }[]}
-            size="md"
-            aria-label="Payment mode"
-          />
-          <MoneyInput
-            value={split.amount}
-            onChange={(amount) => handleChange(index, { amount })}
-            min={0}
-          />
+          <span className="inline-flex items-center rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+            {PAYMENT_MODE_LABELS[split.mode]}
+          </span>
+          <div data-payment-amount>
+            <MoneyInput
+              value={split.amount}
+              onChange={(amount) => handleChange(index, { amount })}
+              min={0}
+            />
+          </div>
           <button
             type="button"
             onClick={() => removeSplit(index)}
             aria-label="Remove payment"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             <X className="h-4 w-4" />
           </button>

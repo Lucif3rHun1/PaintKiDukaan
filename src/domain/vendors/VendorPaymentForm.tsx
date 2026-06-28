@@ -1,17 +1,18 @@
 /**
- * VendorPaymentForm — record a payment against a vendor and display the
- * updated outstanding balance.
+ * VendorPaymentForm — record a payment against a vendor.
  */
 import { useState } from "react";
 import { recordVendorPayment } from "./api";
-import { Button, Money, DatePicker, Select } from "../../components/ui";
+import { Button, DatePicker, Select } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
+import { toast } from "../../lib/feedback/toast";
 import { type Vendor, type VendorOutstanding } from "../types";
 
 interface Props {
   vendor: Vendor;
   onSaved?: (outstanding: VendorOutstanding) => void;
   onCancel?: () => void;
+  onSuccess?: () => void;
 }
 
 const MODES = [
@@ -23,16 +24,13 @@ const MODES = [
   { value: "other", label: "Other" },
 ];
 
-export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
+export function VendorPaymentForm({ vendor, onSaved, onCancel, onSuccess }: Props) {
   const [amount, setAmount] = useState("");
   const [mode, setMode] = useState("upi");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [outstanding, setOutstanding] = useState<VendorOutstanding | null>(
-    null,
-  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -51,30 +49,15 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
         date,
         notes: notes || null,
       });
-      setOutstanding(out);
       onSaved?.(out);
+      toast.success("Payment recorded");
+      onSuccess?.();
+      onCancel?.();
     } catch (e) {
       setError(extractError(e));
     } finally {
       setBusy(false);
     }
-  }
-
-  if (outstanding) {
-    return (
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Payment recorded</h2>
-        <p className="text-sm text-foreground">
-          New outstanding:{" "}
-          <Money paise={outstanding.outstanding} className="font-semibold" />
-        </p>
-        <div className="flex justify-end border-t border-border pt-4">
-          <Button onClick={onCancel} variant="secondary">
-            Close
-          </Button>
-        </div>
-      </div>
-    );
   }
 
   return (

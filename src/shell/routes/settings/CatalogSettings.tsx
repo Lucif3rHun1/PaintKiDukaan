@@ -170,6 +170,7 @@ export function LocationsSettings() {
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [newLocation, setNewLocation] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [expandedLocations, setExpandedLocations] = useState<Set<number>>(new Set());
 
   const refresh = () => {
     tauriInvoke<LocationItem[]>("list_locations")
@@ -208,6 +209,18 @@ export function LocationsSettings() {
     }
   };
 
+  const toggleExpanded = (id: number) => {
+    setExpandedLocations((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   return (
     <Card>
       <Section title="Stock locations" description="Locations group stock and make inventory movement easier to audit. Sub-locations add another layer of precision (e.g. Rack → Shelf).">
@@ -232,17 +245,29 @@ export function LocationsSettings() {
             <EmptyState title="No locations configured" description="Add one above to make it available across billing and catalog workflows." className="rounded-md border border-border py-8" />
           ) : (
             <ul className="divide-y divide-border rounded-md border border-border">
-              {locations.map((loc) => (
-                <li key={loc.id} className="px-3 py-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium">{loc.name}</span>
-                    <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${loc.name}`} onClick={() => void remove(loc)} className="text-destructive hover:bg-destructive/10">
-                      Remove
-                    </Button>
-                  </div>
-                  <SubLocationList locationId={loc.id} onError={(msg) => setError(msg)} />
-                </li>
-              ))}
+              {locations.map((loc) => {
+                const isExpanded = expandedLocations.has(loc.id);
+                return (
+                  <li key={loc.id} className="px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(loc.id)}
+                        className="flex items-center gap-2 font-medium hover:text-primary"
+                      >
+                        <span className="select-none text-muted-foreground" aria-hidden="true">
+                          {isExpanded ? "▼" : "▶"}
+                        </span>
+                        {loc.name}
+                      </button>
+                      <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${loc.name}`} onClick={() => void remove(loc)} className="text-destructive hover:bg-destructive/10">
+                        Remove
+                      </Button>
+                    </div>
+                    {isExpanded && <SubLocationList locationId={loc.id} onError={(msg) => setError(msg)} />}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

@@ -50,13 +50,11 @@ pub fn cmd_save_draft(state: State<'_, AppState>, payload: SaveDraftPayload) -> 
             rusqlite::params![user.id, payload.form_type, payload.data_json, now],
         )?;
 
-        let id = conn.last_insert_rowid();
-
         let mut stmt = conn.prepare(
             "SELECT id, user_id, form_type, data_json, created_at, updated_at
-             FROM drafts WHERE id = ?1",
+             FROM drafts WHERE user_id = ?1 AND form_type = ?2",
         )?;
-        let draft = stmt.query_row(rusqlite::params![id], |row| {
+        let draft = stmt.query_row(rusqlite::params![user.id, payload.form_type], |row| {
             Ok(Draft {
                 id: row.get(0)?,
                 user_id: row.get(1)?,
