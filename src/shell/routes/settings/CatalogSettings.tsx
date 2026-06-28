@@ -1,18 +1,15 @@
 import { useEffect, useState } from "react";
 
 import { toast } from "../../../lib/feedback/toast";
-import { Alert, Button, Card, DataTable, EmptyState, Section, Select } from "../../../components/ui";
+import { Alert, Button, Card, DataTable, EmptyState, Section } from "../../../components/ui";
 import type { ColumnDef } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import { ipc } from "../../lib/ipc";
 import { tauriInvoke } from "../../../lib/security/tauri";
 import { BrandAdmin } from "../../../domain/items/BrandAdmin";
 import { CategoryAdmin } from "../../../domain/items/CategoryAdmin";
-import type { Unit, UnitDimension, SaleUnit, PurchaseUnit } from "../../../domain/types";
+import type { SaleUnit, PurchaseUnit } from "../../../domain/types";
 import {
-  listUnits,
-  createUnit,
-  deactivateUnit,
   listSaleUnits,
   updateSaleUnit,
   listPurchaseUnits,
@@ -21,65 +18,6 @@ import {
 } from "../../../domain/units/api";
 
 import { extractError } from "../../../lib/extractError";
-interface UnitsTableProps {
-  units: Unit[];
-  loading: boolean;
-  onDeactivate: (id: number) => void;
-}
-
-function UnitsTable({ units, loading, onDeactivate }: UnitsTableProps) {
-  const columns: ColumnDef<Unit>[] = [
-    {
-      header: "Code",
-      cell: (u) => (
-        <span className="font-mono font-medium text-foreground">{u.code}</span>
-      ),
-    },
-    {
-      header: "Label",
-      cell: (u) => <span className="text-foreground">{u.label}</span>,
-    },
-    {
-      header: "Dimension",
-      cell: (u) => (
-        <span className="capitalize text-muted-foreground">{u.dimension}</span>
-      ),
-    },
-    {
-      header: "Actions",
-      align: "right",
-      className: "w-24",
-      cell: (u) => (
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          onClick={() => onDeactivate(u.id)}
-          className="text-destructive hover:bg-destructive/10"
-        >
-          Deactivate
-        </Button>
-      ),
-    },
-  ];
-
-  return (
-    <DataTable
-      data={units}
-      columns={columns}
-      keyExtractor={(u) => u.id}
-      loading={loading}
-      emptyState={
-        <EmptyState
-          title="No units configured"
-          description="Add one above to make it available across billing and catalog workflows."
-          className="rounded-md border border-border py-8"
-        />
-      }
-    />
-  );
-}
-
 function SettingsList({ items, emptyText, onRemove }: { items: string[]; emptyText: string; onRemove: (item: string) => void }) {
   if (items.length === 0) {
     return <EmptyState title={emptyText} description="Add one above to make it available across billing and catalog workflows." className="rounded-md border border-border py-8" />;
@@ -359,186 +297,27 @@ export function CatalogBrandsSettings() {
 }
 
 export function CatalogSettingsCombined() {
-  const [tab, setTab] = useState<"brands" | "categories" | "units" | "sale-units" | "purchase-units">("brands");
+  const [tab, setTab] = useState<"brands" | "categories" | "units">("brands");
 
   return (
     <Card>
       <Section title="Catalog" description="Manage brands, categories, and units used across items and billing.">
         <div className="flex gap-1 border-b border-border mb-4">
-          {(["brands", "categories", "units", "sale-units", "purchase-units"] as const).map((t) => (
+          {(["brands", "categories", "units"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-3 py-1.5 text-sm capitalize whitespace-nowrap ${tab === t ? "border-b-2 border-primary text-foreground font-medium" : "text-muted-foreground hover:text-foreground"}`}
-            >{t.replace("-", " ")}</button>
+            >{t}</button>
           ))}
         </div>
 
         {tab === "brands" && <BrandAdmin role="owner" />}
         {tab === "categories" && <CategoryAdmin role="owner" />}
-        {tab === "units" && <CatalogUnitsSettings />}
-        {tab === "sale-units" && <SaleUnitsSettings />}
-        {tab === "purchase-units" && <PurchaseUnitsSettings />}
-      </Section>
-    </Card>
-  );
-}
-
-export function CatalogUnitsSettings() {
-  const [units, setUnits] = useState<Unit[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [newCode, setNewCode] = useState("");
-  const [newLabel, setNewLabel] = useState("");
-  const [newDimension, setNewDimension] = useState<UnitDimension>("count");
-
-  const refresh = () => {
-    setLoading(true);
-    setError(null);
-    listUnits(true)
-      .then((data) => {
-        setUnits((data ?? []).filter((u) => u.is_active));
-      })
-      .catch((e: unknown) => {
-        const msg = extractError(e);
-        setError(msg);
-        toast.error("Failed to load units", msg);
-      })
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    refresh();
-  }, []);
-
-  const handleCreate = async () => {
-    const code = newCode.trim().toUpperCase();
-    const label = newLabel.trim();
-    if (!code || !label) return;
-
-    setError(null);
-    try {
-      await createUnit(code, label, newDimension);
-      setNewCode("");
-      setNewLabel("");
-      setShowCreate(false);
-      setNewDimension("count");
-      refresh();
-      toast.success("Unit created");
-    } catch (e) {
-      const message = extractError(e);
-      setError(message);
-      toast.error("Failed to create unit", message);
-    }
-  };
-
-  const handleDeactivate = async (id: number) => {
-    setError(null);
-    try {
-      await deactivateUnit(id);
-      refresh();
-      toast.success("Unit deactivated");
-    } catch (e) {
-      const message = extractError(e);
-      setError(message);
-      toast.error("Failed to deactivate unit", message);
-    }
-  };
-
-  return (
-    <Card>
-      <Section
-        title="Units"
-        description="Base measurement units used across items, sales, purchases, and inventory. Codes are used in item forms and reports."
-      >
-        <div className="space-y-4 text-sm">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              onClick={() => setShowCreate(!showCreate)}
-              variant={showCreate ? "ghost" : "primary"}
-              shortcut="F6"
-            >
-              {showCreate ? "Cancel" : "Add Unit"}
-            </Button>
+        {tab === "units" && (
+          <div className="space-y-6">
+            <SaleUnitsSettings />
+            <PurchaseUnitsSettings />
           </div>
-
-          {error && <Alert>{error}</Alert>}
-
-          {showCreate && (
-            <div className="rounded-md border border-border bg-card p-4 space-y-3">
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Code</label>
-                  <input
-                    type="text"
-                    value={newCode}
-                    onChange={(e) => setNewCode(e.target.value.toUpperCase().slice(0, 6))}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleCreate();
-                    }}
-                    placeholder="e.g. L, KG"
-                    className="input w-full font-mono"
-                    maxLength={6}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Label</label>
-                  <input
-                    type="text"
-                    value={newLabel}
-                    onChange={(e) => setNewLabel(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleCreate();
-                    }}
-                    placeholder="e.g. Liter, Kilogram"
-                    className="input w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Dimension</label>
-                  <Select
-                    value={newDimension}
-                    onChange={(e) => setNewDimension(e.target.value as UnitDimension)}
-                    options={[
-                      { value: "volume", label: "Volume" },
-                      { value: "mass", label: "Mass" },
-                      { value: "area", label: "Area" },
-                      { value: "count", label: "Count" },
-                    ]}
-                    size="md"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setShowCreate(false);
-                    setNewCode("");
-                    setNewLabel("");
-                    setNewDimension("count");
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleCreate}
-                  disabled={!newCode.trim() || !newLabel.trim()}
-                >
-                  Create Unit
-                </Button>
-              </div>
-            </div>
-          )}
-
-          <UnitsTable
-            units={units}
-            loading={loading}
-            onDeactivate={handleDeactivate}
-          />
-        </div>
+        )}
       </Section>
     </Card>
   );

@@ -102,6 +102,10 @@ mod tests {
             "label_print_log",
             "printers",
             "printer_mappings",
+            // 3-unit system
+            "sale_units",
+            "purchase_units",
+            "item_purchase_packaging",
         ];
 
         let mut stmt = conn

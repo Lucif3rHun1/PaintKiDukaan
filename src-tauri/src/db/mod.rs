@@ -360,6 +360,79 @@ impl Db {
             }
         }
 
+        // M-INLINE-009: create sale_units, purchase_units, item_purchase_packaging
+        // tables for the 3-unit system. Idempotent — skipped when tables already exist.
+        {
+            let has_sale_units: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='sale_units'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_sale_units {
+                conn.execute_batch(
+                    "CREATE TABLE sale_units (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        code TEXT NOT NULL UNIQUE,
+                        label TEXT NOT NULL,
+                        quantity_precision INTEGER NOT NULL DEFAULT 0,
+                        is_active INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                     );
+                     INSERT INTO sale_units (code, label, quantity_precision) VALUES
+                        ('unit', 'Unit', 0),
+                        ('mtr', 'Metre', 3),
+                        ('kg', 'Kg', 3);",
+                )?;
+            }
+        }
+        {
+            let has_purchase_units: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='purchase_units'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_purchase_units {
+                conn.execute_batch(
+                    "CREATE TABLE purchase_units (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        label TEXT NOT NULL UNIQUE,
+                        is_active INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                     );
+                     INSERT INTO purchase_units (label) VALUES
+                        ('Carton'), ('Roll'), ('Sack'), ('Piece'), ('Box'), ('Bundle');",
+                )?;
+            }
+        }
+        {
+            let has_ipp: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='item_purchase_packaging'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_ipp {
+                conn.execute_batch(
+                    "CREATE TABLE item_purchase_packaging (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                        purchase_unit_id INTEGER NOT NULL REFERENCES purchase_units(id),
+                        qty_per_purchase_unit REAL NOT NULL DEFAULT 1.0,
+                        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        UNIQUE(item_id, purchase_unit_id)
+                     );",
+                )?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\
