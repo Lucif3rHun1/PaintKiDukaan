@@ -100,10 +100,8 @@ function unitLabel(unitType: string): string {
       return "mtr";
     case "kg":
       return "kg";
-    case "box":
-      return "Box";
     default:
-      return "Unit";
+      return "unit";
   }
 }
 

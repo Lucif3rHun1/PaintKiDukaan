@@ -159,7 +159,7 @@ export interface NewItem {
   position?: string | null;
   min_stock?: number;
   /** @deprecated Use min_stock instead. */
-  min_qty: number;
+  min_qty?: number;
   barcode_format?: string;
   barcode?: string | null;
 }

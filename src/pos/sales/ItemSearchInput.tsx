@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { createItem, listItems, lookupItem } from "../../domain/items/api";
 import { listFormulas } from "../../domain/formulas/api";
-import { listUnits } from "../../domain/units/api";
 import { listLocations } from "../../domain/locations/api";
 import { useBarcodeScan } from "../../shell/hooks/useBarcodeScan";
 import { Button, MoneyInput } from "../../components/ui";
@@ -18,7 +17,7 @@ import { cn } from "../../components/ui/cn";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
-import type { FormulaSearchHit, Item, ItemLookup, Location, Unit } from "../../domain/types";
+import type { FormulaSearchHit, Item, ItemLookup, Location } from "../../domain/types";
 import type { ItemSearchHit } from "../types";
 
 interface Props {
@@ -79,7 +78,7 @@ function itemToSearchHit(item: Item): ItemSearchHit {
     unit_id: item.unit_id,
     unit_code: item.unit_code ?? "",
     unit_label: item.unit_label ?? "",
-    sell_unit: item.sell_unit === "box" ? "box" : "unit",
+    sell_unit: item.sell_unit || "unit",
     current_qty: item.current_qty,
     min_qty: item.min_qty,
   };
@@ -100,11 +99,9 @@ export function ItemSearchInput({
   const [searching, setSearching] = useState(false);
   const [quickName, setQuickName] = useState("");
   const [quickPrice, setQuickPrice] = useState(0);
-  const [quickUnitId, setQuickUnitId] = useState<number | null>(null);
   const [quickMinStock, setQuickMinStock] = useState(0);
   const [quickBusy, setQuickBusy] = useState(false);
   const [quickError, setQuickError] = useState<string | null>(null);
-  const [units, setUnits] = useState<Unit[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [quickSuggestions, setQuickSuggestions] = useState<ItemSearchHit[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -191,10 +188,9 @@ export function ItemSearchInput({
 
   useEffect(() => {
     let mounted = true;
-    Promise.allSettled([listUnits(), listLocations(false)]).then((settled) => {
+    Promise.allSettled([listLocations(false)]).then((settled) => {
       if (!mounted) return;
-      const [unitsResult, locationsResult] = settled;
-      if (unitsResult.status === "fulfilled") setUnits(unitsResult.value);
+      const [locationsResult] = settled;
       if (locationsResult.status === "fulfilled") setLocations(locationsResult.value);
     });
     return () => {
@@ -352,14 +348,6 @@ export function ItemSearchInput({
       setQuickError("No location configured");
       return;
     }
-    const unit =
-      (quickUnitId != null ? units.find((u) => u.id === quickUnitId) : null) ??
-      units.find((u) => u.is_active && u.code === "pc") ??
-      units.find((u) => u.is_active);
-    if (!unit) {
-      setQuickError("No unit configured");
-      return;
-    }
     setQuickBusy(true);
     setQuickError(null);
     try {
@@ -368,9 +356,11 @@ export function ItemSearchInput({
           name,
           retail_price_paise: quickPrice,
           cost_paise: 0,
-          min_qty: quickMinStock,
+          min_stock: quickMinStock,
+          sell_unit: "unit",
+          sell_unit_id: null,
           primary_location_id: location.id,
-          unit_id: unit.id,
+          unit_id: 0,
         }),
         {
           loading: "Saving item…",
@@ -380,7 +370,6 @@ export function ItemSearchInput({
       );
       handlePick(itemToSearchHit(item));
       setQuickSuggestions([]);
-      setQuickUnitId(null);
       setQuickMinStock(0);
       void queryClient.invalidateQueries({ queryKey: ["items"] });
     } finally {
@@ -592,7 +581,6 @@ export function ItemSearchInput({
                           quickSearchSkipRef.current = true;
                           setQuickName(s.name);
                           setQuickPrice(s.retail_price_paise);
-                          setQuickUnitId(s.unit_id || null);
                           setQuickMinStock(s.min_qty ?? 0);
                           setQuickSuggestions([]);
                         }}
@@ -636,29 +624,19 @@ export function ItemSearchInput({
                   Save
                 </Button>
               </div>
-              {quickUnitId != null ? (
-                <div className="mt-1.5 flex items-center gap-2">
-                  <select
-                    value={quickUnitId ?? ""}
-                    onChange={(e) => setQuickUnitId(Number(e.target.value) || null)}
-                    className="input h-8 text-xs"
-                  >
-                    {units.filter((u) => u.is_active).map((u) => (
-                      <option key={u.id} value={u.id}>{u.code} — {u.label}</option>
-                    ))}
-                  </select>
-                  <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                    Min stock
-                    <input
-                      type="number"
-                      value={quickMinStock}
-                      onChange={(e) => setQuickMinStock(Number(e.target.value) || 0)}
-                      min={0}
-                      className="input h-8 w-16 text-xs"
-                    />
-                  </label>
-                </div>
-              ) : null}
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Unit: <strong>unit</strong></span>
+                <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                  Min stock
+                  <input
+                    type="number"
+                    value={quickMinStock}
+                    onChange={(e) => setQuickMinStock(Number(e.target.value) || 0)}
+                    min={0}
+                    className="input h-8 w-16 text-xs"
+                  />
+                </label>
+              </div>
               {quickError ? (
                 <p className="mt-2 text-xs text-destructive">{quickError}</p>
               ) : null}

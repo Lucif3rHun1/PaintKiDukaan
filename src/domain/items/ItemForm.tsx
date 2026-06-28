@@ -20,12 +20,12 @@ import type {
   Brand,
   Category,
   Item,
-  Unit,
+  SaleUnit,
   NewItem,
   Location,
   SubLocation,
 } from "../types";
-import { listUnits } from "../units/api";
+import { listSaleUnits } from "../units/api";
 import { extractError } from "../../lib/extractError";
 
 type Mode = "create" | "edit";
@@ -43,8 +43,9 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [category, setCategory] = useState(initial?.category ?? "");
   const [categories, setCategories] = useState<Category[]>([]);
-  const [unitId, setUnitId] = useState<number | null>(initial?.unit_id ?? null);
-  const [units, setUnits] = useState<Unit[]>([]);
+  const [sellUnitId, setSellUnitId] = useState<number | null>(initial?.sell_unit_id ?? null);
+  const [sellUnitCode, setSellUnitCode] = useState<string>(initial?.sell_unit ?? "unit");
+  const [saleUnits, setSaleUnits] = useState<SaleUnit[]>([]);
   const [retailPricePaise, setRetailPricePaise] = useState(
     initial?.retail_price_paise ?? 0,
   );
@@ -60,7 +61,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   );
   const [subLocations, setSubLocations] = useState<SubLocation[]>([]);
   const [position, setPosition] = useState(initial?.position ?? "");
-  const [minQty, setMinQty] = useState(initial?.min_qty?.toString() ?? "1");
+  const [minStock, setMinStock] = useState(initial?.min_stock?.toString() ?? "1");
   const [locations, setLocations] = useState<Location[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -85,22 +86,18 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       }),
       listBrands().then((b) => setBrands(b)),
       listCategories().then((c) => setCategories(c)),
-      listUnits().then((u) => {
-        setUnits(u);
-        const firstActive = u.find((x) => x.is_active);
-        if (firstActive && mode === "create") {
-          setUnitId((current) => current ?? firstActive.id);
-        }
+      listSaleUnits().then((u) => {
+        setSaleUnits(u);
       }),
     ]).then((results) => {
       results.forEach((r, i) => {
         if (r.status === "rejected") {
-          const label = ["locations", "brands", "categories", "units"][i];
+          const label = ["locations", "brands", "categories", "saleUnits"][i];
           console.error(`[ItemForm] failed to load ${label}`, r.reason);
           if (label === "locations") setLocations([]);
           if (label === "brands") setBrands([]);
           if (label === "categories") setCategories([]);
-          if (label === "units") setUnits([]);
+          if (label === "saleUnits") setSaleUnits([]);
         }
       });
     });
@@ -157,7 +154,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     if (primaryLocationId <= 0) e.primary_location_id = "Pick a location";
     if (retailPricePaise < 0) e.retail_price_paise = "Cannot be negative";
     if (costPaise < 0) e.cost_paise = "Cannot be negative";
-    if (Number(minQty) < 0) e.min_qty = "Cannot be negative";
+    if (Number(minStock) < 0) e.min_stock = "Cannot be negative";
     setFieldErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -173,14 +170,16 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         name: name.trim(),
         brand_id: brandId,
         category: category || null,
-        unit_id: unitId,
+        sell_unit: sellUnitCode,
+        sell_unit_id: sellUnitId,
+        unit_id: 0,
         retail_price_paise: retailPricePaise,
         cost_paise: costPaise,
         promo_price_paise: promoPricePaise,
         primary_location_id: primaryLocationId,
         sub_location_id: subLocationId,
         position: position || null,
-        min_qty: Number(minQty),
+        min_stock: Number(minStock),
         barcode: null as string | null,
       };
       if (mode === "create") {
@@ -191,14 +190,13 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         });
         const openingQty = Number(openingStock) || 0;
         if (openingQty > 0 && item.primary_location_id) {
-          const unit = units.find((u) => u.id === item.unit_id);
           const req: NewPurchase = {
             vendor_id: null,
             auto_print_label: false,
             lines: [{
               item_id: item.id,
               qty: openingQty,
-              unit_type: "unit",
+              unit_type: item.sell_unit || "unit",
               unit_price_paise: item.cost_paise,
               location_id: item.primary_location_id,
             }],
@@ -271,14 +269,14 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                   onClick={() => {
                     setName(item.name);
                     if (item.category) setCategory(item.category);
-                    if (item.unit_id) setUnitId(item.unit_id);
+                    if (item.unit_id) setSellUnitId(item.sell_unit_id ?? item.unit_id);
                     setRetailPricePaise(item.retail_price_paise);
                     setCostPaise(item.cost_paise);
                     if (item.promo_price_paise != null) setPromoPricePaise(item.promo_price_paise);
                     if (item.primary_location_id) setPrimaryLocationId(item.primary_location_id);
                     if (item.sub_location_id != null) setSubLocationId(item.sub_location_id);
                     if (item.position) setPosition(item.position);
-                    setMinQty(item.min_qty?.toString() ?? "1");
+                    setMinStock(item.min_stock?.toString() ?? item.min_qty?.toString() ?? "1");
                     setNameSuggestions([]);
                   }}
                   className="flex w-full items-center gap-3 border-b border-border/50 px-3 py-2 text-left last:border-b-0 hover:bg-muted/50"
@@ -342,36 +340,46 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       {/* Units & pricing */}
       <Section title="Units & pricing">
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Unit">
+          <Field label="Sale Unit">
             <Select
-              value={String(unitId ?? 0)}
-              onChange={(e) => setUnitId(Number(e.target.value) || null)}
+              value={sellUnitCode || ""}
+              onChange={(e) => {
+                const code = e.target.value;
+                setSellUnitCode(code);
+                const found = saleUnits.find((u) => u.code === code);
+                setSellUnitId(found?.id ?? null);
+              }}
               options={[
-                { value: "0", label: "— Select unit —" },
-                ...units
+                { value: "", label: "— Select sale unit —" },
+                ...saleUnits
                   .filter((u) => u.is_active)
                   .map((u) => ({
-                    value: String(u.id),
-                    label: u.label ?? u.code,
+                    value: u.code,
+                    label: u.label,
                   })),
               ]}
               size="md"
             />
-            {units.filter((u) => u.is_active).length === 0 ? (
+            {saleUnits.filter((u) => u.is_active).length === 0 ? (
               <span className="mt-1 block text-[10px] text-warning">
-                No units configured — add units in Settings.
+                No sale units configured — add in Settings.
               </span>
             ) : null}
           </Field>
-          <Field label="Min qty" error={fieldErrors.min_qty}>
+          <Field label="Min Stock" error={fieldErrors.min_stock}>
             <input
-              value={minQty}
+              value={minStock}
               type="number"
-              step="0.01"
+              step={sellUnitCode === "unit" ? "1" : "0.001"}
               min="0"
-              onChange={(e) => setMinQty(e.target.value)}
+              onChange={(e) => setMinStock(e.target.value)}
               className="input"
             />
+            {sellUnitCode ? (
+              <span className="mt-1 block text-[10px] text-muted">
+                {sellUnitCode}
+              </span>
+            ) : null}
           </Field>
         </div>
         <div className="grid grid-cols-3 gap-4">

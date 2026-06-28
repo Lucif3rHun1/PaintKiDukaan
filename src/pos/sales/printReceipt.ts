@@ -65,9 +65,8 @@ export function buildReceiptData(sale: Sale, settings: ReceiptPrintSettings) {
 }
 
 function formatQty(qty: number, unitType: string): string {
-  if (unitType === "box") return `${qty} box`;
-  if (Number.isInteger(qty)) return String(qty);
-  return qty.toFixed(2);
+  if (Number.isInteger(qty)) return `${qty} ${unitType}`;
+  return `${qty.toFixed(2)} ${unitType}`;
 }
 
 function isWindows(): boolean {
