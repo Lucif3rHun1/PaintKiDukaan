@@ -63,11 +63,11 @@ export interface ReturnCartLine {
   item_id: number;
   item_name: string;
   qty: number;
-  price: number;          // paise per unit
-  unit_code: string;      // e.g. "unit" | "box" (SaleItem.unit_type) or "L"/"pc" (ItemSearchHit.unit_code)
-  sale_id: number | null; // original sale id (for grouped per-sale returns)
-  reason: string | null;  // per-line override; falls back to header reason on submit
-  original_qty?: number;  // max returnable (the original invoice line qty)
+  price: number;
+  unit_code: string;
+  sale_id: number | null;
+  reason: string | null;
+  original_qty?: number;
 }
 
 export interface CartLine {
@@ -108,9 +108,11 @@ export interface ConvertQuotation {
 export interface InwardLine {
   item_id: number;
   qty: number;
-  unit_type: "unit" | "box";
+  unit_type: string;
   unit_price_paise: number;
   location_id: number;
+  purchase_unit_id?: number | null;
+  qty_per_purchase_unit?: number | null;
 }
 
 export interface NewPurchase {
@@ -282,11 +284,8 @@ export interface ItemSearchHit {
   unit_id: number;
   unit_code: string;
   unit_label: string;
-  /** Sell form ("unit" | "box") — maps to `sale_items.unit_type`. Distinct from
-   * `unit_code` which is the measurement unit ("L", "pc", etc.). */
   sell_unit: string;
   current_qty: number;
-  /** Reorder threshold (0 = no threshold). Used to render "low stock" UI. */
   min_qty?: number;
 }
 

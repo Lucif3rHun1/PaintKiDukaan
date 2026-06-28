@@ -72,8 +72,10 @@ export interface Item {
   unit_code: string;
   unit_label: string;
   unit: string;
+  /** @deprecated Use sell_unit ("unit" | "mtr" | "kg") instead. Kept for migration compat. */
   units_per_pack: number | null;
   sell_unit: string;
+  sell_unit_id: number | null;
   retail_price_paise: number;
   cost_paise: number;
   promo_price_paise: number | null;
@@ -82,6 +84,8 @@ export interface Item {
   primary_location_id: number | null;
   sub_location_id: number | null;
   position: string | null;
+  min_stock: number;
+  /** @deprecated Use min_stock instead. */
   min_qty: number;
   barcode_format: string | null;
   is_active: boolean;
@@ -108,6 +112,7 @@ export type ItemLookup =
       unit_id: number;
       unit_code: string;
       unit_label: string | null;
+      /** @deprecated Kept for migration compat. */
       units_per_pack: number | null;
       in_stock: number;
     }
@@ -116,6 +121,8 @@ export type ItemLookup =
       id: number;
       sku_code: string;
       name: string;
+      min_stock: number;
+      /** @deprecated Use min_stock instead. */
       min_qty: number;
       qty_per_loc: QtyPerLoc[];
     };
@@ -138,7 +145,10 @@ export interface NewItem {
   unit_id: number;
   unit_code?: string | null;
   unit_label?: string | null;
+  /** @deprecated Use sell_unit instead. Kept for migration compat. */
   units_per_pack?: number | null;
+  sell_unit?: string;
+  sell_unit_id?: number | null;
   retail_price_paise: number;
   cost_paise: number;
   promo_price_paise?: number | null;
@@ -147,6 +157,8 @@ export interface NewItem {
   primary_location_id: number;
   sub_location_id?: number | null;
   position?: string | null;
+  min_stock?: number;
+  /** @deprecated Use min_stock instead. */
   min_qty: number;
   barcode_format?: string;
   barcode?: string | null;
@@ -158,7 +170,10 @@ export interface ItemUpdate {
   brand_id?: number | null;
   category?: string | null;
   unit_id?: number | null;
+  /** @deprecated Use sell_unit instead. Kept for migration compat. */
   units_per_pack?: number | null;
+  sell_unit?: string | null;
+  sell_unit_id?: number | null;
   retail_price_paise?: number | null;
   cost_paise?: number | null;
   promo_price_paise?: number | null;
@@ -167,6 +182,8 @@ export interface ItemUpdate {
   primary_location_id?: number | null;
   sub_location_id?: number | null;
   position?: string | null;
+  min_stock?: number | null;
+  /** @deprecated Use min_stock instead. */
   min_qty?: number | null;
   barcode_format?: string | null;
   barcode?: string | null;
@@ -359,6 +376,36 @@ export interface UnitConversion {
   from_unit_id: number;
   to_unit_id: number;
   factor: number;
+}
+
+// ── New 3-unit system ────────────────────────────────────────────────
+
+export type SellUnitCode = "unit" | "mtr" | "kg";
+
+export interface SaleUnit {
+  id: number;
+  code: string;           // 'unit', 'mtr', 'kg'
+  label: string;
+  quantity_precision: number; // 0 = integer, 3 = decimal
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchaseUnit {
+  id: number;
+  label: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ItemPurchasePackaging {
+  id: number;
+  item_id: number;
+  purchase_unit_id: number;
+  qty_per_purchase_unit: number;
+  purchase_unit_label?: string;
 }
 
 export interface Draft {
