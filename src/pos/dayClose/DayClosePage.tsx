@@ -1,6 +1,8 @@
 // Day Close page — per-user end-of-day reconciliation.
 // E47–E52 acceptance: see plan §7.6.
 
+const VARIANCE_TOLERANCE_PAISE = 500; // ₹5 — matches day_close::VARIANCE_TOLERANCE_PAISE
+
 import { useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -34,9 +36,19 @@ const recentClosesColumns: ColumnDef<DayClose>[] = [
     ),
   },
   {
-    header: "Cash sales",
+    header: "Cash",
     align: "right",
     cell: (d) => <Money paise={d.cash_sales_paise} />,
+  },
+  {
+    header: "Card",
+    align: "right",
+    cell: (d) => <Money paise={d.card_sales_paise} />,
+  },
+  {
+    header: "UPI",
+    align: "right",
+    cell: (d) => <Money paise={d.upi_sales_paise} />,
   },
   {
     header: "Expected",
@@ -54,7 +66,9 @@ const recentClosesColumns: ColumnDef<DayClose>[] = [
     cell: (d) => (
       <span
         className={
-          d.variance_paise === 0 ? "text-success" : "text-destructive"
+          d.variance_paise === 0 || Math.abs(d.variance_paise) <= VARIANCE_TOLERANCE_PAISE
+            ? "text-success"
+            : "text-destructive"
         }
       >
         <Money paise={d.variance_paise} />
@@ -78,6 +92,8 @@ function RecentClosesTable({ rows }: { rows: DayClose[] }) {
   );
 }
 
+const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
+
 export default function DayClosePage({ user }: Props) {
   const [date, setDate] = useState(() => todayLocalYyyymmdd());
   const [openingRupees, setOpeningRupees] = useState("0");
@@ -89,6 +105,8 @@ export default function DayClosePage({ user }: Props) {
   const [summary, setSummary] = useState<CashSalesSummary | null>(null);
   const [recent, setRecent] = useState<DayClose[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  const [denom, setDenom] = useState<Record<number, number>>({});
+  const [useDenom, setUseDenom] = useState(false);
 
   useEffect(() => {
     backupGateCheck().then((d) => setGate(d ?? null)).catch((e: unknown) => {
@@ -111,10 +129,14 @@ export default function DayClosePage({ user }: Props) {
     });
   }, [user.id, date]);
 
+  const denomTotal = useMemo(() => {
+    return DENOMINATIONS.reduce((sum, d) => sum + d * (denom[d] || 0), 0);
+  }, [denom]);
+
   const openingPaise = Math.round(Number(openingRupees || 0) * 100);
   const cashInPaise = Math.round(Number(cashInRupees || 0) * 100);
   const cashOutPaise = Math.round(Number(cashOutRupees || 0) * 100);
-  const countedPaise = Math.round(Number(countedRupees || 0) * 100);
+  const countedPaise = useDenom ? denomTotal * 100 : Math.round(Number(countedRupees || 0) * 100);
 
   const expected = useMemo(
     () =>
@@ -205,6 +227,24 @@ export default function DayClosePage({ user }: Props) {
                 />
               </label>
               <label className="space-y-1">
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Card sales (auto, ₹)</span>
+                <input
+                  type="number"
+                  readOnly
+                  value={((summary?.card_sales_paise ?? 0) / 100).toFixed(2)}
+                  className="input w-full bg-muted"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">UPI sales (auto, ₹)</span>
+                <input
+                  type="number"
+                  readOnly
+                  value={((summary?.upi_sales_paise ?? 0) / 100).toFixed(2)}
+                  className="input w-full bg-muted"
+                />
+              </label>
+              <label className="space-y-1">
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">Cash in (₹)</span>
                 <input
                   type="number"
@@ -232,13 +272,47 @@ export default function DayClosePage({ user }: Props) {
                   type="number"
                   min="0"
                   step="0.01"
-                  value={countedRupees}
-                  onChange={(e) => setCountedRupees(e.target.value)}
-                  className="input w-full"
+                  value={useDenom ? String(denomTotal) : countedRupees}
+                  onChange={(e) => { setUseDenom(false); setCountedRupees(e.target.value); }}
+                  readOnly={useDenom}
+                  className={`input w-full ${useDenom ? "bg-muted" : ""}`}
                   data-testid="counted-cash"
                 />
               </label>
             </div>
+
+            {/* Denomination breakdown toggle */}
+            <button
+              type="button"
+              onClick={() => setUseDenom(!useDenom)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {useDenom ? "↑ Hide denomination breakdown" : "↓ Count by denomination"}
+            </button>
+
+            {useDenom && (
+              <div className="rounded-lg bg-muted p-3 space-y-2">
+                <div className="grid grid-cols-5 gap-2">
+                  {DENOMINATIONS.map((d) => (
+                    <label key={d} className="space-y-0.5 text-center">
+                      <span className="text-[10px] text-muted-foreground">₹{d}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={denom[d] || ""}
+                        onChange={(e) => setDenom({ ...denom, [d]: Number(e.target.value) || 0 })}
+                        className="input w-full text-center text-xs"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="flex justify-between text-xs font-medium">
+                  <span className="text-muted-foreground">Denomination total</span>
+                  <Money paise={denomTotal * 100} />
+                </div>
+              </div>
+            )}
 
             {/* Expected / Variance */}
             <div className="rounded-lg bg-muted p-3 text-sm space-y-1">
@@ -250,7 +324,11 @@ export default function DayClosePage({ user }: Props) {
                 <span className="text-muted-foreground">Variance</span>
                 <Money
                   paise={variance}
-                  className={variance === 0 ? "font-semibold text-success" : "font-semibold text-destructive"}
+                  className={
+                    variance === 0 || Math.abs(variance) <= VARIANCE_TOLERANCE_PAISE
+                      ? "font-semibold text-success"
+                      : "font-semibold text-destructive"
+                  }
                 />
               </div>
             </div>

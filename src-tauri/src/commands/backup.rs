@@ -164,6 +164,16 @@ pub fn backup_now<R: tauri::Runtime>(
 
     *state.last_backup_unix_ms.lock().unwrap() = Some(metadata.created_at_unix_ms);
 
+    // Persist to SQL so day_close backup gate (which reads from the DB) stays in sync.
+    if let Some(ref db) = *state.db.lock().unwrap() {
+        let _ = db.with_conn(|c| {
+            c.execute(
+                "UPDATE settings SET last_backup_unix_ms = ?1 WHERE id = 1",
+                [metadata.created_at_unix_ms],
+            )
+        });
+    }
+
     Ok(metadata)
 }
 
@@ -196,7 +206,17 @@ pub fn restore<R: tauri::Runtime>(
     drop(temp_plaintext);
     passphrase.zeroize();
 
-    *state.last_backup_unix_ms.lock().unwrap() = Some(Utc::now().timestamp_millis());
+    let now_ms = Utc::now().timestamp_millis();
+    *state.last_backup_unix_ms.lock().unwrap() = Some(now_ms);
+
+    if let Some(ref db) = *state.db.lock().unwrap() {
+        let _ = db.with_conn(|c| {
+            c.execute(
+                "UPDATE settings SET last_backup_unix_ms = ?1 WHERE id = 1",
+                [now_ms],
+            )
+        });
+    }
 
     Ok(())
 }

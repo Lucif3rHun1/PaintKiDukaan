@@ -190,7 +190,7 @@ export function InventoryTab() {
                         ? `Negative stock (${item.current_qty})`
                         : item.current_qty === 0
                           ? "Out of stock"
-                          : `${item.current_qty} / min ${item.min_qty}`}
+                          : `${item.current_qty} / min ${item.min_stock}`}
                     </span>
                   </li>
                 ))}
@@ -338,7 +338,7 @@ export function InventoryTab() {
                 <EmptyState
                   icon={TrendingUp}
                   title="All stock is moving"
-                  description="No items with no inbound movement in the last 60 days."
+                  description="No items without sales in the last 60 days."
                 />
               </div>
             ) : (
@@ -352,8 +352,8 @@ export function InventoryTab() {
                     <div className="flex shrink-0 items-center gap-2 text-xs tabular-nums">
                       <span className="text-muted-foreground">{r.current_qty} units</span>
                       <span className="text-warning">
-                        {r.last_inbound_ms
-                          ? formatDateForDisplay(new Date(r.last_inbound_ms))
+                        {r.last_sale_ms
+                          ? formatDateForDisplay(new Date(r.last_sale_ms))
                           : "never"}
                       </span>
                     </div>

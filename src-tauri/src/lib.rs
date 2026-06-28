@@ -366,6 +366,7 @@ pub fn run() {
             commands::reports::cmd_dead_stock,
             commands::reports::cmd_inventory_aging,
             commands::reports::cmd_payment_summary,
+            commands::reports::cmd_comparison_metrics,
             // Sequences (Slice C)
             commands::sequences::cmd_mint_next_sale_no,
             commands::sequences::get_next_invoice_number,
@@ -515,22 +516,23 @@ async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::Unboun
         )
         .await;
 
-        let _ = splash.close();
-
         match dl_outcome {
             Ok(Ok(())) => {
+                let _ = splash.close();
                 log::info!("Update installed — restarting");
                 app.restart();
             }
             Ok(Err(e)) => {
                 log::warn!("Download/install failed: {e}");
-                show_main(&app);
-                return;
+                show_update_error(&splash, &format!("Update failed. Please try again.\n\n{e}"));
+                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
+                continue;
             }
             Err(_) => {
                 log::warn!("Download/install timed out after 5 min");
-                show_main(&app);
-                return;
+                show_update_error(&splash, "Update timed out. Please try again.");
+                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
+                continue;
             }
         }
     }

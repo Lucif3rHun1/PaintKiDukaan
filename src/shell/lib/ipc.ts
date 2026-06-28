@@ -7,7 +7,8 @@
  */
 import { tauriInvoke } from "../../lib/security/tauri";
 import type { SecurityPolicy } from "../../domain/types";
-import type { NewPrinterInput, PrinterRecord } from "../routes/settings/printing-types";
+import type { NewPrinterInput, PrinterRecord, DiscoveredPrinter } from "../routes/settings/printing-types";
+export type { DiscoveredPrinter };
 
 export type Role = "owner" | "cashier" | "stocker";
 
@@ -106,13 +107,6 @@ export interface BackupStatus {
   targets: BackupTarget[];
 }
 
-export interface DiscoveredPrinter {
-  name: string;
-  driver_name: string | null;
-  port_name: string | null;
-  connection_type: string;
-}
-
 export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return tauriInvoke<T>(cmd, args);
 }
@@ -127,6 +121,8 @@ export const ipc = {
   listUsers: () => invoke<User[]>("list_users"),
   createUser: (name: string, role: string, pin: string) =>
     invoke<User>("create_user", { name, pin, role }),
+  deleteUser: (userId: number) =>
+    invoke<void>("delete_user", { userId }),
   listDevices: () => invoke<Device[]>("list_devices"),
   enrollDevice: (name: string, role: string) =>
     invoke<Device>("enroll_device", { name, role }),

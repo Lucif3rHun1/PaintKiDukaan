@@ -99,6 +99,7 @@ CREATE TABLE settings (
   failed_attempts_lockout  INTEGER NOT NULL DEFAULT 5,
   alerts_retention_days    INTEGER NOT NULL DEFAULT 30,
   last_backup_unix_ms      INTEGER,
+  gstin                    TEXT,
   created_at               INTEGER NOT NULL,
   updated_at               INTEGER NOT NULL,
   created_by               INTEGER REFERENCES users(id) ON DELETE NO ACTION,
@@ -244,6 +245,7 @@ CREATE TABLE vendors (
   is_active            INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at           INTEGER NOT NULL,
   updated_at           INTEGER NOT NULL,
+  notes                TEXT,
   created_by           INTEGER REFERENCES users(id) ON DELETE NO ACTION,
   updated_by           INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
@@ -308,7 +310,7 @@ CREATE TABLE items (
   label_line1         TEXT,
   label_line2         TEXT,
   primary_location_id INTEGER REFERENCES locations(id) ON DELETE NO ACTION,
-  min_qty             INTEGER NOT NULL DEFAULT 0 CHECK(min_qty >= 0),
+  min_stock           REAL NOT NULL DEFAULT 0 CHECK(min_stock >= 0),
   barcode_format      TEXT,
   units_per_pack      INTEGER NOT NULL DEFAULT 1 CHECK(units_per_pack >= 1),
   sub_location_id     INTEGER REFERENCES sub_locations(id) ON DELETE NO ACTION,
@@ -1065,8 +1067,9 @@ UPDATE items SET sell_unit_id = (
 -- N10. Add min_stock (REAL) to items table
 ALTER TABLE items ADD COLUMN min_stock REAL NOT NULL DEFAULT 0;
 
--- N11. Migrate min_qty to min_stock
+-- N11. Migrate min_qty to min_stock, then drop min_qty
 UPDATE items SET min_stock = CAST(min_qty AS REAL) WHERE min_qty IS NOT NULL;
+ALTER TABLE items DROP COLUMN min_qty;
 
 -- Drop triggers before dropping tables they reference
 DROP TRIGGER IF EXISTS stock_movements_ai;

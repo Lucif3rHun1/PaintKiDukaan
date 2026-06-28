@@ -35,7 +35,6 @@ pub struct Item {
     pub primary_location_id: Option<i64>,
     pub sub_location_id: Option<i64>,
     pub position: Option<String>,
-    pub min_qty: i64,
     pub min_stock: f64,
     pub barcode_format: Option<String>,
     pub is_active: bool,
@@ -49,7 +48,7 @@ pub struct Item {
 ///
 /// - `Owner`: all fields, including cost_paise.
 /// - `Cashier`: name, retail_price_paise, sell_unit, in_stock (aggregate across locations).
-/// - `Stocker`: name, qty_per_loc (grouped), min_qty.
+/// - `Stocker`: name, qty_per_loc (grouped), min_stock.
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "scope", rename_all = "lowercase")]
 pub enum ItemLookup {
@@ -111,11 +110,11 @@ pub struct NewItem {
     pub primary_location_id: i64,
     pub sub_location_id: Option<i64>,
     pub position: Option<String>,
-    pub min_qty: Option<i64>,
     pub min_stock: Option<f64>,
     pub barcode_format: Option<String>,
     pub barcode: Option<String>,
 }
+
 
 #[derive(Debug, Deserialize)]
 pub struct ItemUpdate {
@@ -138,7 +137,6 @@ pub struct ItemUpdate {
     pub primary_location_id: Option<i64>,
     pub sub_location_id: Option<i64>,
     pub position: Option<String>,
-    pub min_qty: Option<i64>,
     pub min_stock: Option<f64>,
     pub barcode_format: Option<String>,
     pub barcode: Option<String>,
@@ -299,9 +297,9 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
                 unit_id, unit_code, unit_label, unit, units_per_pack,
                 sell_unit, sell_unit_id, retail_price_paise, cost_paise, promo_price_paise,
                 label_line1, label_line2, primary_location_id,
-                sub_location_id, position, min_qty, min_stock, barcode_format, is_active,
+                sub_location_id, position, min_stock, barcode_format, is_active,
                 created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, 1, unixepoch('now'), unixepoch('now'))",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, 1, unixepoch('now'), unixepoch('now'))",
             params![
                 sku,
                 barcode,
@@ -324,7 +322,6 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
                 payload.primary_location_id,
                 payload.sub_location_id,
                 payload.position,
-                payload.min_qty.unwrap_or(1),
                 payload.min_stock.unwrap_or(0.0),
                 barcode_format,
             ],
@@ -411,9 +408,6 @@ pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> Ap
         if let Some(v) = &patch.position {
             add!("position =", v.clone())
         }
-        if let Some(v) = patch.min_qty {
-            add!("min_qty =", v)
-        }
         if let Some(v) = patch.min_stock {
             add!("min_stock =", v)
         }
@@ -452,7 +446,7 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
-    let mut sql = String::from("SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_qty, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE 1=1");
+    let mut sql = String::from("SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE 1=1");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if !filter.include_inactive {
         sql.push_str(" AND i.is_active = 1");
@@ -470,10 +464,9 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
         args.push(Box::new(c.clone()));
     }
     if filter.low_stock_only {
-        // qty vs min_qty, computed via stock_balances aggregate
         sql.push_str(
             " AND i.id IN (SELECT item_id FROM stock_balances GROUP BY item_id \
-             HAVING SUM(qty) <= (SELECT min_qty FROM items i2 WHERE i2.id = item_id))",
+             HAVING SUM(qty) <= (SELECT min_stock FROM items i2 WHERE i2.id = item_id))",
         );
     }
     sql.push_str(" ORDER BY i.name COLLATE NOCASE");
@@ -498,7 +491,7 @@ pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_qty, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE i.id = ?1",
+            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE i.id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], row_to_item)?;
         rows.next()
@@ -518,7 +511,7 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
     // Search by barcode OR sku_code OR name match (best-effort).
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_qty, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE (i.barcode = ?1 OR i.sku_code = ?1) AND i.is_active = 1 LIMIT 1",
+            "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE (i.barcode = ?1 OR i.sku_code = ?1) AND i.is_active = 1 LIMIT 1",
         )?;
         let mut rows = stmt.query_map(params![code], row_to_item)?;
         let item = match rows.next() {
@@ -707,20 +700,19 @@ fn row_to_item(r: &rusqlite::Row<'_>) -> rusqlite::Result<Item> {
         primary_location_id: r.get(18)?,
         sub_location_id: r.get(19)?,
         position: r.get(20)?,
-        min_qty: r.get(21)?,
-        min_stock: r.get(22)?,
-        barcode_format: r.get(23)?,
-        is_active: r.get::<_, i64>(24)? != 0,
-        created_at: r.get::<_, i64>(25)?.to_string(),
-        updated_at: r.get::<_, i64>(26)?.to_string(),
-        current_qty: r.get(27)?,
-        brand_id: r.get(28)?,
+        min_stock: r.get(21)?,
+        barcode_format: r.get(22)?,
+        is_active: r.get::<_, i64>(23)? != 0,
+        created_at: r.get::<_, i64>(24)?.to_string(),
+        updated_at: r.get::<_, i64>(25)?.to_string(),
+        current_qty: r.get(26)?,
+        brand_id: r.get(27)?,
     })
 }
 
 fn fetch_item_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Item> {
     let mut stmt = tx.prepare(
-        "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_qty, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE i.id = ?1",
+        "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE i.id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], row_to_item)?;
     rows.next()

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useState } from "react";
 import { toast } from "../../../lib/feedback/toast";
 import { Button, Card, DataTable, Section, Skeleton, Badge, Select } from "../../../components/ui";
@@ -222,6 +221,70 @@ const ROLES = ["owner", "cashier", "stocker"] as const;
 
 function formatDate(ms: number): string {
   return formatDateForDisplay(ms);
+}
+
+function DevicesTable({
+  devices,
+  onRevoke,
+}: {
+  devices: Device[];
+  onRevoke: (device: Device) => void;
+}) {
+  const columns: ColumnDef<Device>[] = [
+    {
+      header: "Device",
+      cell: (device) => (
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-foreground">{device.name}</span>
+          <Badge variant="info" size="sm">
+            {device.role}
+          </Badge>
+          {!device.is_active && (
+            <Badge variant="muted" size="sm">
+              Revoked
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      header: "Enrolled",
+      cell: (device) => (
+        <span className="text-muted-foreground">
+          {formatDate(device.enrolled_at_unix_ms)}
+        </span>
+      ),
+    },
+    {
+      header: "Action",
+      align: "right",
+      cell: (device) =>
+        device.is_active ? (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => onRevoke(device)}
+          >
+            Revoke
+          </Button>
+        ) : (
+          <span className="text-xs text-muted-foreground">Revoked</span>
+        ),
+    },
+  ];
+
+  return (
+    <DataTable
+      data={devices}
+      columns={columns}
+      keyExtractor={(device) => device.id}
+      emptyState={
+        <p className="px-3 py-3 text-center text-muted-foreground">
+          No devices enrolled.
+        </p>
+      }
+    />
+  );
 }
 
 export function DevicesSettings() {

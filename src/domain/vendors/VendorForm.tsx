@@ -2,10 +2,12 @@
  * VendorForm — create / edit.
  */
 import { useState } from "react";
-import { Button } from "../../components/ui";
+import { Button, Field } from "../../components/ui";
 import { createVendor, updateVendor } from "./api";
 import { extractError } from "../../lib/extractError";
 import type { NewVendor, Vendor, VendorUpdate } from "../types";
+
+const PHONE_RE = /^[6-9]\d{9}$/;
 
 type Mode = "create" | "edit";
 
@@ -20,7 +22,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [phone, setPhone] = useState(initial?.phone ?? "");
   const [openingBalance, setOpeningBalance] = useState(
-    initial?.opening_balance?.toString() ?? "0",
+    initial?.opening_balance != null ? String(initial.opening_balance / 100) : "0",
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -33,13 +35,17 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
       setError("Name is required");
       return;
     }
+    if (phone && !PHONE_RE.test(phone)) {
+      setError("Phone must be 10 digits, starting with 6-9");
+      return;
+    }
     setBusy(true);
     try {
       if (mode === "create") {
         const payload: NewVendor = {
           name: name.trim(),
           phone: phone || null,
-          opening_balance: Number(openingBalance),
+          opening_balance: Math.round(Number(openingBalance || "0") * 100),
           notes: notes || null,
         };
         const v = await createVendor(payload);
@@ -48,7 +54,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
         const patch: VendorUpdate = {
           name,
           phone: phone || null,
-          opening_balance: Number(openingBalance),
+          opening_balance: Math.round(Number(openingBalance || "0") * 100),
           notes: notes || null,
         };
         const v = await updateVendor(initial.id, patch);
@@ -123,22 +129,3 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
   );
 }
 
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-foreground">
-        {label}
-        {required && <span className="text-destructive"> *</span>}
-      </span>
-      {children}
-    </label>
-  );
-}

@@ -86,7 +86,7 @@ export function CurrencySettings() {
     Promise.all([
       ipc.getSetting("currency_code"),
       ipc.getSetting("currency_symbol"),
-      ipc.getSetting("decimals"),
+      ipc.getSetting("currency_decimal_places"),
     ])
       .then(([c, s, d]) => {
         setCode(c ?? "INR");
@@ -102,7 +102,7 @@ export function CurrencySettings() {
       await Promise.all([
         ipc.setSetting("currency_code", code),
         ipc.setSetting("currency_symbol", symbol),
-        ipc.setSetting("decimals", decimals),
+        ipc.setSetting("currency_decimal_places", decimals),
       ]);
       toast.success("Currency settings saved");
     } catch (e) {

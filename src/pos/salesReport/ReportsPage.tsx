@@ -25,7 +25,7 @@ import { formatDateForDisplay, todayLocalYyyymmdd, shiftDaysLocal } from "../../
 import { listCustomers } from "../../domain/customers/api";
 import { listItems } from "../../domain/items/api";
 import type { Customer, Item } from "../../domain/types";
-import { dailySales, stockReport, outstandingReport, listDayClose, listSales } from "../api";
+import { dailySales, stockReport, outstandingReport, listDayClose, listSales, comparisonMetrics } from "../api";
 import type {
   DailySalesRow,
   DailySalesReport,
@@ -34,16 +34,18 @@ import type {
   StockRow,
   DayClose,
   Sale,
+  ComparisonMetricsReport,
+  ComparisonMetric,
 } from "../types";
 
-type Section = "sales" | "inventory" | "customers";
+type ReportSection = "sales" | "inventory" | "customers";
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
-  section?: Section;
+  section?: ReportSection;
 }
 
-function readSection(): Section {
+function readSection(): ReportSection {
   if (typeof window === "undefined") return "sales";
   const h = window.location.hash;
   if (h.startsWith("#/reports/inventory")) return "inventory";
@@ -101,6 +103,21 @@ function AnalyticsCard({ title, headers, rows }: { title: string; headers: strin
   );
 }
 
+function ComparisonChip({ label, metric, format }: { label: string; metric: ComparisonMetric; format: (v: number) => string }) {
+  const pct = metric.change_pct;
+  const arrow = pct > 0 ? "↑" : pct < 0 ? "↓" : "→";
+  const color = pct > 0 ? "text-green-600" : pct < 0 ? "text-red-600" : "text-muted-foreground";
+  return (
+    <div className="flex flex-col items-center gap-0.5 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold text-foreground tabular-nums">{format(metric.current)}</span>
+      <span className={`text-xs tabular-nums ${color}`}>
+        {arrow} {Math.abs(pct).toFixed(1)}% vs yesterday
+      </span>
+    </div>
+  );
+}
+
 function OutstandingList({
   title,
   total,
@@ -132,8 +149,8 @@ function OutstandingList({
   );
 }
 
-function ReportSubNav({ active, onSelect }: { active: Section; onSelect: (s: Section) => void }) {
-  const tabs: { id: Section; label: string; href: string }[] = [
+function ReportSubNav({ active, onSelect }: { active: ReportSection; onSelect: (s: ReportSection) => void }) {
+  const tabs: { id: ReportSection; label: string; href: string }[] = [
     { id: "sales", label: "Sales", href: "#/reports/sales" },
     { id: "inventory", label: "Inventory", href: "#/reports/inventory" },
     { id: "customers", label: "Outstanding", href: "#/reports/customers" },
@@ -174,7 +191,7 @@ function ReportSubNav({ active, onSelect }: { active: Section; onSelect: (s: Sec
 export default function ReportsPage({ user }: Props) {
   const [from, setFrom] = useState(() => shiftDaysLocal(7));
   const [to, setTo] = useState(() => todayLocalYyyymmdd());
-  const [activeSection, setActiveSection] = useState<Section>(() => readSection());
+  const [activeSection, setActiveSection] = useState<ReportSection>(() => readSection());
   const [sales, setSales] = useState<DailySalesReport | null>(null);
   const [stock, setStock] = useState<StockReport | null>(null);
   const [out, setOut] = useState<OutstandingReport | null>(null);
@@ -186,6 +203,7 @@ export default function ReportsPage({ user }: Props) {
   const [status, setStatus] = useState<string | null>(null);
   const [stockSearch, setStockSearch] = useState("");
   const [outstandingSearch, setOutstandingSearch] = useState("");
+  const [comparison, setComparison] = useState<ComparisonMetricsReport | null>(null);
 
   useEffect(() => {
     const onHash = () => setActiveSection(readSection());
@@ -220,7 +238,16 @@ export default function ReportsPage({ user }: Props) {
       })
       .catch((e) => setStatus(`Failed: ${e}`))
       .finally(() => setLoading(false));
+
   }, [user.role, from, to]);
+
+  useEffect(() => {
+    if (activeSection === "sales" && user.role === "owner") {
+      comparisonMetrics(todayLocalYyyymmdd())
+        .then(setComparison)
+        .catch(() => setComparison(null));
+    }
+  }, [user.role, from, to, activeSection]);
 
   // Day-close snapshots overlay live sales data when present for that date.
   const frozenByDay = useMemo(() => {
@@ -437,6 +464,50 @@ export default function ReportsPage({ user }: Props) {
             </div>
           }
         >
+          {!loading && sales && mergedRows.length > 0 && (
+            <Card className="mb-4 p-6">
+              <div className="flex flex-col items-center gap-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Total Sales
+                </p>
+                <p className="text-4xl font-bold tabular-nums text-foreground">
+                  ₹{(mergedSalesTotals.grandTotal / 100).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
+                  <span>{mergedSalesTotals.billCount} bills</span>
+                  <span>·</span>
+                  <span>Avg ₹{mergedSalesTotals.billCount > 0 ? ((mergedSalesTotals.grandTotal / mergedSalesTotals.billCount) / 100).toFixed(0) : 0}/bill</span>
+                  {mergedSalesTotals.totalDiscount > 0 && (
+                    <>
+                      <span>·</span>
+                      <span>Discount <Money paise={mergedSalesTotals.totalDiscount} /></span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+          {comparison && (
+            <Card className="mb-4 p-4">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <ComparisonChip
+                  label="Sales"
+                  metric={comparison.sales}
+                  format={(v) => `₹${(v / 100).toFixed(0)}`}
+                />
+                <ComparisonChip
+                  label="Bills"
+                  metric={comparison.bills}
+                  format={(v) => String(v)}
+                />
+                <ComparisonChip
+                  label="Avg Bill"
+                  metric={comparison.avg_bill_value}
+                  format={(v) => `₹${(v / 100).toFixed(0)}`}
+                />
+              </div>
+            </Card>
+          )}
           <Card>
             {loading ? (
               <Skeleton variant="card" className="h-40" />

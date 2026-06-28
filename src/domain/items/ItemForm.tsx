@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
-import { Button, MoneyInput, Select } from "../../components/ui";
+import { Button, Field, MoneyInput, Section, Select } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
@@ -179,7 +179,6 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         primary_location_id: primaryLocationId,
         sub_location_id: subLocationId,
         position: position || null,
-        min_qty: 1,
         min_stock: Number(minStock),
         barcode: null as string | null,
       };
@@ -253,7 +252,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       </header>
 
       {/* Identity */}
-      <Section title="Identity">
+      <Section title="Identity" className="rounded-md border border-border bg-muted/40 p-4">
         <Field label="Name" required error={fieldErrors.name}>
           <input
             autoFocus
@@ -277,7 +276,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                     if (item.primary_location_id) setPrimaryLocationId(item.primary_location_id);
                     if (item.sub_location_id != null) setSubLocationId(item.sub_location_id);
                     if (item.position) setPosition(item.position);
-                    setMinStock(item.min_stock?.toString() ?? item.min_qty?.toString() ?? "1");
+                    setMinStock(item.min_stock?.toString() ?? "1");
                     setNameSuggestions([]);
                   }}
                   className="flex w-full items-center gap-3 border-b border-border/50 px-3 py-2 text-left last:border-b-0 hover:bg-muted/50"
@@ -339,7 +338,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       </Section>
 
       {/* Units & pricing */}
-      <Section title="Units & pricing">
+      <Section title="Units & pricing" className="rounded-md border border-border bg-muted/40 p-4">
         <div className="grid grid-cols-2 gap-4">
           <Field label="Sale Unit">
             <Select
@@ -418,7 +417,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       </Section>
 
       {/* Barcode */}
-      <Section title="Barcode">
+      <Section title="Barcode" className="rounded-md border border-border bg-muted/40 p-4">
         <div className="flex items-end gap-4">
           <div className="flex-1">
             <Field
@@ -448,7 +447,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       </Section>
 
       {/* Location */}
-      <Section title="Location">
+      <Section title="Location" className="rounded-md border border-border bg-muted/40 p-4">
         <Field
           label="Primary location"
           required
@@ -494,7 +493,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       </Section>
 
       {mode === "create" && (
-        <Section title="Opening stock">
+        <Section title="Opening stock" className="rounded-md border border-border bg-muted/40 p-4">
           <Field label="Quantity" hint="Initial stock count — creates an inward entry on save">
             <input
               value={openingStock}
@@ -531,52 +530,5 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         </Button>
       </div>
     </form>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-3 rounded-md border border-border bg-muted/40 p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h3>
-      <div className="space-y-3">{children}</div>
-    </section>
-  );
-}
-
-function Field({
-  label,
-  required,
-  error,
-  hint,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">
-        {label}
-        {required && <span className="text-destructive"> *</span>}
-      </span>
-      {children}
-      {hint && !error && (
-        <span className="mt-1 block text-[10px] text-muted-foreground">{hint}</span>
-      )}
-      {error && (
-        <span className="mt-1 block text-[10px] text-destructive">{error}</span>
-      )}
-    </label>
   );
 }

@@ -290,7 +290,8 @@ pub fn outstanding_report(db: &Db) -> Result<OutstandingReport, ReportsError> {
                 "SELECT id, name, outstanding
                  FROM (
                      SELECT v.id, v.name,
-                            COALESCE((SELECT SUM(p.total_paise) FROM purchases p
+                            COALESCE(v.credit_limit_paise, 0)
+                            + COALESCE((SELECT SUM(p.total_paise) FROM purchases p
                                         WHERE p.vendor_id = v.id), 0)
                             - COALESCE((SELECT SUM(vp.amount_paise) FROM vendor_payments vp
                                         WHERE vp.vendor_id = v.id), 0)
@@ -764,23 +765,25 @@ pub struct DeadStockRow {
     pub item_id: i64,
     pub name: String,
     pub current_qty: f64,
-    pub last_inbound_ms: Option<i64>,
+    pub last_sale_ms: Option<i64>,
 }
 
+/// Dead stock = items we have in stock (qty > 0) but haven't sold in `days_idle` days.
+/// Tracks unsold inventory sitting idle, not shipment gaps.
 pub fn dead_stock(db: &Db, days_idle: i64) -> Result<Vec<DeadStockRow>, ReportsError> {
     db.with_conn(|c| -> Result<Vec<DeadStockRow>, ReportsError> {
         let threshold_ms =
             chrono::Utc::now().timestamp_millis() - days_idle.saturating_mul(86_400_000);
         let mut stmt = c.prepare(
             "SELECT i.id, i.name, COALESCE(SUM(sb.qty), 0) AS current_qty,
-                    MAX(sm.created_at) AS last_inbound_ms
+                    MAX(sm.created_at) AS last_sale_ms
              FROM items i
              LEFT JOIN stock_balances sb ON sb.item_id = i.id
              LEFT JOIN stock_movements sm
-                    ON sm.item_id = i.id AND sm.qty > 0 AND sm.created_at >= ?1
+                    ON sm.item_id = i.id AND sm.type = 'sale' AND sm.created_at >= ?1
              WHERE i.is_active = 1
              GROUP BY i.id
-             HAVING current_qty > 0 AND last_inbound_ms IS NULL
+             HAVING current_qty > 0 AND last_sale_ms IS NULL
              ORDER BY i.name
              LIMIT 50",
         )?;
@@ -789,7 +792,7 @@ pub fn dead_stock(db: &Db, days_idle: i64) -> Result<Vec<DeadStockRow>, ReportsE
                 item_id: r.get(0)?,
                 name: r.get(1)?,
                 current_qty: r.get(2)?,
-                last_inbound_ms: r.get(3)?,
+                last_sale_ms: r.get(3)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -826,14 +829,14 @@ pub fn inventory_aging(db: &Db) -> Result<InventoryAgingReport, ReportsError> {
         let t90 = now_ms - 90 * 86_400_000;
         let row = c.query_row(
             "SELECT
-                SUM(CASE WHEN last_inbound_ms >= ?1 THEN 1 ELSE 0 END) AS b0,
-                SUM(CASE WHEN last_inbound_ms >= ?2 AND last_inbound_ms < ?1 THEN 1 ELSE 0 END) AS b30,
-                SUM(CASE WHEN last_inbound_ms >= ?3 AND last_inbound_ms < ?2 THEN 1 ELSE 0 END) AS b60,
-                SUM(CASE WHEN last_inbound_ms IS NULL OR last_inbound_ms < ?3 THEN 1 ELSE 0 END) AS b90
+                SUM(CASE WHEN last_sale_ms >= ?1 THEN 1 ELSE 0 END) AS b0,
+                SUM(CASE WHEN last_sale_ms >= ?2 AND last_sale_ms < ?1 THEN 1 ELSE 0 END) AS b30,
+                SUM(CASE WHEN last_sale_ms >= ?3 AND last_sale_ms < ?2 THEN 1 ELSE 0 END) AS b60,
+                SUM(CASE WHEN last_sale_ms IS NULL OR last_sale_ms < ?3 THEN 1 ELSE 0 END) AS b90
              FROM (
-                SELECT i.id, MAX(sm.created_at) AS last_inbound_ms
+                SELECT i.id, MAX(sm.created_at) AS last_sale_ms
                 FROM items i
-                LEFT JOIN stock_movements sm ON sm.item_id = i.id AND sm.qty > 0
+                LEFT JOIN stock_movements sm ON sm.item_id = i.id AND sm.type = 'sale'
                 WHERE i.is_active = 1
                 GROUP BY i.id
              )",
@@ -915,6 +918,85 @@ pub fn cmd_payment_summary(
 }
 
 // -----------------------------------------------------------------------------
+// Comparison metrics — day-over-day, week-over-week, month-over-month.
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ComparisonMetric {
+    pub current: i64,
+    pub previous: i64,
+    pub change_pct: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ComparisonMetricsReport {
+    pub sales: ComparisonMetric,
+    pub bills: ComparisonMetric,
+    pub avg_bill_value: ComparisonMetric,
+}
+
+fn sum_sales(db: &Db, from_date: &str, to_date: &str) -> Result<(i64, i64), ReportsError> {
+    db.with_conn(|c| -> Result<(i64, i64), ReportsError> {
+        let row = c.query_row(
+            "SELECT COALESCE(SUM(total), 0), COUNT(*) FROM sales
+             WHERE status = 'final' AND date(date) BETWEEN ?1 AND ?2",
+            params![from_date, to_date],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        )?;
+        Ok(row)
+    })
+}
+
+pub fn comparison_metrics(db: &Db, ref_date: &str) -> Result<ComparisonMetricsReport, ReportsError> {
+    let (cur_total, cur_bills) = sum_sales(db, ref_date, ref_date)?;
+    let prev_date: String = db.with_conn(|c| -> Result<String, ReportsError> {
+        c.query_row(
+            "SELECT date(?1, '-1 day')",
+            params![ref_date],
+            |r| r.get(0),
+        )
+        .map_err(ReportsError::from)
+    })?;
+    let (prev_total, prev_bills) = sum_sales(db, &prev_date, &prev_date)?;
+
+    fn delta(current: i64, previous: i64) -> ComparisonMetric {
+        let change_pct = if previous == 0 {
+            if current == 0 { 0.0 } else { 100.0 }
+        } else {
+            ((current as f64 - previous as f64) / previous as f64) * 100.0
+        };
+        ComparisonMetric {
+            current,
+            previous,
+            change_pct: (change_pct * 10.0).round() / 10.0,
+        }
+    }
+
+    let avg_cur = if cur_bills > 0 { cur_total / cur_bills } else { 0 };
+    let avg_prev = if prev_bills > 0 { prev_total / prev_bills } else { 0 };
+
+    Ok(ComparisonMetricsReport {
+        sales: delta(cur_total, prev_total),
+        bills: delta(cur_bills, prev_bills),
+        avg_bill_value: delta(avg_cur, avg_prev),
+    })
+}
+
+#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+pub fn cmd_comparison_metrics(
+    state: tauri::State<'_, AppState>,
+    ref_date: String,
+) -> AppResult<ComparisonMetricsReport> {
+    ipc_auth::authorize_err("cmd_comparison_metrics", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    comparison_metrics(db, &ref_date).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+// -----------------------------------------------------------------------------
 // Unit tests.
 // -----------------------------------------------------------------------------
 
@@ -935,13 +1017,13 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, min_qty, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
-                 VALUES ('SK001','111','Red 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,10000,5000,2,1,'unit',NULL,2,0,0)",
+                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
+                 VALUES ('SK001','111','Red 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,10000,5000,1,'unit',NULL,2,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, min_qty, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
-                 VALUES ('SK002','222','Blue 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,15000,8000,2,1,'unit',NULL,2,0,0)",
+                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
+                 VALUES ('SK002','222','Blue 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,15000,8000,1,'unit',NULL,2,0,0)",
                 [],
             )?;
             c.execute(

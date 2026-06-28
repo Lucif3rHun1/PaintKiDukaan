@@ -10,7 +10,7 @@ const COLUMNS: ImportColumn[] = [
   { name: "category", required: false, example: "Exterior" },
   { name: "retail_price", required: false, example: "1500 (only if changing)", type: "number" },
   { name: "cost_price", required: false, example: "1200", type: "number" },
-  { name: "min_qty", required: false, example: "5", type: "number" },
+  { name: "min_stock", required: false, example: "5", type: "number" },
 ];
 
 interface Props {

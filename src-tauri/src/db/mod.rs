@@ -469,6 +469,56 @@ impl Db {
             }
         }
 
+        // M-INLINE-012: add `notes` column to `vendors` so vendor notes
+        // can be persisted instead of always returning None.
+        {
+            let has_notes: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('vendors') WHERE name = 'notes'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_notes {
+                conn.execute_batch(
+                    "ALTER TABLE vendors ADD COLUMN notes TEXT;",
+                )?;
+            }
+        }
+
+        // M-INLINE-013: canonicalize min_stock, drop min_qty column.
+        // backfill min_stock from min_qty where min_stock was still 0.
+        {
+            let has_min_qty: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('items') WHERE name = 'min_qty'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if has_min_qty {
+                conn.execute_batch(
+                    "UPDATE items SET min_stock = CAST(min_qty AS REAL) \
+                     WHERE min_stock = 0 AND min_qty > 0; \
+                     ALTER TABLE items DROP COLUMN min_qty;",
+                )?;
+            }
+        }
+
+        // M-INLINE-014: add `gstin` column to `settings` so GSTIN persists across restarts.
+        {
+            let has_gstin: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('settings') WHERE name = 'gstin'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_gstin {
+                conn.execute_batch("ALTER TABLE settings ADD COLUMN gstin TEXT;")?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\

@@ -309,9 +309,10 @@ jobs:
           find_sig() {
             local artifact_dir="$1"
             local name_glob="$2"
-            # Try regenerated first
+            # Try regenerated first — search in arch-specific subdir to avoid
+            # cross-arch glob collision (arm64 sorts before x86_64 alphabetically)
             local regen
-            regen="$(find "release-artifacts/regenerated-sigs" -type f -name "${name_glob}" 2>/dev/null | sort | head -n 1)"
+            regen="$(find "release-artifacts/regenerated-sigs/build-artifacts/${artifact_dir}" -type f -name "${name_glob}" 2>/dev/null | sort | head -n 1)"
             if [[ -n "$regen" ]]; then
               echo "$regen"
               return

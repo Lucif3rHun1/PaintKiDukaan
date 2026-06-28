@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Select } from "../../components/ui";
+import { Button, Field, Select } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { createCustomer, updateCustomer } from "./api";
 import type {
@@ -148,22 +148,3 @@ export function CustomerForm({
   );
 }
 
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-foreground">
-        {label}
-        {required && <span className="text-destructive"> *</span>}
-      </span>
-      {children}
-    </label>
-  );
-}

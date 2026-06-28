@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Money, MoneyInput, DatePicker, Select } from "../../components/ui";
+import { Button, Field, Money, MoneyInput, DatePicker, Select } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import { recordCustomerPayment } from "./api";
@@ -135,22 +135,3 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
   );
 }
 
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-foreground">
-        {label}
-        {required && <span className="text-destructive"> *</span>}
-      </span>
-      {children}
-    </label>
-  );
-}

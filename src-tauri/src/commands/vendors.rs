@@ -8,6 +8,23 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+/// Validate Indian mobile number: 10 digits starting with 6-9.
+/// Mirrors `customers::validate_phone`.
+fn validate_phone(phone: &str) -> AppResult<()> {
+    if phone.len() != 10 {
+        return Err(AppError::Validation("phone must be 10 digits".into()));
+    }
+    let bytes = phone.as_bytes();
+    let first = bytes[0] as char;
+    if !('6'..='9').contains(&first) {
+        return Err(AppError::Validation("phone must start with 6-9".into()));
+    }
+    if !bytes.iter().all(|b| b.is_ascii_digit()) {
+        return Err(AppError::Validation("phone must be digits only".into()));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Vendor {
     pub id: i64,
@@ -56,7 +73,7 @@ pub struct VendorPayment {
     pub notes: Option<String>,
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResult<Vendor> {
     let guard = state
         .db
@@ -68,14 +85,18 @@ pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResul
     if payload.name.trim().is_empty() {
         return Err(AppError::Validation("name is required".into()));
     }
+    if let Some(ref phone) = payload.phone {
+        validate_phone(phone)?;
+    }
     let now = chrono::Utc::now().timestamp_millis();
     db.with_tx(|tx| {
         tx.execute(
-            "INSERT INTO vendors (name, phone, credit_limit_paise, is_active, created_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?4)",
+            "INSERT INTO vendors (name, phone, credit_limit_paise, notes, is_active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5)",
             params![
                 payload.name,
                 payload.phone,
                 payload.opening_balance.unwrap_or(0),
+                payload.notes,
                 now,
             ],
         )?;
@@ -99,7 +120,7 @@ pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResul
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_vendors(
     state: State<'_, AppState>,
     query: Option<String>,
@@ -112,7 +133,7 @@ pub fn list_vendors(
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
-        let mut sql = String::from("SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at FROM vendors WHERE 1=1");
+        let mut sql = String::from("SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at, notes FROM vendors WHERE 1=1");
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if !include_inactive { sql.push_str(" AND is_active = 1"); }
         if let Some(q) = &query {
@@ -128,17 +149,17 @@ pub fn list_vendors(
                 name: r.get(1)?,
                 phone: r.get(2)?,
                 opening_balance: r.get::<_, i64>(3)?,
-                notes: None,
                 is_active: r.get::<_, i64>(4)? != 0,
                 created_at: r.get::<_, i64>(5)?.to_string(),
                 updated_at: r.get::<_, i64>(6)?.to_string(),
+                notes: r.get(7)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
     let guard = state
         .db
@@ -148,7 +169,7 @@ pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at FROM vendors WHERE id = ?1",
+            "SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at, notes FROM vendors WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], |r| {
             Ok(Vendor {
@@ -156,10 +177,10 @@ pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
                 name: r.get(1)?,
                 phone: r.get(2)?,
                 opening_balance: r.get::<_, i64>(3)?,
-                notes: None,
                 is_active: r.get::<_, i64>(4)? != 0,
                 created_at: r.get::<_, i64>(5)?.to_string(),
                 updated_at: r.get::<_, i64>(6)?.to_string(),
+                notes: r.get(7)?,
             })
         })?;
         rows.next()
@@ -168,7 +189,7 @@ pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn update_vendor(
     state: State<'_, AppState>,
     id: i64,
@@ -181,6 +202,9 @@ pub fn update_vendor(
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let user = current_user()?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
+    if let Some(Some(ref phone)) = &patch.phone {
+        validate_phone(phone)?;
+    }
     let now = chrono::Utc::now().timestamp_millis();
     db.with_tx(|tx| {
         let mut sets: Vec<&'static str> = Vec::new();
@@ -193,6 +217,8 @@ pub fn update_vendor(
         }
         if let Some(v) = &patch.name { add!("name =", v.clone()) }
         if let Some(v) = &patch.phone { add!("phone =", v.clone()) }
+        if let Some(v) = &patch.notes { add!("notes =", v.clone()) }
+        if let Some(v) = patch.opening_balance { add!("credit_limit_paise =", v) }
         if let Some(v) = patch.is_active { add!("is_active =", if v { 1_i64 } else { 0_i64 }) }
         if sets.is_empty() {
             return Err(AppError::Validation("no fields to update".into()));
@@ -207,7 +233,7 @@ pub fn update_vendor(
             return Err(AppError::NotFound(format!("vendor {id}")));
         }
         let mut stmt = tx.prepare(
-            "SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at FROM vendors WHERE id = ?1",
+            "SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at, notes FROM vendors WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], |r| {
             Ok(Vendor {
@@ -215,10 +241,10 @@ pub fn update_vendor(
                 name: r.get(1)?,
                 phone: r.get(2)?,
                 opening_balance: r.get::<_, i64>(3)?,
-                notes: None,
                 is_active: r.get::<_, i64>(4)? != 0,
                 created_at: r.get::<_, i64>(5)?.to_string(),
                 updated_at: r.get::<_, i64>(6)?.to_string(),
+                notes: r.get(7)?,
             })
         })?;
         rows.next()
@@ -227,7 +253,7 @@ pub fn update_vendor(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn record_vendor_payment(
     state: State<'_, AppState>,
     payload: VendorPayment,
@@ -271,7 +297,7 @@ pub fn record_vendor_payment(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<VendorOutstanding> {
     let guard = state
         .db
@@ -280,6 +306,11 @@ pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<Vend
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
+        let opening_balance: i64 = c.query_row(
+            "SELECT COALESCE(credit_limit_paise, 0) FROM vendors WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )?;
         let total_purchases: i64 = c.query_row(
             "SELECT COALESCE(SUM(total_paise), 0) FROM purchases WHERE vendor_id = ?1",
             params![id],
@@ -290,10 +321,10 @@ pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<Vend
             params![id],
             |r| r.get(0),
         )?;
-        let outstanding = total_purchases - total_payments;
+        let outstanding = opening_balance + total_purchases - total_payments;
         Ok(VendorOutstanding {
             vendor_id: id,
-            opening_balance: 0,
+            opening_balance,
             total_purchases,
             total_payments,
             outstanding,
@@ -302,6 +333,11 @@ pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<Vend
 }
 
 fn compute_outstanding_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<VendorOutstanding> {
+    let opening_balance: i64 = tx.query_row(
+        "SELECT COALESCE(credit_limit_paise, 0) FROM vendors WHERE id = ?1",
+        params![id],
+        |r| r.get(0),
+    )?;
     let total_purchases: i64 = tx.query_row(
         "SELECT COALESCE(SUM(total_paise), 0) FROM purchases WHERE vendor_id = ?1",
         params![id],
@@ -312,10 +348,10 @@ fn compute_outstanding_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Vendo
         params![id],
         |r| r.get(0),
     )?;
-    let outstanding = total_purchases - total_payments;
+    let outstanding = opening_balance + total_purchases - total_payments;
     Ok(VendorOutstanding {
         vendor_id: id,
-        opening_balance: 0,
+        opening_balance,
         total_purchases,
         total_payments,
         outstanding,
@@ -405,9 +441,17 @@ mod tests {
         }).unwrap();
         assert_eq!(out.outstanding, -100, "got {}", out.outstanding);
     }
+
+    #[test]
+    fn validate_phone_rejects_invalid_numbers() {
+        assert!(validate_phone("12345").is_err());
+        assert!(validate_phone("1234567890").is_err());
+        assert!(validate_phone("987654321a").is_err());
+        assert!(validate_phone("9876543210").is_ok());
+    }
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_vendor_payments(
     state: State<'_, AppState>,
     _vendor_id: i64,

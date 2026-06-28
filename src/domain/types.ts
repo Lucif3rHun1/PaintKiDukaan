@@ -18,7 +18,9 @@ export type Role = "owner" | "cashier" | "stocker";
 export type PinRole = "real" | "decoy" | "duress";
 
 export interface UnlockResult {
-  role: PinRole;
+  user: { id: number; name: string; role: Role } | null;
+  locked: boolean;
+  pin_role: PinRole;
   /** wipe_triggered is true when duress PIN triggered background secure deletion */
   wipe_triggered: boolean;
 }
@@ -59,6 +61,7 @@ export interface User {
   id: number;
   name: string;
   role: Role;
+  is_active: boolean;
 }
 
 export interface Item {
@@ -85,8 +88,6 @@ export interface Item {
   sub_location_id: number | null;
   position: string | null;
   min_stock: number;
-  /** @deprecated Use min_stock instead. */
-  min_qty: number;
   barcode_format: string | null;
   is_active: boolean;
   current_qty: number;
@@ -122,8 +123,6 @@ export type ItemLookup =
       sku_code: string;
       name: string;
       min_stock: number;
-      /** @deprecated Use min_stock instead. */
-      min_qty: number;
       qty_per_loc: QtyPerLoc[];
     };
 
@@ -158,8 +157,6 @@ export interface NewItem {
   sub_location_id?: number | null;
   position?: string | null;
   min_stock?: number;
-  /** @deprecated Use min_stock instead. */
-  min_qty?: number;
   barcode_format?: string;
   barcode?: string | null;
 }
@@ -183,8 +180,6 @@ export interface ItemUpdate {
   sub_location_id?: number | null;
   position?: string | null;
   min_stock?: number | null;
-  /** @deprecated Use min_stock instead. */
-  min_qty?: number | null;
   barcode_format?: string | null;
   barcode?: string | null;
   is_active?: boolean | null;

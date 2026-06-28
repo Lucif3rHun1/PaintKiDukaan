@@ -34,6 +34,7 @@ fn sql_col_for(key: &str) -> Option<&'static str> {
         "label_size" => Some("label_size"),
         "failed_attempts_lockout" => Some("failed_attempts_lockout"),
         "alerts_retention_days" => Some("alerts_retention_days"),
+        "gstin" => Some("gstin"),
         _ => None,
     }
 }
@@ -112,6 +113,7 @@ fn read_sql_settings_snapshot(db: &Db) -> rusqlite::Result<Vec<(String, Value)>>
             "label_size",
             "failed_attempts_lockout",
             "alerts_retention_days",
+            "gstin",
         ];
         let mut out: Vec<(String, Value)> = Vec::with_capacity(cols.len());
         for col in cols {

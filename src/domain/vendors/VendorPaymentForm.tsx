@@ -3,7 +3,7 @@
  */
 import { useState } from "react";
 import { recordVendorPayment } from "./api";
-import { Button, DatePicker, Select } from "../../components/ui";
+import { Button, Field, MoneyInput, DatePicker, Select } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { toast } from "../../lib/feedback/toast";
 import { type Vendor, type VendorOutstanding } from "../types";
@@ -12,7 +12,6 @@ interface Props {
   vendor: Vendor;
   onSaved?: (outstanding: VendorOutstanding) => void;
   onCancel?: () => void;
-  onSuccess?: () => void;
 }
 
 const MODES = [
@@ -24,8 +23,8 @@ const MODES = [
   { value: "other", label: "Other" },
 ];
 
-export function VendorPaymentForm({ vendor, onSaved, onCancel, onSuccess }: Props) {
-  const [amount, setAmount] = useState("");
+export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
+  const [amount, setAmount] = useState(0);
   const [mode, setMode] = useState("upi");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
@@ -35,8 +34,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel, onSuccess }: Prop
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const a = Number(amount);
-    if (!(a > 0)) {
+    if (!(amount > 0)) {
       setError("Amount must be > 0");
       return;
     }
@@ -44,15 +42,13 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel, onSuccess }: Prop
     try {
       const out = await recordVendorPayment({
         vendor_id: vendor.id,
-        amount: a,
+        amount,
         mode,
         date,
         notes: notes || null,
       });
-      onSaved?.(out);
       toast.success("Payment recorded");
-      onSuccess?.();
-      onCancel?.();
+      onSaved?.(out);
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -62,16 +58,8 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel, onSuccess }: Prop
 
   return (
     <form onSubmit={submit} className="grid gap-4">
-      <Field label="Amount (₹)" required>
-        <input
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          type="number"
-          step="0.01"
-          min="0"
-          required
-          className="input"
-        />
+      <Field label="Amount" required>
+        <MoneyInput value={amount} onChange={setAmount} min={0} required />
       </Field>
 
       <div className="grid grid-cols-2 gap-4">
@@ -118,25 +106,5 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel, onSuccess }: Prop
         </Button>
       </div>
     </form>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-foreground">
-        {label}
-        {required && <span className="text-destructive"> *</span>}
-      </span>
-      {children}
-    </label>
   );
 }

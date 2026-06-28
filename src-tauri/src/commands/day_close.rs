@@ -110,6 +110,7 @@ pub fn closing_cash(opening: i64, cash_sales: i64, cash_in: i64, cash_out: i64) 
     opening + cash_sales + cash_in - cash_out
 }
 
+/// Variance within this threshold (₹5) is considered normal cash handling noise.
 pub fn variance(actual: i64, closing: i64) -> i64 {
     actual - closing
 }

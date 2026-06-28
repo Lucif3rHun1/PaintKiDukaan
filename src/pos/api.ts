@@ -7,6 +7,7 @@ import type { Draft, ImportResult } from "../domain/types";
 import type {
   BackupGate,
   CashSalesSummary,
+  ComparisonMetricsReport,
   ConvertQuotation,
   DailySalesReport,
   DayClose,
@@ -160,3 +161,7 @@ export const paymentSummary = (fromDate: string, toDate: string): Promise<Paymen
   isTauri()
     ? tauriInvoke<PaymentSummary>("cmd_payment_summary", { from_date: fromDate, to_date: toDate })
     : Promise.resolve({ received_paise: 0, paid_paise: 0 });
+export const comparisonMetrics = (refDate: string): Promise<ComparisonMetricsReport> =>
+  isTauri()
+    ? tauriInvoke<ComparisonMetricsReport>("cmd_comparison_metrics", { ref_date: refDate })
+    : Promise.resolve({ sales: { current: 0, previous: 0, change_pct: 0 }, bills: { current: 0, previous: 0, change_pct: 0 }, avg_bill_value: { current: 0, previous: 0, change_pct: 0 } });

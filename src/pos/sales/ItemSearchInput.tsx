@@ -38,7 +38,7 @@ type StockStatus = "in-stock" | "low" | "out";
 
 function stockStatus(item: ItemSearchHit): StockStatus {
   if (item.current_qty <= 0) return "out";
-  const minQty = item.min_qty ?? 0;
+  const minQty = item.min_stock ?? 0;
   if (minQty > 0 && item.current_qty <= minQty) return "low";
   return "in-stock";
 }
@@ -80,7 +80,7 @@ function itemToSearchHit(item: Item): ItemSearchHit {
     unit_label: item.unit_label ?? "",
     sell_unit: item.sell_unit || "unit",
     current_qty: item.current_qty,
-    min_qty: item.min_qty,
+    min_stock: item.min_stock,
   };
 }
 
@@ -138,7 +138,7 @@ export function ItemSearchInput({
               unit_label: item.unit_label ?? "",
               sell_unit: item.sell_unit,
               current_qty: item.current_qty,
-              min_qty: item.min_qty ?? 0,
+              min_stock: item.min_stock ?? 0,
             }));
             return hits;
           }),
@@ -235,7 +235,7 @@ export function ItemSearchInput({
         unit_label: "",
         sell_unit: "unit",
         current_qty,
-        min_qty: item.min_qty ?? 0,
+        min_stock: item.min_stock ?? 0,
       };
     }
     if (item.scope === "cashier") {
@@ -251,7 +251,7 @@ export function ItemSearchInput({
         unit_label: item.unit_label ?? "",
         sell_unit: item.sell_unit,
         current_qty: item.in_stock,
-        min_qty: 0,
+        min_stock: 0,
       };
     }
     return {
@@ -266,7 +266,7 @@ export function ItemSearchInput({
       unit_label: item.unit_label ?? "",
       sell_unit: item.sell_unit,
       current_qty: item.current_qty,
-      min_qty: item.min_qty ?? 0,
+      min_stock: item.min_stock ?? 0,
     };
   }
 
@@ -355,7 +355,6 @@ export function ItemSearchInput({
           name,
           retail_price_paise: quickPrice,
           cost_paise: 0,
-          min_qty: 1,
           min_stock: quickMinStock,
           sell_unit: "unit",
           sell_unit_id: null,
@@ -581,7 +580,7 @@ export function ItemSearchInput({
                           quickSearchSkipRef.current = true;
                           setQuickName(s.name);
                           setQuickPrice(s.retail_price_paise);
-                          setQuickMinStock(s.min_qty ?? 0);
+                          setQuickMinStock(s.min_stock ?? 0);
                           setQuickSuggestions([]);
                         }}
                         className="flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs hover:bg-muted"

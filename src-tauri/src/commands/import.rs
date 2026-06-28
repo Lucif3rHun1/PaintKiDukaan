@@ -253,9 +253,9 @@ pub fn cmd_import_items_csv(
             };
             let promo_price_paise = get_field(row, &hmap, &["promo_price", "promo", "offer_price"])
                 .and_then(|s| parse_paise(&s));
-            let min_qty = get_field(row, &hmap, &["min_qty", "reorder_level", "minimum"])
-                .and_then(|s| s.parse::<i64>().ok())
-                .unwrap_or(0);
+            let min_stock = get_field(row, &hmap, &["min_qty", "min_stock", "reorder_level", "minimum"])
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0);
             let label_line1 = get_field(row, &hmap, &["label_line1", "label1"]);
             let label_line2 = get_field(row, &hmap, &["label_line2", "label2"]);
 
@@ -329,7 +329,7 @@ pub fn cmd_import_items_csv(
                     sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label,
                     units_per_pack, retail_price_paise, cost_paise, promo_price_paise,
                     label_line1, label_line2, primary_location_id,
-                    sub_location_id, position, min_qty, barcode_format, is_active,
+                    sub_location_id, position, min_stock, barcode_format, is_active,
                     created_at, updated_at
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, 1, ?20, ?20)",
                 params![
@@ -350,7 +350,7 @@ pub fn cmd_import_items_csv(
                     location_id,
                     None::<i64>, // sub_location_id
                     None::<i64>, // position
-                    min_qty,
+                    min_stock,
                     barcode_format,
                     now_ms,
                 ],

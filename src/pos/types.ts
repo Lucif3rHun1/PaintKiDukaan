@@ -262,7 +262,8 @@ export interface StockReport {
   by_group: StockGroupRow[];
 }
 
-export interface CustomerOutstanding {
+/** Summary row for the outstanding report — distinct from domain CustomerOutstanding. */
+export interface OutstandingReportCustomer {
   customer_id: number;
   name: string;
   phone: string | null;
@@ -288,7 +289,7 @@ export interface ItemSearchHit {
   unit_label: string;
   sell_unit: string;
   current_qty: number;
-  min_qty?: number;
+  min_stock?: number;
 }
 
 export interface CustomerLedgerPayment {
@@ -336,7 +337,7 @@ export interface CustomerCreditSale {
 }
 
 export interface OutstandingReport {
-  customers: CustomerOutstanding[];
+  customers: OutstandingReportCustomer[];
   customer_total: number;
   vendors: VendorOutstanding[];
   vendor_total: number;
@@ -384,7 +385,7 @@ export interface DeadStockRow {
   item_id: number;
   name: string;
   current_qty: number;
-  last_inbound_ms: number | null;
+  last_sale_ms: number | null;
 }
 export interface InventoryAgingReport {
   bucket_0_30: number;
@@ -395,5 +396,15 @@ export interface InventoryAgingReport {
 export interface PaymentSummary {
   received_paise: number;
   paid_paise: number;
+}
+export interface ComparisonMetric {
+  current: number;
+  previous: number;
+  change_pct: number;
+}
+export interface ComparisonMetricsReport {
+  sales: ComparisonMetric;
+  bills: ComparisonMetric;
+  avg_bill_value: ComparisonMetric;
 }
 

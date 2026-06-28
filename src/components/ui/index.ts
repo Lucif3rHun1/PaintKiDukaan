@@ -27,3 +27,4 @@ export { PeriodDropdown, type PeriodRange } from "./PeriodDropdown";
 export { MetricCard, type MetricCardProps } from "./MetricCard";
 export { StockStatusBadge } from "./StockStatusBadge";
 export { DownloadMenu } from "./DownloadMenu";
+export { Field } from "./Field";

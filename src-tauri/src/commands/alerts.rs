@@ -377,12 +377,12 @@ fn upsert_alert(
 
 fn refresh_low_stock_alerts(conn: &rusqlite::Connection) -> Result<(), AppError> {
     let mut stmt = conn.prepare(
-        "SELECT i.id, i.name, i.min_qty, COALESCE(SUM(sm.qty), 0) as balance
+        "SELECT i.id, i.name, i.min_stock, COALESCE(SUM(sm.qty), 0) as balance
          FROM items i
          LEFT JOIN stock_movements sm ON sm.item_id = i.id
          WHERE i.is_active = 1
          GROUP BY i.id
-         HAVING balance < i.min_qty",
+         HAVING balance < i.min_stock",
     )?;
     let rows = stmt.query_map([], |row| {
         let name: String = row.get(1)?;
@@ -651,7 +651,7 @@ mod tests {
         let db = setup_db();
         db.with_conn_immediate(|conn| {
             conn.execute(
-                "INSERT INTO items (id, name, sku_code, unit_id, unit_code, unit_label, min_qty, retail_price_paise, cost_paise, is_active, created_at, updated_at) VALUES (1, 'Paint', 'SKU001', 1, 'pc', 'Piece', 10, 10000, 5000, 1, 0, 0)",
+                "INSERT INTO items (id, name, sku_code, unit_id, unit_code, unit_label, min_stock, retail_price_paise, cost_paise, is_active, created_at, updated_at) VALUES (1, 'Paint', 'SKU001', 1, 'pc', 'Piece', 10, 10000, 5000, 1, 0, 0)",
                 [],
             ).unwrap();
             seed_user(conn, 1, "Owner", "owner");

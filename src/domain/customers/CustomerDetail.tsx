@@ -1,13 +1,13 @@
 /**
  * CustomerDetail — read view with outstanding balance.
  */
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { customerOutstanding } from "./api";
-import { extractError } from "../../lib/extractError";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { toTitleCase } from "../../lib/format/titleCase";
-import type { Customer, CustomerOutstanding } from "../types";
-import { KhataRecord } from "./KhataRecord";
+import type { Customer } from "../types";
+import { CustomerLedgerView } from "./CustomerLedgerView";
+import { Button } from "../../components/ui/Button";
 
 interface Props {
   customer: Customer;
@@ -16,16 +16,11 @@ interface Props {
 }
 
 export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
-  const [outstanding, setOutstanding] = useState<CustomerOutstanding | null>(
-    null,
-  );
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    customerOutstanding(customer.id)
-      .then((d) => setOutstanding(d ?? null))
-      .catch((e) => setError(extractError(e)));
-  }, [customer.id]);
+  const { data: outstanding, error: outstandingErr } = useQuery({
+    queryKey: ["customer-outstanding", customer.id],
+    queryFn: () => customerOutstanding(customer.id),
+  });
+  const error = outstandingErr instanceof Error ? outstandingErr.message : null;
 
   return (
     <div>
@@ -41,20 +36,14 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
         </div>
         <div className="flex gap-2">
           {onEdit && (
-            <button
-              onClick={onEdit}
-              className="rounded border border-border px-3 py-1 text-sm text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            >
+            <Button variant="secondary" size="sm" onClick={onEdit}>
               Edit
-            </button>
+            </Button>
           )}
           {onRecordPayment && (
-            <button
-              onClick={onRecordPayment}
-              className="rounded bg-primary px-3 py-1 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            >
+            <Button variant="primary" size="sm" onClick={onRecordPayment}>
               Record payment
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -106,7 +95,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
         </div>
       )}
 
-      <KhataRecord customerId={customer.id} />
+      <CustomerLedgerView customer={customer} />
     </div>
   );
 }
