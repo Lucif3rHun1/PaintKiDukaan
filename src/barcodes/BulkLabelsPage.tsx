@@ -11,7 +11,7 @@
  *
  * Bulk list is component-state (not persisted to DB) — re-decision v1.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Printer } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getSetting, listItems, listLabelPrints, recordLabelPrint } from "../domain/items/api";
@@ -102,6 +102,11 @@ export function BulkLabelsPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [shopName, setShopName] = useState("");
   const [defaultPrinterName, setDefaultPrinterName] = useState<string | null>(null);
+  const [hasPrintedBatch, setHasPrintedBatch] = useState(false);
+
+  const [itemSearchQuery, setItemSearchQuery] = useState("");
+  const [showItemDropdown, setShowItemDropdown] = useState(false);
+  const itemDropdownRef = useRef<HTMLDivElement>(null);
 
   // Sub-tabs: items vs custom
   const [activeTab, setActiveTab] = useState<"items" | "custom">("items");
@@ -205,6 +210,28 @@ export function BulkLabelsPage() {
     [items, selectedItemId],
   );
 
+  const filteredItems = useMemo(() => {
+    const q = itemSearchQuery.toLowerCase().trim();
+    if (!q) return items;
+    return items.filter(
+      (i) =>
+        i.name.toLowerCase().includes(q) ||
+        i.sku_code.toLowerCase().includes(q) ||
+        (i.barcode && i.barcode.toLowerCase().includes(q)),
+    );
+  }, [items, itemSearchQuery]);
+
+  useEffect(() => {
+    if (!showItemDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (itemDropdownRef.current && !itemDropdownRef.current.contains(e.target as Node)) {
+        setShowItemDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showItemDropdown]);
+
   useEffect(() => {
     if (!selectedItem) {
       setLine1("");
@@ -249,15 +276,18 @@ export function BulkLabelsPage() {
       });
     }
     setBatch((prev) => [...rows, ...prev]);
+    setHasPrintedBatch(false);
     setActionMsg(`Added ${n} label${n === 1 ? "" : "s"} to the batch.`);
   }
 
   function removeRow(id: number) {
     setBatch((prev) => prev.filter((r) => r.id !== id));
+    setHasPrintedBatch(false);
   }
 
   function clearBatch() {
     setBatch([]);
+    setHasPrintedBatch(false);
     setActionMsg("Batch cleared.");
   }
 
@@ -283,6 +313,7 @@ export function BulkLabelsPage() {
       });
     }
     setBatch((prev) => [...rows, ...prev]);
+    setHasPrintedBatch(false);
     setActionMsg(`Added ${n} custom label${n === 1 ? "" : "s"} to the batch.`);
   }
 
@@ -300,6 +331,7 @@ export function BulkLabelsPage() {
       itemName: "Custom",
     }));
     setBatch((prev) => [...rows, ...prev]);
+    setHasPrintedBatch(false);
     setActionMsg(`Added ${rows.length} sequence label${rows.length === 1 ? "" : "s"} to the batch.`);
   }
 
@@ -316,6 +348,7 @@ export function BulkLabelsPage() {
         grouped.set(id, { ...row, qty: 1 });
       }
     }
+    const tsplJson = JSON.stringify(tsplConfig);
     await Promise.all(
       Array.from(grouped.values()).map((row) =>
         recordLabelPrint({
@@ -325,6 +358,10 @@ export function BulkLabelsPage() {
           format,
           line1: row.label.line1 ?? null,
           line2: row.label.line2 ?? null,
+          tsplConfig: tsplJson,
+          printer,
+          labelSize: sizeChoice,
+          labelsPerRow,
         }),
       ),
     );
@@ -335,19 +372,24 @@ export function BulkLabelsPage() {
     setBusy(true);
     setActionMsg(null);
     try {
+      const recTspl = record.tsplConfig ? (JSON.parse(record.tsplConfig) as typeof tsplConfig) : tsplConfig;
+      const recSize = record.labelSize || sizeChoice;
+      const recPrinter = record.printer || printer;
+      const recCols = record.labelsPerRow ?? labelsPerRow;
+
       const isTauriApp =
         typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
       if (isTauriApp && defaultPrinterName) {
         try {
-          const selectedSize = THERMAL_SIZES[sizeChoice as keyof typeof THERMAL_SIZES];
-          if (!selectedSize) throw new Error(`Unknown label size: ${sizeChoice}`);
+          const selectedSize = THERMAL_SIZES[recSize as keyof typeof THERMAL_SIZES];
+          if (!selectedSize) throw new Error(`Unknown label size: ${recSize}`);
           const { w: widthMm, h: heightMm } = selectedSize;
           const reprintLabel = { barcode: record.barcode, line1: record.line1 ?? undefined, line2: record.line2 ?? undefined };
-          const cols = printer === "thermal" ? Math.max(1, labelsPerRow) : 1;
+          const cols = recPrinter === "thermal" ? Math.max(1, recCols) : 1;
           // Fill every cell of the strip with the same label; use PRINT stripsNeeded,1.
           const strip = Array.from({ length: cols }, () => reprintLabel);
           const stripsNeeded = Math.ceil(Math.max(1, record.qty) / cols);
-          const bytes = buildTsplBytes(strip, widthMm, heightMm, cols, stripsNeeded, tsplConfig);
+          const bytes = buildTsplBytes(strip, widthMm, heightMm, cols, stripsNeeded, recTspl);
           await ipc.printRaw(defaultPrinterName, bytes);
           setActionMsg(`Reprinted ${record.qty} label${record.qty === 1 ? "" : "s"} for ${record.itemName}.`);
           return;
@@ -382,6 +424,7 @@ export function BulkLabelsPage() {
         cfg,
       );
       await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
+      setHasPrintedBatch(true);
       setActionMsg(`Downloaded PDF with ${batch.length} label(s).`);
     } catch (e) {
       setActionMsg(`Failed: ${extractError(e)}`);
@@ -444,6 +487,7 @@ export function BulkLabelsPage() {
           }
 
           await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
+          setHasPrintedBatch(true);
           setActionMsg(`Sent ${batch.length} label(s) to ${defaultPrinterName}.`);
           return;
         } catch (rawErr) {
@@ -455,6 +499,7 @@ export function BulkLabelsPage() {
       const cfg = configFromSelect(printer, sizeChoice, labelsPerRow);
       await printLabelBatch(batch.map((r) => r.label), cfg);
       await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
+      setHasPrintedBatch(true);
       setActionMsg(
         defaultPrinterName
           ? "Direct thermal print unavailable on this platform — PDF downloaded instead."
@@ -498,24 +543,55 @@ export function BulkLabelsPage() {
         {/* Item picker */}
         {activeTab === "items" && (
         <>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" ref={itemDropdownRef}>
           <label className="text-xs font-medium text-muted-foreground">Item</label>
-          <Select
-            data-shortcut="item-picker"
-            value={selectedItemId === "" ? "" : String(selectedItemId)}
-            onChange={(e) =>
-              setSelectedItemId(e.target.value ? Number(e.target.value) : "")
-            }
-            options={[
-              { value: "", label: "— Pick an item —" },
-              ...items.map((i) => ({
-                value: String(i.id),
-                label: `${i.name} (${i.sku_code})${i.barcode ? ` · ${i.barcode}` : " · (no barcode)"}`,
-              })),
-            ]}
-            size="md"
-            disabled={loadingItems}
-          />
+          <div className="relative">
+            <input
+              type="search"
+              data-shortcut="item-picker"
+              className="input w-full"
+              placeholder={loadingItems ? "Loading items…" : "Search by name, SKU, or barcode…"}
+              value={showItemDropdown ? itemSearchQuery : (selectedItem ? `${selectedItem.name}${selectedItem.barcode ? ` · ${selectedItem.barcode}` : ""}` : itemSearchQuery)}
+              onChange={(e) => {
+                setItemSearchQuery(e.target.value);
+                setShowItemDropdown(true);
+                if (selectedItemId !== "") setSelectedItemId("");
+              }}
+              onFocus={() => {
+                setShowItemDropdown(true);
+                if (selectedItemId !== "") {
+                  setItemSearchQuery("");
+                }
+              }}
+              disabled={loadingItems}
+            />
+            {showItemDropdown && (
+              <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-md border bg-popover shadow-md">
+                {filteredItems.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    {items.length === 0 ? "No items found" : "No matches"}
+                  </div>
+                ) : (
+                  filteredItems.map((i) => (
+                    <button
+                      key={i.id}
+                      type="button"
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer ${
+                        i.id === selectedItemId ? "bg-accent text-accent-foreground" : ""
+                      }`}
+                      onClick={() => {
+                        setSelectedItemId(i.id);
+                        setItemSearchQuery("");
+                        setShowItemDropdown(false);
+                      }}
+                    >
+                      {i.name}{i.barcode ? ` · ${i.barcode}` : ""}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
           {itemError && <p className="text-xs text-destructive">{itemError}</p>}
         </div>
 

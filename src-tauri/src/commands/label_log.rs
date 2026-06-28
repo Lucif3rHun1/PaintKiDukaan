@@ -20,6 +20,10 @@ pub struct LabelPrintRecord {
     pub line2: Option<String>,
     pub created_at: String,
     pub user_name: Option<String>,
+    pub tspl_config: Option<String>,
+    pub printer: Option<String>,
+    pub label_size: Option<String>,
+    pub labels_per_row: Option<i64>,
 }
 
 fn row_to_label_print_record(r: &rusqlite::Row) -> rusqlite::Result<LabelPrintRecord> {
@@ -34,6 +38,10 @@ fn row_to_label_print_record(r: &rusqlite::Row) -> rusqlite::Result<LabelPrintRe
         line2: r.get(7)?,
         created_at: r.get::<_, i64>(8)?.to_string(),
         user_name: r.get(9)?,
+        tspl_config: r.get(10)?,
+        printer: r.get(11)?,
+        label_size: r.get(12)?,
+        labels_per_row: r.get(13)?,
     })
 }
 
@@ -46,6 +54,10 @@ pub fn record_label_print(
     format: String,
     line1: Option<String>,
     line2: Option<String>,
+    tspl_config: Option<String>,
+    printer: Option<String>,
+    label_size: Option<String>,
+    labels_per_row: Option<i64>,
 ) -> AppResult<i64> {
     ipc_auth::authorize_err("record_label_print", state.inner())?;
     if item_id <= 0 {
@@ -77,8 +89,10 @@ pub fn record_label_print(
             return Err(AppError::NotFound(format!("item {item_id}")));
         }
         tx.execute(
-            "INSERT INTO label_print_log (item_id, barcode, qty, format, line1, line2, user_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, unixepoch('now'))",
+            "INSERT INTO label_print_log
+                (item_id, barcode, qty, format, line1, line2, user_id, created_at,
+                 tspl_config, printer, label_size, labels_per_row)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, unixepoch('now'), ?8, ?9, ?10, ?11)",
             params![
                 item_id,
                 barcode.trim(),
@@ -87,6 +101,10 @@ pub fn record_label_print(
                 line1.as_deref().map(str::trim).filter(|s| !s.is_empty()),
                 line2.as_deref().map(str::trim).filter(|s| !s.is_empty()),
                 user.id,
+                tspl_config.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+                printer.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+                label_size.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+                labels_per_row,
             ],
         )?;
         Ok(tx.last_insert_rowid())
@@ -109,7 +127,8 @@ pub fn list_label_prints(
     let limit = limit.unwrap_or(50).clamp(1, 200);
     db.with_raw(|conn| {
         let base = "SELECT l.id, l.item_id, COALESCE(i.name, ''), l.barcode, l.qty,
-                    l.format, l.line1, l.line2, l.created_at, u.name
+                    l.format, l.line1, l.line2, l.created_at, u.name,
+                    l.tspl_config, l.printer, l.label_size, l.labels_per_row
                     FROM label_print_log l
                     LEFT JOIN items i ON i.id = l.item_id
                     LEFT JOIN users u ON u.id = l.user_id";

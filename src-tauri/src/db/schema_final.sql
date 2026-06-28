@@ -820,7 +820,11 @@ CREATE TABLE label_print_log (
   line1      TEXT,
   line2      TEXT,
   user_id    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  tspl_config   TEXT,
+  printer       TEXT,
+  label_size    TEXT,
+  labels_per_row INTEGER
 );
 CREATE INDEX idx_label_print_log_item_created ON label_print_log(item_id, created_at DESC);
 CREATE INDEX idx_label_print_log_created     ON label_print_log(created_at DESC);

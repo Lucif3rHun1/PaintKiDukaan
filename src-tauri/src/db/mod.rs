@@ -313,6 +313,25 @@ impl Db {
             }
         }
 
+        // M-INLINE-007: add print config columns to label_print_log
+        {
+            let has_tspl_config: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('label_print_log') WHERE name = 'tspl_config'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_tspl_config {
+                conn.execute_batch(
+                    "ALTER TABLE label_print_log ADD COLUMN tspl_config TEXT;\
+                     ALTER TABLE label_print_log ADD COLUMN printer TEXT;\
+                     ALTER TABLE label_print_log ADD COLUMN label_size TEXT;\
+                     ALTER TABLE label_print_log ADD COLUMN labels_per_row INTEGER;",
+                )?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\

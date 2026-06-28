@@ -201,6 +201,10 @@ export interface LabelPrintRecord {
   line2: string | null;
   createdAt: string;
   userName: string | null;
+  tsplConfig: string | null;
+  printer: string | null;
+  labelSize: string | null;
+  labelsPerRow: number | null;
 }
 
 export interface Customer {

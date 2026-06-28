@@ -85,6 +85,10 @@ export async function recordLabelPrint(payload: {
   format: string;
   line1?: string | null;
   line2?: string | null;
+  tsplConfig?: string | null;
+  printer?: string | null;
+  labelSize?: string | null;
+  labelsPerRow?: number | null;
 }): Promise<number> {
   return invoke<number>("record_label_print", {
     item_id: payload.itemId,
@@ -93,6 +97,10 @@ export async function recordLabelPrint(payload: {
     format: payload.format,
     line1: payload.line1 ?? null,
     line2: payload.line2 ?? null,
+    tspl_config: payload.tsplConfig ?? null,
+    printer: payload.printer ?? null,
+    label_size: payload.labelSize ?? null,
+    labels_per_row: payload.labelsPerRow ?? null,
   });
 }
 
