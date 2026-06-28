@@ -163,8 +163,7 @@ pub fn autostart_is_enabled<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Resu
 /// "suspended", or "unknown".
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn bitlocker_status(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    ipc_auth::authorize("bitlocker_status", state.inner())
-        .map_err(|e| e.to_string())?;
+    ipc_auth::authorize("bitlocker_status", state.inner()).map_err(|e| e.to_string())?;
     bitlocker_status_inner().map_err(|e| e.to_string())
 }
 

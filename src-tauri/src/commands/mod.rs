@@ -19,11 +19,11 @@ pub mod vendors;
 
 // Slice C — POS commands
 pub mod day_close;
+pub mod drafts;
 pub mod purchases;
 pub mod reports;
 pub mod sales;
 pub mod sequences;
-pub mod drafts;
 
 // CSV import
 pub mod import;

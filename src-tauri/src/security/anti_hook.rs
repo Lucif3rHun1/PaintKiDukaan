@@ -142,7 +142,7 @@ mod win {
 }
 
 /// Walk the IAT of the current module and detect hooks.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub fn walk_iat() -> Result<IatReport, AppError> {
     unsafe {
         let base = get_image_base();
@@ -225,7 +225,7 @@ pub fn walk_iat() -> Result<IatReport, AppError> {
 }
 
 /// Scan the .text section for common inline hook patterns.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub fn detect_inline_hooks() -> Result<HookReport, AppError> {
     unsafe {
         let base = get_image_base();
@@ -277,7 +277,7 @@ pub fn detect_inline_hooks() -> Result<HookReport, AppError> {
 }
 
 /// SHA-256 hash of the in-memory .text section.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub fn hash_text_section() -> Result<[u8; 32], AppError> {
     unsafe {
         let base = get_image_base();
@@ -288,7 +288,7 @@ pub fn hash_text_section() -> Result<[u8; 32], AppError> {
 }
 
 /// SHA-256 hash of the .text section from the on-disk .exe.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub fn hash_text_section_on_disk() -> Result<[u8; 32], AppError> {
     unsafe {
         // Get our own executable path.
@@ -315,7 +315,7 @@ pub fn hash_text_section_on_disk() -> Result<[u8; 32], AppError> {
 
 /// Compare in-memory vs on-disk .text section hash.
 /// Returns `true` if they match (integrity OK).
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub fn text_section_integrity_check() -> Result<bool, AppError> {
     let mem_hash = hash_text_section()?;
     let disk_hash = hash_text_section_on_disk()?;
@@ -324,7 +324,7 @@ pub fn text_section_integrity_check() -> Result<bool, AppError> {
 
 // ─── Windows helpers ────────────────────────────────────────────────────────
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 unsafe fn get_image_base() -> *const u8 {
     // PEB->ImageBaseAddress via GS:[0x60] + 0x10.
     let peb: *const *const u8;
@@ -336,7 +336,7 @@ unsafe fn get_image_base() -> *const u8 {
     *((peb as *const u8).offset(0x10) as *const *const u8)
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 unsafe fn get_module_base_by_name(name: &str) -> Option<*const u8> {
     let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
     let h = win::GetModuleHandleW(wide.as_ptr());
@@ -348,7 +348,7 @@ unsafe fn get_module_base_by_name(name: &str) -> Option<*const u8> {
 }
 
 /// Get the size of a loaded module from its PE headers.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 unsafe fn get_module_size(base: Option<*const u8>) -> Option<u32> {
     let base = base?;
     let dos = &*(base as *const win::IMAGE_DOS_HEADER);
@@ -360,7 +360,7 @@ unsafe fn get_module_size(base: Option<*const u8>) -> Option<u32> {
 }
 
 /// Find the .text section in our own in-memory PE.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 unsafe fn find_text_section(base: *const u8) -> Result<(*const u8, u32), AppError> {
     let dos = &*(base as *const win::IMAGE_DOS_HEADER);
     let nt = &*(base.offset(dos.e_lfanew as isize) as *const win::IMAGE_NT_HEADERS64);
@@ -439,7 +439,7 @@ fn find_text_section_in_file(data: &[u8]) -> Result<(usize, usize), AppError> {
 }
 
 /// Try to resolve an import function name from the OriginalFirstThunk hint/name table.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 unsafe fn resolve_import_name(base: *const u8, oft_rva: u32, index: usize) -> String {
     if oft_rva == 0 {
         return format!("ordinal#{}", index);
@@ -455,7 +455,7 @@ unsafe fn resolve_import_name(base: *const u8, oft_rva: u32, index: usize) -> St
     cstr_from_ptr(name_ptr)
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 unsafe fn cstr_from_ptr(ptr: *const u8) -> String {
     let mut len = 0;
     while *ptr.add(len) != 0 {
@@ -474,7 +474,7 @@ fn sha256(data: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 unsafe fn GetModuleFileNameW(
     hModule: *mut std::ffi::c_void,
     lpFilename: *mut u16,
@@ -494,32 +494,42 @@ unsafe fn GetModuleFileNameW(
 // Non-Windows stubs
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Stub: returns a clean report (no imports checked) on non-Windows.
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(
+    not(target_os = "windows"),
+    all(target_os = "windows", not(target_arch = "x86_64"))
+))]
 pub fn walk_iat() -> Result<IatReport, AppError> {
     Ok(IatReport::default())
 }
 
-/// Stub: returns a clean report on non-Windows.
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(
+    not(target_os = "windows"),
+    all(target_os = "windows", not(target_arch = "x86_64"))
+))]
 pub fn detect_inline_hooks() -> Result<HookReport, AppError> {
     Ok(HookReport::default())
 }
 
-/// Stub: returns a zeroed hash on non-Windows.
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(
+    not(target_os = "windows"),
+    all(target_os = "windows", not(target_arch = "x86_64"))
+))]
 pub fn hash_text_section() -> Result<[u8; 32], AppError> {
     Ok([0u8; 32])
 }
 
-/// Stub: returns a zeroed hash on non-Windows.
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(
+    not(target_os = "windows"),
+    all(target_os = "windows", not(target_arch = "x86_64"))
+))]
 pub fn hash_text_section_on_disk() -> Result<[u8; 32], AppError> {
     Ok([0u8; 32])
 }
 
-/// Stub: always returns `Ok(true)` on non-Windows.
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(
+    not(target_os = "windows"),
+    all(target_os = "windows", not(target_arch = "x86_64"))
+))]
 pub fn text_section_integrity_check() -> Result<bool, AppError> {
     Ok(true)
 }

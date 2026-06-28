@@ -101,9 +101,15 @@ pub fn record_label_print(
                 line1.as_deref().map(str::trim).filter(|s| !s.is_empty()),
                 line2.as_deref().map(str::trim).filter(|s| !s.is_empty()),
                 user.id,
-                tspl_config.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+                tspl_config
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty()),
                 printer.as_deref().map(str::trim).filter(|s| !s.is_empty()),
-                label_size.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+                label_size
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty()),
                 labels_per_row,
             ],
         )?;

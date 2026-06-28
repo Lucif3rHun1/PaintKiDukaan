@@ -173,7 +173,7 @@ impl Db {
                     .unwrap_or(false)
                 };
 
-                let sale_items_exists     = table_exists("sale_items");
+                let sale_items_exists = table_exists("sale_items");
                 let sale_items_old_exists = table_exists("sale_items_old");
 
                 // Clean up any leftover partial new table from a previous failed run.
@@ -182,9 +182,7 @@ impl Db {
                 // Rename the current live table to _old (skip if already done by a
                 // previous failed run that stalled after the rename).
                 if sale_items_exists {
-                    conn.execute_batch(
-                        "ALTER TABLE sale_items RENAME TO sale_items_old;",
-                    )?;
+                    conn.execute_batch("ALTER TABLE sale_items RENAME TO sale_items_old;")?;
                 }
                 // At this point sale_items_old exists (either was already there or
                 // we just renamed it). If neither existed, we'll create an empty table.
@@ -199,7 +197,7 @@ impl Db {
                        formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,\
                        qty           INTEGER NOT NULL CHECK(qty > 0),\
                        price         INTEGER NOT NULL CHECK(price >= 0),\
-                       unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','box')),\
+                       unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),\
                        line_discount INTEGER NOT NULL DEFAULT 0,\
                        shade_note    TEXT,\
                        line_order    INTEGER NOT NULL DEFAULT 0,\
@@ -227,22 +225,26 @@ impl Db {
                         .unwrap_or(false)
                     };
 
-                    let has_sale_id    = col_exists("sale_id");
-                    let has_item_id    = col_exists("item_id");
-                    let has_price      = col_exists("price");
-                    let has_unit_type  = col_exists("unit_type");
-                    let has_discount   = col_exists("line_discount");
-                    let has_shade      = col_exists("shade_note");
-                    let has_order      = col_exists("line_order");
+                    let has_sale_id = col_exists("sale_id");
+                    let has_item_id = col_exists("item_id");
+                    let has_price = col_exists("price");
+                    let has_unit_type = col_exists("unit_type");
+                    let has_discount = col_exists("line_discount");
+                    let has_shade = col_exists("shade_note");
+                    let has_order = col_exists("line_order");
                     let has_created_at = col_exists("created_at");
                     let has_created_by = col_exists("created_by");
 
                     if has_sale_id && has_item_id && has_price && has_unit_type {
-                        let discount_expr   = if has_discount   { "line_discount" }           else { "0" };
-                        let shade_expr      = if has_shade      { "shade_note" }               else { "NULL" };
-                        let order_expr      = if has_order      { "line_order" }               else { "0" };
-                        let created_at_expr = if has_created_at { "created_at" }               else { "datetime('now','localtime')" };
-                        let created_by_expr = if has_created_by { "created_by" }               else { "NULL" };
+                        let discount_expr = if has_discount { "line_discount" } else { "0" };
+                        let shade_expr = if has_shade { "shade_note" } else { "NULL" };
+                        let order_expr = if has_order { "line_order" } else { "0" };
+                        let created_at_expr = if has_created_at {
+                            "created_at"
+                        } else {
+                            "datetime('now','localtime')"
+                        };
+                        let created_by_expr = if has_created_by { "created_by" } else { "NULL" };
 
                         conn.execute_batch(&format!(
                             "INSERT INTO sale_items_new \
@@ -343,7 +345,7 @@ impl Db {
                 .unwrap_or(false);
             if !has_sell_unit_id {
                 conn.execute_batch(
-                    "ALTER TABLE items ADD COLUMN sell_unit_id INTEGER REFERENCES units(id) ON DELETE NO ACTION;",
+                    "ALTER TABLE items ADD COLUMN sell_unit_id INTEGER REFERENCES sale_units(id) ON DELETE NO ACTION;",
                 )?;
             }
             let has_min_stock: bool = conn

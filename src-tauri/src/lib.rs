@@ -61,7 +61,10 @@ fn log_frontend(level: String, message: String) -> Result<(), String> {
 
 #[tauri::command]
 fn retry_update(state: tauri::State<'_, UpdateGateState>) -> Result<(), String> {
-    state.retry_tx.send(()).map_err(|_| "update gate closed".into())
+    state
+        .retry_tx
+        .send(())
+        .map_err(|_| "update gate closed".into())
 }
 
 #[tauri::command]
@@ -99,9 +102,18 @@ pub fn run() {
                 .level(log::LevelFilter::Trace)
                 .level_for("keyring", log::LevelFilter::Warn)
                 .level_for("tao", log::LevelFilter::Warn)
-                .level_for("paintkiduakan_lib::security::mitigation_policy", log::LevelFilter::Warn)
-                .level_for("paintkiduakan_lib::security::priv_strip", log::LevelFilter::Warn)
-                .level_for("paintkiduakan_lib::security::anti_dump", log::LevelFilter::Warn)
+                .level_for(
+                    "paintkiduakan_lib::security::mitigation_policy",
+                    log::LevelFilter::Warn,
+                )
+                .level_for(
+                    "paintkiduakan_lib::security::priv_strip",
+                    log::LevelFilter::Warn,
+                )
+                .level_for(
+                    "paintkiduakan_lib::security::anti_dump",
+                    log::LevelFilter::Warn,
+                )
                 .build(),
         )
         .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {
@@ -445,7 +457,8 @@ async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::Unboun
             }
         };
 
-        let check_outcome = tokio::time::timeout(std::time::Duration::from_secs(30), updater.check()).await;
+        let check_outcome =
+            tokio::time::timeout(std::time::Duration::from_secs(30), updater.check()).await;
 
         let update = match check_outcome {
             Ok(Ok(Some(update))) => update,
@@ -455,16 +468,22 @@ async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::Unboun
                 return;
             }
             Ok(Err(e)) => {
-                log::warn!("Update check failed (proceeding to app): {e}");
-                let _ = splash.close();
-                show_main(&app);
-                return;
+                log::warn!("Update check failed: {e}");
+                show_update_error(
+                    &splash,
+                    &format!("Update check failed. Check your connection and try again.\n\n{e}"),
+                );
+                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
+                continue;
             }
             Err(_) => {
-                log::warn!("Update check timed out after 30 s (proceeding to app)");
-                let _ = splash.close();
-                show_main(&app);
-                return;
+                log::warn!("Update check timed out after 30 s");
+                show_update_error(
+                    &splash,
+                    "Update check timed out. Check your connection and try again.",
+                );
+                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
+                continue;
             }
         };
 
@@ -509,7 +528,11 @@ async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::Unboun
     }
 }
 
-async fn wait_for_retry_or_quit(app: &tauri::AppHandle, splash: &tauri::WebviewWindow, retry_rx: &mut mpsc::UnboundedReceiver<()>) {
+async fn wait_for_retry_or_quit(
+    app: &tauri::AppHandle,
+    splash: &tauri::WebviewWindow,
+    retry_rx: &mut mpsc::UnboundedReceiver<()>,
+) {
     match retry_rx.recv().await {
         Some(()) => {
             let _ = splash.close();
@@ -524,6 +547,12 @@ async fn wait_for_retry_or_quit(app: &tauri::AppHandle, splash: &tauri::WebviewW
 fn show_main(app: &tauri::AppHandle) {
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.show();
+    }
+}
+
+fn show_update_error(splash: &tauri::WebviewWindow, message: &str) {
+    if let Ok(message_json) = serde_json::to_string(message) {
+        let _ = splash.eval(&format!("window.__showError({message_json})"));
     }
 }
 

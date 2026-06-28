@@ -161,7 +161,12 @@ impl From<SaleError> for AppError {
             | SaleError::QuotationNotFound(_)
             | SaleError::NotAQuotation(_, _)
             | SaleError::InvalidKind(_) => AppError::Validation(e.to_string()),
-            SaleError::InsufficientStock { item_name, available, requested, .. } => {
+            SaleError::InsufficientStock {
+                item_name,
+                available,
+                requested,
+                ..
+            } => {
                 let avail = available.max(0.0);
                 AppError::Validation(format!(
                     "Not enough stock for '{item_name}'. Only {avail:.1} available, you need {requested:.1}."

@@ -11,11 +11,11 @@
  *
  * Bulk list is component-state (not persisted to DB) — re-decision v1.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Printer } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getSetting, listItems, listLabelPrints, recordLabelPrint } from "../domain/items/api";
-import type { Item, LabelPrintRecord } from "../domain/types";
+import type { LabelPrintRecord } from "../domain/types";
 import { ipc } from "../shell/lib/ipc";
 import { BarcodeThumb } from "../components/ui/BarcodeThumb";
 import { Select } from "../components/ui/Select";
@@ -72,7 +72,7 @@ interface GeneratedRow {
   itemName: string;
 }
 
-let nextRowId = 1;
+let nextRowId = 1; // ponytail: module-level for simplicity; reset on remount is acceptable for batch UI
 
 export function BulkLabelsPage() {
   const [selectedItemId, setSelectedItemId] = useState<number | "">("");
@@ -249,11 +249,20 @@ export function BulkLabelsPage() {
     setSkuOverride(selectedItem.sku_code);
   }, [selectedItem, shopName]);
 
-  // When printer changes, snap size choice to a valid value.
+  // Save/restore labelsPerRow across printer type switches.
+  const savedLabelsPerRowRef = useRef(1);
   useEffect(() => {
     const presets = PRINTER_PRESETS[printer];
     if (!presets.includes(sizeChoice)) setSizeChoice(presets[0]);
+    // Restore labelsPerRow when switching back to thermal.
+    if (printer === "thermal") {
+      setLabelsPerRow(savedLabelsPerRowRef.current || 1);
+    }
   }, [printer, sizeChoice]);
+  // Snapshot labelsPerRow whenever it changes while on thermal.
+  useEffect(() => {
+    if (printer === "thermal") savedLabelsPerRowRef.current = labelsPerRow;
+  }, [labelsPerRow, printer]);
 
   function addToList() {
     if (!selectedItem || !selectedItem.barcode) {
@@ -423,7 +432,7 @@ export function BulkLabelsPage() {
         batch.map((r) => r.label),
         cfg,
       );
-      await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
+      if (!hasPrintedBatch) await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
       setHasPrintedBatch(true);
       setActionMsg(`Downloaded PDF with ${batch.length} label(s).`);
     } catch (e) {
@@ -486,7 +495,7 @@ export function BulkLabelsPage() {
             }
           }
 
-          await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
+          if (!hasPrintedBatch) await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
           setHasPrintedBatch(true);
           setActionMsg(`Sent ${batch.length} label(s) to ${defaultPrinterName}.`);
           return;
@@ -498,7 +507,7 @@ export function BulkLabelsPage() {
       // Fallback — download PDF (also used when no default label printer).
       const cfg = configFromSelect(printer, sizeChoice, labelsPerRow);
       await printLabelBatch(batch.map((r) => r.label), cfg);
-      await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
+      if (!hasPrintedBatch) await recordCurrentBatch(formatFromSelect(printer, sizeChoice));
       setHasPrintedBatch(true);
       setActionMsg(
         defaultPrinterName
@@ -555,12 +564,30 @@ export function BulkLabelsPage() {
               onChange={(e) => {
                 setItemSearchQuery(e.target.value);
                 setShowItemDropdown(true);
-                if (selectedItemId !== "") setSelectedItemId("");
               }}
               onFocus={() => {
                 setShowItemDropdown(true);
-                if (selectedItemId !== "") {
-                  setItemSearchQuery("");
+                setItemSearchQuery("");
+              }}
+              onKeyDown={(e) => {
+                if (!showItemDropdown || filteredItems.length === 0) return;
+                const curIdx = filteredItems.findIndex((i) => i.id === selectedItemId);
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  const next = curIdx < filteredItems.length - 1 ? curIdx + 1 : 0;
+                  setSelectedItemId(filteredItems[next].id);
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const prev = curIdx > 0 ? curIdx - 1 : filteredItems.length - 1;
+                  setSelectedItemId(filteredItems[prev].id);
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (curIdx >= 0) {
+                    setItemSearchQuery("");
+                    setShowItemDropdown(false);
+                  }
+                } else if (e.key === "Escape") {
+                  setShowItemDropdown(false);
                 }
               }}
               disabled={loadingItems}
@@ -572,7 +599,9 @@ export function BulkLabelsPage() {
                     {items.length === 0 ? "No items found" : "No matches"}
                   </div>
                 ) : (
-                  filteredItems.map((i) => (
+                  filteredItems.map((i) => {
+                    const inBatch = batch.filter((r) => r.itemId === i.id).length;
+                    return (
                     <button
                       key={i.id}
                       type="button"
@@ -585,9 +614,15 @@ export function BulkLabelsPage() {
                         setShowItemDropdown(false);
                       }}
                     >
-                      {i.name}{i.barcode ? ` · ${i.barcode}` : ""}
+                      <span>{i.name}{i.barcode ? ` · ${i.barcode}` : ""}</span>
+                      {inBatch > 0 && (
+                        <span className="ml-1.5 inline-block rounded bg-primary/15 px-1 text-[10px] font-medium text-primary">
+                          {inBatch} in batch
+                        </span>
+                      )}
                     </button>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
@@ -1013,16 +1048,7 @@ export function BulkLabelsPage() {
           </Button>
         )}
 
-        {batch.length > 0 && (
-          <Button
-            type="button"
-            variant="danger"
-            onClick={clearBatch}
-            className="w-full"
-          >
-            Clear all ({batch.length})
-          </Button>
-        )}
+
 
         {actionMsg && (
           <p className="rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{actionMsg}</p>
@@ -1048,7 +1074,7 @@ export function BulkLabelsPage() {
             )}
           </div>
 
-          <div className="max-h-[220px] overflow-y-auto rounded-md border border-border bg-background">
+          <div className="max-h-[320px] overflow-y-auto rounded-md border border-border bg-background">
             {batch.length === 0 ? (
               <p className="p-4 text-center text-xs text-muted-foreground">
                 No labels yet — add from the left.
@@ -1203,7 +1229,7 @@ export function BulkLabelsPage() {
               Refresh
             </Button>
           </div>
-          <div className="max-h-[200px] overflow-y-auto rounded-md border border-border bg-background">
+          <div className="max-h-[320px] overflow-y-auto rounded-md border border-border bg-background">
             {historyLoading ? (
               <div role="status" aria-live="polite" aria-label="Loading print history" className="space-y-2 p-3">
                 <Skeleton className="h-6 w-full" />
@@ -1221,8 +1247,13 @@ export function BulkLabelsPage() {
                         {row.itemName}
                       </p>
                       <p className="font-mono text-[10px] text-muted-foreground">
-                        {row.barcode} · qty {row.qty}
+                        {row.barcode} · qty {row.qty}{row.printer ? ` · ${row.printer}` : ""}{row.labelSize ? ` · ${row.labelSize}` : ""}
                       </p>
+                      {(row.line1 || row.line2) && (
+                        <p className="font-mono text-[10px] text-muted-foreground truncate max-w-[240px]">
+                          {[row.line1, row.line2].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"

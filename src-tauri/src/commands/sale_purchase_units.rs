@@ -150,7 +150,10 @@ pub fn update_sale_unit(
         if !exists {
             return Err(AppError::NotFound(format!("sale_unit {id}")));
         }
-        let new_label = data.label.map(|l| l.trim().to_string()).filter(|l| !l.is_empty());
+        let new_label = data
+            .label
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty());
         let new_precision = data.quantity_precision;
         let new_active = data.is_active.map(|a| a as i64);
         if let Some(p) = new_precision {
@@ -235,10 +238,7 @@ pub fn list_purchase_units(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn create_purchase_unit(
-    state: tauri::State<'_, AppState>,
-    label: String,
-) -> AppResult<i64> {
+pub fn create_purchase_unit(state: tauri::State<'_, AppState>, label: String) -> AppResult<i64> {
     ipc_auth::authorize_err("create_purchase_unit", state.inner())?;
     let label = label.trim().to_string();
     if label.is_empty() {
@@ -275,7 +275,10 @@ pub fn update_purchase_unit(
         if !exists {
             return Err(AppError::NotFound(format!("purchase_unit {id}")));
         }
-        let new_label = data.label.map(|l| l.trim().to_string()).filter(|l| !l.is_empty());
+        let new_label = data
+            .label
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty());
         let new_active = data.is_active.map(|a| a as i64);
         conn.execute(
             "UPDATE purchase_units SET \

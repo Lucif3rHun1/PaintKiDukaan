@@ -365,23 +365,6 @@ export interface ConversionResult {
   qty_in_base_units: number;
 }
 
-export interface Unit {
-  id: number;
-  code: string;
-  label: string;
-  dimension: "volume" | "mass" | "area" | "count";
-  is_active: boolean;
-}
-
-export type UnitDimension = "volume" | "mass" | "area" | "count";
-
-export interface UnitConversion {
-  id: number;
-  from_unit_id: number;
-  to_unit_id: number;
-  factor: number;
-}
-
 // ── New 3-unit system ────────────────────────────────────────────────
 
 export type SellUnitCode = "unit" | "mtr" | "kg";

@@ -114,7 +114,7 @@ pub enum PurchaseError {
     ItemNotFound(usize, i64),
     #[error("line {0}: location {1} not found")]
     LocationNotFound(usize, i64),
-    #[error("line {0}: units_per_box must be > 0 for unit_type=box")]
+    #[error("line {0}: qty_per_purchase_unit must be > 0")]
     BadUnitsPerBox(usize),
     #[error("db error: {0}")]
     Db(#[from] rusqlite::Error),

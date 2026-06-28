@@ -63,7 +63,9 @@ pub fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Re
     let parsed: Value = serde_json::from_str(&value).unwrap_or(Value::String(value));
     if let Some(col) = sql_col_for(&key) {
         let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let db: &Db = guard.as_ref().ok_or_else(|| "database not unlocked".to_string())?;
+        let db: &Db = guard
+            .as_ref()
+            .ok_or_else(|| "database not unlocked".to_string())?;
         write_sql_setting(db, col, &parsed).map_err(|e| e.to_string())?;
     }
     state
@@ -115,10 +117,7 @@ fn read_sql_settings_snapshot(db: &Db) -> rusqlite::Result<Vec<(String, Value)>>
         for col in cols {
             let sql = format!("SELECT {col} FROM settings WHERE id = 1");
             // NULL cells are skipped so the HashMap keeps its runtime default.
-            let v: Option<Value> = conn
-                .query_row(&sql, [], row_to_value)
-                .ok()
-                .flatten();
+            let v: Option<Value> = conn.query_row(&sql, [], row_to_value).ok().flatten();
             if let Some(v) = v {
                 out.push((col.to_string(), v));
             }
@@ -280,7 +279,10 @@ mod tests {
             sql_col_for("failed_attempts_lockout"),
             Some("failed_attempts_lockout")
         );
-        assert_eq!(sql_col_for("alerts_retention_days"), Some("alerts_retention_days"));
+        assert_eq!(
+            sql_col_for("alerts_retention_days"),
+            Some("alerts_retention_days")
+        );
     }
 
     #[test]
@@ -307,9 +309,18 @@ mod tests {
         hydrate_settings_from_sql(&db, &settings);
 
         let guard = settings.lock().unwrap();
-        assert_eq!(guard.get("shop_name"), Some(&Value::String("Acme Paints".into())));
-        assert_eq!(guard.get("address"), Some(&Value::String("12 Main St".into())));
-        assert_eq!(guard.get("phone"), Some(&Value::String("9876543210".into())));
+        assert_eq!(
+            guard.get("shop_name"),
+            Some(&Value::String("Acme Paints".into()))
+        );
+        assert_eq!(
+            guard.get("address"),
+            Some(&Value::String("12 Main St".into()))
+        );
+        assert_eq!(
+            guard.get("phone"),
+            Some(&Value::String("9876543210".into()))
+        );
         assert_eq!(
             guard.get("failed_attempts_lockout"),
             Some(&Value::Number(5.into()))
@@ -328,7 +339,7 @@ mod tests {
         // we override to NULL to verify the skip logic.
         db.with_raw(|c| {
             c.execute_batch(
-                 "UPDATE settings SET shop_name = NULL, address = NULL, phone = NULL WHERE id = 1",
+                "UPDATE settings SET shop_name = NULL, address = NULL, phone = NULL WHERE id = 1",
             )
             .expect("nullify");
         });
@@ -361,7 +372,10 @@ mod tests {
         hydrate_settings_from_sql(&db, &settings);
         let guard = settings.lock().unwrap();
 
-        assert_eq!(guard.get("shop_name"), Some(&Value::String("Shop X".into())));
+        assert_eq!(
+            guard.get("shop_name"),
+            Some(&Value::String("Shop X".into()))
+        );
         assert_eq!(
             guard.get("failed_attempts_lockout"),
             Some(&Value::Number(7.into()))

@@ -11,7 +11,9 @@ import { CategoryAdmin } from "../../../domain/items/CategoryAdmin";
 import type { SaleUnit, PurchaseUnit } from "../../../domain/types";
 import {
   listSaleUnits,
+  createSaleUnit,
   updateSaleUnit,
+  deactivateSaleUnit,
   listPurchaseUnits,
   createPurchaseUnit,
   updatePurchaseUnit,
@@ -331,6 +333,9 @@ function SaleUnitsSettings() {
   const [editLabel, setEditLabel] = useState("");
   const [editPrecision, setEditPrecision] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [newPrecision, setNewPrecision] = useState(0);
 
   const refresh = () => {
     setLoading(true);
@@ -342,6 +347,26 @@ function SaleUnitsSettings() {
   };
 
   useEffect(refresh, []);
+
+  const add = async () => {
+    const code = newCode.trim().toLowerCase();
+    const label = newLabel.trim();
+    if (!code || !label) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createSaleUnit({ code, label, quantity_precision: newPrecision });
+      setNewCode("");
+      setNewLabel("");
+      setNewPrecision(0);
+      refresh();
+      toast.success("Sale unit created");
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const startEdit = (u: SaleUnit) => {
     setEditingId(u.id);
@@ -379,7 +404,11 @@ function SaleUnitsSettings() {
     setBusy(true);
     setError(null);
     try {
-      await updateSaleUnit(u.id, { is_active: !u.is_active });
+      if (u.is_active) {
+        await deactivateSaleUnit(u.id);
+      } else {
+        await updateSaleUnit(u.id, { is_active: true });
+      }
       refresh();
       toast.success(u.is_active ? "Deactivated" : "Activated");
     } catch (e) {
@@ -459,15 +488,57 @@ function SaleUnitsSettings() {
 
   return (
     <Card>
-      <Section title="Sale Units" description="The 3 units items are sold in. Each controls quantity precision (whole numbers or decimals).">
+      <Section title="Sale Units" description="The units items are sold in. Each controls quantity precision (whole numbers or decimals).">
         <div className="space-y-4 text-sm">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col">
+              <label className="mb-1 text-xs font-medium text-muted-foreground">Code</label>
+              <input
+                type="text"
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void add(); }}
+                placeholder="e.g. ltr"
+                className="input w-24"
+                disabled={busy}
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="mb-1 text-xs font-medium text-muted-foreground">Label</label>
+              <input
+                type="text"
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void add(); }}
+                placeholder="e.g. Litre"
+                className="input w-32"
+                disabled={busy}
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="mb-1 text-xs font-medium text-muted-foreground">Precision</label>
+              <div className="flex gap-3 rounded border border-border px-2 py-1.5 text-xs">
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="new-prec" checked={newPrecision === 0} onChange={() => setNewPrecision(0)} className="h-3 w-3" />
+                  Whole
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="new-prec" checked={newPrecision === 3} onChange={() => setNewPrecision(3)} className="h-3 w-3" />
+                  Decimal
+                </label>
+              </div>
+            </div>
+            <Button type="button" onClick={() => void add()} disabled={!newCode.trim() || !newLabel.trim() || busy}>
+              Add
+            </Button>
+          </div>
           {error && <Alert>{error}</Alert>}
           <DataTable
             data={units}
             columns={columns}
             keyExtractor={(u) => u.id}
             loading={loading}
-            emptyState={<EmptyState title="No sale units" description="Sale units are seeded on first run." className="rounded-md border border-border py-8" />}
+            emptyState={<EmptyState title="No sale units" description="Add sale units above (e.g. unit, mtr, kg)." className="rounded-md border border-border py-8" />}
           />
         </div>
       </Section>

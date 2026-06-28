@@ -300,6 +300,19 @@ jobs:
             printf '%s' "$file"
           }
 
+          pick_windows_exe() {
+            local arch="$1"
+            local signed_dir="signed-windows-${arch}"
+            local original_dir="windows-${arch}"
+
+            if [[ -d "release-artifacts/${signed_dir}" ]]; then
+              pick_one "$signed_dir" '*.exe'
+              return
+            fi
+
+            pick_one "$original_dir" '*.exe'
+          }
+
           # Prefer regenerated .sig over original
           find_sig() {
             local artifact_dir="$1"
@@ -324,9 +337,9 @@ jobs:
           mac_aarch64_sig="$(pick_one 'macos-aarch64' '*.app.tar.gz.sig')"
           mac_x86_64_asset="$(pick_one 'macos-x86_64' '*.app.tar.gz')"
           mac_x86_64_sig="$(pick_one 'macos-x86_64' '*.app.tar.gz.sig')"
-          win_x64_asset="$(pick_one 'windows-x86_64' '*.exe')"
+          win_x64_asset="$(pick_windows_exe 'x86_64')"
           win_x64_sig="$(find_sig 'windows-x86_64' '*.exe.sig')"
-          win_arm64_asset="$(pick_one 'windows-aarch64' '*.exe')"
+          win_arm64_asset="$(pick_windows_exe 'aarch64')"
           win_arm64_sig="$(find_sig 'windows-aarch64' '*.exe.sig')"
 
           mac_aarch64_name="$(basename "$mac_aarch64_asset")"

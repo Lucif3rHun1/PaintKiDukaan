@@ -261,9 +261,10 @@ pub fn create(db: &Db, user_id: i64, new: NewFormula) -> AppResult<i64> {
     let with_base = new.with_base as i64;
     // Validate: with_base requires base_item_id; without_base forces None.
     let base_item_id: Option<i64> = if new.with_base {
-        Some(new.base_item_id.ok_or_else(|| {
-            AppError::Validation("with_base requires base_item_id".into())
-        })?)
+        Some(
+            new.base_item_id
+                .ok_or_else(|| AppError::Validation("with_base requires base_item_id".into()))?,
+        )
     } else {
         None // force None when without base
     };
@@ -295,9 +296,10 @@ pub fn update(db: &Db, _user_id: i64, upd: UpdateFormula) -> AppResult<()> {
     let name = upd.name.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let with_base = upd.with_base as i64;
     let base_item_id: Option<i64> = if upd.with_base {
-        Some(upd.base_item_id.ok_or_else(|| {
-            AppError::Validation("with_base requires base_item_id".into())
-        })?)
+        Some(
+            upd.base_item_id
+                .ok_or_else(|| AppError::Validation("with_base requires base_item_id".into()))?,
+        )
     } else {
         None
     };

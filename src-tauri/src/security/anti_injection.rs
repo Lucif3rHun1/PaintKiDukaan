@@ -245,7 +245,7 @@ pub fn snapshot_via_toolhelp() -> Result<ModuleSnapshot, AppError> {
 ///
 /// This avoids any API call that could be hooked — reads the PEB directly
 /// via `NtCurrentTeb()->ProcessEnvironmentBlock`.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub fn snapshot_own_process_modules() -> Result<ModuleSnapshot, AppError> {
     unsafe {
         let peb = get_peb();
@@ -295,7 +295,7 @@ pub fn snapshot_own_process_modules() -> Result<ModuleSnapshot, AppError> {
 }
 
 /// Cross-check PEB walk vs ToolHelp32 — a mismatch indicates tampering.
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub fn check_peb_consistency() -> Result<bool, AppError> {
     let peb_snap = snapshot_own_process_modules()?;
     let th_snap = snapshot_via_toolhelp()?;
@@ -356,7 +356,7 @@ pub fn detect_unauthorized_modules(
 
 // ─── Windows helpers ────────────────────────────────────────────────────────
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 unsafe fn get_peb() -> *mut win::PEB {
     // On x86_64 Windows, the TEB is at GS:[0x60] → PEB.
     let peb: *mut win::PEB;
@@ -367,7 +367,7 @@ unsafe fn get_peb() -> *mut win::PEB {
     peb
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 unsafe fn unicode_string_to_string(us: &win::UNICODE_STRING) -> String {
     if us.buffer.is_null() || us.length == 0 {
         return String::new();
@@ -402,6 +402,11 @@ unsafe fn GetLastError() -> u32 {
 // Non-Windows stubs
 // ═══════════════════════════════════════════════════════════════════════════
 
+#[cfg(all(target_os = "windows", not(target_arch = "x86_64")))]
+pub fn snapshot_own_process_modules() -> Result<ModuleSnapshot, AppError> {
+    snapshot_via_toolhelp()
+}
+
 /// Stub: returns an empty snapshot on non-Windows.
 #[cfg(not(target_os = "windows"))]
 pub fn snapshot_own_process_modules() -> Result<ModuleSnapshot, AppError> {
@@ -420,8 +425,10 @@ pub fn snapshot_via_toolhelp() -> Result<ModuleSnapshot, AppError> {
     })
 }
 
-/// Stub: always returns `Ok(true)` on non-Windows.
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(
+    not(target_os = "windows"),
+    all(target_os = "windows", not(target_arch = "x86_64"))
+))]
 pub fn check_peb_consistency() -> Result<bool, AppError> {
     Ok(true)
 }

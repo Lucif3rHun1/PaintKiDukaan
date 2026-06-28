@@ -129,7 +129,9 @@ fn lock_dir_perms(path: &Path) -> std::io::Result<()> {
     std::fs::set_permissions(path, perms)
 }
 #[cfg(not(unix))]
-fn lock_dir_perms(_path: &Path) -> std::io::Result<()> { Ok(()) }
+fn lock_dir_perms(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
 
 /// Guard over a decrypted keystore tempfile inside a locked tempdir.
 ///
