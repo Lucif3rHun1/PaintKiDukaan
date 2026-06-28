@@ -138,14 +138,14 @@ pub struct StockRow {
     pub name: String,
     pub location_id: i64,
     pub location_name: String,
-    pub qty: i64,
-    pub reorder_level: i64,
+    pub qty: f64,
+    pub reorder_level: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct StockGroupRow {
     pub group: String, // brand or category
-    pub total_qty: i64,
+    pub total_qty: f64,
     pub total_retail_value: i64,
 }
 
@@ -162,7 +162,7 @@ pub fn stock_report(db: &Db) -> Result<StockReport, ReportsError> {
         {
             let mut stmt = c.prepare(
                 "SELECT sb.item_id, i.sku_code, i.name, sb.location_id, l.name, sb.qty,
-                        i.min_qty
+                        i.min_stock
                  FROM stock_balances sb
                  JOIN items i ON i.id = sb.item_id
                  JOIN locations l ON l.id = sb.location_id
@@ -181,14 +181,14 @@ pub fn stock_report(db: &Db) -> Result<StockReport, ReportsError> {
             })?;
             for r in rows {
                 let row = r?;
-                if row.qty != 0 || row.reorder_level > 0 {
+                if row.qty != 0.0 || row.reorder_level > 0.0 {
                     by_location.push(row);
                 }
             }
         }
         let low_stock: Vec<StockRow> = by_location
             .iter()
-            .filter(|r| r.reorder_level > 0 && r.qty <= r.reorder_level)
+            .filter(|r| r.reorder_level > 0.0 && r.qty <= r.reorder_level)
             .cloned()
             .collect();
 
@@ -206,7 +206,7 @@ pub fn stock_report(db: &Db) -> Result<StockReport, ReportsError> {
             let rows = stmt.query_map([], |r| {
                 Ok(StockGroupRow {
                     group: r.get(0)?,
-                    total_qty: r.get::<_, i64>(1)?,
+                    total_qty: r.get::<_, f64>(1)?,
                     total_retail_value: r.get::<_, i64>(2)?,
                 })
             })?;
@@ -495,7 +495,7 @@ pub fn cmd_expense_summary(
 pub struct TopItemRow {
     pub item_id: i64,
     pub name: String,
-    pub total_qty: i64,
+    pub total_qty: f64,
     pub total_value: i64,
 }
 
@@ -717,13 +717,13 @@ pub fn stock_health_summary(db: &Db) -> Result<StockHealthSummary, ReportsError>
         let row = c.query_row(
             "SELECT
                 COUNT(*) AS total_active_items,
-                SUM(CASE WHEN total_qty > 0 AND (min_qty = 0 OR total_qty > min_qty) THEN 1 ELSE 0 END) AS healthy_count,
-                SUM(CASE WHEN total_qty > 0 AND min_qty > 0 AND total_qty <= min_qty THEN 1 ELSE 0 END) AS low_count,
+                SUM(CASE WHEN total_qty > 0 AND (min_stock = 0 OR total_qty > min_stock) THEN 1 ELSE 0 END) AS healthy_count,
+                SUM(CASE WHEN total_qty > 0 AND min_stock > 0 AND total_qty <= min_stock THEN 1 ELSE 0 END) AS low_count,
                 SUM(CASE WHEN total_qty = 0 THEN 1 ELSE 0 END) AS zero_count,
                 SUM(CASE WHEN total_qty < 0 THEN 1 ELSE 0 END) AS negative_count,
                 SUM(CASE WHEN total_qty > 0 THEN total_qty * retail_price_paise ELSE 0 END) AS retail_value_paise
              FROM (
-                SELECT i.id, i.min_qty, i.retail_price_paise,
+                SELECT i.id, i.min_stock, i.retail_price_paise,
                        COALESCE(SUM(sb.qty), 0) AS total_qty
                 FROM items i
                 LEFT JOIN stock_balances sb ON sb.item_id = i.id
@@ -763,7 +763,7 @@ pub fn cmd_stock_health_summary(
 pub struct DeadStockRow {
     pub item_id: i64,
     pub name: String,
-    pub current_qty: i64,
+    pub current_qty: f64,
     pub last_inbound_ms: Option<i64>,
 }
 
@@ -1099,7 +1099,7 @@ mod tests {
             .iter()
             .find(|r| r.item_id == 1)
             .expect("item1 row");
-        assert_eq!(item1.qty, 1);
+        assert_eq!(item1.qty, 1.0);
         assert!(rep.low_stock.iter().any(|r| r.item_id == 1));
         // Group row exists with brand AsianPaints.
         assert!(rep.by_group.iter().any(|g| g.group == "AsianPaints"));

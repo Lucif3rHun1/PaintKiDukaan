@@ -53,7 +53,7 @@ pub struct Purchase {
 pub struct PurchaseItem {
     pub item_id: i64,
     pub item_name: String,
-    pub qty: i64, // base units (after box conversion)
+    pub qty: f64,
     pub unit_price_paise: i64,
     pub location_id: i64,
 }
@@ -62,7 +62,7 @@ pub struct PurchaseItem {
 pub struct InwardLine {
     pub item_id: i64,
     pub qty: f64,
-    pub unit_type: String, // "unit" | "box"
+    pub unit_type: String, // "unit" | "mtr" | "kg"
     pub unit_price_paise: i64,
     pub location_id: i64,
 }
@@ -87,7 +87,7 @@ pub struct StockMovement {
     pub id: i64,
     pub item_id: i64,
     pub location_id: i64,
-    pub qty: i64,
+    pub qty: f64,
     pub r#type: String, // "inward" | "sale" | "adjust" | "transfer"
     pub ref_type: Option<String>,
     pub ref_id: Option<i64>,
@@ -108,7 +108,7 @@ pub enum PurchaseError {
     BadQty(usize),
     #[error("line {0}: unit_price_paise must be >= 0")]
     BadCost(usize),
-    #[error("line {0}: unit_type must be 'unit' or 'box'")]
+    #[error("line {0}: unit_type must be 'unit', 'mtr', or 'kg'")]
     BadUnitType(usize),
     #[error("line {0}: item {1} not found")]
     ItemNotFound(usize, i64),
@@ -126,25 +126,17 @@ pub enum PurchaseError {
 // Pure helpers (also unit-tested).
 // -----------------------------------------------------------------------------
 
-/// Resolve a line's base qty: boxes * units_per_box, else qty as-is.
-/// `units_per_box` is the value from the items row for this line.
-pub fn base_qty(line_qty: f64, unit_type: &str, units_per_box: i64) -> i64 {
-    let raw = if unit_type == "box" {
-        line_qty * units_per_box as f64
-    } else {
-        line_qty
-    };
-    raw.round() as i64
+/// Resolve a line's base qty.
+/// With the 3-unit system, unit_type is always the base unit, so this is a passthrough.
+pub fn base_qty(line_qty: f64, _unit_type: &str, _units_per_box: f64) -> f64 {
+    line_qty
 }
 
-/// Compute total paise for a purchase = sum(qty_base * cost_price) for each
-/// line. Frontend's expected value should match; we recompute on the Rust
-/// side and reject mismatches.
-pub fn purchase_total(lines: &[InwardLine], units_per_box: &[i64]) -> i64 {
+/// Compute total paise for a purchase = sum(qty * cost_price) for each line.
+pub fn purchase_total(lines: &[InwardLine], _units_per_box: &[f64]) -> i64 {
     lines
         .iter()
-        .zip(units_per_box.iter())
-        .map(|(l, upb)| base_qty(l.qty, &l.unit_type, *upb) * l.unit_price_paise)
+        .map(|l| (l.qty * l.unit_price_paise as f64).round() as i64)
         .sum()
 }
 
@@ -354,7 +346,7 @@ pub fn create_inward(
         if l.unit_price_paise < 0 {
             return Err(PurchaseError::BadCost(i));
         }
-        if l.unit_type != "unit" && l.unit_type != "box" {
+        if l.unit_type != "unit" && l.unit_type != "mtr" && l.unit_type != "kg" {
             return Err(PurchaseError::BadUnitType(i));
         }
     }
@@ -364,20 +356,17 @@ pub fn create_inward(
     let location_id = req.lines[0].location_id;
 
     let created = db.with_conn_immediate(|c| -> Result<PurchaseCreated, PurchaseError> {
-        let mut upb_per_line: Vec<i64> = Vec::with_capacity(req.lines.len());
+        let mut upb_per_line: Vec<f64> = Vec::with_capacity(req.lines.len());
         for (i, l) in req.lines.iter().enumerate() {
-            let upb: Option<i64> = c
+            let upb: Option<f64> = c
                 .query_row(
                     "SELECT units_per_pack FROM items WHERE id = ?1",
                     params![l.item_id],
-                    |r| r.get::<_, i64>(0),
+                    |r| r.get::<_, f64>(0),
                 )
                 .optional()
                 .map_err(PurchaseError::Db)?;
             let upb = upb.ok_or(PurchaseError::ItemNotFound(i, l.item_id))?;
-            if l.unit_type == "box" && upb <= 0 {
-                return Err(PurchaseError::BadUnitsPerBox(i));
-            }
             upb_per_line.push(upb);
 
             let loc_exists: bool = c
@@ -409,7 +398,7 @@ pub fn create_inward(
         for (i, l) in req.lines.iter().enumerate() {
             let upb = upb_per_line[i];
             let base = base_qty(l.qty, &l.unit_type, upb);
-            let line_total = base * l.unit_price_paise;
+            let line_total = (base * l.unit_price_paise as f64).round() as i64;
             c.execute(
                 "INSERT INTO purchase_items (purchase_id, item_id, qty, unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at)
                  VALUES (?1, ?2, ?3, (SELECT unit_id FROM items WHERE id = ?2), ?4, 0, ?5, ?6)",
@@ -561,26 +550,25 @@ mod tests {
 
     #[test]
     fn base_qty_unit_passes_through() {
-        assert_eq!(base_qty(3.0, "unit", 12), 3);
+        assert_eq!(base_qty(3.0, "unit", 12.0), 3.0);
     }
 
     #[test]
-    fn base_qty_box_multiplies() {
-        // E26: 2 boxes * 12 units_per_box = 24 base units.
-        assert_eq!(base_qty(2.0, "box", 12), 24);
+    fn base_qty_box_passes_through() {
+        assert_eq!(base_qty(2.0, "box", 12.0), 2.0);
     }
 
     #[test]
-    fn base_qty_box_rounds_non_integer_qty() {
-        assert_eq!(base_qty(1.5, "box", 4), 6);
+    fn base_qty_mtr_passes_through() {
+        assert_eq!(base_qty(1.5, "mtr", 4.0), 1.5);
     }
 
     #[test]
-    fn purchase_total_sums_base_times_cost() {
-        let lines = vec![line(3.0, "unit", 100), line(2.0, "box", 100)];
-        let upb = vec![12, 12];
-        // 3 * 100 + 24 * 100 = 300 + 2400 = 2700 paise.
-        assert_eq!(purchase_total(&lines, &upb), 2700);
+    fn purchase_total_sums_qty_times_cost() {
+        let lines = vec![line(3.0, "unit", 100), line(2.0, "unit", 100)];
+        let upb = vec![12.0, 12.0];
+        // 3 * 100 + 2 * 100 = 300 + 200 = 500 paise.
+        assert_eq!(purchase_total(&lines, &upb), 500);
     }
 
     #[test]
@@ -669,7 +657,7 @@ mod tests {
                 lines: vec![InwardLine {
                     item_id: 1,
                     qty: 3.0,
-                    unit_type: "box".into(),
+                    unit_type: "unit".into(),
                     unit_price_paise: 18000,
                     location_id: 1,
                 }],
@@ -681,14 +669,14 @@ mod tests {
 
         // Verify atomic state.
         let p = get(&db, 1).expect("query").expect("exists");
-        assert_eq!(p.total, 3 * 4 * 18000);
+        assert_eq!(p.total, 3 * 18000);
         assert_eq!(p.items.len(), 1);
-        assert_eq!(p.items[0].qty, 12);
+        assert_eq!(p.items[0].qty, 3.0);
 
-        // Stock movement: +12 base units.
+        // Stock movement: +3 base units.
         let moves = movements_for_item(&db, 1, 10).expect("moves");
         assert_eq!(moves.len(), 1);
-        assert_eq!(moves[0].qty, 12);
+        assert_eq!(moves[0].qty, 3.0);
         assert_eq!(moves[0].r#type, "purchase");
     }
 

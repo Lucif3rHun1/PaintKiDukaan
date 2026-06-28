@@ -55,9 +55,9 @@ pub struct SaleItem {
     pub item_id: Option<i64>,
     pub formula_id: Option<i64>,
     pub display_name: String,
-    pub qty: i64, // base units (INTEGER)
+    pub qty: f64,
     pub price: i64,
-    pub unit_type: String, // "unit" | "box"
+    pub unit_type: String, // "unit" | "mtr" | "kg"
     pub line_discount: i64,
     pub shade_note: Option<String>,
     pub line_order: i64,
@@ -135,8 +135,8 @@ pub enum SaleError {
     InsufficientStock {
         item_id: i64,
         item_name: String,
-        available: i64,
-        requested: i64,
+        available: f64,
+        requested: f64,
     },
     #[error("db error: {0}")]
     Db(#[from] rusqlite::Error),
@@ -162,9 +162,9 @@ impl From<SaleError> for AppError {
             | SaleError::NotAQuotation(_, _)
             | SaleError::InvalidKind(_) => AppError::Validation(e.to_string()),
             SaleError::InsufficientStock { item_name, available, requested, .. } => {
-                let avail = available.max(0);
+                let avail = available.max(0.0);
                 AppError::Validation(format!(
-                    "Not enough stock for '{item_name}'. Only {avail} available, you need {requested}."
+                    "Not enough stock for '{item_name}'. Only {avail:.1} available, you need {requested:.1}."
                 ))
             }
             SaleError::Db(inner) => AppError::from(inner),
@@ -277,7 +277,7 @@ pub fn create_quotation(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sal
                     l.kind,
                     l.item_id,
                     l.formula_id,
-                    l.qty.round() as i64,
+                    l.qty,
                     l.price,
                     l.unit_type,
                     l.line_discount,
@@ -383,7 +383,7 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                     l.kind,
                     l.item_id,
                     l.formula_id,
-                    (l.qty.round() as i64),
+                    l.qty,
                     l.price,
                     l.unit_type,
                     l.line_discount,
@@ -393,12 +393,12 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
             )?;
             // Stock movements for real items AND formulas with a linked base item.
             if let Some(item_id) = l.item_id {
-                let requested = l.qty.round() as i64;
-                let available: i64 = c.query_row(
-                    "SELECT COALESCE(SUM(qty), 0) FROM stock_balances WHERE item_id = ?1",
+                let requested = l.qty;
+                let available: f64 = c.query_row(
+                    "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
                     params![item_id],
                     |r| r.get(0),
-                ).unwrap_or(0);
+                ).unwrap_or(0.0);
                 if available < requested {
                     let item_name: String = c.query_row(
                         "SELECT name FROM items WHERE id = ?1",
@@ -429,12 +429,12 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                         |r| r.get(0),
                     ).unwrap_or(None);
                     if let Some(base_id) = base_item_id {
-                        let requested = l.qty.round() as i64;
-                        let available: i64 = c.query_row(
-                            "SELECT COALESCE(SUM(qty), 0) FROM stock_balances WHERE item_id = ?1",
+                        let requested = l.qty;
+                        let available: f64 = c.query_row(
+                            "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
                             params![base_id],
                             |r| r.get(0),
-                        ).unwrap_or(0);
+                        ).unwrap_or(0.0);
                         if available < requested {
                             let item_name: String = c.query_row(
                                 "SELECT name FROM items WHERE id = ?1",
@@ -565,7 +565,7 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                 let kind: String = r.get(0)?;
                 let item_id: Option<i64> = r.get(1)?;
                 let formula_id: Option<i64> = r.get(2)?;
-                let qty: i64 = r.get(3)?;
+                let qty: f64 = r.get(3)?;
                 let price: i64 = r.get(4)?;
                 let unit_type: String = r.get(5)?;
                 let line_discount: i64 = r.get(6)?;
@@ -590,11 +590,11 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                 )?;
                 // Stock movements for real items AND formulas with a linked base item.
                 if let Some(item_id) = item_id {
-                    let available: i64 = c.query_row(
-                        "SELECT COALESCE(SUM(qty), 0) FROM stock_balances WHERE item_id = ?1",
+                    let available: f64 = c.query_row(
+                        "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
                         params![item_id],
                         |r| r.get(0),
-                    ).unwrap_or(0);
+                    ).unwrap_or(0.0);
                     if available < qty {
                         let item_name: String = c.query_row(
                             "SELECT name FROM items WHERE id = ?1",
@@ -617,11 +617,11 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                             |r| r.get(0),
                         ).unwrap_or(None);
                         if let Some(base_id) = base_item_id {
-                            let available: i64 = c.query_row(
-                                "SELECT COALESCE(SUM(qty), 0) FROM stock_balances WHERE item_id = ?1",
+                            let available: f64 = c.query_row(
+                                "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
                                 params![base_id],
                                 |r| r.get(0),
-                            ).unwrap_or(0);
+                            ).unwrap_or(0.0);
                             if available < qty {
                                 let item_name: String = c.query_row(
                                     "SELECT name FROM items WHERE id = ?1",
@@ -919,7 +919,7 @@ pub struct CreateSaleReturnPayload {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateSaleReturnLine {
     pub sale_item_id: i64,
-    pub qty: i64,
+    pub qty: f64,
     pub refund_paise: i64,
     pub shade_note: Option<String>,
 }
@@ -942,7 +942,7 @@ pub struct SaleReturn {
 pub struct SaleReturnLine {
     pub sale_item_id: i64,
     pub item_name: String,
-    pub qty: i64,
+    pub qty: f64,
     pub refund_paise: i64,
     pub shade_note: Option<String>,
 }
@@ -962,9 +962,9 @@ pub enum ReturnError {
     )]
     QtyExceedsSold {
         line: usize,
-        requested: i64,
-        already: i64,
-        sold: i64,
+        requested: f64,
+        already: f64,
+        sold: f64,
     },
     #[error("payment_modes sum ({got}) must equal refund total ({want})")]
     ModesSumMismatch { got: i64, want: i64 },
@@ -987,7 +987,7 @@ pub fn create_sale_return(
         return Err(ReturnError::EmptyLines);
     }
     for (i, l) in payload.lines.iter().enumerate() {
-        if l.qty <= 0 {
+        if l.qty <= 0.0 {
             return Err(ReturnError::BadLineQty(i));
         }
         if l.refund_paise < 0 {
@@ -1014,11 +1014,11 @@ pub fn create_sale_return(
         // Per-line validation: each sale_item_id must belong to the original
         // sale AND requested qty must not exceed (sold - already_returned).
         for (i, l) in payload.lines.iter().enumerate() {
-            let (sale_id_of_item, sold_qty): (i64, i64) = c
+            let (sale_id_of_item, sold_qty): (i64, f64) = c
                 .query_row(
                     "SELECT sale_id, qty FROM sale_items WHERE id = ?1",
                     params![l.sale_item_id],
-                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)),
                 )
                 .optional()?
                 .ok_or(ReturnError::SaleItemMismatch(
@@ -1033,8 +1033,8 @@ pub fn create_sale_return(
                     payload.sale_id,
                 ));
             }
-            let already: i64 = c.query_row(
-                "SELECT COALESCE(SUM(qty), 0) FROM sale_return_lines
+            let already: f64 = c.query_row(
+                "SELECT COALESCE(SUM(qty), 0.0) FROM sale_return_lines
                      WHERE sale_item_id = ?1",
                 params![l.sale_item_id],
                 |r| r.get(0),
@@ -1052,7 +1052,7 @@ pub fn create_sale_return(
         let refund_total: i64 = payload
             .lines
             .iter()
-            .map(|l| l.qty.saturating_mul(l.refund_paise))
+            .map(|l| (l.qty * l.refund_paise as f64).round() as i64)
             .sum();
         let modes_sum: i64 = payload.payment_modes.iter().map(|m| m.amount).sum();
         if modes_sum != refund_total {
@@ -1466,7 +1466,7 @@ mod tests {
         assert_eq!(modes_sum(&modes), 1000);
     }
 
-    fn ret_line(sale_item_id: i64, qty: i64, refund_paise: i64) -> CreateSaleReturnLine {
+    fn ret_line(sale_item_id: i64, qty: f64, refund_paise: i64) -> CreateSaleReturnLine {
         CreateSaleReturnLine {
             sale_item_id,
             qty,
@@ -1502,7 +1502,7 @@ mod tests {
             reason: None,
             payment_modes: vec![],
             owner_pin: String::new(),
-            lines: vec![ret_line(10, 0, 100)],
+            lines: vec![ret_line(10, 0.0, 100)],
         };
         let err = create_sale_return(&db, 1, payload).unwrap_err();
         assert!(matches!(err, ReturnError::BadLineQty(0)));
@@ -1517,7 +1517,7 @@ mod tests {
             reason: None,
             payment_modes: vec![],
             owner_pin: String::new(),
-            lines: vec![ret_line(10, 1, -10)],
+            lines: vec![ret_line(10, 1.0, -10)],
         };
         let err = create_sale_return(&db, 1, payload).unwrap_err();
         assert!(matches!(err, ReturnError::BadRefund(0)));
@@ -1535,7 +1535,7 @@ mod tests {
                 amount: 100,
             }],
             owner_pin: String::new(),
-            lines: vec![ret_line(1, 1, 100)],
+            lines: vec![ret_line(1, 1.0, 100)],
         };
         let err = create_sale_return(&db, 1, payload).unwrap_err();
         assert!(matches!(err, ReturnError::SaleNotFound(999)));
@@ -1574,7 +1574,7 @@ mod tests {
             reason: None,
             payment_modes: vec![],
             owner_pin: String::new(),
-            lines: vec![ret_line(1, 1, 100)],
+            lines: vec![ret_line(1, 1.0, 100)],
         };
         let err = create_sale_return(&db, 1, payload).unwrap_err();
         assert!(matches!(err, ReturnError::NotAFinalSale(1, s) if s == "quotation"));
@@ -1623,7 +1623,7 @@ mod tests {
                 amount: 10,
             }],
             owner_pin: String::new(),
-            lines: vec![ret_line(1, 2, 10)],
+            lines: vec![ret_line(1, 2.0, 10)],
         };
         let err = create_sale_return(&db, 1, payload).unwrap_err();
         match err {

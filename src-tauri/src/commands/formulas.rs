@@ -67,7 +67,7 @@ pub struct FormulaSaleRow {
     pub sale_kind: String,
     pub customer_id: Option<i64>,
     pub customer_name: Option<String>,
-    pub qty: i64,
+    pub qty: f64,
     pub price: i64,
     pub line_total: i64,
     pub line_discount: i64,
@@ -499,6 +499,7 @@ mod tests {
             id_code: code.into(),
             name: Some("Rose Beige".into()),
             with_base,
+            base_item_id: None,
             retail_price_paise: price,
         }
     }
@@ -564,6 +565,7 @@ mod tests {
                 id,
                 name: Some("Updated Name".into()),
                 with_base: true,
+                base_item_id: None,
                 retail_price_paise: 999,
             },
         )
@@ -588,6 +590,7 @@ mod tests {
                 id,
                 name: None,
                 with_base: false,
+                base_item_id: None,
                 retail_price_paise: 100,
             },
         )
@@ -775,7 +778,7 @@ mod tests {
                 owner_pin: "".into(),
                 lines: vec![CreateSaleReturnLine {
                     sale_item_id,
-                    qty: 1,
+                    qty: 1.0,
                     refund_paise: 250,
                     shade_note: None,
                 }],

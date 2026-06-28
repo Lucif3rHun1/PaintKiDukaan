@@ -240,8 +240,8 @@ pub fn cmd_import_items_csv(
             let unit_code_str = get_field(row, &hmap, &["unit", "unit_code"]).unwrap_or_else(|| "pc".into());
             let unit_id = units.get(&unit_code_str.to_lowercase()).copied().unwrap_or(default_unit_id);
             let units_per_pack = get_field(row, &hmap, &["units_per_pack", "pack_size"])
-                .and_then(|s| s.parse::<i64>().ok())
-                .unwrap_or(1);
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(1.0);
 
             let retail_price_paise = match get_field(row, &hmap, &["retail_price", "retail", "mrp", "selling_price", "price"]) {
                 Some(s) => parse_paise(&s).unwrap_or(0),
@@ -574,8 +574,8 @@ pub fn cmd_import_inward_csv(
             let notes = get_field(row, &hmap, &["notes", "note", "remarks"]);
 
             // Compute base qty
-            let base = crate::commands::purchases::base_qty(qty, "unit", item.units_per_pack);
-            let line_total = base * cost_paise;
+            let base = crate::commands::purchases::base_qty(qty, "unit", item.units_per_pack as f64);
+            let line_total = (base * cost_paise as f64).round() as i64;
 
             // Create purchase
             let now_ms = chrono::Utc::now().timestamp_millis();
@@ -639,7 +639,7 @@ struct ItemLookupRow {
     barcode: Option<String>,
     unit_id: i64,
     _unit_code: String,
-    units_per_pack: i64,
+    units_per_pack: f64,
     cost_paise: i64,
     _retail_price_paise: i64,
 }
