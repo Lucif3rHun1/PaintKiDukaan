@@ -7,7 +7,6 @@ import { ArrowLeft, PackagePlus, Search, Truck, X } from "lucide-react";
 import { EmptyState, Skeleton } from "../../components/ui";
 
 import { Button, InlineDialog, Money, MoneyInput, QtyInput } from "../../components/ui";
-import { DraftBadge } from "../../components/ui/DraftBadge";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
@@ -23,7 +22,7 @@ import { listVendors } from "../../domain/vendors/api";
 import { outstandingReport } from "../api";
 import type { Item, Location, Vendor } from "../../domain/types";
 import { createInward, deleteDraft, lastCost, lastRetail, listPurchases } from "../api";
-import { useAutosave, useDirtyForm } from "../hooks";
+import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay } from "../../lib/date";
 import type { InwardLine, NewPurchase, Purchase } from "../types";
@@ -165,6 +164,15 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       }
     }
   }, [savedDraft, draftLoading, draft.length]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
+      detail: { status: draftStatus, draft: savedDraft },
+    }));
+    return () => window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
+      detail: { status: "idle", draft: null },
+    }));
+  }, [draftStatus, savedDraft]);
 
   const entrySearchRef = useRef<HTMLInputElement>(null);
 
@@ -413,6 +421,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   }
 
   return (
+    <PageBadgeCtx.Provider value={{ status: draftStatus, draft: savedDraft }}>
     <div className="space-y-4">
       {/* ── Sticky toolbar: meta + new-item + save ─────────── */}
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card/95 px-4 py-2.5 backdrop-blur">
@@ -431,7 +440,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
 
         <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold text-foreground">New Inward</h1>
-          <DraftBadge status={draftStatus} draft={savedDraft} />
         </div>
 
         {/* Vendor typeahead — search + add combined into one input */}
@@ -912,5 +920,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
         </InlineDialog>
       )}
     </div>
+    </PageBadgeCtx.Provider>
   );
 }

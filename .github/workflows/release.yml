@@ -93,7 +93,7 @@ jobs:
       - name: Build Tauri app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --target ${{ matrix.target }}
 
       - name: List bundle outputs (debug)
@@ -181,10 +181,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          targets: x86_64-unknown-linux-gnu
+          version: 11.9.0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Download build outputs
         uses: actions/download-artifact@v4
@@ -194,21 +203,16 @@ jobs:
       - name: Re-sign updater artifacts
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-
-          # Install the Tauri CLI to get `cargo tauri signer`
-          cargo install tauri-cli --version "^2" || true
 
           re_sign() {
             local exe="$1"
             local sig_file="${exe}.sig"
             echo "Re-signing: $exe"
-            # Remove the stale .sig
             rm -f "$sig_file"
-            # Generate fresh .sig from the (now signed) .exe
-            cargo tauri signer sign \
+            pnpm tauri signer sign \
               -k "$TAURI_SIGNING_PRIVATE_KEY" \
               -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
               "$exe"

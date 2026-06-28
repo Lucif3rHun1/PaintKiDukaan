@@ -61,7 +61,7 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (155 total).
+/// Complete ACL table for every command registered in `invoke_handler` (158 total).
 ///
 /// Classification:
 /// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.
@@ -723,6 +723,19 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "cmd_list_formula_sales",
         min_role: Role::Cashier,
     },
+    // Drafts (autosave-as-draft for POS forms)
+    CommandAcl {
+        name: "cmd_save_draft",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_get_draft",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_delete_draft",
+        min_role: Role::Cashier,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -856,8 +869,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            155,
-            "ACL has {} entries, expected 155",
+            158,
+            "ACL has {} entries, expected 158",
             COMMAND_ACL.len()
         );
     }

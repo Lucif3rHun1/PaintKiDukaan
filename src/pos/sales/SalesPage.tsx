@@ -31,7 +31,6 @@ import {
   Skeleton,
   cn,
 } from "../../components/ui";
-import { DraftBadge } from "../../components/ui/DraftBadge";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
@@ -56,7 +55,7 @@ import {
   getSale,
   listSales,
 } from "../api";
-import { useAutosave, useDirtyForm } from "../hooks";
+import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay, todayLocalYyyymmdd } from "../../lib/date";
 import { ipc } from "../../shell/lib/ipc";
@@ -147,6 +146,15 @@ export default function SalesPage({ user, onExit }: Props) {
       }
     }
   }, [draft, draftLoading, lines.length]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
+      detail: { status: draftStatus, draft },
+    }));
+    return () => window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
+      detail: { status: "idle", draft: null },
+    }));
+  }, [draftStatus, draft]);
 
   // ---- Computed totals ----
   const subtotal = useMemo(
@@ -462,6 +470,7 @@ export default function SalesPage({ user, onExit }: Props) {
 
   // ---- Render ----
   return (
+    <PageBadgeCtx.Provider value={{ status: draftStatus, draft }}>
     <div className="space-y-4">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
@@ -485,7 +494,6 @@ export default function SalesPage({ user, onExit }: Props) {
           <h1 className="text-lg font-semibold text-foreground">
             {kind === "final" ? "New Bill" : "New Quotation"}
           </h1>
-          <DraftBadge status={draftStatus} draft={draft} />
         </div>
         <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
           {(["final", "quotation"] as const).map((k) => (
@@ -948,5 +956,6 @@ export default function SalesPage({ user, onExit }: Props) {
         </InlineDialog>
       )}
     </div>
+    </PageBadgeCtx.Provider>
   );
 }
