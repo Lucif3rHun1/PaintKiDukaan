@@ -427,10 +427,13 @@ pub fn run() {
 }
 
 async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::UnboundedReceiver<()>) {
+    let mut attempt: u32 = 0;
     loop {
+        attempt = attempt.wrapping_add(1);
+        let splash_label = format!("splash-{attempt}");
         let splash = match tauri::WebviewWindowBuilder::new(
             &app,
-            "splash",
+            &splash_label,
             tauri::WebviewUrl::App("splash.html".into()),
         )
         .inner_size(480.0, 320.0)

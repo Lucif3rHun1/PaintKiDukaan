@@ -140,13 +140,14 @@ where
 {
     #[cfg(target_os = "windows")]
     {
-        let cb1 = _callback.clone();
-        let h1 = watch_key("HKCU", "Software\\PaintKiDukaan", cb1)?;
-        let cb2 = _callback;
-        let _h2 = watch_key(
-            "HKLM",
-            "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PaintKiDukaan",
-            cb2,
+        // Watch the NSIS uninstall key (currentUser mode → HKCU).
+        // ponytail: previous key paths (HKCU\Software\PaintKiDukaan and
+        // HKLM\...\Uninstall\PaintKiDukaan) never existed — NSIS creates
+        // the key under the app identifier, not the display name.
+        let h1 = watch_key(
+            "HKCU",
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\in.paintkiduakan.master",
+            _callback,
         )?;
         Ok(h1)
     }

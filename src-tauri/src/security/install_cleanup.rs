@@ -1,37 +1,5 @@
 use crate::error::AppError;
 
-/// MOVEFILE_DELAY_UNTIL_REBOOT — schedules delete on next reboot.
-#[cfg(target_os = "windows")]
-const MOVEFILE_DELAY_UNTIL_REBOOT: u32 = 0x4;
-
-#[cfg(target_os = "windows")]
-const MAX_PATH: usize = 260;
-
-#[cfg(target_os = "windows")]
-extern "system" {
-    fn MoveFileExW(
-        lp_existing_file_name: *const u16,
-        lp_new_file_name: *const u16,
-        dw_flags: u32,
-    ) -> i32;
-}
-
-/// Encode a Rust string as a NUL-terminated UTF-16 Vec for Win32 W APIs.
-#[cfg(target_os = "windows")]
-fn to_wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
-/// Prefix a path with `\\?\` for long-path support if it exceeds MAX_PATH.
-#[cfg(target_os = "windows")]
-fn to_long_path(path: &str) -> String {
-    if path.len() >= MAX_PATH && !path.starts_with("\\\\?\\") {
-        format!("\\\\?\\{}", path)
-    } else {
-        path.to_string()
-    }
-}
-
 /// Read a REG_SZ value from the registry, returning None on any failure.
 #[cfg(target_os = "windows")]
 fn read_reg_string(
@@ -109,28 +77,12 @@ fn register_uninstall_inner() -> Result<(), AppError> {
 
     let app_data = dirs::data_local_dir()
         .ok_or_else(|| AppError::Internal("cannot resolve app data dir".into()))?;
-    let app_dir = app_data.join("in.paintkiduakan.master");
 
-    // Schedule deferred delete via MoveFileExW — no shell injection surface.
-    // Prefix with \\?\ for paths >= MAX_PATH. Failure is non-fatal: the uninstaller
-    // still runs, the data dir simply stays around for manual cleanup.
-    let path_str = app_dir.to_string_lossy().to_string();
-    let long_path = to_long_path(&path_str);
-    let wide_path = to_wide(&long_path);
-    let move_ok = unsafe {
-        MoveFileExW(
-            wide_path.as_ptr(),
-            std::ptr::null(),
-            MOVEFILE_DELAY_UNTIL_REBOOT,
-        )
-    };
-    if move_ok == 0 {
-        log::warn!(
-            "MoveFileExW failed for {}: {} — deferred wipe skipped, manual cleanup needed",
-            long_path,
-            std::io::Error::last_os_error()
-        );
-    }
+    // ponytail: deliberately skip MoveFileExW on the entire data dir.
+    // NSIS currentUser uninstall already removes program files; the data dir
+    // contains the database and keystore — wiping it silently would destroy
+    // user data.  If full cleanup is desired later, run it from the NSIS
+    // uninstaller script or the frontend.
 
     // Build uninstall command pointing to the Tauri NSIS uninstaller.
     // Read from the NSIS-created registry entry first; fall back to
@@ -154,8 +106,10 @@ fn register_uninstall_inner() -> Result<(), AppError> {
     let cmd_cstr =
         CString::new(uninstall_cmd).map_err(|e| AppError::Internal(format!("CString: {e}")))?;
 
+    // Write into the NSIS-created uninstall key so Add/Remove Programs
+    // shows a single entry instead of duplicates.
     let key_path =
-        CString::new("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PaintKiDukaan")
+        CString::new("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\in.paintkiduakan.master")
             .unwrap();
 
     unsafe {

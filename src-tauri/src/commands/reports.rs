@@ -146,7 +146,7 @@ pub struct StockRow {
 pub struct StockGroupRow {
     pub group: String, // brand or category
     pub total_qty: f64,
-    pub total_retail_value: i64,
+    pub total_retail_value: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -207,7 +207,7 @@ pub fn stock_report(db: &Db) -> Result<StockReport, ReportsError> {
                 Ok(StockGroupRow {
                     group: r.get(0)?,
                     total_qty: r.get::<_, f64>(1)?,
-                    total_retail_value: r.get::<_, i64>(2)?,
+                    total_retail_value: r.get::<_, f64>(2)?,
                 })
             })?;
             for r in rows {
@@ -935,13 +935,13 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, min_qty, is_active, created_at, updated_at)
-                 VALUES ('SK001','111','Red 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,10000,5000,2,1,0,0)",
+                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, min_qty, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
+                 VALUES ('SK001','111','Red 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,10000,5000,2,1,'unit',NULL,2,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, min_qty, is_active, created_at, updated_at)
-                 VALUES ('SK002','222','Blue 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,15000,8000,2,1,0,0)",
+                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, min_qty, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
+                 VALUES ('SK002','222','Blue 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,15000,8000,2,1,'unit',NULL,2,0,0)",
                 [],
             )?;
             c.execute(

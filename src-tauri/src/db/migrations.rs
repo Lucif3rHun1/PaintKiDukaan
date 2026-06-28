@@ -63,7 +63,6 @@ mod tests {
             "locations",
             "sub_locations",
             "units",
-            "unit_conversions",
             // Section C
             "customer_types",
             "customers",

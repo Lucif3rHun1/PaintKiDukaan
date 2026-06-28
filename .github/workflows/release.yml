@@ -249,6 +249,7 @@ jobs:
     name: publish latest.json
     runs-on: ubuntu-latest
     needs: [build, regenerate-updater-signatures]
+    if: always() && needs.build.result == 'success'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -69,7 +69,7 @@ pub struct FormulaSaleRow {
     pub customer_name: Option<String>,
     pub qty: f64,
     pub price: i64,
-    pub line_total: i64,
+    pub line_total: f64,
     pub line_discount: i64,
     pub shade_note: Option<String>,
     pub sold_at: String,
@@ -703,7 +703,7 @@ mod tests {
         );
         assert_eq!(rows[0].sale_kind, "final");
         assert_eq!(rows[0].price, 250);
-        assert_eq!(rows[0].line_total, 250);
+        assert!((rows[0].line_total - 250.0).abs() < f64::EPSILON);
 
         let from_2026_06_21 = list_sales(&db, formula_id, None, Some("2026-06-21"), None, 100)
             .expect("from date filter");

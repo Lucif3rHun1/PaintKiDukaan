@@ -386,7 +386,7 @@ fn refresh_low_stock_alerts(conn: &rusqlite::Connection) -> Result<(), AppError>
     )?;
     let rows = stmt.query_map([], |row| {
         let name: String = row.get(1)?;
-        let balance: i64 = row.get(3)?;
+        let balance: f64 = row.get(3)?;
         Ok((name, balance))
     })?;
     for row in rows {

@@ -61,7 +61,7 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (158 total).
+/// Complete ACL table for every command registered in `invoke_handler` (167 total).
 ///
 /// Classification:
 /// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.
@@ -906,8 +906,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            158,
-            "ACL has {} entries, expected 158",
+            167,
+            "ACL has {} entries, expected 167",
             COMMAND_ACL.len()
         );
     }
