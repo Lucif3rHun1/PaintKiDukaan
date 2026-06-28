@@ -1,6 +1,6 @@
 // Inward (purchase) page — single-column layout with sticky toolbar.
-// Entry pad at top (search → qty → cost → retail → Enter) pushes a read-only
-// line into the draft. Save finalizes all accumulated lines.
+// Entry pad at top (search → packaging → qty → cost → amount → retail → Enter)
+// pushes a read-only line into the draft. Save finalizes all accumulated lines.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, PackagePlus, Search, Truck, X } from "lucide-react";
@@ -20,12 +20,30 @@ import { listLocations } from "../../domain/locations/api";
 import { VendorForm } from "../../domain/vendors/VendorForm";
 import { listVendors } from "../../domain/vendors/api";
 import { outstandingReport } from "../api";
-import type { Item, Location, Vendor } from "../../domain/types";
+import type { Item, Location, Vendor, PurchaseUnit, ItemPurchasePackaging } from "../../domain/types";
 import { createInward, deleteDraft, lastCost, lastRetail, listPurchases } from "../api";
 import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay } from "../../lib/date";
 import type { InwardLine, NewPurchase, Purchase } from "../types";
+import { tauriInvoke } from "../../lib/security/tauri";
+
+// ponytail: packaging APIs — will move to domain/units/api.ts when the other agent adds them
+function getItemPackaging(itemId: number): Promise<ItemPurchasePackaging[]> {
+  return tauriInvoke<ItemPurchasePackaging[]>("get_item_purchase_packaging", { item_id: itemId });
+}
+
+function setItemPackaging(itemId: number, purchaseUnitId: number, qtyPerPurchaseUnit: number): Promise<void> {
+  return tauriInvoke<void>("set_item_purchase_packaging", {
+    item_id: itemId,
+    purchase_unit_id: purchaseUnitId,
+    qty_per_purchase_unit: qtyPerPurchaseUnit,
+  });
+}
+
+function listPurchaseUnits(): Promise<PurchaseUnit[]> {
+  return tauriInvoke<PurchaseUnit[]>("list_purchase_units");
+}
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
@@ -36,7 +54,7 @@ interface DraftLine {
   row_id: string;
   item_id: number;
   qty: number;
-  unit_type: "unit" | "box";
+  unit_type: "unit" | "mtr" | "kg";
   unit_id: number;
   unit_code: string;
   cost_price: number;
@@ -45,6 +63,8 @@ interface DraftLine {
   retail_overridden: boolean;
   location_id: number;
   item_query: string;
+  purchase_unit_id: number | null;
+  qty_per_purchase_unit: number;
 }
 
 interface PurchaseDraftData {
@@ -60,11 +80,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isDraftLine(value: unknown): value is DraftLine {
   if (!isRecord(value)) return false;
+  const ut = value.unit_type;
+  const validUnitType = ut === "unit" || ut === "mtr" || ut === "kg" || ut === "box";
   return (
     typeof value.row_id === "string" &&
     typeof value.item_id === "number" &&
     typeof value.qty === "number" &&
-    (value.unit_type === "unit" || value.unit_type === "box") &&
+    validUnitType &&
     typeof value.unit_id === "number" &&
     typeof value.unit_code === "string" &&
     typeof value.cost_price === "number" &&
@@ -76,12 +98,22 @@ function isDraftLine(value: unknown): value is DraftLine {
   );
 }
 
+/** Migrate old "box" unit_type and fill missing packaging fields. */
+function migrateDraftLine(line: DraftLine): DraftLine {
+  return {
+    ...line,
+    unit_type: line.unit_type,
+    purchase_unit_id: line.purchase_unit_id ?? null,
+    qty_per_purchase_unit: line.qty_per_purchase_unit ?? 1,
+  };
+}
+
 function parsePurchaseDraft(dataJson: string): PurchaseDraftData | null {
   const parsed: unknown = JSON.parse(dataJson);
   if (!isRecord(parsed)) return null;
   return {
     draftLines: Array.isArray(parsed.draftLines)
-      ? parsed.draftLines.filter(isDraftLine)
+      ? parsed.draftLines.filter(isDraftLine).map(migrateDraftLine)
       : undefined,
     vendorId:
       typeof parsed.vendorId === "number" || parsed.vendorId === null
@@ -110,7 +142,14 @@ function emptyEntry(locationId: number): DraftLine {
     retail_overridden: false,
     location_id: locationId,
     item_query: "",
+    purchase_unit_id: null,
+    qty_per_purchase_unit: 1,
   };
+}
+
+/** Line total in paise = qty (purchase units) × qty_per_purchase_unit × cost_price (per base unit). */
+function lineTotalPaise(l: DraftLine): number {
+  return l.qty * l.qty_per_purchase_unit * l.cost_price;
 }
 
 export default function InwardPage({ user: _user, onExit }: Props) {
@@ -135,6 +174,10 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   const [initialLoading, setInitialLoading] = useState(true);
 
   const [showExitModal, setShowExitModal] = useState(false);
+
+  // Packaging state
+  const [purchaseUnits, setPurchaseUnits] = useState<PurchaseUnit[]>([]);
+  const [itemPackagingMap, setItemPackagingMap] = useState<Map<number, ItemPurchasePackaging[]>>(new Map());
 
   const draftData = useMemo(() => ({
     draftLines: draft,
@@ -188,7 +231,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   const entrySearchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Four independent fetches in parallel; allSettled isolates failures.
     Promise.allSettled([
       listPurchases().then((d) => setRecent(d ?? [])),
       listItems({ limit: 200 }).then((rows) => setItems(rows)),
@@ -199,7 +241,8 @@ export default function InwardPage({ user: _user, onExit }: Props) {
         setDefaultLocationId(firstLoc);
         setEntry(emptyEntry(firstLoc));
       }),
-    ]).then(([purchases, itemsResult, vendorsResult, locationsResult]) => {
+      listPurchaseUnits().then((pus) => setPurchaseUnits(pus)),
+    ]).then(([purchases, itemsResult, vendorsResult, locationsResult, purchaseUnitsResult]) => {
       setInitialLoading(false);
       if (purchases.status === "rejected") {
         console.error("[InwardPage] failed to load recent purchases", purchases.reason);
@@ -216,12 +259,14 @@ export default function InwardPage({ user: _user, onExit }: Props) {
         console.error("[InwardPage] failed to load locations", locationsResult.reason);
         setLocations([]);
       }
+      if (purchaseUnitsResult.status === "rejected") {
+        console.error("[InwardPage] failed to load purchase units", purchaseUnitsResult.reason);
+      }
     });
   }, []);
 
   useEffect(() => {
     if (vendors.length === 0) return;
-    // Batch: one round-trip instead of N vendorOutstanding() calls.
     outstandingReport()
       .then((report) => {
         const map: Record<number, number> = {};
@@ -235,7 +280,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   }, [vendors]);
 
   const total = useMemo(
-    () => draft.reduce((s, l) => s + l.qty * l.cost_price, 0),
+    () => draft.reduce((s, l) => s + lineTotalPaise(l), 0),
     [draft],
   );
 
@@ -247,26 +292,66 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     );
   }, [vendors, vendorQuery]);
 
+  // Derived: packaging options for the current entry's item
+  const entryPkgOptions = useMemo(() => {
+    if (entry.item_id <= 0) return [];
+    const itemPkgs = itemPackagingMap.get(entry.item_id);
+    if (itemPkgs && itemPkgs.length > 0) {
+      return itemPkgs.map((pkg) => ({
+        purchase_unit_id: pkg.purchase_unit_id,
+        qty_per_purchase_unit: pkg.qty_per_purchase_unit,
+        label:
+          pkg.purchase_unit_label ??
+          purchaseUnits.find((pu) => pu.id === pkg.purchase_unit_id)?.label ??
+          `Unit #${pkg.purchase_unit_id}`,
+      }));
+    }
+    // No configured packaging → show all active purchase units with default factor 1
+    return purchaseUnits
+      .filter((pu) => pu.is_active)
+      .map((pu) => ({
+        purchase_unit_id: pu.id,
+        qty_per_purchase_unit: 1,
+        label: pu.label,
+      }));
+  }, [entry.item_id, itemPackagingMap, purchaseUnits]);
+
+  // Derived: line total for the entry pad
+  const entryAmountPaise = entry.qty * entry.qty_per_purchase_unit * entry.cost_price;
+
+  function pkgLabelForLine(l: DraftLine): string {
+    if (l.purchase_unit_id) {
+      const pu = purchaseUnits.find((p) => p.id === l.purchase_unit_id);
+      if (pu) return pu.label;
+    }
+    return l.unit_code || "unit";
+  }
+
   async function selectItemForEntry(itemId: number) {
     if (itemId <= 0) return;
     const item = items.find((i) => i.id === itemId);
     const unitId = item?.unit_id ?? 0;
     const unitCode = item?.unit_code ?? "";
-    const sellUnit: "unit" | "box" = item?.sell_unit === "box" ? "box" : "unit";
+    const rawSell = item?.sell_unit;
+    const sellUnit: "unit" | "mtr" | "kg" =
+      rawSell === "mtr" ? "mtr" : rawSell === "kg" ? "kg" : "unit";
     setEntry((e) => ({
       ...e,
       item_id: itemId,
       unit_id: unitId,
       unit_code: unitCode,
       unit_type: sellUnit,
+      purchase_unit_id: null,
+      qty_per_purchase_unit: 1,
     }));
     if (!item) return;
-    // Fetch last cost + last retail in parallel; race-safe via item_id check
-    // on resolve so a later item selection doesn't get overwritten.
-    const [lastCostPaise, lastRetailPaise] = await Promise.all([
+    const [lastCostPaise, lastRetailPaise, packaging] = await Promise.all([
       lastCost(itemId).catch(() => null),
       lastRetail(itemId).catch(() => null),
+      getItemPackaging(itemId).catch(() => [] as ItemPurchasePackaging[]),
     ]);
+    setItemPackagingMap((prev) => new Map(prev).set(itemId, packaging));
+    const defaultPkg = packaging[0];
     setEntry((e) =>
       e.item_id === itemId
         ? {
@@ -280,9 +365,36 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                   : item.retail_price_paise,
             last_retail: lastRetailPaise,
             retail_overridden: false,
+            purchase_unit_id: defaultPkg?.purchase_unit_id ?? null,
+            qty_per_purchase_unit: defaultPkg?.qty_per_purchase_unit ?? 1,
           }
         : e,
     );
+  }
+
+  function handleEntryPkgChange(purchaseUnitId: number) {
+    const option = entryPkgOptions.find((o) => o.purchase_unit_id === purchaseUnitId);
+    const newQtyPerPkg = option?.qty_per_purchase_unit ?? 1;
+    setEntry((p) => ({
+      ...p,
+      purchase_unit_id: purchaseUnitId,
+      qty_per_purchase_unit: newQtyPerPkg,
+    }));
+    // Save as item default (override always overwrites)
+    if (entry.item_id > 0) {
+      const itemNameVal = items.find((i) => i.id === entry.item_id)?.name ?? "item";
+      void setItemPackaging(entry.item_id, purchaseUnitId, newQtyPerPkg)
+        .then(() => {
+          toast.success(`Updated default packaging for ${itemNameVal}`);
+          return getItemPackaging(entry.item_id);
+        })
+        .then((pkgs) => {
+          setItemPackagingMap((prev) => new Map(prev).set(entry.item_id, pkgs));
+        })
+        .catch((e: unknown) => {
+          console.error("[InwardPage] setItemPackaging failed", e);
+        });
+    }
   }
 
   function commitEntry() {
@@ -315,6 +427,12 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     setEditingIndex(index);
     setEntry({ ...line, item_query: "" });
     entrySearchRef.current?.focus();
+    // Ensure packaging data is loaded for this item
+    if (line.item_id > 0 && !itemPackagingMap.has(line.item_id)) {
+      void getItemPackaging(line.item_id)
+        .then((pkgs) => setItemPackagingMap((prev) => new Map(prev).set(line.item_id, pkgs)))
+        .catch(() => {});
+    }
   }
 
   function removeLine(rowId: string) {
@@ -339,8 +457,8 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     const filled = draft.filter((l) => l.item_id > 0);
     const lines: InwardLine[] = filled.map((l) => ({
       item_id: l.item_id,
-      qty: l.qty,
-      unit_type: l.unit_type,
+      qty: l.qty * l.qty_per_purchase_unit,
+      unit_type: l.unit_type as InwardLine["unit_type"],
       unit_price_paise: Math.round(l.cost_price * 100),
       location_id: l.location_id,
     }));
@@ -360,8 +478,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
         success: (r) => `Inward #${r.id} saved${r.print_label ? " — label will print" : ""}`,
         error: (e) => extractError(e),
       });
-      // Persist user-overridden retail prices back to items.retail_price_paise
-      // so future inwards (and POS sales) reflect the new price.
       const overrides = filled.filter(
         (l) =>
           l.retail_overridden &&
@@ -477,7 +593,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && vendorId == null && vendorQuery.trim().length > 0) {
-                // Stop window-level Enter handler (useFormShortcuts) from also submitting.
                 e.preventDefault();
                 e.stopPropagation();
                 const exact = vendors.find(
@@ -578,7 +693,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           <Money paise={total} />
         </span>
 
-        {/* New item — global, beside Save (opens ItemForm, pre-fills entry on save) */}
+        {/* New item — global, beside Save */}
         <Button
           type="button"
           variant="secondary"
@@ -628,8 +743,10 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr className="border-b border-border">
                 <th className="px-4 py-2 font-medium">Item</th>
+                <th className="px-3 py-2 font-medium">Pkg</th>
                 <th className="px-3 py-2 font-medium">Qty</th>
                 <th className="px-3 py-2 font-medium">Cost</th>
+                <th className="px-3 py-2 font-medium">Amount</th>
                 <th className="px-3 py-2 font-medium">Retail</th>
                 <th className="px-3 py-2 font-medium"></th>
               </tr>
@@ -637,7 +754,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             <tbody>
               {initialLoading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-4">
+                  <td colSpan={7} className="px-4 py-4">
                     <div
                       role="status"
                       aria-live="polite"
@@ -666,7 +783,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                           onChange={(e) => {
                             const value = e.target.value;
                             setEntry((p) => ({ ...p, item_query: value }));
-                            // Try "Name (SKU)" datalist format first.
                             const nameMatch = value.match(/^(.+?)\s*\(([^)]+)\)$/);
                             let matched: Item | undefined;
                             if (nameMatch) {
@@ -722,6 +838,29 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                       )}
                     </td>
                     <td className="px-3 py-2">
+                      <select
+                        value={entry.purchase_unit_id ?? ""}
+                        onChange={(e) => {
+                          const puId = Number(e.target.value);
+                          if (puId > 0) handleEntryPkgChange(puId);
+                        }}
+                        disabled={entry.item_id <= 0 || entryPkgOptions.length === 0}
+                        className="input h-9 w-24 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Purchase unit"
+                        data-testid="inward-entry-pkg-unit"
+                      >
+                        {entryPkgOptions.length === 0 ? (
+                          <option value="">—</option>
+                        ) : (
+                          entryPkgOptions.map((opt) => (
+                            <option key={opt.purchase_unit_id} value={opt.purchase_unit_id}>
+                              {opt.label}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2">
                       <QtyInput
                         value={entry.qty}
                         step={0.5}
@@ -737,6 +876,23 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                         onChange={(cost_price) =>
                           setEntry((p) => ({ ...p, cost_price }))
                         }
+                        className="w-24"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MoneyInput
+                        min={0}
+                        value={entryAmountPaise}
+                        onChange={(amountPaise) => {
+                          const rate = entry.qty_per_purchase_unit * entry.cost_price;
+                          if (rate > 0 && entry.unit_type !== "unit") {
+                            const newQty = Math.round((amountPaise / rate) * 100) / 100;
+                            if (newQty > 0) {
+                              setEntry((p) => ({ ...p, qty: newQty }));
+                            }
+                          }
+                        }}
+                        disabled={entry.unit_type === "unit"}
                         className="w-24"
                       />
                     </td>
@@ -782,14 +938,21 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                           {itemName(l.item_id)}
                         </p>
                       </td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        {pkgLabelForLine(l)}
+                      </td>
                       <td className="px-3 py-2 text-sm tabular-nums text-foreground">
                         {l.qty}{" "}
                         <span className="text-xs text-muted-foreground">
-                          {l.unit_code || "unit"}
+                          {pkgLabelForLine(l)}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-sm tabular-nums text-foreground">
                         <Money paise={l.cost_price} />
+                        <span className="text-xs text-muted-foreground">/unit</span>
+                      </td>
+                      <td className="px-3 py-2 text-sm tabular-nums text-foreground">
+                        <Money paise={lineTotalPaise(l)} />
                       </td>
                       <td className="px-3 py-2 text-sm tabular-nums text-foreground">
                         <Money paise={l.retail_price} />
@@ -812,7 +975,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
 
                   {draft.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6">
+                      <td colSpan={7} className="px-4 py-6">
                         <EmptyState
                           icon={PackagePlus}
                           title="No items yet"

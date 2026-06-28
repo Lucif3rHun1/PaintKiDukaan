@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  Lock,
   PackagePlus,
   Paintbrush,
   Printer,
@@ -86,6 +87,42 @@ function lineTotal(line: CartLine): number {
 
 function isFlagged(c: Customer | null): boolean {
   return !!c && (c.is_flagged === true || c.is_active === false);
+}
+
+// ---- Unit-aware helpers ----
+function isDecimalUnit(unitType: string): boolean {
+  return unitType === "mtr" || unitType === "kg";
+}
+
+function unitLabel(unitType: string): string {
+  switch (unitType) {
+    case "mtr":
+      return "mtr";
+    case "kg":
+      return "kg";
+    case "box":
+      return "Box";
+    default:
+      return "Unit";
+  }
+}
+
+function qtyStep(unitType: string): number {
+  return isDecimalUnit(unitType) ? 0.001 : 1;
+}
+
+function clampQty(unitType: string, raw: number): number {
+  if (isDecimalUnit(unitType)) {
+    return Math.max(0.001, Math.round(raw * 1000) / 1000);
+  }
+  return Math.max(1, Math.round(raw));
+}
+
+function formatQty(qty: number, unitType: string): string {
+  if (isDecimalUnit(unitType)) {
+    return qty.toFixed(3).replace(/\.?0+$/, "") || "0";
+  }
+  return String(Math.round(qty));
 }
 
 export default function SalesPage({ user, onExit }: Props) {
@@ -169,12 +206,16 @@ export default function SalesPage({ user, onExit }: Props) {
 
   // ---- Computed totals ----
   const subtotal = useMemo(
-    () => lines.reduce((s, l) => s + lineTotal(l), 0),
+    () => lines.reduce((s, l) => s + l.qty * l.price, 0),
+    [lines],
+  );
+  const lineDiscountTotal = useMemo(
+    () => lines.reduce((s, l) => s + l.line_discount, 0),
     [lines],
   );
   const total = useMemo(
-    () => Math.max(0, subtotal - billDiscount),
-    [subtotal, billDiscount],
+    () => Math.max(0, subtotal - lineDiscountTotal - billDiscount),
+    [subtotal, lineDiscountTotal, billDiscount],
   );
   const paid = useMemo(() => splits.reduce((s, p) => s + p.amount, 0), [splits]);
   const balance = total - paid;
@@ -189,6 +230,32 @@ export default function SalesPage({ user, onExit }: Props) {
   const removeLine = useCallback((index: number) => {
     setLines((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  const handleQtyChange = useCallback(
+    (index: number, rawQty: number) => {
+      setLines((prev) =>
+        prev.map((l, i) => {
+          if (i !== index) return l;
+          return { ...l, qty: clampQty(l.unit_type, rawQty) };
+        }),
+      );
+    },
+    [],
+  );
+
+  const handleAmountChange = useCallback(
+    (index: number, amountPaise: number) => {
+      setLines((prev) =>
+        prev.map((l, i) => {
+          if (i !== index) return l;
+          if (!isDecimalUnit(l.unit_type) || l.price <= 0) return l;
+          const newQty = clampQty(l.unit_type, amountPaise / l.price);
+          return { ...l, qty: newQty };
+        }),
+      );
+    },
+    [],
+  );
 
   const handleItemPick = useCallback(
     (hit: ItemSearchHit | FormulaSearchHit) => {
@@ -227,7 +294,7 @@ export default function SalesPage({ user, onExit }: Props) {
         current_qty_at_add: item.current_qty,
         qty: 1,
         price: item.retail_price_paise,
-        unit_type: item.sell_unit === "box" ? "box" : "unit",
+        unit_type: item.sell_unit || "unit",
         line_discount: 0,
         shade_note: null,
       };
@@ -627,53 +694,90 @@ export default function SalesPage({ user, onExit }: Props) {
                   />
                 ) : (
                   <div className="rounded border border-border">
-                    {/* ponytail: fixed 8rem money columns + identical ₹+value structure
-                        in PRICE/TOTAL = the only way ₹ aligns across editable (MoneyInput)
-                        and read-only (MoneyStatic) cells in the same column. */}
-                    <div className="grid grid-cols-[1fr_auto_8rem_8rem_2.5rem] items-center gap-3 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    <div className="grid grid-cols-[1fr_auto_auto_8rem_2.5rem] items-center gap-2 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
                       <div>Item</div>
                       <div>Qty</div>
-                      <div className="text-right">Price</div>
-                      <div className="text-right">Total</div>
+                      <div className="text-right">Rate</div>
+                      <div className="text-right">Amount</div>
                       <div />
                     </div>
-                    {lines.map((l, i) => (
-                      <div
-                        key={`${l.item_id}-${i}`}
-                        className="grid grid-cols-[1fr_auto_8rem_8rem_2.5rem] items-center gap-3 border-t border-border px-3 py-2"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate font-medium text-foreground">
-                            {l.item_name ? toTitleCase(l.item_name) : `#${l.item_id}`}
+                    {lines.map((l, i) => {
+                      const lineAmount = l.qty * l.price;
+                      const decUnit = isDecimalUnit(l.unit_type);
+                      const uLabel = unitLabel(l.unit_type);
+                      return (
+                        <div
+                          key={`${l.item_id}-${i}`}
+                          className="border-t border-border px-3 py-2"
+                        >
+                          <div className="grid grid-cols-[1fr_auto_auto_8rem_2.5rem] items-center gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate font-medium text-foreground">
+                                {l.item_name ? toTitleCase(l.item_name) : `#${l.item_id}`}
+                              </div>
+                              {l.shade_note ? (
+                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                  {l.shade_note}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <QtyInput
+                                value={l.qty}
+                                step={qtyStep(l.unit_type)}
+                                min={decUnit ? 0.001 : 1}
+                                onChange={(v) => handleQtyChange(i, v)}
+                              />
+                              <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                {uLabel}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
+                              <span>×</span>
+                              <MoneyInput
+                                value={l.price}
+                                onChange={(v) => updateLine(i, { price: v })}
+                                disabled={!canOwner && kind === "final"}
+                                className="w-20"
+                              />
+                              <span>/{uLabel}</span>
+                            </div>
+                            <div className="flex items-center justify-end">
+                              {decUnit ? (
+                                <MoneyInput
+                                  value={lineAmount}
+                                  onChange={(v) => handleAmountChange(i, v)}
+                                  disabled={l.price <= 0}
+                                  className="w-full"
+                                />
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <Lock className="h-3 w-3 text-muted-foreground/50" aria-label="Amount locked for unit items" />
+                                  <MoneyStatic paise={lineAmount} className="font-medium" />
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeLine(i)}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              title="Remove line"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
                           </div>
-                          {l.shade_note ? (
-                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                              {l.shade_note}
+                          {l.line_discount > 0 ? (
+                            <div className="mt-1 flex items-center justify-end gap-2 text-xs">
+                              <span className="text-muted-foreground">Discount</span>
+                              <span className="text-destructive">-{formatRupeesFromPaise(l.line_discount)}</span>
+                              <span className="font-medium text-foreground">
+                                = {formatRupeesFromPaise(lineTotal(l))}
+                              </span>
                             </div>
                           ) : null}
                         </div>
-                        <QtyInput
-                          value={l.qty}
-                          step={l.unit_type === "ml" || l.unit_type === "g" ? 1 : 0.5}
-                          onChange={(v) => updateLine(i, { qty: v })}
-                        />
-                        <MoneyInput
-                          value={l.price}
-                          onChange={(v) => updateLine(i, { price: v })}
-                          disabled={!canOwner && kind === "final"}
-                          className="w-full"
-                        />
-                        <MoneyStatic paise={lineTotal(l)} className="font-medium" />
-                        <button
-                          type="button"
-                          onClick={() => removeLine(i)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          title="Remove line"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </Card.Body>
@@ -693,6 +797,12 @@ export default function SalesPage({ user, onExit }: Props) {
                   <span className="text-muted-foreground">Subtotal</span>
                   <MoneyStatic paise={subtotal} />
                 </div>
+                {lineDiscountTotal > 0 ? (
+                  <div className="grid grid-cols-[1fr_8rem] items-center gap-3">
+                    <span className="text-muted-foreground">Line discounts</span>
+                    <MoneyStatic paise={lineDiscountTotal} tone="destructive" />
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-[1fr_8rem] items-center gap-3">
                   <span className="text-muted-foreground">Bill discount</span>
                   <MoneyInput
