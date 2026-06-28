@@ -642,6 +642,7 @@ CREATE TABLE sale_returns (
   refund_total_paise INTEGER NOT NULL DEFAULT 0,
   reason            TEXT,
   no                TEXT,                          -- M007: human-readable return number
+  date              TEXT,                          -- M17: user-provided logical date (YYYY-MM-DD)
   created_at        INTEGER NOT NULL,
   created_by        INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
@@ -657,8 +658,9 @@ CREATE TABLE sale_return_lines (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
   sale_return_id   INTEGER NOT NULL REFERENCES sale_returns(id) ON DELETE NO ACTION,
   sale_item_id     INTEGER NOT NULL REFERENCES sale_items(id) ON DELETE NO ACTION,
-  qty              INTEGER NOT NULL CHECK(qty > 0),
+  qty              REAL NOT NULL CHECK(qty > 0),
   refund_paise     INTEGER NOT NULL CHECK(refund_paise >= 0),
+  shade_note       TEXT,
   created_at       INTEGER NOT NULL,
   created_by       INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
@@ -671,7 +673,7 @@ CREATE TABLE sale_return_payments (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   sale_return_id    INTEGER NOT NULL REFERENCES sale_returns(id) ON DELETE NO ACTION,
   mode              TEXT    NOT NULL,
-  amount_paise      INTEGER NOT NULL CHECK(amount_paise <> 0),
+  amount_paise      INTEGER NOT NULL CHECK(amount_paise > 0),
   reference         TEXT,
   created_at        INTEGER NOT NULL,
   created_by        INTEGER REFERENCES users(id) ON DELETE NO ACTION

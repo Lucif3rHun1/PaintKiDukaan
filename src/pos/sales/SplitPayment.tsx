@@ -73,9 +73,12 @@ export function SplitPayment({ total, splits, onChange }: Props) {
       return;
     }
 
+    const currentTotal = splits.reduce((sum, s) => sum + s.amount, 0);
+    if (currentTotal >= total && total > 0) return;
+
     pendingFocusIndex.current = splits.length;
-    // First split gets full amount; subsequent splits start empty.
-    const amount = splits.length === 0 ? total : 0;
+    const remaining = Math.max(0, total - currentTotal);
+    const amount = splits.length === 0 ? total : remaining;
     onChange([...splits, { mode, amount }]);
   }
 
@@ -92,11 +95,23 @@ export function SplitPayment({ total, splits, onChange }: Props) {
         amount: Math.max(0, total - others),
       };
     }
+    // M3: Clamp first split so total doesn't exceed bill total
+    if (index === 0 && patch.amount !== undefined) {
+      const othersSum = next.slice(1).reduce((sum, s) => sum + s.amount, 0);
+      next[0] = { ...next[0], amount: Math.min(next[0].amount, Math.max(0, total - othersSum)) };
+    }
     onChange(next);
   }
 
   function removeSplit(index: number) {
-    onChange(splits.filter((_, i) => i !== index));
+    const remaining = splits.filter((_, i) => i !== index);
+    if (remaining.length === 1 && total > 0) {
+      remaining[0] = { ...remaining[0], amount: total };
+    } else if (remaining.length > 1) {
+      const othersSum = remaining.slice(1).reduce((sum, s) => sum + s.amount, 0);
+      remaining[0] = { ...remaining[0], amount: Math.max(0, total - othersSum) };
+    }
+    onChange(remaining);
   }
 
   return (

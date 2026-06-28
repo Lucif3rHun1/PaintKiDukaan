@@ -5,27 +5,31 @@ import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import {
   printSaleReceipt,
+  safePrintReturnReceipt,
   type ReceiptPrintSettings,
 } from "./printReceipt";
 import { buildReceiptPdfBlob } from "../print";
-import { getCustomer } from "../../domain/ipc";
+import { getCustomer, getSaleReturn } from "../../domain/ipc";
 import type { Sale } from "../types";
 
 async function loadSettings(): Promise<ReceiptPrintSettings> {
-  const [shopName, shopAddress, shopPhone, shopGstin, printer] =
+  const [shopName, shopAddress, shopPhone, shopGstin, printer, header, footer, terms] =
     await Promise.all([
       loadString(ipc.getSetting, "shop_name", ""),
       loadString(ipc.getSetting, "address", ""),
       loadString(ipc.getSetting, "phone", ""),
       loadString(ipc.getSetting, "gstin", ""),
       ipc.getDefaultPrinter("receipt").catch(() => null),
+      loadString(ipc.getSetting, "receipt_header", ""),
+      loadString(ipc.getSetting, "receipt_footer", ""),
+      loadString(ipc.getSetting, "receipt_terms", ""),
     ]);
   return {
     receiptPrinter: printer?.name ?? null,
     receiptPaperSize: printer?.paper_size ?? null,
-    receiptHeader: null,
-    receiptFooter: null,
-    receiptTerms: null,
+    receiptHeader: header || null,
+    receiptFooter: footer || null,
+    receiptTerms: terms || null,
     shopName: shopName || "PaintKiDukaan",
     shopAddress: shopAddress || undefined,
     shopPhone: shopPhone || undefined,
@@ -63,12 +67,16 @@ export async function downloadSalePdfById(saleId: number): Promise<void> {
     shop_gstin: settings.shopGstin,
     customer_phone: customer?.phone ?? null,
     customer_address: customer?.address ?? null,
+    paper_size: settings.receiptPaperSize,
+    header: settings.receiptHeader,
+    footer: settings.receiptFooter,
+    terms: settings.receiptTerms,
     sale,
   });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `invoice-${sale.no}.pdf`;
+  a.download = `sale-${sale.no}.pdf`;
   a.rel = "noopener";
   document.body.appendChild(a);
   a.click();
@@ -107,6 +115,10 @@ async function buildPdfForSale(saleId: number): Promise<{ blob: Blob; sale: Sale
     shop_gstin: settings.shopGstin,
     customer_phone: customer?.phone ?? null,
     customer_address: customer?.address ?? null,
+    paper_size: settings.receiptPaperSize,
+    header: settings.receiptHeader,
+    footer: settings.receiptFooter,
+    terms: settings.receiptTerms,
     sale,
   });
   return { blob, sale };
@@ -117,12 +129,12 @@ export async function shareSalePdfById(saleId: number): Promise<void> {
     const result = await buildPdfForSale(saleId);
     if (!result) return;
     const { blob, sale } = result;
-    const file = new File([blob], `invoice-${sale.no}.pdf`, { type: "application/pdf" });
+    const file = new File([blob], `sale-${sale.no}.pdf`, { type: "application/pdf" });
 
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
       await navigator.share({
-        title: `Invoice ${sale.no}`,
-        text: `Invoice ${sale.no} — Rs. ${(sale.total / 100).toFixed(2)}`,
+        title: `Sale ${sale.no}`,
+        text: `Sale ${sale.no} — Rs. ${(sale.total / 100).toFixed(2)}`,
         files: [file],
       });
     } else {
@@ -130,7 +142,7 @@ export async function shareSalePdfById(saleId: number): Promise<void> {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `invoice-${sale.no}.pdf`;
+      a.download = `sale-${sale.no}.pdf`;
       a.rel = "noopener";
       document.body.appendChild(a);
       a.click();
@@ -151,5 +163,19 @@ export async function safeShareSalePdfById(saleId: number): Promise<void> {
   } catch (e: unknown) {
     if (e instanceof DOMException && e.name === "AbortError") return;
     toast.warning(`Share failed: ${extractError(e)}`);
+  }
+}
+
+export async function safePrintReturnById(returnId: number): Promise<void> {
+  try {
+    const ret = await getSaleReturn(returnId);
+    if (!ret) {
+      toast.warning(`Return #${returnId} not found.`);
+      return;
+    }
+    const settings = await loadSettings();
+    await safePrintReturnReceipt(ret, settings);
+  } catch (e: unknown) {
+    toast.warning(`Print failed: ${extractError(e)}`);
   }
 }

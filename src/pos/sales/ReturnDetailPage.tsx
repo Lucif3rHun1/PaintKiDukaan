@@ -1,13 +1,14 @@
 // Return detail page — read-only view of a past return.
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, RotateCcw } from "lucide-react";
+import { ArrowLeft, ExternalLink, Printer, RotateCcw } from "lucide-react";
 
 import { Badge, Button, Card, EmptyState, Money } from "../../components/ui";
 import { getSaleReturn } from "../../domain/ipc";
 import type { SaleReturn } from "../../domain/types";
 import { formatDateForDisplay } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
+import { safePrintReturnById } from "./printOrDownload";
 
 interface Props {
   id: number;
@@ -88,6 +89,15 @@ export function ReturnDetailPage({ id, onBack }: Props) {
           <Badge variant="info" size="sm">return</Badge>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            icon={Printer}
+            onClick={() => void safePrintReturnById(ret.id)}
+          >
+            Print
+          </Button>
           {ret.sale_id > 0 ? (
             <Button
               type="button"
@@ -116,7 +126,13 @@ export function ReturnDetailPage({ id, onBack }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {ret.lines.map((line, index) => (
+                {ret.lines.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                      No items in this return.
+                    </td>
+                  </tr>
+                ) : ret.lines.map((line, index) => (
                   <tr key={`${line.sale_item_id}-${index}`} className="border-b border-border align-middle">
                     <td className="py-2">
                       <div className="text-sm font-medium text-foreground">{line.item_name}</div>

@@ -108,6 +108,7 @@ export function ItemSearchInput({
   const listboxRef = useRef<HTMLDivElement>(null);
   const quickNameRef = useRef<HTMLInputElement>(null);
   const quickSearchSkipRef = useRef(false);
+  const searchSeqRef = useRef(0);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -116,6 +117,7 @@ export function ItemSearchInput({
       return;
     }
     setSearching(true);
+    const seq = ++searchSeqRef.current;
     const timer = setTimeout(() => {
       const trimmed = query.trim();
       const promises: [
@@ -164,6 +166,7 @@ export function ItemSearchInput({
       }
       Promise.allSettled(promises.map(([p]) => p))
         .then((settled) => {
+          if (searchSeqRef.current !== seq) return;
           const combined: SearchHit[] = [];
           for (const r of settled) {
             if (r.status === "fulfilled") combined.push(...(r.value as SearchHit[]));
@@ -176,10 +179,11 @@ export function ItemSearchInput({
           setResults(combined);
         })
         .catch((e) => {
+          if (searchSeqRef.current !== seq) return;
           console.error("[ItemSearchInput] failed to search", e);
           setResults([]);
         })
-        .finally(() => setSearching(false));
+        .finally(() => { if (searchSeqRef.current === seq) setSearching(false); });
     }, 200);
     return () => clearTimeout(timer);
   }, [query, acceptFormula]);

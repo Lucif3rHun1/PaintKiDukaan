@@ -6,7 +6,7 @@ import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
 import { listLocations } from "../../domain/locations/api";
-import { createSalesReturn } from "../../domain/ipc";
+import { createSalesReturn, getCustomer } from "../../domain/ipc";
 import type { Customer, CustomerType, Location, CreateSaleReturnPayload } from "../../domain/types";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
@@ -21,6 +21,7 @@ import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
 import { extractError } from "../../lib/extractError";
+import { RETURN_DRAFT_KEY, type ReturnDraft } from "./ReturnBillSelectModal";
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
@@ -41,6 +42,7 @@ export default function ReturnPage({ user, onBack }: Props) {
   const [ownerPin, setOwnerPin] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const [showExitModal, setShowExitModal] = useState(false);
 
@@ -68,18 +70,50 @@ export default function ReturnPage({ user, onBack }: Props) {
   }, [draftData, draftLoading, markDirty]);
 
   useEffect(() => {
-    if (draft && !draftLoading && !draftRestored.current && lines.length === 0) {
+    if (draftRestored.current) return;
+
+    // H3: Check localStorage first (ReturnBillSelectModal handoff)
+    try {
+      const raw = localStorage.getItem(RETURN_DRAFT_KEY);
+      if (raw) {
+        localStorage.removeItem(RETURN_DRAFT_KEY);
+        const modalDraft: ReturnDraft = JSON.parse(raw);
+        draftRestored.current = true;
+        if (modalDraft.customer_id != null) {
+          setCustomerId(modalDraft.customer_id);
+          getCustomer(modalDraft.customer_id)
+            .then((c) => { if (c) setCustomer(c); })
+            .catch(() => {/* ignore */});
+        }
+        if (modalDraft.lines) setLines(modalDraft.lines);
+        if (modalDraft.location_id) setLocationId(modalDraft.location_id);
+        if (modalDraft.payment_modes) setPaymentSplits(modalDraft.payment_modes);
+        if (modalDraft.reason) setReason(modalDraft.reason);
+        return;
+      }
+    } catch { /* corrupt localStorage, ignore */ }
+
+    // Fall back to DB draft (useAutosave)
+    if (draft && !draftLoading && lines.length === 0) {
       draftRestored.current = true;
       try {
         const data = JSON.parse(draft.data_json);
-        if (data.customerId != null) setCustomerId(data.customerId);
+        if (data.customerId != null) {
+          setCustomerId(data.customerId);
+          getCustomer(data.customerId)
+            .then((c) => { if (c) setCustomer(c); })
+            .catch(() => {/* ignore */});
+        }
         if (data.lines) setLines(data.lines);
         if (data.locationId != null) setLocationId(data.locationId);
         if (data.paymentSplits) setPaymentSplits(data.paymentSplits);
         if (data.reason != null) setReason(data.reason);
-      } catch { /* corrupt draft, ignore */ }
+      } catch {
+        // M5: Corrupt draft — clear it and start fresh
+        void resetDraft();
+      }
     }
-  }, [draft, draftLoading]);
+  }, [draft, draftLoading, resetDraft]);
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
@@ -170,7 +204,11 @@ export default function ReturnPage({ user, onBack }: Props) {
 
   function updateLineQty(index: number, nextQty: number) {
     setLines((current) =>
-      current.map((line, i) => (i === index ? { ...line, qty: Math.max(0, nextQty) } : line)),
+      current.map((line, i) => {
+        if (i !== index) return line;
+        const maxQty = line.original_qty ?? Infinity;
+        return { ...line, qty: Math.min(Math.max(0, nextQty), maxQty) };
+      }),
     );
     setFormError(null);
   }
@@ -212,6 +250,7 @@ export default function ReturnPage({ user, onBack }: Props) {
   }
 
   async function submit() {
+    if (submitting) return;
     if (lines.length === 0) return;
     if (refundAmount > subtotal) {
       setFormError("Refund tenders cannot exceed the return total.");
@@ -226,8 +265,17 @@ export default function ReturnPage({ user, onBack }: Props) {
       setFormError("Select at least one item to return.");
       return;
     }
+    for (const line of returnLines) {
+      if (line.original_qty != null && line.qty > line.original_qty) {
+        setFormError(`Return qty for ${line.item_name} exceeds sold qty (${line.original_qty}).`);
+        return;
+      }
+    }
+    const saleIds = returnLines.map((l) => l.sale_id).filter((id): id is number => id != null && id > 0);
+    const derivedSaleId = saleIds.length > 0 && saleIds.every((id) => id === saleIds[0]) ? saleIds[0] : 0;
+    setSubmitting(true);
     const payload: CreateSaleReturnPayload = {
-      sale_id: 0,
+      sale_id: derivedSaleId,
       lines: returnLines.map((line) => ({
         sale_item_id: line.item_id,
         qty: line.qty,
@@ -243,16 +291,18 @@ export default function ReturnPage({ user, onBack }: Props) {
     };
     try {
       const saved = await toast.promise(createSalesReturn(payload), {
-loading: "Saving return…",
-          success: (returnId) => `Return #${returnId} saved`,
-          error: (e) => extractError(e),
-        });
+        loading: "Saving return…",
+        success: (returnId) => `Return #${returnId} saved`,
+        error: (e) => extractError(e),
+      });
       clearAll();
       void resetDraft();
       resetDirty();
       setStatus(`Return #${saved} saved`);
     } catch (e) {
       setStatus(`Error: ${extractError(e)}`);
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -540,7 +590,7 @@ loading: "Saving return…",
           <Button
             type="button"
             onClick={() => void submit()}
-            disabled={!canSave}
+            disabled={!canSave || submitting}
             icon={Save}
             size="lg"
             shortcut="F9"

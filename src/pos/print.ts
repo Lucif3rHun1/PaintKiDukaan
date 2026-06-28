@@ -6,6 +6,7 @@
 import { jsPDF } from "jspdf";
 import JsBarcode from "jsbarcode";
 import type { Sale } from "./types";
+import type { SaleReturn } from "../domain/types";
 import { formatRupeesFromPaise } from "../lib/money";
 import { amountInWords } from "../lib/amountInWords";
 
@@ -63,13 +64,21 @@ export interface ReceiptSpec {
   sale: Sale;
   customer_phone?: string | null;
   customer_address?: string | null;
+  paper_size?: string | null;
+  header?: string | null;
+  footer?: string | null;
+  terms?: string | null;
 }
 
 export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  const pageW = 210;
-  const margin = 12;
+  const format = paperSizeToJsPdfFormat(spec.paper_size);
+  const isA5 = spec.paper_size === "a5";
+  const doc = new jsPDF({ unit: "mm", format, orientation: "portrait" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = isA5 ? 10 : 12;
   const right = pageW - margin;
+  const contentW = right - margin;
   let y = margin;
 
   const PRIMARY: [number, number, number] = [37, 99, 235]; // indigo-600 — matches app --primary
@@ -154,26 +163,43 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   const colQty = margin + tableW * 0.55;
   const colRate = margin + tableW * 0.72;
   const colAmt = right;
-  doc.setFillColor(...PRIMARY);
-  doc.rect(tableX, y - 4, tableW, 8, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(255, 255, 255);
-  doc.text("Items", tableX + 2, y + 1);
-  doc.text("Quantity", colQty, y + 1, { align: "right" });
-  doc.text("Rate", colRate, y + 1, { align: "right" });
-  doc.text("Amount", colAmt, y + 1, { align: "right" });
-  y += 7;
+  const nameColW = colQty - tableX - 4;
+
+  function drawTableHeader(yPos: number): number {
+    doc.setFillColor(...PRIMARY);
+    doc.rect(tableX, yPos - 4, tableW, 8, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text("Items", tableX + 2, yPos + 1);
+    doc.text("Quantity", colQty, yPos + 1, { align: "right" });
+    doc.text("Rate", colRate, yPos + 1, { align: "right" });
+    doc.text("Amount", colAmt, yPos + 1, { align: "right" });
+    return yPos + 7;
+  }
+
+  y = drawTableHeader(y);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...DARK);
   for (const it of spec.sale.items) {
     const qtyStr = `${it.qty}${it.unit_type ? " " + it.unit_type : ""}`;
     const lineValue = Math.max(0, it.qty * it.price - it.line_discount);
-    doc.text(it.display_name.slice(0, 40), tableX + 2, y);
+    const nameLines: string[] = doc.splitTextToSize(it.display_name, nameColW);
+    const rowH = nameLines.length * 4;
+    if (y + rowH > pageH - margin) {
+      doc.addPage();
+      y = margin;
+      y = drawTableHeader(y);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...DARK);
+    }
+    for (let i = 0; i < nameLines.length; i++) {
+      doc.text(nameLines[i], tableX + 2, y + i * 4);
+    }
     doc.text(qtyStr, colQty, y, { align: "right" });
     doc.text(paiseToPdfRupees(it.price), colRate, y, { align: "right" });
     doc.text(paiseToPdfRupees(lineValue), colAmt, y, { align: "right" });
-    y += 5;
+    y += rowH;
     if (it.shade_note) {
       doc.setFontSize(8);
       doc.setTextColor(...MUTED);
@@ -182,9 +208,12 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
       doc.setTextColor(...DARK);
       y += 4;
     }
-    if (y > 240) {
+    if (y > pageH - margin) {
       doc.addPage();
       y = margin;
+      y = drawTableHeader(y);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...DARK);
     }
   }
   y += 2;
@@ -275,12 +304,151 @@ function paiseToPdfRupees(paise: number): string {
   })}`;
 }
 
+function paperSizeToJsPdfFormat(size?: string | null): string {
+  if (size === "a5") return "a5";
+  return "a4";
+}
+
 export async function buildReceiptPdfBlob(spec: ReceiptSpec): Promise<Blob> {
   return buildReceiptPdf(spec).output("blob");
 }
 
 export async function printReceipt(spec: ReceiptSpec): Promise<void> {
-  buildReceiptPdf(spec).save(`receipt-${spec.sale.no}.pdf`);
+  buildReceiptPdf(spec).save(`sale-${spec.sale.no}.pdf`);
+}
+
+export interface ReturnReceiptSpec {
+  shop_name: string;
+  shop_address?: string;
+  shop_phone?: string;
+  shop_gstin?: string;
+  returnData: SaleReturn;
+  paper_size?: string | null;
+  header?: string | null;
+  footer?: string | null;
+  terms?: string | null;
+}
+
+export function buildReturnReceiptPdf(spec: ReturnReceiptSpec): jsPDF {
+  const format = paperSizeToJsPdfFormat(spec.paper_size);
+  const doc = new jsPDF({ unit: "mm", format, orientation: "portrait" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = spec.paper_size === "a5" ? 10 : 12;
+  const right = pageW - margin;
+  let y = margin;
+
+  const PRIMARY: [number, number, number] = [37, 99, 235];
+  const MUTED: [number, number, number] = [100, 116, 139];
+  const DARK: [number, number, number] = [15, 23, 42];
+  const BORDER: [number, number, number] = [226, 232, 240];
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(...DARK);
+  doc.text("CREDIT NOTE", margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...PRIMARY);
+  doc.text("ORIGINAL FOR RECIPIENT", right, y, { align: "right" });
+  y += 4;
+  doc.setDrawColor(...PRIMARY);
+  doc.setLineWidth(0.6);
+  doc.line(margin, y, right, y);
+  y += 8;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(...PRIMARY);
+  doc.text(spec.shop_name, margin, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  if (spec.shop_phone) { doc.text(`Phone: ${spec.shop_phone}`, margin, y); y += 4; }
+  if (spec.shop_address) { doc.text(spec.shop_address, margin, y); y += 4; }
+  if (spec.shop_gstin) { doc.text(`GSTIN: ${spec.shop_gstin}`, margin, y); y += 4; }
+  y += 2;
+  doc.setDrawColor(...PRIMARY);
+  doc.setLineWidth(0.4);
+  doc.line(margin, y, right, y);
+  y += 4;
+
+  const ret = spec.returnData;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...DARK);
+  doc.text(`Return No: ${ret.no}`, margin, y);
+  doc.text(`Date: ${ret.date}`, right, y, { align: "right" });
+  y += 6;
+  if (ret.reason) {
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...MUTED);
+    doc.text(`Reason: ${ret.reason}`, margin, y);
+    y += 6;
+  }
+
+  const tableX = margin;
+  const tableW = right - margin;
+  const colQty = margin + tableW * 0.6;
+  const colAmt = right;
+  const nameColW = colQty - tableX - 4;
+
+  doc.setFillColor(...PRIMARY);
+  doc.rect(tableX, y - 4, tableW, 8, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(255, 255, 255);
+  doc.text("Item", tableX + 2, y + 1);
+  doc.text("Qty", colQty, y + 1, { align: "right" });
+  doc.text("Refund", colAmt, y + 1, { align: "right" });
+  y += 7;
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...DARK);
+  for (const line of ret.lines) {
+    const nameLines: string[] = doc.splitTextToSize(line.item_name, nameColW);
+    const rowH = nameLines.length * 4;
+    if (y + rowH > pageH - margin) { doc.addPage(); y = margin; }
+    for (let i = 0; i < nameLines.length; i++) {
+      doc.text(nameLines[i], tableX + 2, y + i * 4);
+    }
+    doc.text(String(line.qty), colQty, y, { align: "right" });
+    doc.text(paiseToPdfRupees(line.refund_paise), colAmt, y, { align: "right" });
+    y += rowH;
+  }
+  y += 2;
+  doc.setDrawColor(...PRIMARY);
+  doc.line(margin, y, right, y);
+  y += 6;
+
+  const labelX = right - 60;
+  const valueX = right;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(...PRIMARY);
+  doc.text("Total Refund", labelX, y);
+  doc.text(paiseToPdfRupees(ret.refund_total), valueX, y, { align: "right" });
+  y += 7;
+
+  if (ret.payment_modes.length > 0) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    doc.text("REFUND BREAKDOWN", margin, y);
+    y += 4;
+    doc.setTextColor(...DARK);
+    for (const m of ret.payment_modes) {
+      doc.text(m.mode.toUpperCase(), margin, y);
+      doc.text(paiseToPdfRupees(m.amount), valueX, y, { align: "right" });
+      y += 4;
+    }
+  }
+
+  return doc;
+}
+
+export async function buildReturnReceiptPdfBlob(spec: ReturnReceiptSpec): Promise<Blob> {
+  return buildReturnReceiptPdf(spec).output("blob");
 }
 
 export interface BatchLabel {

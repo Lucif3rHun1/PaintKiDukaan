@@ -46,6 +46,7 @@ import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
+import { getCustomer } from "../../domain/ipc";
 import { ItemForm } from "../../domain/items/ItemForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
 import { FormulaForm } from "../../domain/formulas/FormulaForm";
@@ -185,8 +186,13 @@ export default function SalesPage({ user, onExit }: Props) {
         if (data.splits) setSplits(data.splits);
         if (data.validityDays != null) setValidityDays(data.validityDays);
         if (data.ackFlag != null) setAckFlag(data.ackFlag);
+        if (data.customerId != null) {
+          getCustomer(data.customerId)
+            .then((c) => { if (c) setCustomer(c); })
+            .catch(() => {/* ignore */});
+        }
       } catch {
-        void 0;
+        void resetDraft();
       }
     }
   }, [draft, draftLoading]);
@@ -757,6 +763,7 @@ export default function SalesPage({ user, onExit }: Props) {
                             <button
                               type="button"
                               onClick={() => removeLine(i)}
+                              aria-label={`Remove ${l.item_name ?? "item"} from cart`}
                               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                               title="Remove line"
                             >

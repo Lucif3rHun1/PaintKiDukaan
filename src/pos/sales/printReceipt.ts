@@ -1,8 +1,10 @@
-import { formatRupeesFromPaise } from "../../lib/money";
 import { ipc } from "../../shell/lib/ipc";
 import type { Sale } from "../types";
+import type { SaleReturn } from "../../domain/types";
 import { buildReceiptPdfBlob, printReceipt as printReceiptPdf } from "../print";
 import type { DiscoveredPrinter } from "../../shell/routes/settings/printing-types";
+import { toast } from "../../lib/feedback/toast";
+import { extractError } from "../../lib/extractError";
 
 export interface ReceiptPrintSettings {
   /** Saved printer object selected for receipts. Null/empty falls back to PDF. */
@@ -27,6 +29,21 @@ export interface PrintReceiptResult {
 
 /** Build the ReceiptData payload the Rust ESC/POS backend expects. */
 export function buildReceiptData(sale: Sale, settings: ReceiptPrintSettings) {
+  if (!sale) {
+    return {
+      shop_name: settings.shopName,
+      sale_number: "—",
+      created_at: "",
+      customer_name: null,
+      items: [],
+      subtotal: "0",
+      discount: "0",
+      total: "0",
+      paid: "0",
+      due: "0",
+      payments: [],
+    };
+  }
   const subtotal = sale.subtotal ?? sale.total + (sale.bill_discount ?? 0);
   const discount = sale.bill_discount ?? 0;
   const paid = sale.paid_amount ?? 0;
@@ -42,31 +59,38 @@ export function buildReceiptData(sale: Sale, settings: ReceiptPrintSettings) {
     paper_size: settings.receiptPaperSize?.startsWith("thermal-")
       ? settings.receiptPaperSize
       : undefined,
-    sale_number: sale.no,
-    created_at: sale.date,
-    customer_name: sale.customer_name,
-    items: sale.items.map((it) => ({
-      name: it.display_name,
-      qty: formatQty(it.qty, it.unit_type),
-      unit: it.unit_type,
-      unit_price: formatRupeesFromPaise(it.price),
-      line_total: formatRupeesFromPaise(it.qty * it.price - (it.line_discount ?? 0)),
+    sale_number: sale.no ?? "—",
+    created_at: sale.date ?? "",
+    customer_name: sale.customer_name ?? null,
+    items: (sale.items ?? []).map((it) => ({
+      name: it.display_name ?? "Item",
+      qty: formatQty(it.qty ?? 0),
+      unit: it.unit_type ?? "unit",
+      unit_price: formatRupeesForThermal(it.price ?? 0),
+      line_total: formatRupeesForThermal((it.qty ?? 0) * (it.price ?? 0) - (it.line_discount ?? 0)),
+      line_discount: it.line_discount ? formatRupeesForThermal(it.line_discount) : undefined,
     })),
-    subtotal: formatRupeesFromPaise(subtotal),
-    discount: formatRupeesFromPaise(discount),
-    total: formatRupeesFromPaise(sale.total),
-    paid: formatRupeesFromPaise(paid),
-    due: formatRupeesFromPaise(due),
-    payments: sale.payment_modes.map((p) => ({
+    subtotal: formatRupeesForThermal(subtotal),
+    discount: formatRupeesForThermal(discount),
+    total: formatRupeesForThermal(sale.total ?? 0),
+    paid: formatRupeesForThermal(paid),
+    due: formatRupeesForThermal(due),
+    payments: (sale.payment_modes ?? []).map((p) => ({
       mode: p.mode,
-      amount: formatRupeesFromPaise(p.amount),
+      amount: formatRupeesForThermal(p.amount ?? 0),
     })),
   };
 }
 
-function formatQty(qty: number, unitType: string): string {
-  if (Number.isInteger(qty)) return `${qty} ${unitType}`;
-  return `${qty.toFixed(2)} ${unitType}`;
+function formatQty(qty: number): string {
+  if (Number.isInteger(qty)) return `${qty}`;
+  return qty.toFixed(2);
+}
+
+/** Format paise as Rs.XX.XX (safe for ESC/POS which uses CP437 — no ₹ glyph). */
+function formatRupeesForThermal(paise: number): string {
+  const rupees = (paise || 0) / 100;
+  return `Rs.${rupees.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function isWindows(): boolean {
@@ -112,6 +136,10 @@ export async function printSaleReceipt(
     shop_address: settings.shopAddress,
     shop_phone: settings.shopPhone,
     shop_gstin: settings.shopGstin,
+    paper_size: settings.receiptPaperSize,
+    header: settings.receiptHeader,
+    footer: settings.receiptFooter,
+    terms: settings.receiptTerms,
     sale,
   });
 
@@ -123,6 +151,10 @@ export async function printSaleReceipt(
         shop_address: settings.shopAddress,
         shop_phone: settings.shopPhone,
         shop_gstin: settings.shopGstin,
+        paper_size: settings.receiptPaperSize,
+        header: settings.receiptHeader,
+        footer: settings.receiptFooter,
+        terms: settings.receiptTerms,
         sale,
       });
       const base64 = await blobToBase64(blob);
@@ -163,4 +195,89 @@ export function printerMatchesUseCase(
     name.includes("label") ||
     name.includes("zebra") ||
     name.includes("datamax");
+}
+
+export function buildReturnReceiptData(ret: SaleReturn, settings: ReceiptPrintSettings) {
+  return {
+    shop_name: settings.shopName,
+    shop_address: settings.shopAddress,
+    shop_phone: settings.shopPhone,
+    shop_gstin: settings.shopGstin,
+    header: settings.receiptHeader,
+    footer: settings.receiptFooter,
+    paper_size: settings.receiptPaperSize?.startsWith("thermal-")
+      ? settings.receiptPaperSize
+      : undefined,
+    return_number: ret.no,
+    created_at: ret.date,
+    reason: ret.reason,
+    items: ret.lines.map((it) => ({
+      name: it.item_name,
+      qty: formatQty(it.qty),
+      refund: formatRupeesForThermal(it.refund_paise),
+    })),
+    total: formatRupeesForThermal(ret.refund_total),
+    payments: ret.payment_modes.map((p) => ({
+      mode: p.mode,
+      amount: formatRupeesForThermal(p.amount),
+    })),
+  };
+}
+
+export async function printReturnReceipt(
+  ret: SaleReturn,
+  settings: ReceiptPrintSettings,
+): Promise<PrintReceiptResult> {
+  const payload = buildReturnReceiptData(ret, settings);
+
+  if (
+    isWindows() &&
+    isThermalPaper(settings.receiptPaperSize) &&
+    settings.receiptPrinter &&
+    settings.receiptPrinter.trim().length > 0
+  ) {
+    await ipc.printEscPosReceipt(settings.receiptPrinter, payload);
+    return { destination: "thermal" };
+  }
+
+  const { buildReturnReceiptPdfBlob } = await import("../print");
+  const blob = await buildReturnReceiptPdfBlob({
+    shop_name: settings.shopName,
+    shop_address: settings.shopAddress,
+    shop_phone: settings.shopPhone,
+    shop_gstin: settings.shopGstin,
+    paper_size: settings.receiptPaperSize,
+    header: settings.receiptHeader,
+    footer: settings.receiptFooter,
+    terms: settings.receiptTerms,
+    returnData: ret,
+  });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `return-${ret.no}.pdf`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+
+  return { destination: "pdf" };
+}
+
+export async function safePrintReturnReceipt(
+  ret: SaleReturn,
+  settings: ReceiptPrintSettings,
+): Promise<void> {
+  try {
+    const result = await printReturnReceipt(ret, settings);
+    if (result.destination === "thermal") {
+      toast.success(`Return receipt sent to ${settings.receiptPrinter ?? "thermal printer"}`);
+    } else {
+      toast.success("Return receipt PDF downloaded");
+    }
+  } catch (e: unknown) {
+    toast.warning(`Print failed: ${extractError(e)}`);
+  }
 }

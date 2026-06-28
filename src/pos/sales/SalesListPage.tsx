@@ -102,16 +102,31 @@ export function SalesListPage({ onCreate }: Props) {
     return { count: allData.length, totalValue, paidCount, paidTotal, partialCount, partialTotal, dueCount, dueTotal };
   }, [allData]);
 
-  const displayedRows = useMemo(() => {
-    if (payFilter === "all") return rows;
-    return rows.filter((s) => {
+  const statusFilterFn = useMemo(() => {
+    if (payFilter === "all") return null;
+    return (s: Sale) => {
       if (s.status !== "final") return false;
       const balance = s.total - s.paid_amount;
       if (payFilter === "paid") return balance <= 0;
       if (payFilter === "due") return balance > 0 && s.paid_amount <= 0;
       return balance > 0 && s.paid_amount > 0;
-    });
-  }, [rows, payFilter]);
+    };
+  }, [payFilter]);
+
+  const filteredAllData = useMemo(
+    () => statusFilterFn ? allData.filter(statusFilterFn) : allData,
+    [allData, statusFilterFn],
+  );
+
+  const displayedRows = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredAllData.slice(start, start + PAGE_SIZE);
+  }, [filteredAllData, page]);
+
+  const filteredTotalItems = filteredAllData.length;
+  const filteredTotalPages = Math.max(1, Math.ceil(filteredTotalItems / PAGE_SIZE));
+
+  useEffect(() => { setPage(1); }, [payFilter, setPage]);
 
   const columns = useMemo<ColumnDef<Sale>[]>(
     () => [
@@ -372,11 +387,11 @@ export function SalesListPage({ onCreate }: Props) {
         }
       />
 
-      {!isLoading && allData.length > 0 ? (
+      {!isLoading && filteredAllData.length > 0 ? (
         <PaginationControls
           page={page}
-          totalPages={totalPages}
-          totalItems={totalItems}
+          totalPages={filteredTotalPages}
+          totalItems={filteredTotalItems}
           pageSize={pageSize}
           onPageChange={setPage}
         />

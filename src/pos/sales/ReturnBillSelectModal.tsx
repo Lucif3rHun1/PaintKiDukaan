@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useMemo, useState } from "react";
 import { RotateCcw, X } from "lucide-react";
 
@@ -13,6 +12,7 @@ export interface ReturnDraft {
   customer_name: string | null;
   customer_phone: string | null;
   location_id: number;
+  sale_id: number; // H2: link return to original sale
   lines: ReturnCartLine[];
   payment_modes: PaymentSplit[];
   reason: string;
@@ -25,13 +25,14 @@ interface Props {
 
 function buildDraftLine(item: SaleItem, saleId: number): ReturnCartLine {
   return {
-    item_id: item.item_id,
-    item_name: item.item_name,
+    item_id: item.item_id ?? 0,
+    item_name: item.display_name,
     qty: item.qty,
     price: item.price,
     unit_code: item.unit_type,
     sale_id: saleId,
     reason: null,
+    original_qty: item.qty,
   };
 }
 
@@ -62,7 +63,8 @@ export function ReturnBillSelectModal({ sale, onClose }: Props) {
   const hasSelection = selected.some((line) => line.qty > 0);
 
   function updateQty(index: number, nextQty: number) {
-    setSelected((current) => current.map((line, i) => (i === index ? { ...line, qty: Math.max(0, nextQty) } : line)));
+    const maxQty = sale.items[index]?.qty ?? nextQty;
+    setSelected((current) => current.map((line, i) => (i === index ? { ...line, qty: Math.max(0, Math.min(nextQty, maxQty)) } : line)));
   }
 
   function updatePrice(index: number, nextPrice: number) {
@@ -83,6 +85,7 @@ export function ReturnBillSelectModal({ sale, onClose }: Props) {
       customer_name: sale.customer_name,
       customer_phone: null,
       location_id: 0,
+      sale_id: sale.id,
       lines,
       payment_modes: paymentModes,
       reason: `Return against ${sale.no}`,
@@ -121,7 +124,7 @@ export function ReturnBillSelectModal({ sale, onClose }: Props) {
               {sale.items.map((item, index) => (
                 <tr key={index} className="border-b border-border align-middle">
                   <td className="py-2">
-                    <div className="font-medium text-foreground">{item.item_name}</div>
+                    <div className="font-medium text-foreground">{item.display_name}</div>
                     <div className="font-mono text-[10px] text-muted-foreground">#{item.item_id}</div>
                   </td>
                   <td className="py-2 text-muted-foreground">{item.qty}</td>

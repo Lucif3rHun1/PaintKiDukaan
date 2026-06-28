@@ -20,6 +20,7 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
 
   const recents = useMemo(() => {
     const seen = new Set<number>();
@@ -35,12 +36,15 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
       setResults([]);
       return;
     }
+    const id = ++requestIdRef.current;
     const timer = setTimeout(() => {
       listCustomers(query, false)
-        .then((d) => setResults(d ?? []))
+        .then((d) => {
+          if (id === requestIdRef.current) setResults(d ?? []);
+        })
         .catch((e) => {
           console.error("[CustomerAutocomplete] failed to load customers", e);
-          setResults([]);
+          if (id === requestIdRef.current) setResults([]);
         });
     }, 200);
     return () => clearTimeout(timer);
@@ -82,6 +86,10 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <input
           type="text"
+          role="combobox"
+          aria-expanded={open && (showSuggestions || hasResults)}
+          aria-autocomplete="list"
+          aria-label="Search customer"
           placeholder="Search customer by name or phone…"
           value={selected ? `${toTitleCase(selected.name)} (${selected.phone})` : query}
           onChange={(e) => {

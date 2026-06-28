@@ -190,7 +190,7 @@ pub fn line_value(line: &CartLine) -> i64 {
 }
 
 pub fn cart_subtotal(lines: &[CartLine]) -> i64 {
-    lines.iter().map(line_value).sum()
+    lines.iter().fold(0i64, |acc, l| acc.saturating_add(line_value(l)))
 }
 
 pub fn cart_total(lines: &[CartLine], bill_discount: i64) -> i64 {
@@ -198,7 +198,7 @@ pub fn cart_total(lines: &[CartLine], bill_discount: i64) -> i64 {
 }
 
 pub fn modes_sum(modes: &[PaymentSplit]) -> i64 {
-    modes.iter().map(|m| m.amount).sum()
+    modes.iter().fold(0i64, |acc, m| acc.saturating_add(m.amount))
 }
 
 /// Validate paid_amount against the credit rule. Returns Ok(()) or an error.
@@ -233,12 +233,23 @@ pub fn create_quotation(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sal
         return Err(SaleError::EmptyCart);
     }
     for (i, l) in sale.lines.iter().enumerate() {
-        if l.qty <= 0.0 || l.qty.is_nan() {
+        if l.qty <= 0.0 || !l.qty.is_finite() {
             return Err(SaleError::BadLineQty(i));
         }
         if l.price < 0 {
             return Err(SaleError::BadLinePrice(i));
         }
+        if l.line_discount < 0 {
+            return Err(SaleError::Other(anyhow::anyhow!(
+                "line {}: line_discount cannot be negative",
+                i
+            )));
+        }
+    }
+    if sale.bill_discount < 0 {
+        return Err(SaleError::Other(anyhow::anyhow!(
+            "bill_discount cannot be negative"
+        )));
     }
     // Even for a quotation, paid_amount MUST be 0.
     if sale.paid_amount != 0 {
@@ -315,12 +326,23 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
         return Err(SaleError::EmptyCart);
     }
     for (i, l) in sale.lines.iter().enumerate() {
-        if l.qty <= 0.0 || l.qty.is_nan() {
+        if l.qty <= 0.0 || !l.qty.is_finite() {
             return Err(SaleError::BadLineQty(i));
         }
         if l.price < 0 {
             return Err(SaleError::BadLinePrice(i));
         }
+        if l.line_discount < 0 {
+            return Err(SaleError::Other(anyhow::anyhow!(
+                "line {}: line_discount cannot be negative",
+                i
+            )));
+        }
+    }
+    if sale.bill_discount < 0 {
+        return Err(SaleError::Other(anyhow::anyhow!(
+            "bill_discount cannot be negative"
+        )));
     }
     let total = cart_total(&sale.lines, sale.bill_discount);
     let customer = match sale.customer_id {
@@ -343,6 +365,14 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
             got: paid_sum,
             want: sale.paid_amount,
         });
+    }
+    for (i, m) in sale.payment_modes.iter().enumerate() {
+        if m.amount <= 0 {
+            return Err(SaleError::Other(anyhow::anyhow!(
+                "payment split {}: amount must be > 0",
+                i
+            )));
+        }
     }
     let payment_json = serde_json::to_string(&sale.payment_modes).unwrap_or_else(|_| "[]".into());
     let no =
@@ -536,6 +566,14 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                     got: paid_sum,
                     want: req.paid_amount,
                 });
+            }
+            for (i, m) in req.payment_modes.iter().enumerate() {
+                if m.amount <= 0 {
+                    return Err(SaleError::Other(anyhow::anyhow!(
+                        "payment split {}: amount must be > 0",
+                        i
+                    )));
+                }
             }
             let payment_json =
                 serde_json::to_string(&req.payment_modes).unwrap_or_else(|_| "[]".into());
@@ -973,6 +1011,8 @@ pub enum ReturnError {
     },
     #[error("payment_modes sum ({got}) must equal refund total ({want})")]
     ModesSumMismatch { got: i64, want: i64 },
+    #[error("refund total ({refund}) exceeds paid amount ({paid})")]
+    OverRefund { refund: i64, paid: i64 },
     #[error("sale {0} not found")]
     SaleNotFound(i64),
     #[error("sale {0} is not a final bill (status: {1})")]
@@ -981,6 +1021,24 @@ pub enum ReturnError {
     Db(#[from] rusqlite::Error),
     #[error("{0}")]
     Other(#[from] anyhow::Error),
+}
+
+impl From<ReturnError> for AppError {
+    fn from(e: ReturnError) -> Self {
+        match e {
+            ReturnError::EmptyLines
+            | ReturnError::BadLineQty(_)
+            | ReturnError::BadRefund(_)
+            | ReturnError::SaleItemMismatch(..)
+            | ReturnError::QtyExceedsSold { .. }
+            | ReturnError::ModesSumMismatch { .. }
+            | ReturnError::NotAFinalSale(..)
+            | ReturnError::OverRefund { .. } => AppError::Validation(e.to_string()),
+            ReturnError::SaleNotFound(_) => AppError::NotFound("Sale not found".into()),
+            ReturnError::Db(inner) => AppError::from(inner),
+            ReturnError::Other(inner) => AppError::Internal(inner.to_string()),
+        }
+    }
 }
 
 pub fn create_sale_return(
@@ -992,7 +1050,7 @@ pub fn create_sale_return(
         return Err(ReturnError::EmptyLines);
     }
     for (i, l) in payload.lines.iter().enumerate() {
-        if l.qty <= 0.0 {
+        if l.qty <= 0.0 || !l.qty.is_finite() {
             return Err(ReturnError::BadLineQty(i));
         }
         if l.refund_paise < 0 {
@@ -1058,8 +1116,11 @@ pub fn create_sale_return(
             .lines
             .iter()
             .map(|l| (l.qty * l.refund_paise as f64).round() as i64)
-            .sum();
-        let modes_sum: i64 = payload.payment_modes.iter().map(|m| m.amount).sum();
+            .fold(0i64, |acc, v| acc.saturating_add(v));
+        let modes_sum: i64 = payload
+            .payment_modes
+            .iter()
+            .fold(0i64, |acc, m| acc.saturating_add(m.amount));
         if modes_sum != refund_total {
             return Err(ReturnError::ModesSumMismatch {
                 got: modes_sum,
@@ -1067,12 +1128,33 @@ pub fn create_sale_return(
             });
         }
 
-        // Default location: lowest active location id (mirrors create_final_bill).
+        // H9: reject if refund exceeds what was actually paid.
+        let paid_amount: i64 = c.query_row(
+            "SELECT paid_amount FROM sales WHERE id = ?1",
+            params![payload.sale_id],
+            |r| r.get(0),
+        )?;
+        if refund_total > paid_amount {
+            return Err(ReturnError::OverRefund {
+                refund: refund_total,
+                paid: paid_amount,
+            });
+        }
+
+        // H10: restore stock to the same location the sale deducted from.
         let default_location: i64 = c.query_row(
             "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
             [],
             |r| r.get(0),
         )?;
+        let sale_location: i64 = c
+            .query_row(
+                "SELECT location_id FROM stock_movements \
+                 WHERE ref_kind = 'sale' AND ref_id = ?1 LIMIT 1",
+                params![payload.sale_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(default_location);
 
         let no = sequences::mint_next_sale_no(db, sequences::Kind::SaleRet)
             .map_err(ReturnError::Other)?;
@@ -1082,8 +1164,8 @@ pub fn create_sale_return(
 
         let return_id: i64 = c.query_row(
             "INSERT INTO sale_returns
-                (no, sale_id, refund_total_paise, reason, created_at, created_by)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                (no, sale_id, refund_total_paise, reason, date, created_at, created_by)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              RETURNING id",
             params![
                 no,
@@ -1091,6 +1173,7 @@ pub fn create_sale_return(
                 refund_total,
                 reason,
                 logical_date,
+                created_at,
                 user_id
             ],
             |r| r.get(0),
@@ -1113,20 +1196,22 @@ pub fn create_sale_return(
                 ],
             )?;
             // Positive stock movement (return restores stock).
-            let item_id = sale_item_id_to_item_id(c, l.sale_item_id)?;
-            c.execute(
-                "INSERT INTO stock_movements
-                    (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
-                 VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='return'),(SELECT unit_id FROM items WHERE id=?1),'return',?4,?5,?6)",
-                params![
-                    item_id,
-                    default_location,
-                    l.qty,
-                    return_id,
-                    user_id,
-                    created_at,
-                ],
-            )?;
+            // H8: skip formula lines (item_id is NULL — formulas have no stock).
+            if let Some(item_id) = sale_item_id_to_item_id(c, l.sale_item_id)? {
+                c.execute(
+                    "INSERT INTO stock_movements
+                        (item_id,location_id,qty,kind_id,unit_id,ref_kind,ref_id,created_by,created_at)
+                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='return'),(SELECT unit_id FROM items WHERE id=?1),'return',?4,?5,?6)",
+                    params![
+                        item_id,
+                        sale_location,
+                        l.qty,
+                        return_id,
+                        user_id,
+                        created_at,
+                    ],
+                )?;
+            }
         }
 
         for m in &payload.payment_modes {
@@ -1163,11 +1248,11 @@ pub fn create_sale_return(
 fn sale_item_id_to_item_id(
     c: &rusqlite::Connection,
     sale_item_id: i64,
-) -> Result<i64, ReturnError> {
+) -> Result<Option<i64>, ReturnError> {
     Ok(c.query_row(
         "SELECT item_id FROM sale_items WHERE id = ?1",
         params![sale_item_id],
-        |r| r.get(0),
+        |r| r.get::<_, Option<i64>>(0),
     )?)
 }
 
@@ -1237,7 +1322,8 @@ struct SaleReturnHeader {
 fn fetch_return_header(c: &rusqlite::Connection, id: i64) -> AppResult<Option<SaleReturnHeader>> {
     let row = c
         .query_row(
-            "SELECT id, COALESCE(no, ''), sale_id, created_at, reason, refund_total_paise, created_by
+            "SELECT id, COALESCE(no, ''), sale_id, COALESCE(date, created_at), reason,
+                    refund_total_paise, created_at, created_by
              FROM sale_returns WHERE id = ?1",
             params![id],
             |r| {
@@ -1248,8 +1334,8 @@ fn fetch_return_header(c: &rusqlite::Connection, id: i64) -> AppResult<Option<Sa
                     date: r.get(3)?,
                     reason: r.get(4)?,
                     refund_total: r.get(5)?,
-                    created_at: r.get(3)?,
-                    created_by: r.get(6)?,
+                    created_at: r.get(6)?,
+                    created_by: r.get(7)?,
                 })
             },
         )
@@ -1276,7 +1362,7 @@ pub fn list_returns(
 ) -> AppResult<Vec<SaleReturn>> {
     db.with_raw(|c| {
         let mut sql = String::from(
-            "SELECT sr.id, COALESCE(sr.no, ''), sr.sale_id, sr.created_at, sr.reason,
+            "SELECT sr.id, COALESCE(sr.no, ''), sr.sale_id, COALESCE(sr.date, sr.created_at), sr.reason,
                     sr.refund_total_paise, sr.created_at, sr.created_by
              FROM sale_returns sr
              JOIN sales s ON s.id = sr.sale_id
@@ -1345,7 +1431,7 @@ pub fn cmd_create_sale_return(
         crate::commands::auth::verify_owner_pin(state.inner(), &payload.owner_pin)?;
     }
     let user_id = user.id;
-    create_sale_return(db, user_id, payload).map_err(|e| AppError::Internal(e.to_string()))
+    create_sale_return(db, user_id, payload).map_err(AppError::from)
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
@@ -1381,7 +1467,7 @@ pub fn cmd_list_sale_returns(
         customer_id,
         from_date.as_deref(),
         to_date.as_deref(),
-        limit.unwrap_or(100),
+        limit.unwrap_or(100).max(1).min(500),
     )
 }
 

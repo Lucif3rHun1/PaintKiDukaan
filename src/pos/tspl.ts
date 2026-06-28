@@ -155,7 +155,7 @@ function fit(text: string, maxDots: number, charW: number): string {
 }
 
 function esc(s: string): string {
-  return s.replace(/"/g, '\\"');
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\0/g, "");
 }
 
 // ── TSPL byte builder ────────────────────────────────────────────────────────
