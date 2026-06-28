@@ -332,6 +332,34 @@ impl Db {
             }
         }
 
+        // M-INLINE-008: add sell_unit_id and min_stock columns to items table
+        {
+            let has_sell_unit_id: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('items') WHERE name = 'sell_unit_id'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_sell_unit_id {
+                conn.execute_batch(
+                    "ALTER TABLE items ADD COLUMN sell_unit_id INTEGER REFERENCES units(id) ON DELETE NO ACTION;",
+                )?;
+            }
+            let has_min_stock: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('items') WHERE name = 'min_stock'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_min_stock {
+                conn.execute_batch(
+                    "ALTER TABLE items ADD COLUMN min_stock REAL NOT NULL DEFAULT 0;",
+                )?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\

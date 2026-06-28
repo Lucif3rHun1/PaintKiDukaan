@@ -302,6 +302,7 @@ CREATE TABLE items (
   unit_label          TEXT    NOT NULL,           -- denormalized for cashier projection
   unit                TEXT    NOT NULL DEFAULT 'pc',  -- denormalized unit code (legacy compat)
   sell_unit           TEXT    NOT NULL DEFAULT 'unit', -- "unit" or "box"
+  sell_unit_id        INTEGER REFERENCES units(id) ON DELETE NO ACTION,
   retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),
   cost_paise          INTEGER NOT NULL CHECK(cost_paise >= 0),
   promo_price_paise   INTEGER CHECK(promo_price_paise >= 0),
@@ -309,6 +310,7 @@ CREATE TABLE items (
   label_line2         TEXT,
   primary_location_id INTEGER REFERENCES locations(id) ON DELETE NO ACTION,
   min_qty             INTEGER NOT NULL DEFAULT 0 CHECK(min_qty >= 0),
+  min_stock           REAL    NOT NULL DEFAULT 0 CHECK(min_stock >= 0),
   barcode_format      TEXT,
   units_per_pack      INTEGER NOT NULL DEFAULT 1 CHECK(units_per_pack >= 1),
   sub_location_id     INTEGER REFERENCES sub_locations(id) ON DELETE NO ACTION,

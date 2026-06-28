@@ -1013,6 +1013,17 @@ export function BulkLabelsPage() {
           </Button>
         )}
 
+        {batch.length > 0 && (
+          <Button
+            type="button"
+            variant="danger"
+            onClick={clearBatch}
+            className="w-full"
+          >
+            Clear all ({batch.length})
+          </Button>
+        )}
+
         {actionMsg && (
           <p className="rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{actionMsg}</p>
         )}
@@ -1105,7 +1116,7 @@ export function BulkLabelsPage() {
               disabled={batch.length === 0 || busy}
               className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Print
+              {hasPrintedBatch ? "Reprint" : "Print"}
             </button>
           </div>
         </div>
