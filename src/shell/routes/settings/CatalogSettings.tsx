@@ -8,8 +8,17 @@ import { ipc } from "../../lib/ipc";
 import { tauriInvoke } from "../../../lib/security/tauri";
 import { BrandAdmin } from "../../../domain/items/BrandAdmin";
 import { CategoryAdmin } from "../../../domain/items/CategoryAdmin";
-import type { Unit, UnitDimension } from "../../../domain/types";
-import { listUnits, createUnit, deactivateUnit } from "../../../domain/units/api";
+import type { Unit, UnitDimension, SaleUnit, PurchaseUnit } from "../../../domain/types";
+import {
+  listUnits,
+  createUnit,
+  deactivateUnit,
+  listSaleUnits,
+  updateSaleUnit,
+  listPurchaseUnits,
+  createPurchaseUnit,
+  updatePurchaseUnit,
+} from "../../../domain/units/api";
 
 import { extractError } from "../../../lib/extractError";
 interface UnitsTableProps {
@@ -197,6 +206,7 @@ export function LocationsSettings() {
   };
 
   const remove = async (location: LocationItem) => {
+    if (!window.confirm(`Remove location "${location.name}"? This cannot be undone.`)) return;
     setError(null);
     try {
       await ipc.removeLocation(location.name);
@@ -349,23 +359,24 @@ export function CatalogBrandsSettings() {
 }
 
 export function CatalogSettingsCombined() {
-  const [tab, setTab] = useState<"brands" | "categories" | "units">("brands");
+  const [tab, setTab] = useState<"brands" | "categories" | "units" | "sale-units" | "purchase-units">("brands");
 
   return (
     <Card>
       <Section title="Catalog" description="Manage brands, categories, and units used across items and billing.">
-        {/* Tab bar */}
         <div className="flex gap-1 border-b border-border mb-4">
-          {(["brands", "categories", "units"] as const).map((t) => (
+          {(["brands", "categories", "units", "sale-units", "purchase-units"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-3 py-1.5 text-sm capitalize ${tab === t ? "border-b-2 border-primary text-foreground font-medium" : "text-muted-foreground hover:text-foreground"}`}
-            >{t}</button>
+              className={`px-3 py-1.5 text-sm capitalize whitespace-nowrap ${tab === t ? "border-b-2 border-primary text-foreground font-medium" : "text-muted-foreground hover:text-foreground"}`}
+            >{t.replace("-", " ")}</button>
           ))}
         </div>
 
         {tab === "brands" && <BrandAdmin role="owner" />}
         {tab === "categories" && <CategoryAdmin role="owner" />}
         {tab === "units" && <CatalogUnitsSettings />}
+        {tab === "sale-units" && <SaleUnitsSettings />}
+        {tab === "purchase-units" && <PurchaseUnitsSettings />}
       </Section>
     </Card>
   );
@@ -526,6 +537,312 @@ export function CatalogUnitsSettings() {
             units={units}
             loading={loading}
             onDeactivate={handleDeactivate}
+          />
+        </div>
+      </Section>
+    </Card>
+  );
+}
+
+function SaleUnitsSettings() {
+  const [units, setUnits] = useState<SaleUnit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editPrecision, setEditPrecision] = useState(0);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () => {
+    setLoading(true);
+    setError(null);
+    listSaleUnits(true)
+      .then((data) => setUnits(data ?? []))
+      .catch((e: unknown) => setError(extractError(e)))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(refresh, []);
+
+  const startEdit = (u: SaleUnit) => {
+    setEditingId(u.id);
+    setEditLabel(u.label);
+    setEditPrecision(u.quantity_precision);
+    setError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditLabel("");
+    setEditPrecision(0);
+  };
+
+  const saveEdit = async () => {
+    if (editingId === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await updateSaleUnit(editingId, {
+        label: editLabel.trim(),
+        quantity_precision: editPrecision,
+      });
+      setEditingId(null);
+      refresh();
+      toast.success("Sale unit updated");
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (u: SaleUnit) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateSaleUnit(u.id, { is_active: !u.is_active });
+      refresh();
+      toast.success(u.is_active ? "Deactivated" : "Activated");
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const columns: ColumnDef<SaleUnit>[] = [
+    {
+      header: "Code",
+      cell: (u) => <span className="font-mono font-medium text-foreground">{u.code}</span>,
+    },
+    {
+      header: "Label",
+      cell: (u) =>
+        editingId === u.id ? (
+          <input
+            type="text"
+            value={editLabel}
+            onChange={(e) => setEditLabel(e.target.value)}
+            className="w-32 rounded border border-border bg-card px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none"
+          />
+        ) : (
+          <span className="text-foreground">{u.label}</span>
+        ),
+    },
+    {
+      header: "Precision",
+      cell: (u) =>
+        editingId === u.id ? (
+          <div className="flex gap-3 text-xs">
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input type="radio" name={`prec-${u.id}`} checked={editPrecision === 0} onChange={() => setEditPrecision(0)} className="h-3 w-3" />
+              Whole
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input type="radio" name={`prec-${u.id}`} checked={editPrecision === 3} onChange={() => setEditPrecision(3)} className="h-3 w-3" />
+              Decimal
+            </label>
+          </div>
+        ) : (
+          <span className="text-muted-foreground">{u.quantity_precision === 0 ? "Whole" : "Decimal"}</span>
+        ),
+    },
+    {
+      header: "Active",
+      cell: (u) => (
+        <button
+          type="button"
+          onClick={() => void toggleActive(u)}
+          disabled={busy}
+          className={`inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            u.is_active ? "bg-primary" : "bg-muted"
+          }`}
+        >
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${u.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
+        </button>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      className: "w-28",
+      cell: (u) =>
+        editingId === u.id ? (
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => void saveEdit()} disabled={busy} className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">Save</button>
+            <button type="button" onClick={cancelEdit} disabled={busy} className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Cancel</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => startEdit(u)} disabled={busy} className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Edit</button>
+        ),
+    },
+  ];
+
+  return (
+    <Card>
+      <Section title="Sale Units" description="The 3 units items are sold in. Each controls quantity precision (whole numbers or decimals).">
+        <div className="space-y-4 text-sm">
+          {error && <Alert>{error}</Alert>}
+          <DataTable
+            data={units}
+            columns={columns}
+            keyExtractor={(u) => u.id}
+            loading={loading}
+            emptyState={<EmptyState title="No sale units" description="Sale units are seeded on first run." className="rounded-md border border-border py-8" />}
+          />
+        </div>
+      </Section>
+    </Card>
+  );
+}
+
+function PurchaseUnitsSettings() {
+  const [units, setUnits] = useState<PurchaseUnit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newLabel, setNewLabel] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () => {
+    setLoading(true);
+    setError(null);
+    listPurchaseUnits(true)
+      .then((data) => setUnits(data ?? []))
+      .catch((e: unknown) => setError(extractError(e)))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(refresh, []);
+
+  const add = async () => {
+    const label = newLabel.trim();
+    if (!label) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createPurchaseUnit(label);
+      setNewLabel("");
+      refresh();
+      toast.success("Purchase unit added");
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEdit = (u: PurchaseUnit) => {
+    setEditingId(u.id);
+    setEditLabel(u.label);
+    setError(null);
+  };
+
+  const saveEdit = async () => {
+    if (editingId === null) return;
+    const label = editLabel.trim();
+    if (!label) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await updatePurchaseUnit(editingId, { label });
+      setEditingId(null);
+      refresh();
+      toast.success("Label updated");
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (u: PurchaseUnit) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await updatePurchaseUnit(u.id, { is_active: !u.is_active });
+      refresh();
+      toast.success(u.is_active ? "Deactivated" : "Activated");
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const columns: ColumnDef<PurchaseUnit>[] = [
+    {
+      header: "Label",
+      cell: (u) =>
+        editingId === u.id ? (
+          <input
+            type="text"
+            value={editLabel}
+            onChange={(e) => setEditLabel(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void saveEdit(); if (e.key === "Escape") setEditingId(null); }}
+            className="w-40 rounded border border-border bg-card px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none"
+            autoFocus
+          />
+        ) : (
+          <span className="text-foreground">{u.label}</span>
+        ),
+    },
+    {
+      header: "Active",
+      cell: (u) => (
+        <button
+          type="button"
+          onClick={() => void toggleActive(u)}
+          disabled={busy}
+          className={`inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            u.is_active ? "bg-primary" : "bg-muted"
+          }`}
+        >
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${u.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
+        </button>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      className: "w-28",
+      cell: (u) =>
+        editingId === u.id ? (
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => void saveEdit()} disabled={busy} className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">Save</button>
+            <button type="button" onClick={() => setEditingId(null)} disabled={busy} className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Cancel</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => startEdit(u)} disabled={busy} className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Edit</button>
+        ),
+    },
+  ];
+
+  return (
+    <Card>
+      <Section title="Purchase Units" description="Packaging labels used when receiving stock (e.g. Carton, Roll, Sack). Per-item remembered.">
+        <div className="space-y-4 text-sm">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void add(); }}
+              placeholder="e.g. Carton, Roll, Sack"
+              className="input"
+            />
+            <Button type="button" onClick={() => void add()} disabled={!newLabel.trim() || busy} shortcut="F6">
+              Add
+            </Button>
+          </div>
+          {error && <Alert>{error}</Alert>}
+          <DataTable
+            data={units}
+            columns={columns}
+            keyExtractor={(u) => u.id}
+            loading={loading}
+            emptyState={<EmptyState title="No purchase units" description="Add packaging labels used for inward stock." className="rounded-md border border-border py-8" />}
           />
         </div>
       </Section>

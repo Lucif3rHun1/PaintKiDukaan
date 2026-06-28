@@ -206,7 +206,7 @@ export function ItemList({ role }: Props) {
     for (const item of allItems) {
       if (item.current_qty < 0) stockAnomaly++;
       else if (item.current_qty === 0) outOfStock++;
-      else if (item.current_qty <= item.min_qty) lowStock++;
+                      else if (item.current_qty <= (item.min_stock ?? item.min_qty)) lowStock++;
       totalRetail += Math.max(item.current_qty ?? 0, 0) * item.retail_price_paise;
     }
     return {
@@ -549,7 +549,7 @@ export function ItemList({ role }: Props) {
                     {rows.map((item) => {
                       const stockAnomaly = item.current_qty < 0;
                       const isOut = item.current_qty === 0;
-                      const lowStock = !isOut && !stockAnomaly && item.current_qty <= item.min_qty;
+                      const lowStock = !isOut && !stockAnomaly && item.current_qty <= (item.min_stock ?? item.min_qty);
                       return (
                         <tr
                           key={item.id}
@@ -589,8 +589,8 @@ export function ItemList({ role }: Props) {
                               ) : null}
                             </div>
                           </td>
-                          <td className="px-3 py-2 text-muted-foreground">
-                            {item.unit_label ?? item.unit_code ?? "—"}
+                          <td className="px-3 py-2">
+                            <Badge variant="muted">{item.sell_unit}</Badge>
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">
                             {formatLocation(item)}
@@ -604,12 +604,12 @@ export function ItemList({ role }: Props) {
                             <Money paise={item.retail_price_paise} />
                           </td>
                           <td className="px-3 py-2 text-right text-muted-foreground">
-                            {item.min_qty}
+                            {item.min_stock ?? item.min_qty}
                           </td>
                           <td className="px-3 py-2">
                             <StockDisplay
                               currentQty={item.current_qty}
-                              minQty={item.min_qty}
+                              minQty={item.min_stock ?? item.min_qty}
                             />
                           </td>
                           <td
