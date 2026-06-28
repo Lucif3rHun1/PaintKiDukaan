@@ -113,7 +113,6 @@ export default function SalesPage({ user, onExit }: Props) {
 
   const [showExitModal, setShowExitModal] = useState(false);
   const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
-  const [draftRestoreOpen, setDraftRestoreOpen] = useState(false);
 
   const draftData = useMemo(() => ({
     kind,
@@ -139,21 +138,33 @@ export default function SalesPage({ user, onExit }: Props) {
     }
   }, [draftData, draftLoading, markDirty]);
 
+  const draftRestored = useRef(false);
   useEffect(() => {
-    if (draft && !draftLoading && isInitialDraftMount.current === false) {
-      if (lines.length === 0) {
-        setDraftRestoreOpen(true);
+    if (draft && !draftLoading && !draftRestored.current && lines.length === 0) {
+      draftRestored.current = true;
+      try {
+        const data = JSON.parse(draft.data_json);
+        if (data.kind) setKind(data.kind);
+        if (data.lines) setLines(data.lines);
+        if (data.billDiscount != null) setBillDiscount(data.billDiscount);
+        if (data.splits) setSplits(data.splits);
+        if (data.validityDays != null) setValidityDays(data.validityDays);
+        if (data.ackFlag != null) setAckFlag(data.ackFlag);
+      } catch {
+        void 0;
       }
     }
-  }, [draft, draftLoading, lines.length]);
+  }, [draft, draftLoading]);
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
       detail: { status: draftStatus, draft },
     }));
-    return () => window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
-      detail: { status: "idle", draft: null },
-    }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
+        detail: { status: "idle", draft: null },
+      }));
+    };
   }, [draftStatus, draft]);
 
   // ---- Computed totals ----
@@ -427,23 +438,6 @@ export default function SalesPage({ user, onExit }: Props) {
   useEffect(() => {
     refreshRecent();
   }, [refreshRecent]);
-
-  function handleRestoreDraft() {
-    if (!draft) return;
-    try {
-      const data = JSON.parse(draft.data_json);
-      if (data.kind) setKind(data.kind);
-      if (data.lines) setLines(data.lines);
-      if (data.billDiscount != null) setBillDiscount(data.billDiscount);
-      if (data.splits) setSplits(data.splits);
-      if (data.validityDays != null) setValidityDays(data.validityDays);
-      if (data.ackFlag != null) setAckFlag(data.ackFlag);
-    } catch {
-      void 0;
-    }
-    setDraftRestoreOpen(false);
-    resetDirty();
-  }
 
   function handleSaveDraftAndExit() {
     const exit = pendingExit ?? onExit;
@@ -931,30 +925,6 @@ export default function SalesPage({ user, onExit }: Props) {
         onCancel={handleCancelExit}
       />
 
-      {draftRestoreOpen && draft && (
-        <InlineDialog
-          open={draftRestoreOpen}
-          onClose={() => setDraftRestoreOpen(false)}
-          title="Restore draft?"
-          description={`You have a saved draft from ${new Date(draft.updated_at).toLocaleString()}.`}
-        >
-          <div className="flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setDraftRestoreOpen(false);
-                void deleteDraft("sale");
-              }}
-            >
-              Start fresh
-            </Button>
-            <Button type="button" variant="primary" onClick={handleRestoreDraft}>
-              Restore
-            </Button>
-          </div>
-        </InlineDialog>
-      )}
     </div>
     </PageBadgeCtx.Provider>
   );

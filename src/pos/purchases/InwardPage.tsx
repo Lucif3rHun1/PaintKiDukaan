@@ -134,7 +134,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   const [initialLoading, setInitialLoading] = useState(true);
 
   const [showExitModal, setShowExitModal] = useState(false);
-  const [draftRestoreOpen, setDraftRestoreOpen] = useState(false);
 
   const draftData = useMemo(() => ({
     draftLines: draft,
@@ -157,21 +156,32 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     }
   }, [draftData, draftLoading, markDirty]);
 
+  const draftRestored = useRef(false);
   useEffect(() => {
-    if (savedDraft && !draftLoading && isInitialDraftMount.current === false) {
-      if (draft.length === 0) {
-        setDraftRestoreOpen(true);
+    if (savedDraft && !draftLoading && !draftRestored.current && draft.length === 0) {
+      draftRestored.current = true;
+      try {
+        const data = parsePurchaseDraft(savedDraft.data_json);
+        if (!data) return;
+        if (data.draftLines) setDraft(data.draftLines);
+        if (data.vendorId !== undefined) setVendorId(data.vendorId);
+        if (data.notes !== undefined) setNotes(data.notes);
+        if (data.autoPrint !== undefined) setAutoPrint(data.autoPrint);
+      } catch {
+        return;
       }
     }
-  }, [savedDraft, draftLoading, draft.length]);
+  }, [savedDraft, draftLoading]);
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
       detail: { status: draftStatus, draft: savedDraft },
     }));
-    return () => window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
-      detail: { status: "idle", draft: null },
-    }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("paintkiduakan:page-badge", {
+        detail: { status: "idle", draft: null },
+      }));
+    };
   }, [draftStatus, savedDraft]);
 
   const entrySearchRef = useRef<HTMLInputElement>(null);
@@ -380,26 +390,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     } else {
       onExit();
     }
-  }
-
-  function handleRestoreDraft() {
-    if (!savedDraft) return;
-    try {
-      const data = parsePurchaseDraft(savedDraft.data_json);
-      if (!data) {
-        toast.warning("Saved purchase draft could not be restored");
-      } else {
-        if (data.draftLines) setDraft(data.draftLines);
-        if (data.vendorId !== undefined) setVendorId(data.vendorId);
-        if (data.notes !== undefined) setNotes(data.notes);
-        if (data.autoPrint !== undefined) setAutoPrint(data.autoPrint);
-      }
-    } catch (e: unknown) {
-      console.warn("[InwardPage] corrupt purchase draft", e);
-      toast.warning("Saved purchase draft could not be restored");
-    }
-    setDraftRestoreOpen(false);
-    resetDirty();
   }
 
   function handleSaveDraftAndExit() {
@@ -895,30 +885,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
         onCancel={handleCancelExit}
       />
 
-      {draftRestoreOpen && savedDraft && (
-        <InlineDialog
-          open={draftRestoreOpen}
-          onClose={() => setDraftRestoreOpen(false)}
-          title="Restore draft?"
-          description={`You have a saved draft from ${new Date(savedDraft.updated_at).toLocaleString()}.`}
-        >
-          <div className="flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setDraftRestoreOpen(false);
-                void deleteDraft("purchase");
-              }}
-            >
-              Start fresh
-            </Button>
-            <Button type="button" variant="primary" onClick={handleRestoreDraft}>
-              Restore
-            </Button>
-          </div>
-        </InlineDialog>
-      )}
     </div>
     </PageBadgeCtx.Provider>
   );

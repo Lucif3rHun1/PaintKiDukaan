@@ -27,8 +27,10 @@ import logo32 from "../assets/logo-32.png";
 import logo64 from "../assets/logo-64.png";
 const LOGO_64 = logo64;
 import { cn, Toaster } from "../components/ui";
+import { DraftBadge } from "../components/ui/DraftBadge";
 import { KbdHint } from "../components/ui/KbdHint";
 import { ShortcutOverlay, type ShortcutGroup } from "../components/ui/ShortcutOverlay";
+import { usePageBadge } from "../pos/hooks";
 import { useShortcut } from "../lib/shortcuts";
 import { toTitleCase } from "../lib/format/titleCase";
 import { AlertBell } from "./components/AlertBell";
@@ -211,6 +213,17 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
     settings: true,
   });
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const contextPageBadge = usePageBadge();
+  const [pageBadge, setPageBadge] = useState(contextPageBadge);
+
+  useEffect(() => {
+    const onPageBadge = (event: Event) => {
+      const detail = (event as CustomEvent<typeof contextPageBadge>).detail;
+      if (detail) setPageBadge(detail);
+    };
+    window.addEventListener("paintkiduakan:page-badge", onPageBadge);
+    return () => window.removeEventListener("paintkiduakan:page-badge", onPageBadge);
+  }, []);
 
   const shopNameQuery = useQuery({
     queryKey: ["app", "shopName"],
@@ -387,8 +400,9 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Desktop top bar */}
         <header className="hidden md:flex h-14 items-center justify-between border-b border-border bg-background px-4 sticky top-0 z-40">
-          <div className="text-sm font-semibold text-foreground tracking-tight">
-            {tabTitle(activeTab)}
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground tracking-tight">
+            <span>{tabTitle(activeTab)}</span>
+            {activeTab !== "dashboard" ? <DraftBadge draft={pageBadge.draft} /> : null}
             {activeTab === "dashboard" ? (
               <span className="font-normal text-muted-foreground">
                 {" · "}{shopName}{" · "}{displayRole}
