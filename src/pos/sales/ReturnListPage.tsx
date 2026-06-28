@@ -1,13 +1,14 @@
 // Return list page — recent returns with search, date filter, and pagination.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, RotateCcw } from "lucide-react";
 import { PeriodDropdown } from "../../components/ui";
 
 import { Button, Card, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { listSaleReturns } from "../../domain/ipc";
-import type { SaleReturn } from "../../domain/types";
+import { getDraft } from "../api";
+import type { SaleReturn, Draft } from "../../domain/types";
 import { usePaginatedQuery } from "../../lib/query";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
@@ -23,6 +24,8 @@ const PAGE_SIZE = 25;
 export function ReturnListPage({ onCreate, onSelect }: Props) {
   const [from, setFrom] = useState(() => shiftDaysLocal(6));
   const [to, setTo] = useState(() => todayLocalYyyymmdd());
+  const [draft, setDraft] = useState<Draft | null>(null);
+  useEffect(() => { void getDraft("return").then(setDraft); }, []);
 
   const {
     data: rows,
@@ -182,6 +185,12 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
           className="min-w-[220px] flex-1"
         />
         <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
+        {draft && (
+          <button type="button" onClick={() => { window.location.hash = "#/sales/return"; }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            Open draft
+          </button>
+        )}
         <Button type="button" variant="primary" size="sm" icon={Plus} onClick={onCreate} shortcut="F6">
           New Return
         </Button>

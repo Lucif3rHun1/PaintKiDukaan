@@ -179,6 +179,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         primary_location_id: primaryLocationId,
         sub_location_id: subLocationId,
         position: position || null,
+        min_qty: 1,
         min_stock: Number(minStock),
         barcode: null as string | null,
       };

@@ -1,7 +1,7 @@
 // Sales list page — recent sales with search, date filter, status chips,
 // pagination, and at-a-glance totals (count, value, outstanding due).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, Eye, Plus, Printer, Receipt, Share2 } from "lucide-react";
 import { PeriodDropdown } from "../../components/ui";
 
@@ -17,12 +17,13 @@ import {
   SearchInput,
 } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
-import { listSales } from "../api";
+import { listSales, getDraft } from "../api";
 import { usePaginatedQuery } from "../../lib/query";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { formatDateForDisplay, shiftDaysLocal, todayLocalYyyymmdd } from "../../lib/date";
 import type { Sale } from "../types";
+import type { Draft } from "../../domain/types";
 import {
   safeDownloadSalePdfById,
   safePrintSaleById,
@@ -42,6 +43,8 @@ export function SalesListPage({ onCreate }: Props) {
   const [from, setFrom] = useState(() => shiftDaysLocal(6));
   const [to, setTo] = useState(() => todayLocalYyyymmdd());
   const [payFilter, setPayFilter] = useState<PaymentFilter>("all");
+  const [draft, setDraft] = useState<Draft | null>(null);
+  useEffect(() => { void getDraft("sale").then(setDraft); }, []);
 
   const {
     data: rows,
@@ -284,6 +287,12 @@ export function SalesListPage({ onCreate }: Props) {
           className="min-w-[220px] flex-1"
         />
         <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
+        {draft && (
+          <button type="button" onClick={() => { window.location.hash = "#/sales/new"; }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            Open draft
+          </button>
+        )}
         <Button type="button" variant="primary" size="sm" icon={Plus} onClick={onCreate} shortcut="F6">
           New Sale
         </Button>

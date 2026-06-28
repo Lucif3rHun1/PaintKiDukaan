@@ -1,17 +1,18 @@
 // Inward list page — recent purchases with search, date filter, pagination.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PackagePlus, Truck } from "lucide-react";
 import { PeriodDropdown } from "../../components/ui";
 
 import { Button, Card, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
-import { listPurchases } from "../api";
+import { listPurchases, getDraft } from "../api";
 import { usePaginatedQuery } from "../../lib/query";
 import { formatDateForDisplay, shiftDaysLocal, todayLocalYyyymmdd } from "../../lib/date";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import type { Purchase } from "../types";
+import type { Draft } from "../../domain/types";
 
 interface Props {
   onCreate: () => void;
@@ -23,6 +24,8 @@ const PAGE_SIZE = 25;
 export function InwardListPage({ onCreate, onSelect }: Props) {
   const [from, setFrom] = useState(() => shiftDaysLocal(6));
   const [to, setTo] = useState(() => todayLocalYyyymmdd());
+  const [draft, setDraft] = useState<Draft | null>(null);
+  useEffect(() => { void getDraft("purchase").then(setDraft); }, []);
 
   const {
     data: rows,
@@ -160,6 +163,12 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
           className="min-w-[220px] flex-1"
         />
         <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
+        {draft && (
+          <button type="button" onClick={() => { window.location.hash = "#/inward"; }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            Open draft
+          </button>
+        )}
         <Button type="button" variant="primary" size="sm" icon={PackagePlus} onClick={onCreate} shortcut="F6">
           New Inward
         </Button>

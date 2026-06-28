@@ -356,6 +356,7 @@ export function ItemSearchInput({
           name,
           retail_price_paise: quickPrice,
           cost_paise: 0,
+          min_qty: 1,
           min_stock: quickMinStock,
           sell_unit: "unit",
           sell_unit_id: null,

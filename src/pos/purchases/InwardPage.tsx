@@ -850,30 +850,30 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                         </div>
                       </td>
                       <td className="px-3 py-2 relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
                         <input
                           type="number"
                           min={0}
                           step={0.01}
-                          value={(entry.cost_price / 100).toFixed(2)}
+                          placeholder="buy price"
+                          value={entry.cost_price > 0 ? (entry.cost_price / 100).toFixed(2) : ""}
                           onChange={(e) => setEntry((p) => ({ ...p, cost_price: Math.round(Math.max(0, Number(e.target.value)) * 100) }))}
-                          className="h-8 w-24 rounded border border-border bg-card pl-5 pr-2 text-right text-sm tabular-nums"
-                          title="Cost per base unit"
+                          className="h-8 w-24 rounded border border-amber-300/60 bg-amber-50/40 px-2 text-right text-sm tabular-nums placeholder:text-muted-foreground/60 dark:border-amber-700/30 dark:bg-amber-950/20"
+                          title="Purchase cost per unit"
                         />
                       </td>
                       <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
                         <Money paise={entryAmountPaise} />
                       </td>
                       <td className="px-3 py-2 relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
                         <input
                           type="number"
                           min={0}
                           step={0.01}
-                          value={(entry.retail_price / 100).toFixed(2)}
+                          placeholder="sell price"
+                          value={entry.retail_price > 0 ? (entry.retail_price / 100).toFixed(2) : ""}
                           onChange={(e) => setEntry((p) => ({ ...p, retail_price: Math.round(Math.max(0, Number(e.target.value)) * 100), retail_overridden: true }))}
-                          className="h-8 w-24 rounded border border-border bg-card pl-5 pr-2 text-right text-sm tabular-nums"
-                          title="MRP per base unit"
+                          className="h-8 w-24 rounded border border-emerald-300/60 bg-emerald-50/40 px-2 text-right text-sm tabular-nums placeholder:text-muted-foreground/60 dark:border-emerald-700/30 dark:bg-emerald-950/20"
+                          title="MRP per unit (sell price)"
                         />
                       </td>
                       <td className="px-3 py-2 text-center">
