@@ -32,7 +32,7 @@ pub fn init<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Erro
     };
 
     TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("PaintKiDukaan Master")
+        .tooltip(concat!("PaintKiDukaan v", env!("CARGO_PKG_VERSION")))
         .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)

@@ -199,6 +199,11 @@ pub fn run() {
 
             security::run_security_init(&handle, &app_state);
 
+            let app_title = concat!("PaintKiDukaan v", env!("CARGO_PKG_VERSION"));
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.set_title(app_title);
+            }
+
             if cfg!(debug_assertions) {
                 if let Some(main) = app.get_webview_window("main") {
                     let _ = main.show();
