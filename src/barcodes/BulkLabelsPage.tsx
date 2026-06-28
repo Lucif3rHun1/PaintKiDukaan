@@ -413,7 +413,9 @@ export function BulkLabelsPage() {
         line1: record.line1 ?? undefined,
         line2: record.line2 ?? undefined,
       }));
-      await printLabelBatch(labels, configFromFormat(record.format));
+      const reprintCfg = configFromFormat(record.format);
+      if (reprintCfg.type === "thermal") reprintCfg.labelsPerRow = record.labelsPerRow ?? labelsPerRow;
+      await printLabelBatch(labels, reprintCfg);
       setActionMsg(`Reprinted ${record.qty} label${record.qty === 1 ? "" : "s"} for ${record.itemName}.`);
     } catch (e) {
       setActionMsg(`Failed: ${extractError(e)}`);
@@ -1066,7 +1068,7 @@ export function BulkLabelsPage() {
             {batch.length > 0 && (
               <button
                 type="button"
-                onClick={clearBatch}
+                onClick={() => { if (window.confirm("Clear all labels from the batch?")) clearBatch(); }}
                 className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted"
               >
                 Clear all
