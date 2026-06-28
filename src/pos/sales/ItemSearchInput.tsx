@@ -198,12 +198,7 @@ export function ItemSearchInput({
     };
   }, []);
 
-  useEffect(() => {
-    const showQuickCreate = open && query.trim() && !searching && results.length === 0 && onCreateItem;
-    if (showQuickCreate) {
-      quickNameRef.current?.focus();
-    }
-  }, [open, query, searching, results.length, onCreateItem]);
+  // ponytail: removed auto-focus on quick-create name field — it steals focus from the search input after first keystroke when no results found
 
   useEffect(() => {
     if (quickSearchSkipRef.current) { quickSearchSkipRef.current = false; return; }

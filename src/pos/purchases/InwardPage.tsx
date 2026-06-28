@@ -753,143 +753,149 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           </div>
         )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-muted-foreground">
-              <tr className="border-b border-border">
-                <th className="px-4 py-2 font-medium">Item</th>
-                <th className="px-3 py-2 font-medium">Pkg</th>
-                <th className="px-3 py-2 text-right font-medium">Qty</th>
-                <th className="px-3 py-2 text-right font-medium">₹/Unit</th>
-                <th className="px-3 py-2 text-right font-medium">Total ₹</th>
-                <th className="px-3 py-2 text-right font-medium">MRP ₹</th>
-                <th className="px-3 py-2 text-center font-medium">✓</th>
-              </tr>
-            </thead>
-            <tbody>
-              {initialLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-4">
-                    <div
-                      role="status"
-                      aria-live="polite"
-                      aria-label="Loading items and locations"
-                      className="space-y-2"
-                    >
-                      <Skeleton className="h-9 w-full" />
-                      <Skeleton className="h-9 w-11/12" />
-                      <Skeleton className="h-9 w-10/12" />
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                <>
-                  {/* ── Entry row (inline form) ── */}
-                  {entry.item_id > 0 && (
-                    <tr className="border-b border-primary/20 bg-primary/5" data-testid="inward-entry">
-                      <td className="px-4 py-2">
-                        <p className="text-sm font-medium text-foreground">
-                          {editingIndex != null ? "✏️ " : ""}{itemName(entry.item_id)}
-                        </p>
-                        {editingIndex != null && (
-                          <button
-                            type="button"
-                            onClick={() => { setEditingIndex(null); setEntry(emptyEntry(defaultLocationId)); }}
-                            className="mt-0.5 text-xs text-muted-foreground underline hover:text-foreground"
-                          >
-                            cancel
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <select
-                          value={entry.purchase_unit_id ?? ""}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            if (v > 0) handleEntryPkgChange(v);
-                          }}
-                          className="h-8 w-full rounded border border-border bg-card px-1.5 text-xs"
-                          disabled={entryPkgOptions.length === 0}
-                        >
-                          {entryPkgOptions.map((o) => (
-                            <option key={o.purchase_unit_id} value={o.purchase_unit_id}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            min={0}
-                            step={entry.unit_type === "unit" ? 1 : 0.001}
-                            value={entry.qty}
-                            onChange={(e) => setEntry((p) => ({ ...p, qty: Math.max(0, Number(e.target.value)) }))}
-                            className="h-8 w-16 rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
-                            title="Quantity"
-                          />
-                          <span className="text-xs text-muted-foreground">×</span>
-                          <input
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={entry.qty_per_purchase_unit}
-                            onChange={(e) => {
-                              const v = Math.max(1, Number(e.target.value) || 1);
-                              setEntry((p) => ({ ...p, qty_per_purchase_unit: v }));
-                            }}
-                            onBlur={() => {
-                              if (entry.item_id > 0 && entry.purchase_unit_id) {
-                                void setItemPackaging(entry.item_id, entry.purchase_unit_id, entry.qty_per_purchase_unit).catch(() => {});
-                              }
-                            }}
-                            className="h-8 w-14 rounded border border-border bg-card px-2 text-right text-xs tabular-nums"
-                            title="Units per package"
-                          />
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 relative">
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          placeholder="buy price"
-                          value={entry.cost_price > 0 ? (entry.cost_price / 100).toFixed(2) : ""}
-                          onChange={(e) => setEntry((p) => ({ ...p, cost_price: Math.round(Math.max(0, Number(e.target.value)) * 100) }))}
-                          className="h-8 w-24 rounded border border-amber-300/60 bg-amber-50/40 px-2 text-right text-sm tabular-nums placeholder:text-muted-foreground/60 dark:border-amber-700/30 dark:bg-amber-950/20"
-                          title="Purchase cost per unit"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
-                        <Money paise={entryAmountPaise} />
-                      </td>
-                      <td className="px-3 py-2 relative">
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          placeholder="sell price"
-                          value={entry.retail_price > 0 ? (entry.retail_price / 100).toFixed(2) : ""}
-                          onChange={(e) => setEntry((p) => ({ ...p, retail_price: Math.round(Math.max(0, Number(e.target.value)) * 100), retail_overridden: true }))}
-                          className="h-8 w-24 rounded border border-emerald-300/60 bg-emerald-50/40 px-2 text-right text-sm tabular-nums placeholder:text-muted-foreground/60 dark:border-emerald-700/30 dark:bg-emerald-950/20"
-                          title="MRP per unit (sell price)"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <button
-                          type="button"
-                          onClick={commitEntry}
-                          className="inline-flex h-7 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-                        >
-                          {editingIndex != null ? "Update" : "Add"}
-                        </button>
-                      </td>
-                    </tr>
-                  )}
+        {/* ── Entry form card (when item selected) ── */}
+        {entry.item_id > 0 && (
+          <div className="border-b border-primary/20 bg-primary/5 px-4 py-3" data-testid="inward-entry">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground">
+                {editingIndex != null ? "Editing: " : "Selected: "}{itemName(entry.item_id)}
+              </p>
+              {editingIndex != null && (
+                <button
+                  type="button"
+                  onClick={() => { setEditingIndex(null); setEntry(emptyEntry(defaultLocationId)); }}
+                  className="text-xs text-muted-foreground underline hover:text-foreground"
+                >
+                  Cancel edit
+                </button>
+              )}
+            </div>
 
-                  {/* ── Accumulated lines: clickable for editing ── */}
-                  {draft.map((l, idx) => (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Package</label>
+                <select
+                  value={entry.purchase_unit_id ?? ""}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (v > 0) handleEntryPkgChange(v);
+                  }}
+                  className="h-9 w-full rounded border border-border bg-card px-2 text-sm"
+                  disabled={entryPkgOptions.length === 0}
+                >
+                  {entryPkgOptions.map((o) => (
+                    <option key={o.purchase_unit_id} value={o.purchase_unit_id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Units/pkg</label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={entry.qty_per_purchase_unit}
+                  onChange={(e) => {
+                    const v = Math.max(1, Number(e.target.value) || 1);
+                    setEntry((p) => ({ ...p, qty_per_purchase_unit: v }));
+                  }}
+                  onBlur={() => {
+                    if (entry.item_id > 0 && entry.purchase_unit_id) {
+                      void setItemPackaging(entry.item_id, entry.purchase_unit_id, entry.qty_per_purchase_unit).catch(() => {});
+                    }
+                  }}
+                  className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Quantity</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={entry.unit_type === "unit" ? 1 : 0.001}
+                  value={entry.qty}
+                  onChange={(e) => setEntry((p) => ({ ...p, qty: Math.max(0, Number(e.target.value)) }))}
+                  className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Cost/unit (₹)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={entry.cost_price > 0 ? (entry.cost_price / 100).toFixed(2) : ""}
+                  onChange={(e) => setEntry((p) => ({ ...p, cost_price: Math.round(Math.max(0, Number(e.target.value)) * 100) }))}
+                  className="h-9 w-full rounded border border-amber-300/60 bg-amber-50/40 px-2 text-right text-sm tabular-nums placeholder:text-muted-foreground/60 dark:border-amber-700/30 dark:bg-amber-950/20"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Total</label>
+                <div className="flex h-9 items-center justify-end rounded border border-border bg-muted/30 px-2 text-sm font-medium tabular-nums">
+                  <Money paise={entryAmountPaise} />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">MRP/unit (₹)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={entry.retail_price > 0 ? (entry.retail_price / 100).toFixed(2) : ""}
+                  onChange={(e) => setEntry((p) => ({ ...p, retail_price: Math.round(Math.max(0, Number(e.target.value)) * 100), retail_overridden: true }))}
+                  className="h-9 w-full rounded border border-emerald-300/60 bg-emerald-50/40 px-2 text-right text-sm tabular-nums placeholder:text-muted-foreground/60 dark:border-emerald-700/30 dark:bg-emerald-950/20"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={commitEntry}
+                className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              >
+                {editingIndex != null ? "Update" : "Add to inward"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Committed lines table ── */}
+        {draft.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase text-muted-foreground">
+                <tr className="border-b border-border">
+                  <th className="px-4 py-2 font-medium">Item</th>
+                  <th className="px-3 py-2 font-medium">Package</th>
+                  <th className="px-3 py-2 text-right font-medium">Qty</th>
+                  <th className="px-3 py-2 text-right font-medium">Cost/Unit</th>
+                  <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  <th className="px-3 py-2 text-right font-medium">MRP</th>
+                  <th className="px-3 py-2 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {initialLoading ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-4">
+                      <div role="status" aria-live="polite" className="space-y-2">
+                        <Skeleton className="h-9 w-full" />
+                        <Skeleton className="h-9 w-11/12" />
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  draft.map((l, idx) => (
                     <tr
                       key={l.row_id}
                       onClick={() => startEdit(idx)}
@@ -897,11 +903,9 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                       data-testid="inward-line"
                     >
                       <td className="px-4 py-2">
-                        <p className="text-sm font-medium text-foreground">
-                          {itemName(l.item_id)}
-                        </p>
+                        <p className="text-sm font-medium text-foreground">{itemName(l.item_id)}</p>
                       </td>
-                      <td className="px-3 py-2 text-sm text-foreground">
+                      <td className="px-3 py-2">
                         <span className="inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                           {pkgLabelForLine(l)}
                         </span>
@@ -909,15 +913,13 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                       <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
                         <div>{l.qty}</div>
                         {l.qty_per_purchase_unit !== 1 ? (
-                          <div className="text-xs text-muted-foreground">
-                            × {l.qty_per_purchase_unit}
-                          </div>
+                          <div className="text-xs text-muted-foreground">× {l.qty_per_purchase_unit} pkg</div>
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
                         <Money paise={l.cost_price} />
                       </td>
-                      <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
+                      <td className="px-3 py-2 text-right text-sm tabular-nums font-medium text-foreground">
                         <Money paise={lineTotalPaise(l)} />
                       </td>
                       <td className="px-3 py-2 text-right text-sm tabular-nums text-foreground">
@@ -926,35 +928,30 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                       <td className="px-3 py-2 text-center">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeLine(l.row_id);
-                          }}
-                          aria-label={`Remove line ${itemName(l.item_id)}`}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                          onClick={(e) => { e.stopPropagation(); removeLine(l.row_id); }}
+                          aria-label={`Remove ${itemName(l.item_id)}`}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                         >
                           ×
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-                  {draft.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-6">
-                        <EmptyState
-                          icon={PackagePlus}
-                          title="No items yet"
-                          description="Search or scan an item above, choose packaging, then add it to this inward."
-                        />
-                      </td>
-                    </tr>
-                  )}
-                </>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {!initialLoading && draft.length === 0 && entry.item_id <= 0 && (
+          <div className="px-4 py-6">
+            <EmptyState
+              icon={PackagePlus}
+              title="No items yet"
+              description="Search or scan an item above to start adding inward stock."
+            />
+          </div>
+        )}
       </section>
 
       {/* ── Recent inwards ──────────────────────────────────── */}
