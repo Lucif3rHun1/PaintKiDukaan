@@ -9,6 +9,8 @@ import type {
   CashSalesSummary,
   ComparisonMetricsReport,
   ConvertQuotation,
+  InventoryTurnoverReport,
+  ReceivableAgingReport,
   DailySalesReport,
   DayClose,
   DayLockState,
@@ -165,3 +167,11 @@ export const comparisonMetrics = (refDate: string): Promise<ComparisonMetricsRep
   isTauri()
     ? tauriInvoke<ComparisonMetricsReport>("cmd_comparison_metrics", { ref_date: refDate })
     : Promise.resolve({ sales: { current: 0, previous: 0, change_pct: 0 }, bills: { current: 0, previous: 0, change_pct: 0 }, avg_bill_value: { current: 0, previous: 0, change_pct: 0 } });
+export const inventoryTurnover = (): Promise<InventoryTurnoverReport> =>
+  isTauri()
+    ? tauriInvoke<InventoryTurnoverReport>("cmd_inventory_turnover")
+    : Promise.resolve({ stock_value_paise: 0 });
+export const receivableAging = (): Promise<ReceivableAgingReport> =>
+  isTauri()
+    ? tauriInvoke<ReceivableAgingReport>("cmd_receivable_aging")
+    : Promise.resolve({ bucket_0_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_91_plus: 0 });

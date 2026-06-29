@@ -382,7 +382,7 @@ fn refresh_low_stock_alerts(conn: &rusqlite::Connection) -> Result<(), AppError>
          LEFT JOIN stock_movements sm ON sm.item_id = i.id
          WHERE i.is_active = 1
          GROUP BY i.id
-         HAVING balance < i.min_stock",
+         HAVING balance <= i.min_stock",
     )?;
     let rows = stmt.query_map([], |row| {
         let name: String = row.get(1)?;

@@ -4,21 +4,23 @@ import {
   ArrowUpRight,
   Banknote,
   BarChart3,
-  Percent,
+  CircleDollarSign,
   Receipt,
   ShoppingCart,
   TrendingUp,
   Users,
+  Wallet,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge, Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton } from "../../../components/ui";
 import {
+  comparisonMetrics,
   dailySales,
   expenseSummary,
-  listSales,
   outstandingReport,
   paymentSummary,
   purchaseSummary,
+  receivableAging,
   topCustomers,
   topItemsPurchased,
   topItemsSold,
@@ -91,11 +93,6 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
     queryFn: () => dailySales(oFrom, oTo),
     refetchInterval: STAGGER_BUSINESS,
   });
-  const overviewSalesDetail = useQuery({
-    queryKey: ["dashboard", "sales", "range", overviewFrom, overviewTo],
-    queryFn: () => listSales(oFrom, oTo, 500),
-    refetchInterval: STAGGER_BUSINESS,
-  });
 
   const topSold = useQuery({
     queryKey: ["dashboard", "topItemsSold", trendFrom, trendTo],
@@ -115,6 +112,18 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
   const outstanding = useQuery({
     queryKey: ["dashboard", "outstanding"],
     queryFn: () => outstandingReport(),
+    refetchInterval: STAGGER_BUSINESS,
+  });
+
+  const receivableAgingQuery = useQuery({
+    queryKey: ["dashboard", "receivableAging"],
+    queryFn: () => receivableAging(),
+    refetchInterval: STAGGER_BUSINESS,
+  });
+
+  const compMetrics = useQuery({
+    queryKey: ["dashboard", "comparisonMetrics", today],
+    queryFn: () => comparisonMetrics(today),
     refetchInterval: STAGGER_BUSINESS,
   });
 
@@ -150,15 +159,19 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
       ? overviewSales.data.grand_total / overviewSales.data.bill_count
       : 0
     : 0;
-  const finals = (overviewSalesDetail.data ?? []).filter((sale) => sale.status === "final");
-  const quotations = (overviewSalesDetail.data ?? []).filter((sale) => sale.status === "quotation");
-  const totalBills = finals.length + quotations.length;
-  const quotationRate = totalBills > 0 ? Math.round((finals.length / totalBills) * 100) : 0;
   const totalExpense = todayExpense.data?.grand_total ?? 0;
   const receivableTone = (outstanding.data?.customer_total ?? 0) > 0 ? "text-destructive" : undefined;
   const payableTone = (outstanding.data?.vendor_total ?? 0) > 0 ? "text-destructive" : undefined;
   const netPosition = (outstanding.data?.customer_total ?? 0) - (outstanding.data?.vendor_total ?? 0);
   const netTone = netPosition > 0 ? "text-success" : netPosition < 0 ? "text-destructive" : undefined;
+
+  const totalPurchase = todayPurchase.data?.grand_total ?? 0;
+  const grossProfit = totalSales - totalPurchase - totalExpense;
+  const grossMargin = totalSales > 0 ? Math.round((grossProfit / totalSales) * 100) : 0;
+
+  const receivedPaise = todayPayments.data?.received_paise ?? 0;
+  const paidPaise = todayPayments.data?.paid_paise ?? 0;
+  const netCashFlow = receivedPaise - paidPaise;
 
   return (
     <div className="space-y-3">
@@ -178,6 +191,13 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
             label={isOverviewToday ? "Total Sales (today)" : "Total Sales"}
             loading={overviewSales.isLoading}
             tone="primary"
+            footer={
+              compMetrics.data?.sales && isOverviewToday ? (
+                <Badge variant={compMetrics.data.sales.change_pct >= 0 ? "success" : "danger"} size="sm">
+                  {compMetrics.data.sales.change_pct >= 0 ? "▲" : "▼"} {Math.abs(compMetrics.data.sales.change_pct)}% vs yesterday
+                </Badge>
+              ) : undefined
+            }
           >
             <Money paise={totalSales} className="text-xl font-semibold" />
           </MetricCard>
@@ -187,7 +207,7 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
             loading={todayPurchase.isLoading}
             tone="info"
           >
-            <Money paise={todayPurchase.data?.grand_total ?? 0} className="text-xl font-semibold" />
+            <Money paise={totalPurchase} className="text-xl font-semibold" />
           </MetricCard>
           <MetricCard
             icon={Receipt}
@@ -198,13 +218,26 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
             <Money paise={totalExpense} className="text-xl font-semibold" />
           </MetricCard>
           <MetricCard
+            icon={CircleDollarSign}
+            label="Net Operating Profit"
+            loading={overviewSales.isLoading || todayPurchase.isLoading || todayExpense.isLoading}
+            tone={grossProfit >= 0 ? "success" : "destructive"}
+            footer={
+              <Badge variant={grossMargin >= 0 ? "success" : "danger"} size="sm">
+                {grossMargin}% margin
+              </Badge>
+            }
+          >
+            <Money paise={grossProfit} className="text-xl font-semibold" />
+          </MetricCard>
+          <MetricCard
             icon={Banknote}
             label="Payment Received"
             loading={todayPayments.isLoading}
             tone="success"
           >
             <Money
-              paise={todayPayments.data?.received_paise ?? 0}
+              paise={receivedPaise}
               className="text-xl font-semibold"
             />
           </MetricCard>
@@ -215,30 +248,32 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
             tone="destructive"
           >
             <Money
-              paise={todayPayments.data?.paid_paise ?? 0}
+              paise={paidPaise}
               className="text-xl font-semibold"
             />
+          </MetricCard>
+          <MetricCard
+            icon={Wallet}
+            label="Net Cash Flow"
+            loading={todayPayments.isLoading}
+            tone={netCashFlow >= 0 ? "success" : "destructive"}
+          >
+            <Money paise={netCashFlow} className="text-xl font-semibold" />
           </MetricCard>
           <MetricCard
             icon={BarChart3}
             label="Avg Transaction"
             loading={overviewSales.isLoading}
             tone="info"
-          >
-            <Money paise={avgTxnValue} className="text-xl font-semibold" />
-          </MetricCard>
-          <MetricCard
-            icon={Percent}
-            label="Final Bill Share"
-            loading={overviewSalesDetail.isLoading}
-            tone="success"
             footer={
-              <Badge variant="success" size="sm">
-                {finals.length}/{totalBills} final or quote bills
-              </Badge>
+              compMetrics.data?.avg_bill_value && isOverviewToday ? (
+                <Badge variant={compMetrics.data.avg_bill_value.change_pct >= 0 ? "success" : "danger"} size="sm">
+                  {compMetrics.data.avg_bill_value.change_pct >= 0 ? "▲" : "▼"} {Math.abs(compMetrics.data.avg_bill_value.change_pct)}% vs yesterday
+                </Badge>
+              ) : undefined
             }
           >
-            <span className="text-xl font-semibold tabular-nums">{quotationRate}%</span>
+            <Money paise={avgTxnValue} className="text-xl font-semibold" />
           </MetricCard>
         </div>
       </section>
@@ -480,6 +515,40 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
                   paise={netPosition}
                   compact
                   className={netTone}
+                />
+              }
+            />
+          </Card.Body>
+        </Card>
+
+        <Card>
+          <Card.Header>
+            <h3 className="text-sm font-semibold">Receivable Aging</h3>
+          </Card.Header>
+          <Card.Body className="space-y-2 text-sm">
+            <Row
+              icon={Banknote}
+              label="0–30 days"
+              value={<Money paise={receivableAgingQuery.data?.bucket_0_30 ?? 0} compact />}
+            />
+            <Row
+              icon={Banknote}
+              label="31–60 days"
+              value={<Money paise={receivableAgingQuery.data?.bucket_31_60 ?? 0} compact />}
+            />
+            <Row
+              icon={Banknote}
+              label="61–90 days"
+              value={<Money paise={receivableAgingQuery.data?.bucket_61_90 ?? 0} compact />}
+            />
+            <Row
+              icon={Banknote}
+              label="90+ days"
+              value={
+                <Money
+                  paise={receivableAgingQuery.data?.bucket_91_plus ?? 0}
+                  compact
+                  className={(receivableAgingQuery.data?.bucket_91_plus ?? 0) > 0 ? "text-destructive" : undefined}
                 />
               }
             />

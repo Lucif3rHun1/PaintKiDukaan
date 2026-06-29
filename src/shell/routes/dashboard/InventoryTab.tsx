@@ -11,8 +11,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import {
+  dailySales,
   deadStock,
   inventoryAging,
+  inventoryTurnover,
   stockHealthSummary,
   stockReport,
   topItemsPurchased,
@@ -56,6 +58,18 @@ export function InventoryTab() {
   const agingQuery = useQuery({
     queryKey: ["dashboard", "inventoryAging"],
     queryFn: () => inventoryAging(),
+    refetchInterval: STAGGER_INVENTORY,
+  });
+
+  const turnoverQuery = useQuery({
+    queryKey: ["dashboard", "inventoryTurnover"],
+    queryFn: () => inventoryTurnover(),
+    refetchInterval: STAGGER_INVENTORY,
+  });
+
+  const periodSales = useQuery({
+    queryKey: ["dashboard", "sales", "period", fromDate, toDate],
+    queryFn: () => dailySales(fromDate, toDate),
     refetchInterval: STAGGER_INVENTORY,
   });
 
@@ -130,6 +144,20 @@ export function InventoryTab() {
         >
           <span className="text-2xl font-semibold tabular-nums">
             {health?.zero_count ?? 0}
+          </span>
+        </MetricCard>
+        <MetricCard
+          icon={TrendingUp}
+          label="Stock Velocity"
+          loading={turnoverQuery.isLoading || periodSales.isLoading}
+          tone="primary"
+        >
+          <span className="text-2xl font-semibold tabular-nums">
+            {(() => {
+              const stockVal = turnoverQuery.data?.stock_value_paise ?? 0;
+              const salesVal = periodSales.data?.grand_total ?? 0;
+              return stockVal > 0 ? (salesVal / stockVal).toFixed(1) : "—";
+            })()}
           </span>
         </MetricCard>
       </div>

@@ -313,7 +313,7 @@ CREATE TABLE items (
   label_line1         TEXT,
   label_line2         TEXT,
   primary_location_id INTEGER REFERENCES locations(id) ON DELETE NO ACTION,
-  min_qty             INTEGER NOT NULL DEFAULT 0 CHECK(min_qty >= 0),
+  min_stock           REAL NOT NULL DEFAULT 0 CHECK(min_stock >= 0),
   barcode_format      TEXT,
   units_per_pack      INTEGER NOT NULL DEFAULT 1 CHECK(units_per_pack >= 1),
   sub_location_id     INTEGER REFERENCES sub_locations(id) ON DELETE NO ACTION,

@@ -6,7 +6,7 @@
 //! Items CSV columns (header required):
 //!   name (required), sku, barcode, brand, category, unit, unit_code,
 //!   units_per_pack, retail_price (rupees), cost_price (rupees),
-//!   promo_price (rupees), min_qty, label_line1, label_line2
+//!   promo_price (rupees), min_stock, label_line1, label_line2
 //!
 //! Purchases CSV columns (header required):
 //!   item (name/sku/barcode, required), qty (required),

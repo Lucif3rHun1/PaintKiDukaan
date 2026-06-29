@@ -773,6 +773,14 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "cmd_delete_draft",
         min_role: Role::Cashier,
     },
+    CommandAcl {
+        name: "cmd_inventory_turnover",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_receivable_aging",
+        min_role: Role::Cashier,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -906,8 +914,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            167,
-            "ACL has {} entries, expected 167",
+            169,
+            "ACL has {} entries, expected 169",
             COMMAND_ACL.len()
         );
     }

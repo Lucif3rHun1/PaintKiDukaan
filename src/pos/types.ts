@@ -407,4 +407,13 @@ export interface ComparisonMetricsReport {
   bills: ComparisonMetric;
   avg_bill_value: ComparisonMetric;
 }
+export interface InventoryTurnoverReport {
+  stock_value_paise: number;
+}
+export interface ReceivableAgingReport {
+  bucket_0_30: number;
+  bucket_31_60: number;
+  bucket_61_90: number;
+  bucket_91_plus: number;
+}
 

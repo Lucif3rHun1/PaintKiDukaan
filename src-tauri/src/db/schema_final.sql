@@ -1064,13 +1064,6 @@ UPDATE items SET sell_unit_id = (
   SELECT id FROM sale_units WHERE code = items.sell_unit
 );
 
--- N10. Add min_stock (REAL) to items table
-ALTER TABLE items ADD COLUMN min_stock REAL NOT NULL DEFAULT 0;
-
--- N11. Migrate min_qty to min_stock, then drop min_qty
-UPDATE items SET min_stock = CAST(min_qty AS REAL) WHERE min_qty IS NOT NULL;
-ALTER TABLE items DROP COLUMN min_qty;
-
 -- Drop triggers before dropping tables they reference
 DROP TRIGGER IF EXISTS stock_movements_ai;
 DROP TRIGGER IF EXISTS stock_movements_bu;

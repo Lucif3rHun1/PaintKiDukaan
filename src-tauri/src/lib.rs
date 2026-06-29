@@ -367,6 +367,8 @@ pub fn run() {
             commands::reports::cmd_inventory_aging,
             commands::reports::cmd_payment_summary,
             commands::reports::cmd_comparison_metrics,
+            commands::reports::cmd_inventory_turnover,
+            commands::reports::cmd_receivable_aging,
             // Sequences (Slice C)
             commands::sequences::cmd_mint_next_sale_no,
             commands::sequences::get_next_invoice_number,
@@ -518,6 +520,11 @@ async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::Unboun
 
         match dl_outcome {
             Ok(Ok(())) => {
+                // Save current route so the app can resume where it left off.
+                // ponytail: localStorage survives Tauri restart; one eval is enough.
+                if let Some(main) = app.get_webview_window("main") {
+                    let _ = main.eval("localStorage.setItem('pkb:lastHash', window.location.hash)");
+                }
                 let _ = splash.close();
                 log::info!("Update installed — restarting");
                 app.restart();

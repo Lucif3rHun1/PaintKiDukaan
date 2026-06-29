@@ -997,6 +997,120 @@ pub fn cmd_comparison_metrics(
 }
 
 // -----------------------------------------------------------------------------
+// Inventory turnover — current stock value (qty × cost) for dashboard ratio.
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InventoryTurnoverReport {
+    pub stock_value_paise: i64,
+}
+
+pub fn inventory_turnover(db: &Db) -> Result<InventoryTurnoverReport, ReportsError> {
+    db.with_conn(|c| -> Result<InventoryTurnoverReport, ReportsError> {
+        let val: i64 = c.query_row(
+            "SELECT COALESCE(SUM(CAST(sb.qty AS REAL) * i.cost_paise), 0)
+             FROM stock_balances sb
+             JOIN items i ON sb.item_id = i.id
+             WHERE sb.qty > 0",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(InventoryTurnoverReport {
+            stock_value_paise: val,
+        })
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_inventory_turnover(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<InventoryTurnoverReport> {
+    ipc_auth::authorize_err("cmd_inventory_turnover", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    inventory_turnover(db).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+// -----------------------------------------------------------------------------
+// Receivable aging — outstanding grouped by days since oldest unpaid sale.
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReceivableAgingReport {
+    pub bucket_0_30: i64,
+    pub bucket_31_60: i64,
+    pub bucket_61_90: i64,
+    pub bucket_91_plus: i64,
+}
+
+pub fn receivable_aging(db: &Db) -> Result<ReceivableAgingReport, ReportsError> {
+    db.with_conn(|c| -> Result<ReceivableAgingReport, ReportsError> {
+        let row = c.query_row(
+            "WITH customer_balances AS (
+                SELECT
+                    c.id,
+                    COALESCE(c.opening_balance_paise, 0)
+                        + COALESCE((SELECT SUM(s.total - s.paid_amount)
+                                    FROM sales s
+                                    WHERE s.customer_id = c.id AND s.status = 'final'), 0)
+                        - COALESCE((SELECT SUM(cp.amount_paise)
+                                    FROM customer_payments cp
+                                    WHERE cp.customer_id = c.id), 0)
+                        AS outstanding,
+                    (SELECT MIN(s2.date)
+                     FROM sales s2
+                     WHERE s2.customer_id = c.id
+                       AND s2.status = 'final'
+                       AND s2.total > s2.paid_amount) AS oldest_unpaid_date
+                FROM customers c
+            ),
+            bucketed AS (
+                SELECT
+                    outstanding,
+                    CASE
+                        WHEN oldest_unpaid_date IS NULL THEN 999
+                        ELSE CAST(julianday('now') - julianday(oldest_unpaid_date) AS INTEGER)
+                    END AS days_old
+                FROM customer_balances
+                WHERE outstanding > 0
+            )
+            SELECT
+                COALESCE(SUM(CASE WHEN days_old <= 30 THEN outstanding ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN days_old > 30 AND days_old <= 60 THEN outstanding ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN days_old > 60 AND days_old <= 90 THEN outstanding ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN days_old > 90 OR days_old = 999 THEN outstanding ELSE 0 END), 0)
+            FROM bucketed",
+            [],
+            |r| {
+                Ok(ReceivableAgingReport {
+                    bucket_0_30: r.get(0)?,
+                    bucket_31_60: r.get(1)?,
+                    bucket_61_90: r.get(2)?,
+                    bucket_91_plus: r.get(3)?,
+                })
+            },
+        )?;
+        Ok(row)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_receivable_aging(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<ReceivableAgingReport> {
+    ipc_auth::authorize_err("cmd_receivable_aging", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    receivable_aging(db).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+// -----------------------------------------------------------------------------
 // Unit tests.
 // -----------------------------------------------------------------------------
 

@@ -122,6 +122,19 @@ const HASH_REDIRECTS: Record<string, string> = {
   "#/sales-report": "#/reports/sales",
 };
 
+// Restore hash from localStorage if the current hash is empty.
+// Called once before React reads window.location.hash on startup.
+function restoreLastHash(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.hash) return; // already has a route
+  const saved = localStorage.getItem("pkb:lastHash");
+  if (saved && saved !== "#/" && saved !== "") {
+    window.location.hash = saved;
+    localStorage.removeItem("pkb:lastHash");
+  }
+}
+restoreLastHash();
+
 function readTab(): AppShellTab {
   const h = typeof window !== "undefined" ? window.location.hash : "";
   if (h.startsWith("#/reports") || h.startsWith("#/sales-report")) return "sales-report";

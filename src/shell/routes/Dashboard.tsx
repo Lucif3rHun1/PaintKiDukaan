@@ -5,6 +5,7 @@ import { Alert } from "../../components/ui";
 import { todayLocalYyyymmdd } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 import {
+  comparisonMetrics,
   dailySales,
   listDayClose,
 } from "../../pos/api";
@@ -29,7 +30,8 @@ function startOfTodayIso(): string {
   return todayLocalYyyymmdd();
 }
 
-function startOfWeekIso(): string {
+// ponytail: this is "last 7 days" not "start of week" — name matches behaviour
+function last7DaysIso(): string {
   const d = new Date();
   d.setDate(d.getDate() - 6);
   const yyyy = d.getFullYear();
@@ -55,7 +57,7 @@ export function Dashboard() {
   const [dashTab, setDashTab] = useState<DashTab>("business");
 
   const today = startOfTodayIso();
-  const weekStart = startOfWeekIso();
+  const weekStart = last7DaysIso();
 
   const weeklySales = useQuery({
     queryKey: ["dashboard", "sales", "weekly", today],
