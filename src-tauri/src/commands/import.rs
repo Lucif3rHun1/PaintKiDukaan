@@ -185,25 +185,6 @@ pub fn cmd_import_items_csv(
         errors: Vec::new(),
     };
 
-    // Fetch existing units for lookup
-    let units: std::collections::HashMap<String, i64> = db.with_raw(|c| {
-        let mut stmt = c.prepare("SELECT id, code FROM units WHERE is_active = 1")?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, i64>(0)?)))?;
-        let mut map = std::collections::HashMap::new();
-        for r in rows {
-            let (code, id) = r?;
-            map.insert(code.to_lowercase(), id);
-        }
-        Ok::<_, AppError>(map)
-    })?;
-
-    // Default unit
-    let default_unit_id = units
-        .get("pc")
-        .copied()
-        .or_else(|| units.values().next().copied())
-        .unwrap_or(1);
-
     // Fetch existing locations (name → id, case-insensitive)
     let locations: std::collections::HashMap<String, i64> = db.with_raw(|c| {
         let mut stmt = c.prepare("SELECT id, name FROM locations WHERE is_active = 1")?;
@@ -276,7 +257,6 @@ pub fn cmd_import_items_csv(
             let brand = get_field(row, &hmap, &["brand"]);
             let category = get_field(row, &hmap, &["category", "group"]);
             let unit_code_str = get_field(row, &hmap, &["unit", "unit_code"]).unwrap_or_else(|| "pc".into());
-            let unit_id = units.get(&unit_code_str.to_lowercase()).copied().unwrap_or(default_unit_id);
             let units_per_pack = get_field(row, &hmap, &["units_per_pack", "pack_size"])
                 .and_then(|s| s.parse::<f64>().ok())
                 .unwrap_or(1.0);
@@ -371,29 +351,27 @@ pub fn cmd_import_items_csv(
                         name = ?2,
                         brand_id = ?3,
                         category = ?4,
-                        unit_id = ?5,
-                        unit_code = ?6,
-                        unit_label = ?7,
-                        units_per_pack = ?8,
-                        sell_unit = ?9,
-                        sell_unit_id = ?10,
-                        retail_price_paise = ?11,
-                        cost_paise = ?12,
-                        promo_price_paise = ?13,
-                        label_line1 = ?14,
-                        label_line2 = ?15,
-                        primary_location_id = ?16,
-                        sub_location_id = ?17,
-                        position = ?18,
-                        min_stock = ?19,
-                        updated_at = ?20
-                     WHERE id = ?21",
+                        unit_code = ?5,
+                        unit_label = ?6,
+                        units_per_pack = ?7,
+                        sell_unit = ?8,
+                        sell_unit_id = ?9,
+                        retail_price_paise = ?10,
+                        cost_paise = ?11,
+                        promo_price_paise = ?12,
+                        label_line1 = ?13,
+                        label_line2 = ?14,
+                        primary_location_id = ?15,
+                        sub_location_id = ?16,
+                        position = ?17,
+                        min_stock = ?18,
+                        updated_at = ?19
+                     WHERE id = ?20",
                     params![
                         final_barcode,
                         name,
                         brand_id,
                         category,
-                        unit_id,
                         unit_code_str,
                         unit_code_str,
                         units_per_pack,
@@ -421,20 +399,19 @@ pub fn cmd_import_items_csv(
 
                 match tx.execute(
                     "INSERT INTO items (
-                        sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label,
+                        sku_code, barcode, name, brand_id, category, unit_code, unit_label,
                         units_per_pack, sell_unit, sell_unit_id,
                         retail_price_paise, cost_paise, promo_price_paise,
                         label_line1, label_line2, primary_location_id,
                         sub_location_id, position, min_stock, barcode_format, is_active,
                         created_at, updated_at
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, 1, ?22, ?22)",
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, 1, ?21, ?21)",
                     params![
                         final_sku,
                         final_barcode,
                         name,
                         brand_id,
                         category,
-                        unit_id,
                         unit_code_str,
                         unit_code_str,
                         units_per_pack,
@@ -541,7 +518,7 @@ pub fn cmd_import_inward_csv(
     // Pre-fetch items for name/SKU/barcode lookup
     let all_items: Vec<ItemLookupRow> = db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT id, name, sku_code, barcode, unit_id, unit_code, units_per_pack, cost_paise, retail_price_paise FROM items WHERE is_active = 1",
+            "SELECT id, name, sku_code, barcode, sell_unit_id, unit_code, units_per_pack, cost_paise, retail_price_paise FROM items WHERE is_active = 1",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(ItemLookupRow {
@@ -549,7 +526,7 @@ pub fn cmd_import_inward_csv(
                 name: r.get(1)?,
                 sku_code: r.get(2)?,
                 barcode: r.get(3)?,
-                unit_id: r.get(4)?,
+                sell_unit_id: r.get(4)?,
                 _unit_code: r.get(5)?,
                 units_per_pack: r.get(6)?,
                 cost_paise: r.get(7)?,
@@ -704,9 +681,9 @@ pub fn cmd_import_inward_csv(
 
             // Insert purchase_item
             if let Err(e) = tx.execute(
-                "INSERT INTO purchase_items (purchase_id, item_id, qty, unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at)
+                "INSERT INTO purchase_items (purchase_id, item_id, qty, sale_unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7)",
-                params![pid, item.id, base, item.unit_id, cost_paise, line_total, now_ms],
+                params![pid, item.id, base, item.sell_unit_id, cost_paise, line_total, now_ms],
             ) {
                 result.errors.push(ImportRowError {
                     row: row_num,
@@ -718,9 +695,9 @@ pub fn cmd_import_inward_csv(
 
             // Insert stock movement
             let _ = tx.execute(
-                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, unit_id, ref_kind, ref_id, note, created_at, created_by)
+                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
                  VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='purchase'), ?4, 'purchase', ?5, ?6, ?7, ?8)",
-                params![item.id, location_id, base, item.unit_id, pid, notes, now_ms, user.id],
+                params![item.id, location_id, base, item.sell_unit_id, pid, notes, now_ms, user.id],
             );
 
             result.created += 1;
@@ -743,7 +720,7 @@ struct ItemLookupRow {
     name: String,
     sku_code: String,
     barcode: Option<String>,
-    unit_id: i64,
+    sell_unit_id: i64,
     _unit_code: String,
     units_per_pack: f64,
     cost_paise: i64,

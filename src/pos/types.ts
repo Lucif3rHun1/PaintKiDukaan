@@ -286,7 +286,6 @@ export interface ItemSearchHit {
   brand: string | null;
   retail_price_paise: number;
   cost_paise: number;
-  unit_id: number;
   unit_code: string;
   unit_label: string;
   sell_unit: string;

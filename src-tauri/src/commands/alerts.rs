@@ -651,7 +651,7 @@ mod tests {
         let db = setup_db();
         db.with_conn_immediate(|conn| {
             conn.execute(
-                "INSERT INTO items (id, name, sku_code, unit_id, unit_code, unit_label, min_stock, retail_price_paise, cost_paise, is_active, created_at, updated_at) VALUES (1, 'Paint', 'SKU001', 1, 'pc', 'Piece', 10, 10000, 5000, 1, 0, 0)",
+                "INSERT INTO items (id, name, sku_code, unit_code, unit_label, min_stock, retail_price_paise, cost_paise, is_active, created_at, updated_at) VALUES (1, 'Paint', 'SKU001', 'pc', 'Piece', 10, 10000, 5000, 1, 0, 0)",
                 [],
             ).unwrap();
             seed_user(conn, 1, "Owner", "owner");
@@ -660,7 +660,7 @@ mod tests {
                 [],
             ).unwrap();
             conn.execute(
-                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, unit_id, ref_kind, ref_id, created_at) VALUES (1, 1, 5, (SELECT id FROM stock_movement_kinds WHERE code = 'recount'), 1, 'adjustment', 1, 0)",
+                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, created_at) VALUES (1, 1, 5, (SELECT id FROM stock_movement_kinds WHERE code = 'recount'), 1, 'adjustment', 1, 0)",
                 [],
             ).unwrap();
             Ok::<(), AppError>(())

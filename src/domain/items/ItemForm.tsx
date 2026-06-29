@@ -172,7 +172,6 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         category: category || null,
         sell_unit: sellUnitCode,
         sell_unit_id: sellUnitId,
-        unit_id: null as number | null,
         retail_price_paise: retailPricePaise,
         cost_paise: costPaise,
         promo_price_paise: promoPricePaise,
@@ -269,7 +268,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                   onClick={() => {
                     setName(item.name);
                     if (item.category) setCategory(item.category);
-                    if (item.unit_id) setSellUnitId(item.sell_unit_id ?? item.unit_id);
+                    if (item.sell_unit_id) setSellUnitId(item.sell_unit_id);
                     setRetailPricePaise(item.retail_price_paise);
                     setCostPaise(item.cost_paise);
                     if (item.promo_price_paise != null) setPromoPricePaise(item.promo_price_paise);

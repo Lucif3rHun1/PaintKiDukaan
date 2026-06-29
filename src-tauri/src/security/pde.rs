@@ -47,13 +47,13 @@ pub fn provision_decoy_db_impl(
                 params![now],
             )?;
             conn.execute(
-                "INSERT INTO items (sku_code, name, unit_id, unit_code, unit_label, retail_price_paise, cost_paise, primary_location_id, created_at, updated_at) \
-                 VALUES ('SP001', 'Sample Paint 1L', 1, 'L', 'Litre', 50000, 35000, 1, ?1, ?1)",
+                "INSERT INTO items (sku_code, name, unit_code, unit_label, retail_price_paise, cost_paise, primary_location_id, created_at, updated_at) \
+                 VALUES ('SP001', 'Sample Paint 1L', 'L', 'Litre', 50000, 35000, 1, ?1, ?1)",
                 params![now],
             )?;
             conn.execute(
-                "INSERT INTO items (sku_code, name, unit_id, unit_code, unit_label, retail_price_paise, cost_paise, primary_location_id, created_at, updated_at) \
-                 VALUES ('PR004', 'Primer 4L', 1, 'L', 'Litre', 120000, 80000, 1, ?1, ?1)",
+                "INSERT INTO items (sku_code, name, unit_code, unit_label, retail_price_paise, cost_paise, primary_location_id, created_at, updated_at) \
+                 VALUES ('PR004', 'Primer 4L', 'L', 'Litre', 120000, 80000, 1, ?1, ?1)",
                 params![now],
             )?;
             Ok::<_, rusqlite::Error>(())

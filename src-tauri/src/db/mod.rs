@@ -555,6 +555,29 @@ impl Db {
             }
         }
 
+        // M-INLINE-017: Drop legacy unit_id from items, stock_movements, purchase_items.
+        // Add sale_unit_id to stock_movements and purchase_items, backfill from items.sell_unit_id, then drop unit_id.
+        {
+            let has_unit_id: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('items') WHERE name = 'unit_id'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if has_unit_id {
+                conn.execute_batch(
+                    "ALTER TABLE stock_movements ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
+                     UPDATE stock_movements SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = stock_movements.item_id) WHERE sale_unit_id IS NULL;
+                     ALTER TABLE stock_movements DROP COLUMN unit_id;
+                     ALTER TABLE purchase_items ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
+                     UPDATE purchase_items SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = purchase_items.item_id) WHERE sale_unit_id IS NULL;
+                     ALTER TABLE purchase_items DROP COLUMN unit_id;
+                     ALTER TABLE items DROP COLUMN unit_id;",
+                )?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\

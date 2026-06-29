@@ -400,13 +400,13 @@ pub fn create_inward(
             let base = base_qty(l.qty, &l.unit_type, upb);
             let line_total = (base * l.unit_price_paise as f64).round() as i64;
             c.execute(
-                "INSERT INTO purchase_items (purchase_id, item_id, qty, unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at)
-                 VALUES (?1, ?2, ?3, (SELECT unit_id FROM items WHERE id = ?2), ?4, 0, ?5, ?6)",
+                "INSERT INTO purchase_items (purchase_id, item_id, qty, sale_unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at)
+                 VALUES (?1, ?2, ?3, (SELECT sell_unit_id FROM items WHERE id = ?2), ?4, 0, ?5, ?6)",
                 params![pid, l.item_id, base, l.unit_price_paise, line_total, now_ms()],
             )?;
             c.execute(
-                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, unit_id, ref_kind, ref_id, note, created_at, created_by)
-                 VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='purchase'), (SELECT unit_id FROM items WHERE id = ?1), 'purchase', ?4, ?5, ?6, ?7)",
+                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
+                 VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='purchase'), (SELECT sell_unit_id FROM items WHERE id = ?1), 'purchase', ?4, ?5, ?6, ?7)",
                 params![l.item_id, l.location_id, base, pid, req.notes, now_ms(), user_id],
             )?;
         }
@@ -635,8 +635,8 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, created_at, updated_at)
-                 VALUES ('TEST-001','1234567890','Red Paint 4L',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',4,25000,18000,1,0,0)",
+                "INSERT INTO items (sku_code, barcode, name, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, created_at, updated_at)
+                 VALUES ('TEST-001','1234567890','Red Paint 4L','L','Liter',4,25000,18000,1,0,0)",
                 [],
             )?;
             c.execute(
@@ -705,8 +705,8 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, created_at, updated_at)
-                 VALUES ('TEST-001','1234567890','Red Paint 4L',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',4,25000,18000,1,0,0)",
+                "INSERT INTO items (sku_code, barcode, name, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, created_at, updated_at)
+                 VALUES ('TEST-001','1234567890','Red Paint 4L','L','Liter',4,25000,18000,1,0,0)",
                 [],
             )?;
             c.execute(

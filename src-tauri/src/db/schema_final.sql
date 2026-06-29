@@ -299,7 +299,6 @@ CREATE TABLE items (
   brand_id            INTEGER REFERENCES brands(id) ON DELETE NO ACTION,
   brand               TEXT,                       -- denormalized brand name for cashier projection
   category            TEXT,
-  unit_id             INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
   unit_code           TEXT    NOT NULL,           -- denormalized for cashier projection
   unit_label          TEXT    NOT NULL,           -- denormalized for cashier projection
   unit                TEXT    NOT NULL DEFAULT 'pc',  -- denormalized unit code (legacy compat)
@@ -382,7 +381,7 @@ CREATE TABLE stock_movements (
   location_id  INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
   kind_id      INTEGER NOT NULL REFERENCES stock_movement_kinds(id) ON DELETE NO ACTION,
   qty          REAL NOT NULL CHECK(qty <> 0),  -- sign comes from kinds, but we still ban 0
-  unit_id      INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  sale_unit_id INTEGER NOT NULL REFERENCES sale_units(id) ON DELETE NO ACTION,
   ref_kind     TEXT    CHECK(ref_kind IN ('sale','purchase','return','adjustment') OR ref_kind IS NULL),
   ref_id       INTEGER,
   note         TEXT,
@@ -487,7 +486,7 @@ CREATE TABLE purchase_items (
   purchase_id        INTEGER NOT NULL REFERENCES purchases(id) ON DELETE NO ACTION,
   item_id            INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
   qty                REAL NOT NULL CHECK(qty > 0),
-  unit_id            INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  sale_unit_id       INTEGER NOT NULL REFERENCES sale_units(id) ON DELETE NO ACTION,
   unit_price_paise   INTEGER NOT NULL CHECK(unit_price_paise >= 0),
   line_discount_paise INTEGER NOT NULL DEFAULT 0 CHECK(line_discount_paise >= 0),
   line_total_paise   INTEGER NOT NULL CHECK(line_total_paise >= 0),
@@ -1092,15 +1091,15 @@ CREATE TABLE IF NOT EXISTS stock_movements_new (
   location_id  INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
   kind_id      INTEGER NOT NULL REFERENCES stock_movement_kinds(id) ON DELETE NO ACTION,
   qty          REAL NOT NULL CHECK(qty <> 0),
-  unit_id      INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  sale_unit_id INTEGER NOT NULL REFERENCES sale_units(id) ON DELETE NO ACTION,
   ref_kind     TEXT    CHECK(ref_kind IN ('sale','purchase','return','adjustment') OR ref_kind IS NULL),
   ref_id       INTEGER,
   note         TEXT,
   created_at   INTEGER NOT NULL,
   created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
-INSERT INTO stock_movements_new (id, item_id, location_id, kind_id, qty, unit_id, ref_kind, ref_id, note, created_at, created_by)
-  SELECT id, item_id, location_id, kind_id, CAST(qty AS REAL), unit_id, ref_kind, ref_id, note, created_at, created_by FROM stock_movements;
+INSERT INTO stock_movements_new (id, item_id, location_id, kind_id, qty, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
+  SELECT id, item_id, location_id, kind_id, CAST(qty AS REAL), sale_unit_id, ref_kind, ref_id, note, created_at, created_by FROM stock_movements;
 DROP TABLE stock_movements;
 ALTER TABLE stock_movements_new RENAME TO stock_movements;
 CREATE INDEX idx_stock_movements_item_loc_created ON stock_movements(item_id, location_id, created_at DESC);
@@ -1168,15 +1167,15 @@ CREATE TABLE IF NOT EXISTS purchase_items_new (
   purchase_id        INTEGER NOT NULL REFERENCES purchases(id) ON DELETE NO ACTION,
   item_id            INTEGER NOT NULL REFERENCES items(id) ON DELETE NO ACTION,
   qty                REAL NOT NULL CHECK(qty > 0),
-  unit_id            INTEGER NOT NULL REFERENCES units(id) ON DELETE NO ACTION,
+  sale_unit_id       INTEGER NOT NULL REFERENCES sale_units(id) ON DELETE NO ACTION,
   unit_price_paise   INTEGER NOT NULL CHECK(unit_price_paise >= 0),
   line_discount_paise INTEGER NOT NULL DEFAULT 0 CHECK(line_discount_paise >= 0),
   line_total_paise   INTEGER NOT NULL CHECK(line_total_paise >= 0),
   created_at         INTEGER NOT NULL,
   created_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
-INSERT INTO purchase_items_new (id, purchase_id, item_id, qty, unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at, created_by)
-  SELECT id, purchase_id, item_id, CAST(qty AS REAL), unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at, created_by
+INSERT INTO purchase_items_new (id, purchase_id, item_id, qty, sale_unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at, created_by)
+  SELECT id, purchase_id, item_id, CAST(qty AS REAL), sale_unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at, created_by
   FROM purchase_items;
 DROP TABLE purchase_items;
 ALTER TABLE purchase_items_new RENAME TO purchase_items;
@@ -1185,3 +1184,13 @@ CREATE INDEX idx_purchase_items_item_id ON purchase_items(item_id);
 
 -- N16. Drop unit_conversions table (no longer needed with 3 fixed units)
 DROP TABLE IF EXISTS unit_conversions;
+
+-- N17: Drop legacy unit_id from items, stock_movements, purchase_items.
+-- items already has sell_unit_id. stock_movements/purchase_items get sale_unit_id backfilled from items.sell_unit_id.
+ALTER TABLE stock_movements ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
+UPDATE stock_movements SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = stock_movements.item_id) WHERE sale_unit_id IS NULL;
+ALTER TABLE stock_movements DROP COLUMN unit_id;
+ALTER TABLE purchase_items ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
+UPDATE purchase_items SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = purchase_items.item_id) WHERE sale_unit_id IS NULL;
+ALTER TABLE purchase_items DROP COLUMN unit_id;
+ALTER TABLE items DROP COLUMN unit_id;

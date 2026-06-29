@@ -488,10 +488,10 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (id, sku_code, name, unit_id, unit_code, unit_label, unit, sell_unit, \
+                "INSERT INTO items (id, sku_code, name, unit_code, unit_label, unit, sell_unit, \
                                     retail_price_paise, cost_paise, primary_location_id, min_stock, is_active, \
                                     created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, 1, 'pc', 'piece', 'pc', 'unit', 100, 50, 1, 0, 1, 0, 0)",
+                 VALUES (?1, ?2, ?3, 'pc', 'piece', 'pc', 'unit', 100, 50, 1, 0, 1, 0, 0)",
                 rusqlite::params![id, sku, name],
             )?;
             Ok(())

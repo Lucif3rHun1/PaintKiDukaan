@@ -57,7 +57,6 @@ interface DraftLine {
   item_id: number;
   qty: number;
   unit_type: "unit" | "mtr" | "kg";
-  unit_id: number;
   unit_code: string;
   cost_price: number;
   retail_price: number;
@@ -89,7 +88,6 @@ function isDraftLine(value: unknown): value is DraftLine {
     typeof value.item_id === "number" &&
     typeof value.qty === "number" &&
     validUnitType &&
-    typeof value.unit_id === "number" &&
     typeof value.unit_code === "string" &&
     typeof value.cost_price === "number" &&
     typeof value.retail_price === "number" &&
@@ -136,7 +134,6 @@ function emptyEntry(locationId: number): DraftLine {
     item_id: 0,
     qty: 1,
     unit_type: "unit",
-    unit_id: 0,
     unit_code: "",
     cost_price: 0,
     retail_price: 0,
@@ -327,7 +324,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   async function selectItemForEntry(itemId: number) {
     if (itemId <= 0) return;
     const item = items.find((i) => i.id === itemId);
-    const unitId = item?.unit_id ?? 0;
     const unitCode = item?.unit_code ?? "";
     const rawSell = item?.sell_unit;
     const sellUnit: "unit" | "mtr" | "kg" =
@@ -335,7 +331,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     setEntry((e) => ({
       ...e,
       item_id: itemId,
-      unit_id: unitId,
       unit_code: unitCode,
       unit_type: sellUnit,
       purchase_unit_id: null,

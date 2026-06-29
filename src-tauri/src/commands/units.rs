@@ -224,7 +224,7 @@ pub fn deactivate_unit(state: tauri::State<'_, AppState>, id: i64) -> AppResult<
     let db = db_guard.as_ref().ok_or(AppError::NotUnlocked)?;
     db.with_conn(|conn| {
         let ref_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM items WHERE unit_id = ?1",
+            "SELECT COUNT(*) FROM items WHERE sell_unit_id = ?1",
             rusqlite::params![id],
             |r| r.get(0),
         )?;

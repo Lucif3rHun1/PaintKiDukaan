@@ -540,15 +540,10 @@ mod tests {
                  VALUES ('Owner','owner',X'00',X'00',6,0,0)",
                 [],
             )?;
-            let unit_id: i64 = c.query_row(
-                "SELECT id FROM units WHERE code = 'pc'",
-                [],
-                |r| r.get(0),
-            )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, unit_id, unit_code, unit_label, retail_price_paise, cost_paise, is_active, created_at, updated_at)
-                 VALUES ('TEST-001','1234567890','Red',?1,'pc','Piece',10000,5000,1,0,0)",
-                params![unit_id],
+                "INSERT INTO items (sku_code, barcode, name, unit_code, unit_label, retail_price_paise, cost_paise, is_active, created_at, updated_at)
+                 VALUES ('TEST-001','1234567890','Red','pc','Piece',10000,5000,1,0,0)",
+                [],
             )?;
             c.execute(
                 "INSERT INTO locations (name, zone, is_default, is_active, created_at, updated_at) VALUES ('Main',NULL,1,1,0,0)",

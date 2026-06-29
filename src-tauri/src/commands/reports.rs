@@ -1131,13 +1131,13 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
-                 VALUES ('SK001','111','Red 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,10000,5000,1,'unit',NULL,2,0,0)",
+                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
+                 VALUES ('SK001','111','Red 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior','L','Liter',1,10000,5000,1,'unit',NULL,2,0,0)",
                 [],
             )?;
             c.execute(
-                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
-                 VALUES ('SK002','222','Blue 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior',(SELECT id FROM units WHERE code='L' LIMIT 1),'L','Liter',1,15000,8000,1,'unit',NULL,2,0,0)",
+                "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
+                 VALUES ('SK002','222','Blue 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior','L','Liter',1,15000,8000,1,'unit',NULL,2,0,0)",
                 [],
             )?;
             c.execute(

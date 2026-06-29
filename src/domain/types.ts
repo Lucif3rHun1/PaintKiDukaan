@@ -71,7 +71,6 @@ export interface Item {
   name: string;
   brand: string | null;
   category: string | null;
-  unit_id: number;
   unit_code: string;
   unit_label: string;
   unit: string;
@@ -110,7 +109,6 @@ export type ItemLookup =
       name: string;
       retail_price_paise: number;
       sell_unit: string;
-      unit_id: number;
       unit_code: string;
       unit_label: string | null;
       /** @deprecated Kept for migration compat. */
@@ -130,7 +128,6 @@ export interface ItemFilter {
   query?: string;
   brand?: string;
   category?: string;
-  unit_id?: number;
   low_stock_only?: boolean;
   include_inactive?: boolean;
   archived_only?: boolean;
@@ -142,7 +139,6 @@ export interface NewItem {
   brand?: string | null;
   brand_id?: number | null;
   category?: string | null;
-  unit_id: number;
   unit_code?: string | null;
   unit_label?: string | null;
   /** @deprecated Use sell_unit instead. Kept for migration compat. */
@@ -167,7 +163,6 @@ export interface ItemUpdate {
   brand?: string | null;
   brand_id?: number | null;
   category?: string | null;
-  unit_id?: number | null;
   /** @deprecated Use sell_unit instead. Kept for migration compat. */
   units_per_pack?: number | null;
   sell_unit?: string | null;
