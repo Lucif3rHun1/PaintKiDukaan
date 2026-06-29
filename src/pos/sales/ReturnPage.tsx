@@ -94,7 +94,8 @@ export default function ReturnPage({ user, onBack }: Props) {
     } catch { /* corrupt localStorage, ignore */ }
 
     // Fall back to DB draft (useAutosave)
-    if (draft && !draftLoading && lines.length === 0) {
+    const isFresh = window.location.search.includes("fresh=1");
+    if (draft && !draftLoading && lines.length === 0 && !isFresh) {
       draftRestored.current = true;
       try {
         const data = JSON.parse(draft.data_json);

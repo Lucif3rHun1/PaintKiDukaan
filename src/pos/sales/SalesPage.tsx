@@ -176,7 +176,8 @@ export default function SalesPage({ user, onExit }: Props) {
 
   const draftRestored = useRef(false);
   useEffect(() => {
-    if (draft && !draftLoading && !draftRestored.current && lines.length === 0) {
+    const isFresh = window.location.search.includes("fresh=1");
+    if (draft && !draftLoading && !draftRestored.current && lines.length === 0 && !isFresh) {
       draftRestored.current = true;
       try {
         const data = JSON.parse(draft.data_json);

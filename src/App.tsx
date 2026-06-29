@@ -153,7 +153,7 @@ function readTab(): AppShellTab {
 }
 
 function readSalesSubRoute(): "list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail" {
-  const h = window.location.hash;
+  const h = window.location.hash.split("?")[0];
   if (h === "#/sales/new") return "new";
   if (h === "#/sales/return/new") return "return";
   const detailMatch = h.match(/^#\/sales\/return\/(.+)$/);
@@ -171,7 +171,7 @@ function readFormulasSubRoute(): "list" | "detail" {
 }
 
 function readInwardSubRoute(): "list" | "new" | "detail" {
-  const h = window.location.hash;
+  const h = window.location.hash.split("?")[0];
   if (h === "#/inward/new") return "new";
   const detailMatch = h.match(/^#\/inward\/(\d+)$/);
   if (detailMatch) return "detail";
@@ -425,7 +425,7 @@ export default function App() {
           <Suspense fallback={<RouteFallback />}>
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <ReturnListPage
-                onCreate={() => (window.location.hash = "#/sales/return/new")}
+                onCreate={() => (window.location.hash = "#/sales/return/new?fresh=1")}
                 onSelect={(id) => (window.location.hash = `#/sales/return/${id}`)}
               />
             </div>
@@ -452,7 +452,7 @@ export default function App() {
         <ErrorBoundary context="Sales — list">
           <Suspense fallback={<RouteFallback />}>
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-              <SalesListPage onCreate={() => (window.location.hash = "#/sales/new")} />
+              <SalesListPage onCreate={() => (window.location.hash = "#/sales/new?fresh=1")} />
             </div>
           </Suspense>
         </ErrorBoundary>
@@ -490,7 +490,7 @@ export default function App() {
           <Suspense fallback={<RouteFallback />}>
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <InwardListPage
-                onCreate={() => (window.location.hash = "#/inward/new")}
+                onCreate={() => (window.location.hash = "#/inward/new?fresh=1")}
                 onSelect={(id) => (window.location.hash = `#/inward/${id}`)}
               />
             </div>

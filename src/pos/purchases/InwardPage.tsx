@@ -204,7 +204,8 @@ export default function InwardPage({ user: _user, onExit }: Props) {
 
   const draftRestored = useRef(false);
   useEffect(() => {
-    if (savedDraft && !draftLoading && !draftRestored.current && draft.length === 0) {
+    const isFresh = window.location.search.includes("fresh=1");
+    if (savedDraft && !draftLoading && !draftRestored.current && draft.length === 0 && !isFresh) {
       draftRestored.current = true;
       try {
         const data = parsePurchaseDraft(savedDraft.data_json);
