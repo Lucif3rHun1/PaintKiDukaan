@@ -8,7 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::commands::auth::AppState;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

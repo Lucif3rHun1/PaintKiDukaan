@@ -567,7 +567,7 @@ CREATE INDEX idx_sales_status ON sales(status);
 CREATE INDEX idx_sales_kind_created ON sales(status, created_at DESC);
 
 -- G2. Sale lines — polymorphic (item OR formula) per ADR-011.
--- A line carries EXACTLY ONE of item_id / formula_id via the CHECK.
+-- App-layer validation enforces that each line has item_id or formula_id (or neither for custom fbill lines).
 CREATE TABLE sale_items (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   sale_id       INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,

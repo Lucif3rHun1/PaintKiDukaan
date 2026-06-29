@@ -152,6 +152,39 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
 
   const [showExitModal, setShowExitModal] = useState(false);
   const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
+  const [editMode, setEditMode] = useState(false);
+
+  // Load sale data when in edit mode
+  useEffect(() => {
+    if (!editSaleId) return;
+    setEditMode(true);
+    getSale(editSaleId).then((sale) => {
+      if (!sale) return;
+      setKind(sale.status as Kind);
+      setLines(
+        sale.items.map((item) => ({
+          kind: item.kind as "item" | "formula",
+          item_id: item.item_id,
+          formula_id: item.formula_id,
+          item_name: item.display_name,
+          qty: item.qty,
+          price: item.price,
+          unit_type: item.unit_type,
+          line_discount: item.line_discount,
+          shade_note: item.shade_note ?? null,
+        }))
+      );
+      setBillDiscount(sale.bill_discount);
+      if (sale.customer_id) {
+        getCustomer(sale.customer_id).then((c) => {
+          if (c) {
+            setCustomer(c);
+            setWalkIn(false);
+          }
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  }, [editSaleId]);
 
   const draftData = useMemo(() => ({
     kind,
@@ -410,6 +443,40 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
       kind === "quotation" ? [] : splits.filter((s) => s.amount > 0);
     const finalPaid =
       kind === "quotation" ? 0 : finalSplits.reduce((sum, s) => sum + s.amount, 0);
+
+    if (editMode && editSaleId) {
+      editSale({
+        sale_id: editSaleId,
+        lines: lines.map((l) => ({
+          kind: l.kind,
+          item_id: l.item_id,
+          formula_id: l.formula_id,
+          display_name: l.item_name ?? null,
+          qty: l.qty,
+          price: l.price,
+          unit_type: l.unit_type,
+          line_discount: l.line_discount,
+          shade_note: l.shade_note ?? null,
+        })),
+        bill_discount: billDiscount,
+        customer_id: customer?.id ?? null,
+        paid_amount: finalPaid,
+        payment_modes: finalSplits,
+      })
+        .then(() => {
+          toast.success("FBill updated");
+          setEditMode(false);
+          resetDraft();
+          resetDirty();
+          onExit();
+        })
+        .catch((e: unknown) => {
+          setError(extractError(e));
+        })
+        .finally(() => setBusy(false));
+      return;
+    }
+
     const payload: NewSale = {
       customer_id: customer?.id ?? null,
       kind,
@@ -574,7 +641,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         </Button>
         <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold text-foreground">
-            {kind === "final" ? "New Bill" : kind === "fbill" ? "New FBill" : "New Quotation"}
+            {editMode ? "Edit FBill" : kind === "final" ? "New Bill" : kind === "fbill" ? "New FBill" : "New Quotation"}
           </h1>
         </div>
         <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
@@ -583,12 +650,14 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
               key={k}
               type="button"
               onClick={() => setKind(k)}
+              disabled={editMode}
               aria-pressed={kind === k}
               className={cn(
                 "rounded px-3 py-1 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                 kind === k
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground",
+                editMode && "cursor-not-allowed opacity-50",
               )}
             >
               {k === "final" ? "Bill" : k === "fbill" ? "FBill" : "Quotation"}
@@ -738,9 +807,8 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                     <Button
                       type="button"
                       variant="secondary"
-                      size="sm"
                       onClick={addCustomLine}
-                      className="shrink-0"
+                      className="shrink-0 h-10 px-3 text-sm"
                     >
                       <PackagePlus className="mr-1 h-3.5 w-3.5" />
                       Custom
@@ -947,7 +1015,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                   className="w-full"
                   shortcut="F9"
                 >
-                  {kind === "final" ? "Save bill" : kind === "fbill" ? "Save FBill" : "Save quotation"}
+                  {editMode ? "Update FBill" : kind === "final" ? "Save bill" : kind === "fbill" ? "Save FBill" : "Save quotation"}
                 </Button>
                 {(kind === "final" || kind === "fbill") ? (
                   <Button
