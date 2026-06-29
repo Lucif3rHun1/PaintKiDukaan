@@ -581,8 +581,7 @@ CREATE TABLE sale_items (
   line_order    INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
   created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
-  CHECK ((item_id IS NOT NULL AND formula_id IS NULL)
-      OR (item_id IS NULL AND formula_id IS NOT NULL))
+-- CHECK removed: custom fbill lines may have both item_id and formula_id null.
 );
 
 -- serves: "lines for this sale"

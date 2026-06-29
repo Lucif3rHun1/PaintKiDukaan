@@ -519,11 +519,10 @@ impl Db {
             }
         }
 
-        // M-INLINE-015: best-effort log that 'fbill' is now accepted in sales.status
-        // (kind is validated app-side in commands/sales.rs via SaleError::InvalidKind).
-        // SQLite has no ALTER CONSTRAINT, so we can't mutate the CHECK on an existing
-        // database. The fresh schema in schema_final.sql already includes 'fbill'; we
-        // only detect and log legacy databases here.
+        // M-INLINE-015: Recreate sales table to add 'fbill' to the CHECK constraint.
+        // SQLite has no ALTER TABLE ... ALTER CONSTRAINT, so we must recreate the
+        // table with the updated CHECK. Indexes are auto-dropped with the old table
+        // and recreated below.
         {
             let has_fbill_clause: bool = conn
                 .query_row(
@@ -534,10 +533,38 @@ impl Db {
                 .unwrap_or_default()
                 .contains("'fbill'");
             if !has_fbill_clause {
-                log::info!(
-                    "M-INLINE-015: legacy sales CHECK constraint lacks 'fbill' — \
-                     app-layer SaleError::InvalidKind enforces the value set"
-                );
+                conn.execute_batch("DROP TABLE IF EXISTS sales_new;")?;
+                conn.execute_batch(
+                    "PRAGMA foreign_keys = OFF;
+                     CREATE TABLE sales_new (
+                        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                        no                 TEXT    NOT NULL UNIQUE,
+                        customer_id        INTEGER REFERENCES customers(id) ON DELETE NO ACTION,
+                        date               TEXT    NOT NULL DEFAULT '',
+                        status             TEXT    NOT NULL DEFAULT 'quotation'
+                                             CHECK(status IN ('quotation','final','fbill')),
+                        subtotal           INTEGER NOT NULL DEFAULT 0,
+                        bill_discount      INTEGER NOT NULL DEFAULT 0,
+                        total              INTEGER NOT NULL DEFAULT 0,
+                        paid_amount        INTEGER NOT NULL DEFAULT 0,
+                        payment_modes_json TEXT    NOT NULL DEFAULT '[]',
+                        validity_days      INTEGER,
+                        converted_from_id  INTEGER REFERENCES sales(id) ON DELETE NO ACTION,
+                        user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+                        created_at         TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+                        updated_at         TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+                        created_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+                        updated_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION
+                     );
+                     INSERT INTO sales_new SELECT * FROM sales;
+                     DROP TABLE sales;
+                     ALTER TABLE sales_new RENAME TO sales;
+                     CREATE INDEX IF NOT EXISTS idx_sales_user_created ON sales(user_id, created_at DESC);
+                     CREATE INDEX IF NOT EXISTS idx_sales_customer_created ON sales(customer_id, created_at DESC) WHERE customer_id IS NOT NULL;
+                     CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(status);
+                     CREATE INDEX IF NOT EXISTS idx_sales_kind_created ON sales(status, created_at DESC);
+                     PRAGMA foreign_keys = ON;",
+                )?;
             }
         }
 
@@ -555,8 +582,61 @@ impl Db {
             }
         }
 
+        // M-INLINE-018: Remove CHECK constraint from sale_items that blocks custom fbill lines.
+        // The old CHECK required exactly one of (item_id, formula_id) to be set, but
+        // custom fbill lines may have both null. SQLite cannot ALTER CONSTRAINT, so we
+        // recreate the table without it.
+        {
+            let has_old_check: bool = conn
+                .query_row(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='sale_items'",
+                    [],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap_or_default()
+                .contains("item_id IS NOT NULL AND formula_id IS NULL");
+            if has_old_check {
+                conn.execute_batch(
+                    "PRAGMA foreign_keys = OFF;
+                     CREATE TABLE sale_items_new (
+                         id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                         sale_id       INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
+                         kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),
+                         item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,
+                         formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
+                         qty           REAL NOT NULL CHECK(qty > 0),
+                         price         INTEGER NOT NULL CHECK(price >= 0),
+                         unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),
+                         line_discount INTEGER NOT NULL DEFAULT 0,
+                         shade_note    TEXT,
+                         line_order    INTEGER NOT NULL DEFAULT 0,
+                         created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+                         created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+                         display_name  TEXT
+                     );
+                     INSERT INTO sale_items_new
+                         SELECT id, sale_id, kind, item_id, formula_id, qty, price,
+                                unit_type, line_discount, shade_note, line_order,
+                                created_at, created_by, display_name
+                         FROM sale_items;
+                     DROP TABLE sale_items;
+                     ALTER TABLE sale_items_new RENAME TO sale_items;
+                     CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
+                     CREATE INDEX IF NOT EXISTS idx_sale_items_item_id ON sale_items(item_id);
+                     PRAGMA foreign_keys = ON;",
+                )?;
+            }
+        }
+
         // M-INLINE-017: Drop legacy unit_id from items, stock_movements, purchase_items.
         // Each step is independently idempotent to survive partial prior runs.
+        //
+        // BUGFIX: The BEFORE UPDATE trigger on stock_movements must be dropped
+        // BEFORE the backfill UPDATE runs, and recreated AFTER. Previously the
+        // trigger was created inside the `!has_col` block; on a re-run where
+        // sale_unit_id already existed the block was skipped, but the trigger
+        // from the prior run still fired on the UPDATE → abort → unit_id
+        // never dropped → "NOT NULL constraint failed: items.unit_id".
         {
             fn has_col(conn: &Connection, table: &str, col: &str) -> bool {
                 conn.query_row(
@@ -572,19 +652,14 @@ impl Db {
 
             if has_col(&conn, "items", "unit_id") {
                 // --- stock_movements ---
+                // Always drop trigger before backfill to prevent abort
+                conn.execute_batch("DROP TRIGGER IF EXISTS stock_movements_bu;")?;
                 if !has_col(&conn, "stock_movements", "sale_unit_id") {
-                    conn.execute_batch("DROP TRIGGER IF EXISTS stock_movements_bu;")?;
                     conn.execute_batch(
                         "ALTER TABLE stock_movements ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);",
                     )?;
-                    conn.execute_batch(
-                        "CREATE TRIGGER stock_movements_bu \
-                         BEFORE UPDATE ON stock_movements \
-                         BEGIN \
-                           SELECT RAISE(ABORT, 'stock_movements is append-only; insert a corrective movement instead'); \
-                         END;",
-                    )?;
                 }
+                // Backfill sale_unit_id from items (safe: trigger dropped)
                 conn.execute_batch(
                     "UPDATE stock_movements SET sale_unit_id = \
                      (SELECT sell_unit_id FROM items WHERE id = stock_movements.item_id) \
@@ -593,6 +668,14 @@ impl Db {
                 if has_col(&conn, "stock_movements", "unit_id") {
                     conn.execute_batch("ALTER TABLE stock_movements DROP COLUMN unit_id;")?;
                 }
+                // Recreate append-only trigger after backfill is complete
+                conn.execute_batch(
+                    "CREATE TRIGGER IF NOT EXISTS stock_movements_bu \
+                     BEFORE UPDATE ON stock_movements \
+                     BEGIN \
+                       SELECT RAISE(ABORT, 'stock_movements is append-only; insert a corrective movement instead'); \
+                     END;",
+                )?;
 
                 // --- purchase_items ---
                 if !has_col(&conn, "purchase_items", "sale_unit_id") {
