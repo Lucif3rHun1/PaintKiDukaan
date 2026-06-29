@@ -753,6 +753,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             <ItemSearchInput
               onPick={handleInwardItemPick}
               allowOutOfStock
+              display={{ priceField: "cost" }}
               onCreateItem={() => setAddItemOpen(true)}
               acceptFormula={false}
             />

@@ -605,6 +605,7 @@ pub struct ItemSearchHit {
     pub name: String,
     pub brand: Option<String>,
     pub retail_price_paise: i64,
+    pub cost_paise: i64,
     pub sell_unit: String,
     pub unit: String,
     pub units_per_pack: Option<f64>,
@@ -624,7 +625,7 @@ pub fn search_items(db: &Db, query: &str, limit: i64) -> anyhow::Result<Vec<Item
         // Exact barcode/sku match wins first (scanner flow), then FTS5 text search.
         let mut stmt = c.prepare(
             "SELECT i.id, i.sku_code, i.barcode, i.name, i.brand,
-                    i.retail_price_paise, i.sell_unit, i.unit, i.units_per_pack,
+                    i.retail_price_paise, i.cost_paise, i.sell_unit, i.unit, i.units_per_pack,
                     COALESCE(sb.qty, 0) AS current_qty
               FROM items i
               LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id
@@ -649,10 +650,11 @@ pub fn search_items(db: &Db, query: &str, limit: i64) -> anyhow::Result<Vec<Item
                 name: r.get(3)?,
                 brand: r.get(4)?,
                 retail_price_paise: r.get(5)?,
-                sell_unit: r.get(6)?,
-                unit: r.get(7)?,
-                units_per_pack: r.get(8)?,
-                current_qty: r.get(9)?,
+                cost_paise: r.get(6)?,
+                sell_unit: r.get(7)?,
+                unit: r.get(8)?,
+                units_per_pack: r.get(9)?,
+                current_qty: r.get(10)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
