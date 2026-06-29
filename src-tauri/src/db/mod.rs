@@ -556,39 +556,61 @@ impl Db {
         }
 
         // M-INLINE-017: Drop legacy unit_id from items, stock_movements, purchase_items.
-        // Add sale_unit_id to stock_movements and purchase_items, backfill from items.sell_unit_id, then drop unit_id.
+        // Each step is independently idempotent to survive partial prior runs.
         {
-            let has_unit_id: bool = conn
-                .query_row(
-                    "SELECT COUNT(*) > 0 FROM pragma_table_info('items') WHERE name = 'unit_id'",
+            fn has_col(conn: &Connection, table: &str, col: &str) -> bool {
+                conn.query_row(
+                    &format!(
+                        "SELECT COUNT(*) > 0 FROM pragma_table_info('{}') WHERE name = '{}'",
+                        table, col
+                    ),
                     [],
                     |r| r.get(0),
                 )
-                .unwrap_or(false);
-            if has_unit_id {
-                // Drop the append-only UPDATE trigger so we can backfill sale_unit_id.
+                .unwrap_or(false)
+            }
+
+            if has_col(&conn, "items", "unit_id") {
+                // --- stock_movements ---
+                if !has_col(&conn, "stock_movements", "sale_unit_id") {
+                    conn.execute_batch("DROP TRIGGER IF EXISTS stock_movements_bu;")?;
+                    conn.execute_batch(
+                        "ALTER TABLE stock_movements ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);",
+                    )?;
+                    conn.execute_batch(
+                        "CREATE TRIGGER stock_movements_bu \
+                         BEFORE UPDATE ON stock_movements \
+                         BEGIN \
+                           SELECT RAISE(ABORT, 'stock_movements is append-only; insert a corrective movement instead'); \
+                         END;",
+                    )?;
+                }
                 conn.execute_batch(
-                    "DROP TRIGGER IF EXISTS stock_movements_bu;",
+                    "UPDATE stock_movements SET sale_unit_id = \
+                     (SELECT sell_unit_id FROM items WHERE id = stock_movements.item_id) \
+                     WHERE sale_unit_id IS NULL;",
                 )?;
+                if has_col(&conn, "stock_movements", "unit_id") {
+                    conn.execute_batch("ALTER TABLE stock_movements DROP COLUMN unit_id;")?;
+                }
+
+                // --- purchase_items ---
+                if !has_col(&conn, "purchase_items", "sale_unit_id") {
+                    conn.execute_batch(
+                        "ALTER TABLE purchase_items ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);",
+                    )?;
+                }
                 conn.execute_batch(
-                    "ALTER TABLE stock_movements ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
-                     UPDATE stock_movements SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = stock_movements.item_id) WHERE sale_unit_id IS NULL;
-                     ALTER TABLE stock_movements DROP COLUMN unit_id;",
+                    "UPDATE purchase_items SET sale_unit_id = \
+                     (SELECT sell_unit_id FROM items WHERE id = purchase_items.item_id) \
+                     WHERE sale_unit_id IS NULL;",
                 )?;
-                // Recreate the append-only trigger after backfill.
-                conn.execute_batch(
-                    "CREATE TRIGGER stock_movements_bu
-                     BEFORE UPDATE ON stock_movements
-                     BEGIN
-                       SELECT RAISE(ABORT, 'stock_movements is append-only; insert a corrective movement instead');
-                     END;",
-                )?;
-                conn.execute_batch(
-                    "ALTER TABLE purchase_items ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
-                     UPDATE purchase_items SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = purchase_items.item_id) WHERE sale_unit_id IS NULL;
-                     ALTER TABLE purchase_items DROP COLUMN unit_id;
-                     ALTER TABLE items DROP COLUMN unit_id;",
-                )?;
+                if has_col(&conn, "purchase_items", "unit_id") {
+                    conn.execute_batch("ALTER TABLE purchase_items DROP COLUMN unit_id;")?;
+                }
+
+                // --- items ---
+                conn.execute_batch("ALTER TABLE items DROP COLUMN unit_id;")?;
             }
         }
 
