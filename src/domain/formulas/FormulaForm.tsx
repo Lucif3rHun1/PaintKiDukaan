@@ -173,6 +173,7 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
                   }
                 }}
                 onCreateItem={undefined}
+                display={{ showBrand: true, showStock: false }}
               />
             )}
             {fieldErrors.base_item_id ? (

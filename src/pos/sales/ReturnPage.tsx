@@ -479,7 +479,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                 </table>
               </div>
 
-              <ItemSearchInput onPick={addLineFromItem} allowOutOfStock acceptFormula={false} />
+              <ItemSearchInput onPick={addLineFromItem} allowOutOfStock acceptFormula={false} display={{ showBrand: true }} />
             </Card>
           </div>
 

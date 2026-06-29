@@ -82,7 +82,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isDraftLine(value: unknown): value is DraftLine {
   if (!isRecord(value)) return false;
   const ut = value.unit_type;
-  const validUnitType = ut === "unit" || ut === "mtr" || ut === "kg" || ut === "box";
+  const validUnitType = ut === "unit" || ut === "mtr" || ut === "kg";
   return (
     typeof value.row_id === "string" &&
     typeof value.item_id === "number" &&
@@ -457,7 +457,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     const lines: InwardLine[] = filled.map((l) => ({
       item_id: l.item_id,
       qty: l.qty * l.qty_per_purchase_unit,
-      unit_type: l.unit_type as InwardLine["unit_type"],
+      unit_type: (l.unit_type === "mtr" || l.unit_type === "kg") ? l.unit_type : "unit",
       unit_price_paise: l.cost_price,
       location_id: l.location_id,
     }));
@@ -742,7 +742,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             <ItemSearchInput
               onPick={handleInwardItemPick}
               allowOutOfStock
-              display={{ priceField: "cost" }}
+              display={{ priceField: "cost", showBrand: true }}
               onCreateItem={() => setAddItemOpen(true)}
               acceptFormula={false}
             />

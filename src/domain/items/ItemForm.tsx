@@ -281,14 +281,9 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                   className="flex w-full items-center gap-3 border-b border-border/50 px-3 py-2 text-left last:border-b-0 hover:bg-muted/50"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-foreground">{item.name}</span>
-                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{item.sku_code}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                      {item.brand && <span>{item.brand}</span>}
-                      {item.unit_code && <span>· {item.unit_code}</span>}
-                    </div>
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {(() => { const b = brands.find(b => b.id === item.brand_id); return b ? `${b.name} · ${item.name}` : item.name; })()}
+                    </span>
                   </div>
                   <span className="shrink-0 text-xs font-medium text-foreground">
                     ₹{(item.retail_price_paise / 100).toFixed(2)}

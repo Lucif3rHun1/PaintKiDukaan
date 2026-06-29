@@ -24,6 +24,10 @@ import type { ItemSearchHit } from "../types";
 export interface SearchDisplayConfig {
   priceField?: "retail" | "cost";
   showBrand?: boolean;
+  /** Show SKU code in suggestion. Default true. */
+  showSku?: boolean;
+  /** Show stock pill in suggestion. Default true. */
+  showStock?: boolean;
 }
 
 interface Props {
@@ -100,6 +104,8 @@ export function ItemSearchInput({
   display,
 }: Props) {
   const priceField = display?.priceField ?? "retail";
+  const showSku = display?.showSku ?? true;
+  const showStock = display?.showStock ?? true;
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[]>([]);
@@ -338,7 +344,8 @@ export function ItemSearchInput({
     setQuery("");
     setOpen(false);
     setQuickSuggestions([]);
-    inputRef.current?.focus();
+    // ponytail: removed focus() — it re-triggered onFocus→setOpen(true), causing the
+    // double-click/enter bug where the dropdown stayed open after picking an item.
   }
 
   async function handleQuickSave() {
@@ -555,19 +562,23 @@ export function ItemSearchInput({
                           status === "out" ? "text-muted-foreground line-through" : "text-foreground",
                         )}
                       >
-                        {toTitleCase(hit.name)}
+                        {display?.showBrand && hit.brand
+                          ? `${hit.brand} · ${toTitleCase(hit.name)}`
+                          : toTitleCase(hit.name)}
                       </span>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                          styles.pill,
-                        )}
-                      >
-                        {stockLabel(hit, status)}
-                      </span>
+                      {showStock && (
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                            styles.pill,
+                          )}
+                        >
+                          {stockLabel(hit, status)}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span className="font-mono">{hit.sku_code}</span>
+                      {showSku && <span className="font-mono">{hit.sku_code}</span>}
                       <span className="font-semibold text-foreground">
                         {formatRupeesFromPaise(priceField === "cost" ? hit.cost_paise : hit.retail_price_paise)}
                       </span>
