@@ -204,15 +204,54 @@ pub fn cmd_import_items_csv(
         .or_else(|| units.values().next().copied())
         .unwrap_or(1);
 
-    // Fetch existing locations
-    let default_location_id = db.with_raw(|c| {
-        c.query_row(
-            "SELECT id FROM locations WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1",
-            [],
-            |r| r.get::<_, i64>(0),
-        )
-        .unwrap_or(1)
-    });
+    // Fetch existing locations (name → id, case-insensitive)
+    let locations: std::collections::HashMap<String, i64> = db.with_raw(|c| {
+        let mut stmt = c.prepare("SELECT id, name FROM locations WHERE is_active = 1")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, i64>(0)?)))?;
+        let mut map = std::collections::HashMap::new();
+        for r in rows {
+            let (name, id) = r?;
+            map.insert(name.to_lowercase(), id);
+        }
+        Ok::<_, AppError>(map)
+    })?;
+
+    // Fetch existing sub-locations (name → (id, location_id), case-insensitive)
+    let sub_locations: std::collections::HashMap<String, (i64, i64)> = db.with_raw(|c| {
+        let mut stmt = c.prepare("SELECT id, location_id, name FROM sub_locations WHERE is_active = 1")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+            ))
+        })?;
+        let mut map = std::collections::HashMap::new();
+        for r in rows {
+            let (name, id, location_id) = r?;
+            map.insert(name.to_lowercase(), (id, location_id));
+        }
+        Ok::<_, AppError>(map)
+    })?;
+
+    // Default location
+    let default_location_id = locations.values().next().copied().unwrap_or(1);
+
+    // Fetch existing items for upsert matching (name, sku, barcode → id)
+    let existing_items: Vec<ExistingItemRow> = db.with_raw(|c| {
+        let mut stmt = c.prepare(
+            "SELECT id, name, sku_code, barcode FROM items WHERE is_active = 1",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(ExistingItemRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                sku_code: r.get(2)?,
+                barcode: r.get(3)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    })?;
 
     db.with_tx(|tx| {
         for (i, row) in rows.iter().enumerate() {
@@ -232,8 +271,7 @@ pub fn cmd_import_items_csv(
             };
 
             // Optional fields
-            let sku_code = get_field(row, &hmap, &["sku", "sku_code"])
-                .unwrap_or_else(|| auto_sku(tx));
+            let sku_code = get_field(row, &hmap, &["sku", "sku_code"]);
             let barcode = get_field(row, &hmap, &["barcode"]);
             let brand = get_field(row, &hmap, &["brand"]);
             let category = get_field(row, &hmap, &["category", "group"]);
@@ -242,6 +280,7 @@ pub fn cmd_import_items_csv(
             let units_per_pack = get_field(row, &hmap, &["units_per_pack", "pack_size"])
                 .and_then(|s| s.parse::<f64>().ok())
                 .unwrap_or(1.0);
+            let sell_unit = get_field(row, &hmap, &["sell_unit", "sell"]);
 
             let retail_price_paise = match get_field(row, &hmap, &["retail_price", "retail", "mrp", "selling_price", "price"]) {
                 Some(s) => parse_paise(&s).unwrap_or(0),
@@ -259,7 +298,18 @@ pub fn cmd_import_items_csv(
             let label_line1 = get_field(row, &hmap, &["label_line1", "label1"]);
             let label_line2 = get_field(row, &hmap, &["label_line2", "label2"]);
 
-            let location_id = default_location_id;
+            // Location resolution by name (case-insensitive)
+            let primary_location_id = get_field(row, &hmap, &["primary_location", "location", "location_name"])
+                .and_then(|s| locations.get(&s.to_lowercase()).copied())
+                .unwrap_or(default_location_id);
+
+            let sub_location_id = get_field(row, &hmap, &["sub_location", "sub", "rack"])
+                .and_then(|s| {
+                    let (sub_id, _) = sub_locations.get(&s.to_lowercase())?;
+                    Some(sub_id)
+                });
+
+            let position = get_field(row, &hmap, &["position", "pos", "shelf"]);
 
             // Validate
             if retail_price_paise < 0 || cost_price_paise < 0 {
@@ -270,45 +320,6 @@ pub fn cmd_import_items_csv(
                 result.skipped += 1;
                 continue;
             }
-
-            // Check for duplicate barcode
-            if let Some(ref bc) = barcode {
-                let exists: bool = tx
-                    .query_row(
-                        "SELECT COUNT(*) > 0 FROM items WHERE barcode = ?1",
-                        params![bc],
-                        |r| r.get(0),
-                    )
-                    .unwrap_or(false);
-                if exists {
-                    result.errors.push(ImportRowError {
-                        row: row_num,
-                        message: format!("barcode '{}' already exists", bc),
-                    });
-                    result.skipped += 1;
-                    continue;
-                }
-            }
-
-            // Check for duplicate SKU
-            let sku_exists: bool = tx
-                .query_row(
-                    "SELECT COUNT(*) > 0 FROM items WHERE sku_code = ?1",
-                    params![sku_code],
-                    |r| r.get(0),
-                )
-                .unwrap_or(false);
-            if sku_exists {
-                result.errors.push(ImportRowError {
-                    row: row_num,
-                    message: format!("SKU '{}' already exists", sku_code),
-                });
-                result.skipped += 1;
-                continue;
-            }
-
-            let final_barcode = barcode.unwrap_or_else(|| sku_code.clone());
-            let barcode_format = "CODE128";
 
             // Resolve brand_id if brand name is provided
             let brand_id: Option<i64> = if let Some(ref bname) = brand {
@@ -322,46 +333,134 @@ pub fn cmd_import_items_csv(
                 None
             };
 
+            // Resolve sell_unit_id if sell_unit is provided
+            let sell_unit_id: Option<i64> = if let Some(ref su) = sell_unit {
+                let sid = tx.query_row(
+                    "SELECT id FROM units WHERE LOWER(code) = LOWER(?1) AND is_active = 1",
+                    params![su],
+                    |r| r.get(0),
+                );
+                sid.ok()
+            } else {
+                None
+            };
+
             let now_ms = chrono::Utc::now().timestamp_millis();
 
-            match tx.execute(
-                "INSERT INTO items (
-                    sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label,
-                    units_per_pack, retail_price_paise, cost_paise, promo_price_paise,
-                    label_line1, label_line2, primary_location_id,
-                    sub_location_id, position, min_stock, barcode_format, is_active,
-                    created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, 1, ?20, ?20)",
-                params![
-                    sku_code,
-                    final_barcode,
-                    name,
-                    brand_id,
-                    category,
-                    unit_id,
-                    unit_code_str,
-                    unit_code_str, // unit_label same as code for imports
-                    units_per_pack,
-                    retail_price_paise,
-                    cost_price_paise,
-                    promo_price_paise,
-                    label_line1,
-                    label_line2,
-                    location_id,
-                    None::<i64>, // sub_location_id
-                    None::<i64>, // position
-                    min_stock,
-                    barcode_format,
-                    now_ms,
-                ],
-            ) {
-                Ok(_) => result.created += 1,
-                Err(e) => {
-                    result.errors.push(ImportRowError {
-                        row: row_num,
-                        message: format!("DB error: {}", e),
-                    });
-                    result.skipped += 1;
+            // Check if item exists by SKU (exact match) or by name (exact match)
+            let existing_id = if let Some(ref sku) = sku_code {
+                // SKU match — SKU is immutable, only update fields
+                existing_items.iter().find(|it| it.sku_code.to_lowercase() == sku.to_lowercase()).map(|it| it.id)
+            } else {
+                // No SKU provided — match by exact name (case-insensitive)
+                existing_items.iter().find(|it| it.name.to_lowercase() == name.to_lowercase()).map(|it| it.id)
+            };
+
+            if let Some(item_id) = existing_id {
+                // ── UPSERT: update existing item's mutable fields ──
+                // SKU is never overwritten; barcode is kept if already set
+                let final_barcode = tx
+                    .query_row("SELECT barcode FROM items WHERE id = ?1", params![item_id], |r| r.get::<_, Option<String>>(0))
+                    .unwrap_or(None)
+                    .or(barcode)
+                    .unwrap_or_else(|| sku_code.clone().unwrap_or_else(|| auto_sku(tx)));
+
+                let _ = tx.execute(
+                    "UPDATE items SET
+                        barcode = ?1,
+                        name = ?2,
+                        brand_id = ?3,
+                        category = ?4,
+                        unit_id = ?5,
+                        unit_code = ?6,
+                        unit_label = ?7,
+                        units_per_pack = ?8,
+                        sell_unit = ?9,
+                        sell_unit_id = ?10,
+                        retail_price_paise = ?11,
+                        cost_paise = ?12,
+                        promo_price_paise = ?13,
+                        label_line1 = ?14,
+                        label_line2 = ?15,
+                        primary_location_id = ?16,
+                        sub_location_id = ?17,
+                        position = ?18,
+                        min_stock = ?19,
+                        updated_at = ?20
+                     WHERE id = ?21",
+                    params![
+                        final_barcode,
+                        name,
+                        brand_id,
+                        category,
+                        unit_id,
+                        unit_code_str,
+                        unit_code_str,
+                        units_per_pack,
+                        sell_unit,
+                        sell_unit_id,
+                        retail_price_paise,
+                        cost_price_paise,
+                        promo_price_paise,
+                        label_line1,
+                        label_line2,
+                        primary_location_id,
+                        sub_location_id,
+                        position,
+                        min_stock,
+                        now_ms,
+                        item_id,
+                    ],
+                );
+                result.created += 1; // counts as "processed"
+            } else {
+                // ── INSERT: new item ──
+                let final_sku = sku_code.unwrap_or_else(|| auto_sku(tx));
+                let final_barcode = barcode.unwrap_or_else(|| final_sku.clone());
+                let barcode_format = "CODE128";
+
+                match tx.execute(
+                    "INSERT INTO items (
+                        sku_code, barcode, name, brand_id, category, unit_id, unit_code, unit_label,
+                        units_per_pack, sell_unit, sell_unit_id,
+                        retail_price_paise, cost_paise, promo_price_paise,
+                        label_line1, label_line2, primary_location_id,
+                        sub_location_id, position, min_stock, barcode_format, is_active,
+                        created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, 1, ?22, ?22)",
+                    params![
+                        final_sku,
+                        final_barcode,
+                        name,
+                        brand_id,
+                        category,
+                        unit_id,
+                        unit_code_str,
+                        unit_code_str,
+                        units_per_pack,
+                        sell_unit,
+                        sell_unit_id,
+                        retail_price_paise,
+                        cost_price_paise,
+                        promo_price_paise,
+                        label_line1,
+                        label_line2,
+                        primary_location_id,
+                        sub_location_id,
+                        position,
+                        min_stock,
+                        barcode_format,
+                        now_ms,
+                    ],
+                ) {
+                    Ok(_) => result.created += 1,
+                    Err(e) => {
+                        result.errors.push(ImportRowError {
+                            row: row_num,
+                            message: format!("DB error: {}", e),
+                        });
+                        result.skipped += 1;
+                    }
                 }
             }
         }
@@ -630,6 +729,13 @@ pub fn cmd_import_inward_csv(
     })?;
 
     Ok(result)
+}
+
+struct ExistingItemRow {
+    id: i64,
+    name: String,
+    sku_code: String,
+    barcode: Option<String>,
 }
 
 struct ItemLookupRow {
