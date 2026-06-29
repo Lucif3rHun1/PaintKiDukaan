@@ -419,6 +419,83 @@ pub fn create_inward(
 }
 
 // -----------------------------------------------------------------------------
+// Stock adjustment (add / reduce).
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdjustStockRequest {
+    pub item_id: i64,
+    pub qty: f64, // positive = add, negative = reduce
+    pub location_id: i64,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AdjustStockResult {
+    pub new_qty: f64,
+}
+
+/// Insert a stock_movement with kind='adjustment'. Rejects if reduce would
+/// make stock negative.
+pub fn adjust_stock(
+    db: &Db,
+    user_id: i64,
+    req: AdjustStockRequest,
+) -> Result<AdjustStockResult, PurchaseError> {
+    if req.qty == 0.0 || req.qty.is_nan() {
+        return Err(PurchaseError::BadQty(0));
+    }
+    if req.qty < 0.0 {
+        // Check current balance won't go negative.
+        let current: f64 = db
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT COALESCE(sb.qty, 0) FROM items i \
+                     LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb \
+                     ON sb.item_id = i.id WHERE i.id = ?1",
+                    params![req.item_id],
+                    |r| r.get(0),
+                )
+            })
+            .map_err(|e| PurchaseError::Db(e))?;
+        if current + req.qty < 0.0 {
+            return Err(PurchaseError::Other(anyhow::anyhow!(
+                "stock would go negative (current: {}, reduce: {})",
+                current,
+                req.qty.abs()
+            )));
+        }
+    }
+    let note = req.notes.unwrap_or_else(|| "stock adjustment".into());
+    let kind_id: i64 = db
+        .with_conn(|c| {
+            c.query_row(
+                "SELECT id FROM stock_movement_kinds WHERE code = 'adjustment'",
+                [],
+                |r| r.get(0),
+            )
+        })
+        .map_err(PurchaseError::Db)?;
+
+    db.with_conn_immediate(|c| {
+        c.execute(
+            "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by) \
+             VALUES (?1, ?2, ?3, ?4, (SELECT sell_unit_id FROM items WHERE id = ?1), 'adjustment', NULL, ?5, ?6, ?7)",
+            params![req.item_id, req.location_id, req.qty, kind_id, note, now_ms(), user_id],
+        )?;
+        let new_qty: f64 = c.query_row(
+            "SELECT COALESCE(sb.qty, 0) FROM items i \
+             LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb \
+             ON sb.item_id = i.id WHERE i.id = ?1",
+            params![req.item_id],
+            |r| r.get(0),
+        )?;
+        Ok(AdjustStockResult { new_qty })
+    })
+    .map_err(|e| PurchaseError::Db(e))
+}
+
+// -----------------------------------------------------------------------------
 // Date helpers.
 // -----------------------------------------------------------------------------
 
@@ -533,6 +610,29 @@ pub fn cmd_movements_for_item(
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     movements_for_item(db, item_id, limit.unwrap_or(200))
         .map_err(|e| AppError::Internal(e.to_string()))
+}
+
+// -----------------------------------------------------------------------------
+// Tauri command: adjust stock.
+// -----------------------------------------------------------------------------
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_adjust_stock(
+    state: tauri::State<'_, AppState>,
+    req: AdjustStockRequest,
+) -> AppResult<AdjustStockResult> {
+    crate::security::ipc_auth::authorize_err("cmd_adjust_stock", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
+    let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
+    adjust_stock(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 // -----------------------------------------------------------------------------

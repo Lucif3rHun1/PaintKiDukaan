@@ -42,7 +42,7 @@ import { formatRupeesFromPaise } from "../../lib/money";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { toast } from "../../lib/feedback/toast";
 import { usePaginatedQuery } from "../../lib/query";
-import { listBrands, listItems, updateItem } from "./api";
+import { adjustStock, listBrands, listItems, updateItem } from "./api";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Brand, Item, SubLocation } from "../types";
 import { ItemForm } from "./ItemForm";
@@ -82,6 +82,7 @@ export function ItemList({ role }: Props) {
   const [importOpen, setImportOpen] = useState(false);
   const [stockAdjustItem, setStockAdjustItem] = useState<Item | null>(null);
   const [stockAdjustQty, setStockAdjustQty] = useState("");
+  const [stockAdjustDir, setStockAdjustDir] = useState<"add" | "reduce">("add");
 
   const canEdit = role === "owner" || role === "stocker";
 
@@ -435,33 +436,45 @@ export function ItemList({ role }: Props) {
 
   const handleStockAdjust = useCallback(async () => {
     if (!stockAdjustItem) return;
-    const qty = Number(stockAdjustQty);
-    if (!qty || qty <= 0) {
+    const absQty = Number(stockAdjustQty);
+    if (!absQty || absQty <= 0) {
       toast.error("Enter a valid quantity");
       return;
     }
     try {
-      const req: NewPurchase = {
-        vendor_id: null,
-        notes: "Opening stock adjustment",
-        auto_print_label: false,
-        lines: [{
-          item_id: stockAdjustItem.id,
+      const qty = stockAdjustDir === "add" ? absQty : -absQty;
+      const locId = stockAdjustItem.primary_location_id ?? 1;
+      if (stockAdjustDir === "add") {
+        const req: NewPurchase = {
+          vendor_id: null,
+          notes: "Stock adjustment — add",
+          auto_print_label: false,
+          lines: [{
+            item_id: stockAdjustItem.id,
+            qty: absQty,
+            unit_type: stockAdjustItem.unit_code ?? "unit",
+            unit_price_paise: stockAdjustItem.cost_paise,
+            location_id: locId,
+          }],
+        };
+        await createInward(req);
+      } else {
+        await adjustStock({
+          itemId: stockAdjustItem.id,
           qty,
-          unit_type: stockAdjustItem.unit_code ?? "unit",
-          unit_price_paise: stockAdjustItem.cost_paise,
-          location_id: stockAdjustItem.primary_location_id ?? 1,
-        }],
-      };
-      await createInward(req);
+          locationId: locId,
+          notes: "Stock adjustment — reduce",
+        });
+      }
       toast.success(`Stock adjusted for ${stockAdjustItem.name}`);
       setStockAdjustItem(null);
       setStockAdjustQty("");
+      setStockAdjustDir("add");
       refetch();
     } catch (e) {
       toast.error(extractError(e));
     }
-  }, [stockAdjustItem, stockAdjustQty, refetch]);
+  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, refetch]);
 
   if (mode === "create") {
     return (
@@ -861,11 +874,39 @@ export function ItemList({ role }: Props) {
             <p className="mb-3 text-xs text-muted-foreground">
               {stockAdjustItem.name} — current: {stockAdjustItem.current_qty}
             </p>
+            <div className="mb-3 flex gap-1 rounded-md border border-border bg-muted/40 p-0.5">
+              <button
+                type="button"
+                className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                  stockAdjustDir === "add"
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setStockAdjustDir("add")}
+              >
+                <ArrowUpFromLine className="mr-1 inline h-3 w-3" />
+                Add
+              </button>
+              <button
+                type="button"
+                className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                  stockAdjustDir === "reduce"
+                    ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setStockAdjustDir("reduce")}
+                disabled={stockAdjustItem.current_qty <= 0}
+              >
+                <TrendingDown className="mr-1 inline h-3 w-3" />
+                Reduce
+              </button>
+            </div>
             <input
               type="number"
               value={stockAdjustQty}
               onChange={(e) => setStockAdjustQty(e.target.value)}
-              placeholder="Qty to add"
+              placeholder={stockAdjustDir === "add" ? "Qty to add" : `Max ${stockAdjustItem.current_qty}`}
+              max={stockAdjustDir === "reduce" ? stockAdjustItem.current_qty : undefined}
               className="mb-3 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
               autoFocus
               onKeyDown={(e) => {
@@ -873,6 +914,7 @@ export function ItemList({ role }: Props) {
                 if (e.key === "Escape") {
                   setStockAdjustItem(null);
                   setStockAdjustQty("");
+                  setStockAdjustDir("add");
                 }
               }}
             />
@@ -884,12 +926,13 @@ export function ItemList({ role }: Props) {
                 onClick={() => {
                   setStockAdjustItem(null);
                   setStockAdjustQty("");
+                  setStockAdjustDir("add");
                 }}
               >
                 Cancel
               </Button>
               <Button type="button" size="sm" onClick={() => void handleStockAdjust()}>
-                Add Stock
+                {stockAdjustDir === "add" ? "Add Stock" : "Reduce Stock"}
               </Button>
             </div>
           </div>

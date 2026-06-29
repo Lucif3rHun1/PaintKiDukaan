@@ -118,6 +118,22 @@ export async function getSetting(key: string): Promise<string> {
   return invoke<string>("get_setting", { key });
 }
 
+export async function adjustStock(payload: {
+  itemId: number;
+  qty: number;
+  locationId: number;
+  notes?: string | null;
+}): Promise<{ new_qty: number }> {
+  return invoke<{ new_qty: number }>("cmd_adjust_stock", {
+    req: {
+      item_id: payload.itemId,
+      qty: payload.qty,
+      location_id: payload.locationId,
+      notes: payload.notes ?? null,
+    },
+  });
+}
+
 export async function importItemsCsv(csvData: string): Promise<ImportResult> {
   return invoke<ImportResult>("cmd_import_items_csv", { csv_data: csvData });
 }
