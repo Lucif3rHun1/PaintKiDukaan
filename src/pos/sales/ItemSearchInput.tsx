@@ -15,10 +15,16 @@ import { useBarcodeScan } from "../../shell/hooks/useBarcodeScan";
 import { Button, MoneyInput } from "../../components/ui";
 import { cn } from "../../components/ui/cn";
 import { toTitleCase } from "../../lib/format/titleCase";
+import { formatRupeesFromPaise } from "../../lib/money";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import type { FormulaSearchHit, Item, ItemLookup, Location } from "../../domain/types";
 import type { ItemSearchHit } from "../types";
+
+export interface SearchDisplayConfig {
+  priceField?: "retail" | "cost";
+  showBrand?: boolean;
+}
 
 interface Props {
   onPick: (hit: ItemSearchHit | FormulaSearchHit) => void;
@@ -26,6 +32,7 @@ interface Props {
   onCreateItem?: () => void;
   onCreateFormula?: () => void;
   acceptFormula?: boolean;
+  display?: SearchDisplayConfig;
 }
 
 type SearchHit = ItemSearchHit | FormulaSearchHit;
@@ -75,6 +82,7 @@ function itemToSearchHit(item: Item): ItemSearchHit {
     name: item.name,
     brand: item.brand,
     retail_price_paise: item.retail_price_paise,
+    cost_paise: item.cost_paise,
     unit_id: item.unit_id,
     unit_code: item.unit_code ?? "",
     unit_label: item.unit_label ?? "",
@@ -90,7 +98,9 @@ export function ItemSearchInput({
   onCreateItem,
   onCreateFormula,
   acceptFormula = true,
+  display,
 }: Props) {
+  const priceField = display?.priceField ?? "retail";
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[]>([]);
@@ -133,6 +143,7 @@ export function ItemSearchInput({
               name: item.name,
               brand: item.brand,
               retail_price_paise: item.retail_price_paise,
+              cost_paise: item.cost_paise,
               unit_id: item.unit_id,
               unit_code: item.unit_code ?? "",
               unit_label: item.unit_label ?? "",
@@ -230,6 +241,7 @@ export function ItemSearchInput({
         name: item.name,
         brand: null,
         retail_price_paise: 0,
+        cost_paise: 0,
         unit_id: 0,
         unit_code: "",
         unit_label: "",
@@ -246,6 +258,7 @@ export function ItemSearchInput({
         name: item.name,
         brand: null,
         retail_price_paise: item.retail_price_paise,
+        cost_paise: 0,
         unit_id: item.unit_id,
         unit_code: item.unit_code,
         unit_label: item.unit_label ?? "",
@@ -261,6 +274,7 @@ export function ItemSearchInput({
       name: item.name,
       brand: item.brand,
       retail_price_paise: item.retail_price_paise,
+      cost_paise: item.cost_paise ?? 0,
       unit_id: item.unit_id,
       unit_code: item.unit_code ?? "",
       unit_label: item.unit_label ?? "",
@@ -560,6 +574,9 @@ export function ItemSearchInput({
                     </div>
                     <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                       <span className="font-mono">{hit.sku_code}</span>
+                      <span className="font-semibold text-foreground">
+                        {formatRupeesFromPaise(priceField === "cost" ? hit.cost_paise : hit.retail_price_paise)}
+                      </span>
                     </div>
                   </div>
                 </button>
