@@ -472,6 +472,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Cashier,
     },
     CommandAcl {
+        name: "cmd_convert_to_fbill",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
         name: "cmd_edit_sale",
         min_role: Role::Cashier,
     },
@@ -530,6 +534,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_list_purchases_by_vendor",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_adjust_stock",
         min_role: Role::Cashier,
     },
     // Day close
@@ -914,8 +922,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            169,
-            "ACL has {} entries, expected 169",
+            170,
+            "ACL has {} entries, expected 170",
             COMMAND_ACL.len()
         );
     }

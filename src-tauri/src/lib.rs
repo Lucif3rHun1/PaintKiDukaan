@@ -324,6 +324,7 @@ pub fn run() {
             commands::sales::cmd_create_sale_return,
             commands::sales::cmd_convert_quotation,
             commands::sales::cmd_edit_sale,
+            commands::sales::cmd_convert_to_fbill,
             commands::sales::cmd_get_sale,
             commands::sales::cmd_get_sale_by_invoice_number,
             commands::sales::cmd_get_sale_return,
@@ -343,6 +344,7 @@ pub fn run() {
             commands::purchases::cmd_get_purchase,
             commands::purchases::cmd_movements_for_item,
             commands::purchases::cmd_list_purchases_by_vendor,
+            commands::purchases::cmd_adjust_stock,
             // Day Close (Slice C)
             commands::day_close::cmd_cash_sales_for,
             commands::day_close::cmd_last_opening_for,

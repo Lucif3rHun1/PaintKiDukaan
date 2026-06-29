@@ -40,14 +40,20 @@ impl Kind {
         }
     }
 
-    /// Daily-counter row prefix used for INV/QTN/RET numbers.
     fn daily_prefix(self) -> &'static str {
         match self {
             Kind::SaleInv => "INV",
             Kind::SaleQtn => "QTN",
             Kind::SaleRet => "RET",
-            Kind::SaleFbk => "FBK",
+            Kind::SaleFbk => "INV",
             Kind::Sku => "SKU",
+        }
+    }
+
+    fn counter_key(self) -> &'static str {
+        match self {
+            Kind::SaleFbk => "fbk",
+            _ => self.daily_prefix(),
         }
     }
 
@@ -94,18 +100,18 @@ pub fn mint_next(db: &Db, kind: Kind) -> anyhow::Result<String> {
                 Ok(format_number_daily(kind, next, &date_for_closure))
             })
         }
-        // FBill starts at 1000 so it's visually distinct from real invoices.
+        // FBill starts at 101 so it continues after invoice/quote/return (which start at 1).
         Kind::SaleFbk => {
             let date = today_ddmmyyyy();
             let date_for_closure = date.clone();
             db.with_conn_immediate(move |c| {
                 let next: i64 = c.query_row(
                     "INSERT INTO daily_counters(prefix,date,last_serial)
-                         VALUES (?1,?2,1000)
+                         VALUES (?1,?2,101)
                          ON CONFLICT(prefix,date) DO UPDATE
                            SET last_serial = last_serial + 1
                          RETURNING last_serial",
-                    rusqlite::params![kind.daily_prefix(), &date_for_closure],
+                    rusqlite::params![kind.counter_key(), &date_for_closure],
                     |r| r.get(0),
                 )?;
                 Ok(format_number_daily(kind, next, &date_for_closure))
@@ -133,9 +139,9 @@ fn format_number_sku(n: i64) -> String {
     format!("SKU-{:0>5}", n)
 }
 
-/// Parse a sale number and return the (kind, date, seq) triple. Currently
-/// unused but kept for future validation paths (e.g. converting a quotation
-/// to a final bill, looking up a return by `no`).
+/// Parse a sale number and return the (kind, date, seq) triple. `INV` prefix
+/// is ambiguous (invoices 001-100, fbills 101+) — callers that need the
+/// exact kind should query the `sales` table directly.
 pub fn parse(no: &str) -> Option<(Kind, String, i64)> {
     let parts: Vec<&str> = no.splitn(3, '/').collect();
     if parts.len() != 3 {
@@ -146,7 +152,6 @@ pub fn parse(no: &str) -> Option<(Kind, String, i64)> {
         "INV" => Kind::SaleInv,
         "QTN" => Kind::SaleQtn,
         "RET" => Kind::SaleRet,
-        "FBK" => Kind::SaleFbk,
         _ => return None,
     };
     let seq: i64 = seq.parse().ok()?;
