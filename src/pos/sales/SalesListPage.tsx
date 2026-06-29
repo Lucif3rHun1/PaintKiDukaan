@@ -2,7 +2,7 @@
 // pagination, and at-a-glance totals (count, value, outstanding due).
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, Eye, Plus, Printer, Receipt, Share2 } from "lucide-react";
+import { Download, Eye, Plus, Printer, Receipt, Share2, FilePenLine } from "lucide-react";
 import { PeriodDropdown } from "../../components/ui";
 
 import {
@@ -17,7 +17,7 @@ import {
   SearchInput,
 } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
-import { listSales, getDraft } from "../api";
+import { listSales, getDraft, convertToFbill } from "../api";
 import { usePaginatedQuery } from "../../lib/query";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
@@ -220,6 +220,22 @@ export function SalesListPage({ onCreate }: Props) {
                 icon: Share2,
                 onSelect: () => void safeShareSalePdfById(s.id),
               },
+              ...(s.status === "final"
+                ? [
+                    {
+                      label: "Convert to FBill",
+                      icon: FilePenLine,
+                      onSelect: async () => {
+                        try {
+const newId = await convertToFbill(s.id);
+                           window.location.hash = `#/sales/edit/${newId}`;
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      },
+                    },
+                  ]
+                : []),
             ]}
           />
         ),
@@ -358,6 +374,30 @@ export function SalesListPage({ onCreate }: Props) {
           );
         })}
       </div>
+
+      {draft && (() => {
+        let label = "Untitled draft";
+        let itemCount = 0;
+        try {
+          const data = JSON.parse(draft.data_json) as Record<string, unknown>;
+          const lines = data.lines as { item_id?: number }[] | undefined;
+          itemCount = lines?.length ?? 0;
+          if (data.customerId) label = `Walk-in`;
+        } catch { /* corrupt draft — still show it */ }
+        const time = new Date(draft.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        return (
+          <button
+            type="button"
+            onClick={() => { window.location.hash = "#/sales/new?restore=1"; }}
+            className="w-full flex items-center gap-3 rounded border border-amber-300/50 bg-amber-50/50 px-3 py-2 text-left text-sm hover:bg-amber-100/70 dark:border-amber-700/50 dark:bg-amber-950/50 dark:hover:bg-amber-900/50"
+          >
+            <Badge variant="warning" size="sm">Draft</Badge>
+            <span className="flex-1 truncate text-foreground">{label}</span>
+            <span className="text-xs tabular-nums text-muted-foreground">{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
+            <span className="text-xs text-muted-foreground">Saved {time}</span>
+          </button>
+        );
+      })()}
 
       <DataTable
         data={displayedRows}

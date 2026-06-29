@@ -470,6 +470,17 @@ export default function App() {
                   id={id}
                   onBack={() => (window.location.hash = "#/sales")}
                   onEdit={(sale) => (window.location.hash = `#/sales/edit/${sale.id}`)}
+                  onConvert={async (sale) => {
+                    try {
+                      const { convertToFbill } = await import("./pos/api");
+                      const newId = await convertToFbill(sale.id);
+                      toast.success("Converted to FBill");
+                      window.location.hash = `#/sales/edit/${newId}`;
+                    } catch (e) {
+                      console.error(e);
+                      toast.error("Failed to convert");
+                    }
+                  }}
                 />
               </div>
             </Suspense>

@@ -42,6 +42,8 @@ export const createSale = (req: NewSale): Promise<number> =>
   isTauri() ? tauriInvoke<number>("cmd_create_sale", { sale: req }) : Promise.resolve(0);
 export const convertQuotation = (req: ConvertQuotation): Promise<number> =>
   isTauri() ? tauriInvoke<number>("cmd_convert_quotation", { req }) : Promise.resolve(0);
+export const convertToFbill = (sourceId: number): Promise<number> =>
+  isTauri() ? tauriInvoke<number>("cmd_convert_to_fbill", { source_id: sourceId }) : Promise.resolve(0);
 export const getSale = (id: number): Promise<Sale | null> =>
   isTauri() ? tauriInvoke<Sale | null>("cmd_get_sale", { id }) : Promise.resolve(null);
 export const listSales = (fromDate?: string, toDate?: string, limit = 100): Promise<Sale[]> =>

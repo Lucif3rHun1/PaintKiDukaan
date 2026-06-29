@@ -30,6 +30,7 @@ import {
   MoneyInput,
   MoneyStatic,
   QtyInput,
+  Select,
   Skeleton,
   cn,
 } from "../../components/ui";
@@ -74,7 +75,8 @@ import type {
   PaymentSplit,
   Sale,
 } from "../types";
-import type { Customer, CustomerType, Formula, FormulaSearchHit } from "../../domain/types";
+import type { Customer, CustomerType, Formula, FormulaSearchHit, SaleUnit } from "../../domain/types";
+import { listSaleUnits } from "../../domain/units/api";
 
 type Kind = "quotation" | "final" | "fbill";
 
@@ -145,6 +147,8 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [saleUnits, setSaleUnits] = useState<SaleUnit[]>([]);
+
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createFormulaOpen, setCreateFormulaOpen] = useState(false);
@@ -167,6 +171,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
           item_id: item.item_id,
           formula_id: item.formula_id,
           item_name: item.display_name,
+          display_name: item.display_name,
           qty: item.qty,
           price: item.price,
           unit_type: item.unit_type,
@@ -274,6 +279,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         item_id: null,
         formula_id: null,
         item_name: "",
+        display_name: "",
         qty: 1,
         price: 0,
         unit_type: "unit",
@@ -320,6 +326,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
           item_id: null,
           formula_id: hit.id,
           item_name: formulaLabel,
+          display_name: formulaLabel,
           qty: 1,
           price: hit.retail_price_paise,
           unit_type: "unit",
@@ -342,6 +349,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         item_id: item.id,
         formula_id: null,
         item_name: item.name,
+        display_name: item.name,
         in_stock_at_add: item.current_qty > 0,
         current_qty_at_add: item.current_qty,
         qty: 1,
@@ -393,6 +401,13 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
       });
   }, []);
 
+  // ---- Sale units (for FBill custom lines) ----
+  useEffect(() => {
+    listSaleUnits()
+      .then((rows) => setSaleUnits(rows.filter((u) => u.is_active)))
+      .catch(() => setSaleUnits([]));
+  }, []);
+
   function handleCustomerCreated(c: Customer) {
     setCustomer(c);
     setCreateCustomerOpen(false);
@@ -412,6 +427,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
       item_id: null,
       formula_id: f.id,
       item_name: f.name ? `${f.id_code} — ${f.name}` : f.id_code,
+      display_name: f.name ? `${f.id_code} — ${f.name}` : f.id_code,
       qty: 1,
       price: f.retail_price_paise,
       unit_type: "unit",
@@ -506,6 +522,8 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
             shouldPrintAfterSaveRef.current = false;
             void tryPrintReceipt(id);
           }
+          // Navigate to detail page so the saved sale is visible
+          window.location.hash = `#/sales/${id}`;
           return kind === "final" ? `Bill #${id} saved` : kind === "fbill" ? `FBill #${id} saved` : `Quotation #${id} saved`;
         },
         error: (e: unknown) => extractError(e),
@@ -801,6 +819,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                       onPick={handleItemPick}
                       onCreateItem={canOwner ? () => setCreateItemOpen(true) : undefined}
                       onCreateFormula={canOwner ? () => setCreateFormulaOpen(true) : undefined}
+                      display={{ showBrand: true }}
                     />
                   </div>
                   {kind === "fbill" && (
@@ -848,7 +867,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                                 <input
                                   type="text"
                                   value={l.item_name ?? ""}
-                                  onChange={(e) => updateLine(i, { item_name: e.target.value })}
+                                  onChange={(e) => updateLine(i, { item_name: e.target.value, display_name: e.target.value })}
                                   placeholder="Item name..."
                                   className="w-full truncate border-0 border-b border-transparent bg-transparent p-0 font-medium text-foreground placeholder:text-muted-foreground/50 focus:border-border focus:outline-none"
                                 />
@@ -870,9 +889,28 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                                 min={decUnit ? 0.001 : 1}
                                 onChange={(v) => handleQtyChange(i, v)}
                               />
-                              <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                {uLabel}
-                              </span>
+                              {kind === "fbill" && l.item_id === null ? (
+                                <select
+                                  value={l.unit_type}
+                                  onChange={(e) => updateLine(i, { unit_type: e.target.value })}
+                                  className="h-6 rounded border border-border bg-muted px-1 text-[10px] font-medium text-muted-foreground focus:border-ring focus:outline-none"
+                                >
+                                  <option value="unit">pc</option>
+                                  <option value="box">box</option>
+                                  <option value="bundle">bndl</option>
+                                  <option value="roll">roll</option>
+                                  <option value="kg">kg</option>
+                                  <option value="mtr">mtr</option>
+                                  <option value="L">L</option>
+                                  <option value="ml">ml</option>
+                                  <option value="sqft">sqft</option>
+                                  <option value="sqm">sqm</option>
+                                </select>
+                              ) : (
+                                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                  {uLabel}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
                               <span>×</span>

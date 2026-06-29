@@ -78,6 +78,7 @@ export interface CartLine {
   item_id: number | null;
   formula_id: number | null;
   item_name?: string;
+  display_name?: string | null;
   in_stock_at_add?: boolean;
   current_qty_at_add?: number;
   qty: number;

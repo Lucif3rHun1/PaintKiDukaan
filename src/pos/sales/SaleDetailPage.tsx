@@ -190,6 +190,17 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
               Convert to invoice
             </Button>
           ) : null}
+          {!isQuotation && !isFbill && onConvert ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              disabled={busy}
+              onClick={() => onConvert(sale)}
+            >
+              Convert to FBill
+            </Button>
+          ) : null}
           {isFbill && onEdit ? (
             <Button
               type="button"
