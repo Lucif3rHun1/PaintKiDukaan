@@ -110,7 +110,10 @@ fn err_str(e: BackupError) -> String {
 
 /// List available backup targets.
 #[tauri::command(rename_all = "snake_case")]
-pub fn list_targets() -> Result<Vec<BackupTarget>, String> {
+pub fn list_targets(state: State<'_, AppState>) -> Result<Vec<BackupTarget>, String> {
+    if let Err(e) = ipc_auth::authorize_err("list_targets", state.inner()) {
+        return Err(e.to_string());
+    }
     list_backup_targets().map_err(err_str)
 }
 
@@ -120,6 +123,9 @@ pub fn backup_now<R: tauri::Runtime>(
     state: State<'_, AppState>,
     app: tauri::AppHandle<R>,
 ) -> Result<BackupMetadata, String> {
+    if let Err(e) = ipc_auth::authorize_err("backup_now", state.inner()) {
+        return Err(e.to_string());
+    }
     let mut passphrase = state
         .recovery_passphrase
         .lock()
@@ -184,6 +190,9 @@ pub fn restore<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     path: String,
 ) -> Result<(), String> {
+    if let Err(e) = ipc_auth::authorize_err("restore", state.inner()) {
+        return Err(e.to_string());
+    }
     let mut passphrase = state
         .recovery_passphrase
         .lock()
@@ -228,6 +237,9 @@ pub fn restore_into_first_launch<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     path: String,
 ) -> Result<(), String> {
+    if let Err(e) = ipc_auth::authorize_err("restore_into_first_launch", state.inner()) {
+        return Err(e.to_string());
+    }
     let mut passphrase = state
         .recovery_passphrase
         .lock()
@@ -276,6 +288,9 @@ pub fn test_restore<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     path: String,
 ) -> Result<TestRestoreResult, String> {
+    if let Err(e) = ipc_auth::authorize_err("test_restore", state.inner()) {
+        return Err(e.to_string());
+    }
     let mut passphrase = state
         .recovery_passphrase
         .lock()
@@ -374,6 +389,21 @@ mod tests {
 mod poc_tests {
     use tauri::Manager;
 
+    fn plant_owner_session(state: &super::AppState) {
+        use crate::commands::auth::User as AuthUser;
+        *state.session.lock().unwrap() = Some(AuthUser {
+            id: 1,
+            name: "owner".into(),
+            role: "owner".into(),
+            is_active: true,
+        });
+        crate::session::set_current_user(Some(crate::session::User {
+            id: 1,
+            name: "owner".into(),
+            role: crate::session::Role::Owner,
+        }));
+    }
+
     #[test]
     fn test_restore_rejects_path_traversal() {
         let app = tauri::test::mock_builder()
@@ -381,6 +411,7 @@ mod poc_tests {
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .expect("mock app should build");
         let state = app.state::<super::AppState>();
+        plant_owner_session(&state);
         *state.recovery_passphrase.lock().unwrap() = Some("toy-passphrase".to_string().into());
 
         let err = super::test_restore(
@@ -403,6 +434,7 @@ mod poc_tests {
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .expect("mock app should build");
         let state = app.state::<super::AppState>();
+        plant_owner_session(&state);
         *state.recovery_passphrase.lock().unwrap() = Some("toy-passphrase".to_string().into());
 
         let dir = tempfile::tempdir().unwrap();
@@ -429,6 +461,7 @@ mod poc_tests {
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .expect("mock app should build");
         let state = app.state::<super::AppState>();
+        plant_owner_session(&state);
         *state.recovery_passphrase.lock().unwrap() = Some("toy-passphrase".to_string().into());
 
         let missing = std::env::temp_dir().join("missing-file.pkb1");

@@ -11,6 +11,7 @@ use tauri::State;
 
 use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
+use crate::security::ipc_auth;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Brand {
@@ -80,6 +81,7 @@ pub fn update_brand_code_prefix(
     id: i64,
     prefix: String,
 ) -> AppResult<Brand> {
+    ipc_auth::authorize_err("update_brand_code_prefix", state.inner())?;
     let prefix = prefix.trim().to_uppercase();
     if prefix.is_empty() || prefix.len() > 4 {
         return Err(AppError::Validation("prefix must be 1-4 characters".into()));
@@ -113,6 +115,7 @@ pub fn update_brand_code_prefix(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_brand(state: State<'_, AppState>, name: String, prefix: String) -> AppResult<Brand> {
+    ipc_auth::authorize_err("create_brand", state.inner())?;
     let name = name.trim().to_string();
     let prefix = prefix.trim().to_uppercase();
     if name.is_empty() {
@@ -155,6 +158,7 @@ pub fn create_brand(state: State<'_, AppState>, name: String, prefix: String) ->
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn deactivate_brand(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    ipc_auth::authorize_err("deactivate_brand", state.inner())?;
     let guard = state
         .db
         .lock()

@@ -28,7 +28,12 @@ impl Role {
             "owner" => Role::Owner,
             "cashier" => Role::Cashier,
             "stocker" => Role::Stocker,
-            _ => Role::Cashier,
+            // ponytail: unknown role falls back to lowest privilege rather than
+            // Cashier (fail-open). Pair with `ipc_auth::Role::from_db` which
+            // returns None for the same input. Worst-case UX is that a corrupted
+            // role string locks the operator out of write ops, which is the
+            // correct posture for a money path.
+            _ => Role::Stocker,
         }
     }
 

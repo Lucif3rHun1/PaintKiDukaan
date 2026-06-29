@@ -461,6 +461,7 @@ pub fn cmd_create_inward(
     state: tauri::State<'_, AppState>,
     req: NewPurchase,
 ) -> AppResult<PurchaseCreated> {
+    crate::security::ipc_auth::authorize_err("cmd_create_inward", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -476,6 +477,7 @@ pub fn cmd_create_inward(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_last_cost(state: tauri::State<'_, AppState>, item_id: i64) -> AppResult<Option<i64>> {
+    crate::security::ipc_auth::authorize_err("cmd_last_cost", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -491,6 +493,7 @@ pub fn cmd_list_purchases(
     to_date: Option<String>,
     limit: Option<i64>,
 ) -> AppResult<Vec<Purchase>> {
+    crate::security::ipc_auth::authorize_err("cmd_list_purchases", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -507,6 +510,7 @@ pub fn cmd_list_purchases(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_get_purchase(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Purchase>> {
+    crate::security::ipc_auth::authorize_err("cmd_get_purchase", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -521,6 +525,7 @@ pub fn cmd_movements_for_item(
     item_id: i64,
     limit: Option<i64>,
 ) -> AppResult<Vec<StockMovement>> {
+    crate::security::ipc_auth::authorize_err("cmd_movements_for_item", state.inner())?;
     let guard = state
         .db
         .lock()
