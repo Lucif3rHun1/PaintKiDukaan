@@ -566,11 +566,25 @@ impl Db {
                 )
                 .unwrap_or(false);
             if has_unit_id {
+                // Drop the append-only UPDATE trigger so we can backfill sale_unit_id.
+                conn.execute_batch(
+                    "DROP TRIGGER IF EXISTS stock_movements_bu;",
+                )?;
                 conn.execute_batch(
                     "ALTER TABLE stock_movements ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
                      UPDATE stock_movements SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = stock_movements.item_id) WHERE sale_unit_id IS NULL;
-                     ALTER TABLE stock_movements DROP COLUMN unit_id;
-                     ALTER TABLE purchase_items ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
+                     ALTER TABLE stock_movements DROP COLUMN unit_id;",
+                )?;
+                // Recreate the append-only trigger after backfill.
+                conn.execute_batch(
+                    "CREATE TRIGGER stock_movements_bu
+                     BEFORE UPDATE ON stock_movements
+                     BEGIN
+                       SELECT RAISE(ABORT, 'stock_movements is append-only; insert a corrective movement instead');
+                     END;",
+                )?;
+                conn.execute_batch(
+                    "ALTER TABLE purchase_items ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
                      UPDATE purchase_items SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = purchase_items.item_id) WHERE sale_unit_id IS NULL;
                      ALTER TABLE purchase_items DROP COLUMN unit_id;
                      ALTER TABLE items DROP COLUMN unit_id;",
