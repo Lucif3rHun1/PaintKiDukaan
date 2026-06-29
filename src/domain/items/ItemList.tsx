@@ -29,6 +29,7 @@ import {
   Alert,
   Badge,
   Button,
+  DownloadMenu,
   EmptyState,
   MetricCard,
   Money,
@@ -43,15 +44,17 @@ import { toast } from "../../lib/feedback/toast";
 import { usePaginatedQuery } from "../../lib/query";
 import { listBrands, listItems, updateItem } from "./api";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Brand, Item } from "../types";
+import type { Brand, Item, SubLocation } from "../types";
 import { ItemForm } from "./ItemForm";
 import { CsvImportDialog } from "./CsvImportDialog";
 import { printLabel } from "../../pos/print";
-import { listLocations } from "../locations/api";
+import { listLocations, listSubLocations } from "../locations/api";
 import type { Location } from "../types";
 import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
+import { createInward } from "../../pos/api";
+import type { NewPurchase } from "../../pos/types";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
@@ -66,6 +69,7 @@ const ITEM_PAGE_SIZE = 25;
 export function ItemList({ role }: Props) {
   const queryClient = useQueryClient();
   const [locations, setLocations] = useState<Location[]>([]);
+  const [subLocations, setSubLocations] = useState<SubLocation[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -76,6 +80,8 @@ export function ItemList({ role }: Props) {
   const [mode, setMode] = useState<Mode>("list");
   const [editing, setEditing] = useState<Item | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [stockAdjustItem, setStockAdjustItem] = useState<Item | null>(null);
+  const [stockAdjustQty, setStockAdjustQty] = useState("");
 
   const canEdit = role === "owner" || role === "stocker";
 
@@ -121,6 +127,12 @@ export function ItemList({ role }: Props) {
         console.error("[ItemList] failed to load locations", e);
         setLocations([]);
       });
+    listSubLocations()
+      .then((d) => setSubLocations(d ?? []))
+      .catch((e) => {
+        console.error("[ItemList] failed to load sub-locations", e);
+        setSubLocations([]);
+      });
     listBrands()
       .then((d) => setBrands(d ?? []))
       .catch((e) => {
@@ -147,11 +159,24 @@ export function ItemList({ role }: Props) {
     return map;
   }, [brands]);
 
+  const subLocationNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const sl of subLocations) map.set(sl.id, sl.name);
+    return map;
+  }, [subLocations]);
+
   function formatLocation(item: Item): string {
     const where =
       item.primary_location_id != null
         ? (locationNameById.get(item.primary_location_id) ?? "—")
         : "—";
+    const sub =
+      item.sub_location_id != null
+        ? (subLocationNameById.get(item.sub_location_id) ?? "")
+        : "";
+    const pos = item.position?.trim() || "";
+    if (sub && pos) return `${where} / ${sub} / ${pos}`;
+    if (sub) return `${where} / ${sub}`;
     return where;
   }
 
@@ -324,6 +349,66 @@ export function ItemList({ role }: Props) {
     });
   }, [allPageSelected, pageIds]);
 
+  const exportHeaders = [
+    "SKU", "Barcode", "Name", "Brand", "Category",
+    "Unit", "Sell Unit", "Units/Pack",
+    "Retail (₹)", "Cost (₹)", "Promo (₹)", "Min Stock",
+    "Location", "Sub Location", "Position",
+    "Stock", "Active",
+  ];
+
+  const exportRows = useMemo(() => {
+    return allItems.map((item) => [
+      item.sku_code,
+      item.barcode ?? "",
+      item.name,
+      item.brand ?? "",
+      item.category ?? "",
+      item.unit ?? item.unit_code ?? "",
+      item.sell_unit ?? "",
+      item.units_per_pack ?? 1,
+      (item.retail_price_paise / 100).toFixed(2),
+      (item.cost_paise / 100).toFixed(2),
+      item.promo_price_paise != null ? (item.promo_price_paise / 100).toFixed(2) : "",
+      item.min_stock,
+      item.primary_location_id != null ? (locationNameById.get(item.primary_location_id) ?? "") : "",
+      item.sub_location_id != null ? (subLocationNameById.get(item.sub_location_id) ?? "") : "",
+      item.position ?? "",
+      item.current_qty,
+      item.is_active ? "Yes" : "No",
+    ]);
+  }, [allItems, locationNameById, subLocationNameById]);
+
+  const handleStockAdjust = useCallback(async () => {
+    if (!stockAdjustItem) return;
+    const qty = Number(stockAdjustQty);
+    if (!qty || qty <= 0) {
+      toast.error("Enter a valid quantity");
+      return;
+    }
+    try {
+      const req: NewPurchase = {
+        vendor_id: null,
+        notes: "Opening stock adjustment",
+        auto_print_label: false,
+        lines: [{
+          item_id: stockAdjustItem.id,
+          qty,
+          unit_type: stockAdjustItem.unit_code ?? "unit",
+          unit_price_paise: stockAdjustItem.cost_paise,
+          location_id: stockAdjustItem.primary_location_id ?? 1,
+        }],
+      };
+      await createInward(req);
+      toast.success(`Stock adjusted for ${stockAdjustItem.name}`);
+      setStockAdjustItem(null);
+      setStockAdjustQty("");
+      refetch();
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  }, [stockAdjustItem, stockAdjustQty, refetch]);
+
   if (mode === "create") {
     return (
       <ItemForm
@@ -456,6 +541,12 @@ export function ItemList({ role }: Props) {
             <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">
               Import CSV
             </Button>
+            <DownloadMenu
+              headers={exportHeaders}
+              rows={exportRows}
+              filename="items-export"
+              title="Items Export"
+            />
           </>
         ) : null}
         <Button
@@ -628,6 +719,18 @@ export function ItemList({ role }: Props) {
                                       },
                                     ]
                                   : []),
+                                ...(role === "owner"
+                                  ? [
+                                      {
+                                        label: "Adjust Stock",
+                                        icon: PackagePlus,
+                                        onSelect: () => {
+                                          setStockAdjustItem(item);
+                                          setStockAdjustQty("");
+                                        },
+                                      },
+                                    ]
+                                  : []),
                                 {
                                   label: "Print Barcode",
                                   icon: Barcode,
@@ -680,6 +783,49 @@ export function ItemList({ role }: Props) {
           refetch();
         }}
       />
+
+      {/* ── Stock adjust dialog ──────────────────────────────── */}
+      {stockAdjustItem ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-80 rounded-lg border border-border bg-card p-4 shadow-xl">
+            <h3 className="mb-3 text-sm font-semibold">Adjust Stock</h3>
+            <p className="mb-3 text-xs text-muted-foreground">
+              {stockAdjustItem.name} — current: {stockAdjustItem.current_qty}
+            </p>
+            <input
+              type="number"
+              value={stockAdjustQty}
+              onChange={(e) => setStockAdjustQty(e.target.value)}
+              placeholder="Qty to add"
+              className="mb-3 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleStockAdjust();
+                if (e.key === "Escape") {
+                  setStockAdjustItem(null);
+                  setStockAdjustQty("");
+                }
+              }}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setStockAdjustItem(null);
+                  setStockAdjustQty("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="button" size="sm" onClick={() => void handleStockAdjust()}>
+                Add Stock
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
