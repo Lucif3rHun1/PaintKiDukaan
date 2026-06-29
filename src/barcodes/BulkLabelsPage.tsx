@@ -14,8 +14,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Printer } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { getSetting, listItems, listLabelPrints, recordLabelPrint } from "../domain/items/api";
-import type { LabelPrintRecord } from "../domain/types";
+import { getSetting, listBrands, listItems, listLabelPrints, recordLabelPrint } from "../domain/items/api";
+import type { Brand, LabelPrintRecord } from "../domain/types";
 import { ipc } from "../shell/lib/ipc";
 import { BarcodeThumb } from "../components/ui/BarcodeThumb";
 import { Select } from "../components/ui/Select";
@@ -74,6 +74,19 @@ interface GeneratedRow {
 
 let nextRowId = 1; // ponytail: module-level for simplicity; reset on remount is acceptable for batch UI
 
+interface SectionPrintConfig {
+  printer: PrinterType;
+  sizeChoice: string;
+  labelsPerRow: number;
+  tsplConfig: TsplConfig;
+}
+const DEFAULT_SECTION_CONFIG: SectionPrintConfig = {
+  printer: "thermal",
+  sizeChoice: "50x25",
+  labelsPerRow: 1,
+  tsplConfig: DEFAULT_TSPL_CONFIG,
+};
+
 export function BulkLabelsPage() {
   const [selectedItemId, setSelectedItemId] = useState<number | "">("");
   const [count, setCount] = useState<number>(1);
@@ -87,12 +100,9 @@ export function BulkLabelsPage() {
 
   const [tsplConfig, setTsplConfig] = useState<TsplConfig>(DEFAULT_TSPL_CONFIG);
 
+  // ponytail: persistence is handled by the useEffect below; this is pure state update
   function updateTsplConfig(updater: (c: TsplConfig) => TsplConfig) {
-    setTsplConfig((prev) => {
-      const next = updater(prev);
-      ipc.setSetting("label.tspl_config", JSON.stringify(next)).catch(() => {});
-      return next;
-    });
+    setTsplConfig(updater);
   }
 
   const [batch, setBatch] = useState<GeneratedRow[]>([]);
@@ -135,16 +145,42 @@ export function BulkLabelsPage() {
   const loadingItems = itemsQuery.isLoading;
   const itemError = itemsQuery.error ? extractError(itemsQuery.error) : null;
 
+  const brandsQuery = useQuery({
+    queryKey: ["bulk-labels-brands"],
+    queryFn: () => listBrands(),
+    staleTime: 60_000,
+  });
+  const brandMap = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const b of brandsQuery.data ?? []) m.set(b.id, b.name);
+    return m;
+  }, [brandsQuery.data]);
+
   useEffect(() => {
     let cancelled = false;
     getSetting("shop_name")
       .then((v) => !cancelled && setShopName(v || "")).catch((err: unknown) => console.error("Silent catch replaced:", err));
-    getSetting("label.tspl_config").then((raw) => {
-      if (!raw || cancelled) return;
-      try {
-        const saved = JSON.parse(raw) as Partial<TsplConfig>;
-        setTsplConfig((prev) => ({ ...prev, ...saved }));
-      } catch { /* ignore corrupt */ }
+    // Load per-section print config (items tab on mount)
+    getSetting("label.print_config_items").then((raw) => {
+      if (cancelled) return;
+      if (raw) {
+        try {
+          const cfg = JSON.parse(raw) as Partial<SectionPrintConfig>;
+          if (cfg.printer) setPrinter(cfg.printer);
+          if (cfg.sizeChoice) setSizeChoice(cfg.sizeChoice);
+          if (cfg.labelsPerRow != null) setLabelsPerRow(cfg.labelsPerRow);
+          if (cfg.tsplConfig) setTsplConfig(cfg.tsplConfig);
+        } catch { /* ignore corrupt */ }
+      } else {
+        // Legacy fallback: load old single-section tspl_config key
+        getSetting("label.tspl_config").then((legacyRaw) => {
+          if (!legacyRaw || cancelled) return;
+          try {
+            const saved = JSON.parse(legacyRaw) as Partial<TsplConfig>;
+            setTsplConfig((prev) => ({ ...prev, ...saved }));
+          } catch { /* ignore corrupt */ }
+        }).catch(() => {});
+      }
     }).catch(() => {});
 
     Promise.all([
@@ -177,6 +213,50 @@ export function BulkLabelsPage() {
       cancelled = true;
     };
   }, []);
+
+  // --- Per-section persistence ---
+  const activeTabRef = useRef(activeTab);
+
+  // Save departing tab's config and load arriving tab's config on tab switch
+  useEffect(() => {
+    const prevTab = activeTabRef.current;
+    if (prevTab === activeTab) return;
+
+    // Save departing tab
+    const departingCfg: SectionPrintConfig = { printer, sizeChoice, labelsPerRow, tsplConfig };
+    ipc.setSetting(`label.print_config_${prevTab}`, JSON.stringify(departingCfg)).catch(() => {});
+
+    // Load arriving tab
+    const arrivingTab = activeTab;
+    getSetting(`label.print_config_${arrivingTab}`).then((raw) => {
+      if (raw) {
+        try {
+          const cfg = JSON.parse(raw) as Partial<SectionPrintConfig>;
+          if (cfg.printer) setPrinter(cfg.printer);
+          if (cfg.sizeChoice) setSizeChoice(cfg.sizeChoice);
+          if (cfg.labelsPerRow != null) setLabelsPerRow(cfg.labelsPerRow);
+          if (cfg.tsplConfig) setTsplConfig(cfg.tsplConfig);
+        } catch { /* ignore corrupt */ }
+      } else {
+        // Reset to defaults for new tab
+        setPrinter(DEFAULT_SECTION_CONFIG.printer);
+        setSizeChoice(DEFAULT_SECTION_CONFIG.sizeChoice);
+        setLabelsPerRow(DEFAULT_SECTION_CONFIG.labelsPerRow);
+        setTsplConfig(DEFAULT_SECTION_CONFIG.tsplConfig);
+      }
+    }).catch(() => {});
+
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  // Persist within-tab config changes (debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const cfg: SectionPrintConfig = { printer, sizeChoice, labelsPerRow, tsplConfig };
+      ipc.setSetting(`label.print_config_${activeTabRef.current}`, JSON.stringify(cfg)).catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [printer, sizeChoice, labelsPerRow, tsplConfig, activeTab]);
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -216,6 +296,7 @@ export function BulkLabelsPage() {
     return items.filter(
       (i) =>
         i.name.toLowerCase().includes(q) ||
+        (i.brand_id != null && brandMap.get(i.brand_id)?.toLowerCase().includes(q)) ||
         i.sku_code.toLowerCase().includes(q) ||
         (i.barcode && i.barcode.toLowerCase().includes(q)),
     );
@@ -241,7 +322,7 @@ export function BulkLabelsPage() {
     }
     const rawLine1 = shopName || selectedItem.label_line1 || "";
     setLine1(rawLine1.replace(/^"|"$/g, ""));
-    const brandPart = selectedItem.brand ?? "";
+    const brandPart = selectedItem.brand_id != null ? (brandMap.get(selectedItem.brand_id) ?? "") : "";
     const brandName = typeof brandPart === "string" ? brandPart : "";
     setLine2(
       [brandName, selectedItem.name].filter(Boolean).join(" "),
@@ -377,51 +458,14 @@ export function BulkLabelsPage() {
     await loadHistory();
   }
 
-  async function reprint(record: LabelPrintRecord) {
-    setBusy(true);
-    setActionMsg(null);
-    try {
-      const recTspl = record.tsplConfig ? (JSON.parse(record.tsplConfig) as typeof tsplConfig) : tsplConfig;
-      const recSize = record.labelSize || sizeChoice;
-      const recPrinter = record.printer || printer;
-      const recCols = record.labelsPerRow ?? labelsPerRow;
-
-      const isTauriApp =
-        typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-      if (isTauriApp && defaultPrinterName) {
-        try {
-          const selectedSize = THERMAL_SIZES[recSize as keyof typeof THERMAL_SIZES];
-          if (!selectedSize) throw new Error(`Unknown label size: ${recSize}`);
-          const { w: widthMm, h: heightMm } = selectedSize;
-          const reprintLabel = { barcode: record.barcode, line1: record.line1 ?? undefined, line2: record.line2 ?? undefined };
-          const cols = recPrinter === "thermal" ? Math.max(1, recCols) : 1;
-          // Fill every cell of the strip with the same label; use PRINT stripsNeeded,1.
-          const strip = Array.from({ length: cols }, () => reprintLabel);
-          const stripsNeeded = Math.ceil(Math.max(1, record.qty) / cols);
-          const bytes = buildTsplBytes(strip, widthMm, heightMm, cols, stripsNeeded, recTspl);
-          await ipc.printRaw(defaultPrinterName, bytes);
-          setActionMsg(`Reprinted ${record.qty} label${record.qty === 1 ? "" : "s"} for ${record.itemName}.`);
-          return;
-        } catch (rawErr) {
-          console.warn("TSPL reprint failed, falling back to PDF:", rawErr);
-        }
-      }
-
-      // Fallback — PDF download.
-      const labels = Array.from({ length: Math.max(1, record.qty) }, () => ({
-        barcode: record.barcode,
-        line1: record.line1 ?? undefined,
-        line2: record.line2 ?? undefined,
-      }));
-      const reprintCfg = configFromFormat(record.format);
-      if (reprintCfg.type === "thermal") reprintCfg.labelsPerRow = record.labelsPerRow ?? labelsPerRow;
-      await printLabelBatch(labels, reprintCfg);
-      setActionMsg(`Reprinted ${record.qty} label${record.qty === 1 ? "" : "s"} for ${record.itemName}.`);
-    } catch (e) {
-      setActionMsg(`Failed: ${extractError(e)}`);
-    } finally {
-      setBusy(false);
+  function loadRecordConfig(record: LabelPrintRecord) {
+    if (record.tsplConfig) {
+      try { setTsplConfig(JSON.parse(record.tsplConfig) as typeof tsplConfig); } catch { /* keep current */ }
     }
+    if (record.printer) setPrinter(record.printer as PrinterType);
+    if (record.labelSize) setSizeChoice(record.labelSize);
+    if (record.labelsPerRow != null) setLabelsPerRow(record.labelsPerRow);
+    setActionMsg(`Loaded config from "${record.itemName}" print — review and Print when ready.`);
   }
 
   async function handleDownload() {
@@ -562,7 +606,7 @@ export function BulkLabelsPage() {
               data-shortcut="item-picker"
               className="input w-full"
               placeholder={loadingItems ? "Loading items…" : "Search by name, SKU, or barcode…"}
-              value={showItemDropdown ? itemSearchQuery : (selectedItem ? `${selectedItem.name}${selectedItem.barcode ? ` · ${selectedItem.barcode}` : ""}` : itemSearchQuery)}
+              value={showItemDropdown ? itemSearchQuery : (selectedItem ? `${(() => { const b = selectedItem.brand_id != null ? brandMap.get(selectedItem.brand_id) : undefined; return b ? `${b} · ` : ""; })()}${selectedItem.name}${selectedItem.barcode ? ` · ${selectedItem.barcode}` : ""}` : itemSearchQuery)}
               onChange={(e) => {
                 setItemSearchQuery(e.target.value);
                 setShowItemDropdown(true);
@@ -616,7 +660,7 @@ export function BulkLabelsPage() {
                         setShowItemDropdown(false);
                       }}
                     >
-                      <span>{i.name}{i.barcode ? ` · ${i.barcode}` : ""}</span>
+                      <span>{(() => { const b = i.brand_id != null ? brandMap.get(i.brand_id) : undefined; return b ? `${b} · ${i.name}` : i.name; })()}</span>
                       {inBatch > 0 && (
                         <span className="ml-1.5 inline-block rounded bg-primary/15 px-1 text-[10px] font-medium text-primary">
                           {inBatch} in batch
@@ -1259,12 +1303,12 @@ export function BulkLabelsPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => void reprint(row)}
+                      onClick={() => loadRecordConfig(row)}
                       disabled={busy}
                       className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/20 px-2 py-1 text-[10px] text-primary/80 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Printer className="h-3 w-3" />
-                      Reprint
+                      Load config
                     </button>
                   </div>
                 ))}
