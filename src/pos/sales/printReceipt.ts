@@ -64,6 +64,7 @@ export function buildReceiptData(sale: Sale, settings: ReceiptPrintSettings) {
     customer_name: sale.customer_name ?? null,
     items: (sale.items ?? []).map((it) => ({
       name: it.display_name ?? "Item",
+      sku: it.sku_code ?? null,
       qty: formatQty(it.qty ?? 0),
       unit: it.unit_type ?? "unit",
       unit_price: formatRupeesForThermal(it.price ?? 0),
@@ -216,6 +217,7 @@ export function buildReturnReceiptData(ret: SaleReturn, settings: ReceiptPrintSe
     customer_name: null,
     items: ret.lines.map((it) => ({
       name: it.item_name,
+      sku: null,
       qty: formatQty(it.qty),
       unit: "pc",
       unit_price: formatRupeesForThermal(it.refund_paise),

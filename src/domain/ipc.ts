@@ -176,11 +176,32 @@ export async function updateFormula(
   id: number,
   patch: UpdateFormula,
 ): Promise<Formula> {
-  return invoke<Formula>("cmd_update_formula", { id, patch });
+  return invoke<Formula>("cmd_update_formula", { payload: { ...patch, id } });
 }
 
 export async function deactivateFormula(id: number): Promise<void> {
   return invoke<void>("cmd_deactivate_formula", { id });
+}
+
+export async function editSale(payload: {
+  sale_id: number;
+  lines: Array<{
+    kind: string;
+    item_id: number | null;
+    formula_id: number | null;
+    display_name?: string | null;
+    qty: number;
+    price: number;
+    unit_type: string;
+    line_discount: number;
+    shade_note?: string | null;
+  }>;
+  bill_discount: number;
+  customer_id?: number | null;
+  paid_amount?: number;
+  payment_modes?: Array<{ mode: string; amount: number }>;
+}): Promise<number> {
+  return invoke<number>("cmd_edit_sale", { payload });
 }
 
 export async function listFormulaSales(

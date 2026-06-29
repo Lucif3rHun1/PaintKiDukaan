@@ -519,6 +519,42 @@ impl Db {
             }
         }
 
+        // M-INLINE-015: best-effort log that 'fbill' is now accepted in sales.status
+        // (kind is validated app-side in commands/sales.rs via SaleError::InvalidKind).
+        // SQLite has no ALTER CONSTRAINT, so we can't mutate the CHECK on an existing
+        // database. The fresh schema in schema_final.sql already includes 'fbill'; we
+        // only detect and log legacy databases here.
+        {
+            let has_fbill_clause: bool = conn
+                .query_row(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='sales'",
+                    [],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap_or_default()
+                .contains("'fbill'");
+            if !has_fbill_clause {
+                log::info!(
+                    "M-INLINE-015: legacy sales CHECK constraint lacks 'fbill' — \
+                     app-layer SaleError::InvalidKind enforces the value set"
+                );
+            }
+        }
+
+        // M-INLINE-016: Add display_name column to sale_items if missing.
+        {
+            let has_display_name: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('sale_items') WHERE name = 'display_name'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_display_name {
+                conn.execute_batch("ALTER TABLE sale_items ADD COLUMN display_name TEXT;")?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;\

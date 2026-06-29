@@ -133,6 +133,7 @@ export interface ItemFilter {
   unit_id?: number;
   low_stock_only?: boolean;
   include_inactive?: boolean;
+  archived_only?: boolean;
   limit?: number;
 }
 
@@ -591,7 +592,7 @@ export interface UpdateFormula {
 export interface FormulaSaleRow {
   sale_id: number;
   sale_no: string;
-  sale_kind: "quotation" | "final";
+  sale_kind: "quotation" | "final" | "fbill";
   date: string;
   customer_id: number | null;
   customer_name: string | null;

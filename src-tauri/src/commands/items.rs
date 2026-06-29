@@ -86,6 +86,7 @@ pub struct ItemFilter {
     pub category: Option<String>,
     pub low_stock_only: bool,
     pub include_inactive: bool,
+    pub archived_only: bool,
     pub limit: Option<i64>,
 }
 
@@ -448,7 +449,9 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
     let _ = current_user()?;
     let mut sql = String::from("SELECT i.id, i.sku_code, i.barcode, i.name, i.brand, i.category, i.unit_id, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE 1=1");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-    if !filter.include_inactive {
+    if filter.archived_only {
+        sql.push_str(" AND i.is_active = 0");
+    } else if !filter.include_inactive {
         sql.push_str(" AND i.is_active = 1");
     }
     if let Some(q) = &filter.query {

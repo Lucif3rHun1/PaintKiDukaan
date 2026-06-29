@@ -33,6 +33,7 @@ export interface SaleItem {
   item_id: number | null;
   formula_id: number | null;
   display_name: string;
+  sku_code?: string | null;
   qty: number;
   price: number;
   unit_type: string;
@@ -47,7 +48,7 @@ export interface Sale {
   customer_id: number | null;
   customer_name: string | null;
   date: string;
-  status: "quotation" | "final";
+  status: "quotation" | "final" | "fbill";
   subtotal: number;
   bill_discount: number;
   total: number;
@@ -88,7 +89,7 @@ export interface CartLine {
 
 export interface NewSale {
   customer_id: number | null;
-  kind: "quotation" | "final";
+  kind: "quotation" | "final" | "fbill";
   date?: string | null;
   bill_discount: number;
   paid_amount: number;

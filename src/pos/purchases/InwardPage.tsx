@@ -191,32 +191,26 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
   const { draft: savedDraft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("purchase", draftData);
 
-  const isInitialDraftMount = useRef(true);
   useEffect(() => {
-    if (isInitialDraftMount.current) {
-      isInitialDraftMount.current = false;
-      return;
-    }
-    if (!draftLoading && draftData.draftLines.length > 0) {
-      markDirty();
-    }
+    if (!draftLoading && draftData.draftLines.length > 0) markDirty();
   }, [draftData, draftLoading, markDirty]);
 
   const draftRestored = useRef(false);
   useEffect(() => {
-    const isFresh = window.location.search.includes("fresh=1");
-    if (savedDraft && !draftLoading && !draftRestored.current && draft.length === 0 && !isFresh) {
-      draftRestored.current = true;
-      try {
-        const data = parsePurchaseDraft(savedDraft.data_json);
-        if (!data) { void resetDraft(); return; }
-        if (data.draftLines) setDraft(data.draftLines);
-        if (data.vendorId !== undefined) setVendorId(data.vendorId);
-        if (data.notes !== undefined) setNotes(data.notes);
-        if (data.autoPrint !== undefined) setAutoPrint(data.autoPrint);
-      } catch {
-        void resetDraft();
-      }
+    if (draftRestored.current) return;
+    const inHash = window.location.hash;
+    if (!inHash.includes("restore=1") || !savedDraft || draftLoading || draft.length > 0) return;
+    draftRestored.current = true;
+    window.history.replaceState(null, "", window.location.pathname + "#" + inHash.split("?")[0]);
+    try {
+      const data = parsePurchaseDraft(savedDraft.data_json);
+      if (!data) { void resetDraft(); return; }
+      if (data.draftLines) setDraft(data.draftLines);
+      if (data.vendorId !== undefined) setVendorId(data.vendorId);
+      if (data.notes !== undefined) setNotes(data.notes);
+      if (data.autoPrint !== undefined) setAutoPrint(data.autoPrint);
+    } catch {
+      void resetDraft();
     }
   }, [savedDraft, draftLoading]);
 

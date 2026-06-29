@@ -56,6 +56,7 @@ pub struct SaleItem {
     pub item_id: Option<i64>,
     pub formula_id: Option<i64>,
     pub display_name: String,
+    pub sku_code: Option<String>,
     pub qty: f64,
     pub price: i64,
     pub unit_type: String, // "unit" | "mtr" | "kg"
@@ -75,6 +76,7 @@ pub struct CartLine {
     pub kind: String, // "item" | "formula"
     pub item_id: Option<i64>,
     pub formula_id: Option<i64>,
+    pub display_name: Option<String>,
     pub qty: f64, // BASE units (frontend already converted box → base)
     pub price: i64,
     pub unit_type: String,
@@ -130,7 +132,7 @@ pub enum SaleError {
     QuotationNotFound(i64),
     #[error("only quotations can be converted (sale {0} is {1})")]
     NotAQuotation(i64, String),
-    #[error("invalid kind: {0} (expected 'quotation' or 'final')")]
+    #[error("invalid kind: {0} (expected 'quotation', 'final', or 'fbill')")]
     InvalidKind(String),
     #[error("insufficient stock for item '{item_name}' (id={item_id}): available {available}, need {requested}")]
     InsufficientStock {
@@ -287,13 +289,14 @@ pub fn create_quotation(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sal
         for (i, l) in sale.lines.iter().enumerate() {
             c.execute(
                 "INSERT INTO sale_items
-                    (sale_id,kind,item_id,formula_id,qty,price,unit_type,line_discount,shade_note,line_order)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                    (sale_id,kind,item_id,formula_id,display_name,qty,price,unit_type,line_discount,shade_note,line_order)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
                 params![
                     id,
                     l.kind,
                     l.item_id,
                     l.formula_id,
+                    l.display_name,
                     l.qty,
                     l.price,
                     l.unit_type,
@@ -304,6 +307,114 @@ pub fn create_quotation(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sal
             )?;
         }
         // Normalize payment splits into sale_payments for cash-summary queries.
+        let now_epoch = chrono::Utc::now().timestamp_millis();
+        for pm in &sale.payment_modes {
+            c.execute(
+                "INSERT INTO sale_payments (sale_id, mode, amount_paise, created_at, created_by) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, pm.mode, pm.amount, now_epoch, user_id],
+            )?;
+        }
+        Ok(id)
+    })?;
+    Ok(id)
+}
+
+/// Create a fake bill — identical to a final bill except NO stock deduction.
+/// Supports payments, customer, all fields. Not returnable. Re-open editable
+/// via `edit_fbill`. Status = "fbill".
+pub fn create_fbill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, SaleError> {
+    if sale.kind != "fbill" {
+        return Err(SaleError::InvalidKind(sale.kind));
+    }
+    if sale.lines.is_empty() {
+        return Err(SaleError::EmptyCart);
+    }
+    for (i, l) in sale.lines.iter().enumerate() {
+        if l.qty <= 0.0 || !l.qty.is_finite() {
+            return Err(SaleError::BadLineQty(i));
+        }
+        if l.price < 0 {
+            return Err(SaleError::BadLinePrice(i));
+        }
+        if l.line_discount < 0 {
+            return Err(SaleError::Other(anyhow::anyhow!(
+                "line {}: line_discount cannot be negative",
+                i
+            )));
+        }
+    }
+    if sale.bill_discount < 0 {
+        return Err(SaleError::Other(anyhow::anyhow!(
+            "bill_discount cannot be negative"
+        )));
+    }
+    // Validate payments (same as final bill).
+    validate_paid(sale.paid_amount, cart_total(&sale.lines, sale.bill_discount), None)?;
+    let paid_sum = modes_sum(&sale.payment_modes);
+    if paid_sum != sale.paid_amount {
+        return Err(SaleError::ModesSumMismatch {
+            got: paid_sum,
+            want: sale.paid_amount,
+        });
+    }
+    for (i, m) in sale.payment_modes.iter().enumerate() {
+        if m.amount <= 0 {
+            return Err(SaleError::Other(anyhow::anyhow!(
+                "payment split {}: amount must be > 0",
+                i
+            )));
+        }
+    }
+    let payment_json = serde_json::to_string(&sale.payment_modes).unwrap_or_else(|_| "[]".into());
+    let total = cart_total(&sale.lines, sale.bill_discount);
+    let validity_days = sale.validity_days.unwrap_or(7).max(1);
+    let no = sequences::mint_next_sale_no(db, sequences::Kind::SaleFbk)
+        .map_err(SaleError::Other)?;
+    let date = sale.date.unwrap_or_else(today);
+
+    let id = db.with_conn_immediate(|c| -> Result<i64, SaleError> {
+        let id: i64 = c.query_row(
+            "INSERT INTO sales
+                (no,customer_id,date,status,subtotal,bill_discount,total,
+                 paid_amount,payment_modes_json,validity_days,user_id)
+             VALUES (?1,?2,?3,'fbill',?4,?5,?6,?7,?8,?9,?10)
+             RETURNING id",
+            params![
+                no,
+                sale.customer_id,
+                date,
+                cart_subtotal(&sale.lines),
+                sale.bill_discount,
+                total,
+                sale.paid_amount,
+                payment_json,
+                validity_days,
+                user_id,
+            ],
+            |r| r.get(0),
+        )?;
+        for (i, l) in sale.lines.iter().enumerate() {
+            c.execute(
+                "INSERT INTO sale_items
+                    (sale_id,kind,item_id,formula_id,display_name,qty,price,unit_type,line_discount,shade_note,line_order)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                params![
+                    id,
+                    l.kind,
+                    l.item_id,
+                    l.formula_id,
+                    l.display_name,
+                    l.qty,
+                    l.price,
+                    l.unit_type,
+                    l.line_discount,
+                    l.shade_note,
+                    i as i64,
+                ],
+            )?;
+        }
+        // Record payment splits (no stock deduction — that's the only difference from final bill).
         let now_epoch = chrono::Utc::now().timestamp_millis();
         for pm in &sale.payment_modes {
             c.execute(
@@ -412,13 +523,14 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
         for (i, l) in sale.lines.iter().enumerate() {
             c.execute(
                 "INSERT INTO sale_items
-                    (sale_id,kind,item_id,formula_id,qty,price,unit_type,line_discount,shade_note,line_order)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                    (sale_id,kind,item_id,formula_id,display_name,qty,price,unit_type,line_discount,shade_note,line_order)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
                 params![
                     id,
                     l.kind,
                     l.item_id,
                     l.formula_id,
+                    l.display_name,
                     l.qty,
                     l.price,
                     l.unit_type,
@@ -601,7 +713,7 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
             )?;
             // Copy sale_items; insert stock_movements for each line.
             let mut stmt = c.prepare(
-                "SELECT kind,item_id,formula_id,qty,price,unit_type,line_discount,shade_note,line_order
+                "SELECT kind,item_id,formula_id,display_name,qty,price,unit_type,line_discount,shade_note,line_order
              FROM sale_items WHERE sale_id = ?1 ORDER BY line_order",
             )?;
             let mut rows = stmt.query(params![qid])?;
@@ -609,21 +721,23 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                 let kind: String = r.get(0)?;
                 let item_id: Option<i64> = r.get(1)?;
                 let formula_id: Option<i64> = r.get(2)?;
-                let qty: f64 = r.get(3)?;
-                let price: i64 = r.get(4)?;
-                let unit_type: String = r.get(5)?;
-                let line_discount: i64 = r.get(6)?;
-                let shade_note: Option<String> = r.get(7)?;
-                let line_order: i64 = r.get(8)?;
+                let display_name: Option<String> = r.get(3)?;
+                let qty: f64 = r.get(4)?;
+                let price: i64 = r.get(5)?;
+                let unit_type: String = r.get(6)?;
+                let line_discount: i64 = r.get(7)?;
+                let shade_note: Option<String> = r.get(8)?;
+                let line_order: i64 = r.get(9)?;
                 c.execute(
                     "INSERT INTO sale_items
-                    (sale_id,kind,item_id,formula_id,qty,price,unit_type,line_discount,shade_note,line_order)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                    (sale_id,kind,item_id,formula_id,display_name,qty,price,unit_type,line_discount,shade_note,line_order)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
                     params![
                         new_id,
                         kind,
                         item_id,
                         formula_id,
+                        display_name,
                         qty,
                         price,
                         unit_type,
@@ -797,7 +911,8 @@ pub fn list(db: &Db, status: Option<&str>, limit: i64) -> anyhow::Result<Vec<Sal
 fn load_items(c: &rusqlite::Connection, sale_id: i64) -> anyhow::Result<Vec<SaleItem>> {
     let mut stmt = c.prepare(
         "SELECT si.id, si.kind, si.item_id, si.formula_id,
-                COALESCE(i.name, f.id_code, '') AS display_name,
+                COALESCE(si.display_name, i.name, f.id_code, '') AS display_name,
+                i.sku_code,
                 si.qty, si.price, si.unit_type, si.line_discount,
                 si.shade_note, si.line_order
          FROM sale_items si
@@ -813,12 +928,13 @@ fn load_items(c: &rusqlite::Connection, sale_id: i64) -> anyhow::Result<Vec<Sale
             item_id: r.get(2)?,
             formula_id: r.get(3)?,
             display_name: r.get(4)?,
-            qty: r.get(5)?,
-            price: r.get(6)?,
-            unit_type: r.get(7)?,
-            line_discount: r.get(8)?,
-            shade_note: r.get(9)?,
-            line_order: r.get(10)?,
+            sku_code: r.get(5)?,
+            qty: r.get(6)?,
+            price: r.get(7)?,
+            unit_type: r.get(8)?,
+            line_discount: r.get(9)?,
+            shade_note: r.get(10)?,
+            line_order: r.get(11)?,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -868,8 +984,9 @@ pub fn cmd_create_sale(state: tauri::State<'_, AppState>, sale: NewSale) -> AppR
     match sale.kind.as_str() {
         "quotation" => create_quotation(db, user_id, sale).map_err(AppError::from),
         "final" => create_final_bill(db, user_id, sale).map_err(AppError::from),
+        "fbill" => create_fbill(db, user_id, sale).map_err(AppError::from),
         k => Err(AppError::Validation(format!(
-            "invalid kind: {} (expected 'quotation' or 'final')",
+            "invalid kind: {} (expected 'quotation', 'final', or 'fbill')",
             k
         ))),
     }
@@ -1731,14 +1848,136 @@ mod tests {
     }
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+/// Re-open and edit a fake bill. FBill is the only sale kind that allows
+/// post-creation edit: replace the line items and recompute totals.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EditFbillPayload {
+    pub sale_id: i64,
+    pub lines: Vec<CartLine>,
+    pub bill_discount: i64,
+    pub customer_id: Option<i64>,
+    pub paid_amount: i64,
+    pub payment_modes: Vec<PaymentSplit>,
+}
+
+pub fn edit_fbill(db: &Db, user_id: i64, payload: EditFbillPayload) -> Result<i64, SaleError> {
+    if payload.lines.is_empty() {
+        return Err(SaleError::EmptyCart);
+    }
+    for (i, l) in payload.lines.iter().enumerate() {
+        if l.qty <= 0.0 || !l.qty.is_finite() {
+            return Err(SaleError::BadLineQty(i));
+        }
+        if l.price < 0 {
+            return Err(SaleError::BadLinePrice(i));
+        }
+        if l.line_discount < 0 {
+            return Err(SaleError::Other(anyhow::anyhow!(
+                "line {}: line_discount cannot be negative",
+                i
+            )));
+        }
+    }
+    if payload.bill_discount < 0 {
+        return Err(SaleError::Other(anyhow::anyhow!(
+            "bill_discount cannot be negative"
+        )));
+    }
+    let subtotal = cart_subtotal(&payload.lines);
+    let total = cart_total(&payload.lines, payload.bill_discount);
+
+    let id = db.with_conn_immediate(|c| -> Result<i64, SaleError> {
+        let status: String = c
+            .query_row(
+                "SELECT status FROM sales WHERE id = ?1",
+                params![payload.sale_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or(SaleError::Other(anyhow::anyhow!(
+                "sale {} not found",
+                payload.sale_id
+            )))?;
+        if status != "fbill" {
+            return Err(SaleError::Other(anyhow::anyhow!(
+                "only fbill sales can be re-opened (sale {} is status '{}')",
+                payload.sale_id,
+                status
+            )));
+        }
+        let payment_json = serde_json::to_string(&payload.payment_modes).unwrap_or_else(|_| "[]".into());
+        c.execute(
+            "UPDATE sales SET subtotal = ?1, bill_discount = ?2, total = ?3, \
+             customer_id = ?4, paid_amount = ?5, payment_modes_json = ?6, updated_by = ?7 \
+             WHERE id = ?8",
+            params![
+                subtotal,
+                payload.bill_discount,
+                total,
+                payload.customer_id,
+                payload.paid_amount,
+                payment_json,
+                user_id,
+                payload.sale_id
+            ],
+        )?;
+        c.execute(
+            "DELETE FROM sale_items WHERE sale_id = ?1",
+            params![payload.sale_id],
+        )?;
+        c.execute(
+            "DELETE FROM sale_payments WHERE sale_id = ?1",
+            params![payload.sale_id],
+        )?;
+        for (i, l) in payload.lines.iter().enumerate() {
+            c.execute(
+                "INSERT INTO sale_items
+                    (sale_id,kind,item_id,formula_id,display_name,qty,price,unit_type,line_discount,shade_note,line_order)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                params![
+                    payload.sale_id,
+                    l.kind,
+                    l.item_id,
+                    l.formula_id,
+                    l.display_name,
+                    l.qty,
+                    l.price,
+                    l.unit_type,
+                    l.line_discount,
+                    l.shade_note,
+                    i as i64,
+                ],
+            )?;
+        }
+        let now_epoch = chrono::Utc::now().timestamp_millis();
+        for m in &payload.payment_modes {
+            c.execute(
+                "INSERT INTO sale_payments (sale_id, mode, amount_paise, created_at) VALUES (?1,?2,?3,?4)",
+                params![payload.sale_id, m.mode, m.amount, now_epoch],
+            )?;
+        }
+        Ok(payload.sale_id)
+    })?;
+    Ok(id)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_edit_sale(
     state: tauri::State<'_, AppState>,
-    _sale_id: i64,
-    _payload: serde_json::Value,
+    payload: EditFbillPayload,
 ) -> AppResult<i64> {
     ipc_auth::authorize_err("cmd_edit_sale", state.inner())?;
-    Err(AppError::Internal("not implemented".into()))
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
+    let user_id = session.as_ref().ok_or(AppError::NotUnlocked)?.id;
+    edit_fbill(db, user_id, payload).map_err(AppError::from)
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]

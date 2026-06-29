@@ -56,23 +56,15 @@ export default function ReturnPage({ user, onBack }: Props) {
 
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
   const { draft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("return", draftData);
-  const isInitialDraftMount = useRef(true);
   const draftRestored = useRef(false);
 
   useEffect(() => {
-    if (isInitialDraftMount.current) {
-      isInitialDraftMount.current = false;
-      return;
-    }
-    if (!draftLoading && draftData.lines.length > 0) {
-      markDirty();
-    }
+    if (!draftLoading && draftData.lines.length > 0) markDirty();
   }, [draftData, draftLoading, markDirty]);
 
   useEffect(() => {
     if (draftRestored.current) return;
 
-    // H3: Check localStorage first (ReturnBillSelectModal handoff)
     try {
       const raw = localStorage.getItem(RETURN_DRAFT_KEY);
       if (raw) {
@@ -83,7 +75,7 @@ export default function ReturnPage({ user, onBack }: Props) {
           setCustomerId(modalDraft.customer_id);
           getCustomer(modalDraft.customer_id)
             .then((c) => { if (c) setCustomer(c); })
-            .catch(() => {/* ignore */});
+            .catch(() => {});
         }
         if (modalDraft.lines) setLines(modalDraft.lines);
         if (modalDraft.location_id) setLocationId(modalDraft.location_id);
@@ -91,28 +83,26 @@ export default function ReturnPage({ user, onBack }: Props) {
         if (modalDraft.reason) setReason(modalDraft.reason);
         return;
       }
-    } catch { /* corrupt localStorage, ignore */ }
+    } catch { void 0; }
 
-    // Fall back to DB draft (useAutosave)
-    const isFresh = window.location.search.includes("fresh=1");
-    if (draft && !draftLoading && lines.length === 0 && !isFresh) {
-      draftRestored.current = true;
-      try {
-        const data = JSON.parse(draft.data_json);
-        if (data.customerId != null) {
-          setCustomerId(data.customerId);
-          getCustomer(data.customerId)
-            .then((c) => { if (c) setCustomer(c); })
-            .catch(() => {/* ignore */});
-        }
-        if (data.lines) setLines(data.lines);
-        if (data.locationId != null) setLocationId(data.locationId);
-        if (data.paymentSplits) setPaymentSplits(data.paymentSplits);
-        if (data.reason != null) setReason(data.reason);
-      } catch {
-        // M5: Corrupt draft — clear it and start fresh
-        void resetDraft();
+    const inHash = window.location.hash;
+    if (!inHash.includes("restore=1") || !draft || draftLoading || lines.length > 0) return;
+    draftRestored.current = true;
+    window.history.replaceState(null, "", window.location.pathname + "#" + inHash.split("?")[0]);
+    try {
+      const data = JSON.parse(draft.data_json);
+      if (data.customerId != null) {
+        setCustomerId(data.customerId);
+        getCustomer(data.customerId)
+          .then((c) => { if (c) setCustomer(c); })
+          .catch(() => {});
       }
+      if (data.lines) setLines(data.lines);
+      if (data.locationId != null) setLocationId(data.locationId);
+      if (data.paymentSplits) setPaymentSplits(data.paymentSplits);
+      if (data.reason != null) setReason(data.reason);
+    } catch {
+      void resetDraft();
     }
   }, [draft, draftLoading, resetDraft]);
 
@@ -398,6 +388,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                     setCustomer(c);
                   }}
                   onCreate={() => setAddCustomerOpen(true)}
+                  display={{ showBalance: true, showType: true, allowWalkIn: false }}
                 />
               )}
             </Card>

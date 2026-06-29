@@ -25,6 +25,9 @@ export function saleStatus(s: Pick<Sale, "status" | "total" | "paid_amount">): S
   if (s.status === "quotation") {
     return { text: "Quotation", variant: "info" };
   }
+  if (s.status === "fbill") {
+    return { text: "FBill", variant: "info" };
+  }
   const balance = s.total - s.paid_amount;
   if (balance <= 0) {
     return { text: "Paid", variant: "success" };

@@ -3,24 +3,40 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, UserPlus, Users } from "lucide-react";
 import { Button, Badge } from "../../components/ui";
 import { toTitleCase } from "../../lib/format/titleCase";
+import { formatRupeesFromPaise } from "../../lib/money";
 import { listCustomers } from "../../domain/customers/api";
 import type { Customer } from "../../domain/types";
+
+/** Per-page configuration for what customer info to show in the dropdown. */
+export interface CustomerDisplayConfig {
+  /** Show opening balance in search results (default: false). */
+  showBalance?: boolean;
+  /** Show customer type badge (default: false). */
+  showType?: boolean;
+  /** Allow selecting walk-in customer (default: true). Set false when a real customer is required. */
+  allowWalkIn?: boolean;
+}
 
 interface Props {
   selectedId: number | null;
   selectedCustomer?: Customer | null;
   recentCustomers?: Customer[];
   onChange: (id: number | null, customer: Customer | null) => void;
+  onWalkIn?: () => void;
   onCreate: () => void;
+  display?: CustomerDisplayConfig;
 }
 
-export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCustomers = [], onChange, onCreate }: Props) {
+export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCustomers = [], onChange, onWalkIn, onCreate, display }: Props) {
+  const { showBalance = false, showType = false, allowWalkIn = true } = display ?? {};
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Customer[]>([]);
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [walkIn, setWalkIn] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const recents = useMemo(() => {
     const seen = new Set<number>();
@@ -55,7 +71,10 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    };
   }, []);
 
   const selected = selectedCustomer ?? (selectedId != null ? results.find((c) => c.id === selectedId) ?? null : null);
@@ -64,12 +83,15 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
   const hasRecents = recents.length > 0;
 
   function handleSelectWalkIn() {
+    setWalkIn(true);
     onChange(null, null);
+    onWalkIn?.();
     setQuery("");
     setOpen(false);
   }
 
   function handleSelectCustomer(c: Customer) {
+    setWalkIn(false);
     onChange(c.id, c);
     setQuery("");
     setOpen(false);
@@ -91,26 +113,32 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
           aria-autocomplete="list"
           aria-label="Search customer"
           placeholder="Search customer by name or phone…"
-          value={selected ? `${toTitleCase(selected.name)} (${selected.phone})` : query}
+          value={walkIn ? "Walk-in" : selected ? `${toTitleCase(selected.name)} (${selected.phone})` : query}
           onChange={(e) => {
+            setWalkIn(false);
             setQuery(e.target.value);
             if (selectedId) onChange(null, null);
             setOpen(true);
           }}
           onFocus={() => {
+            setWalkIn(false);
             setFocused(true);
             setOpen(true);
           }}
-          onBlur={() => setFocused(false)}
+          onBlur={() => {
+            // Defer blur so click events on dropdown items fire first
+            blurTimeoutRef.current = setTimeout(() => setFocused(false), 150);
+          }}
           className="input h-10 w-full pl-9 pr-3"
         />
       </div>
       {open && (showSuggestions || hasResults) && (
         <div className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-card shadow-lg">
-          {showSuggestions && (
+          {showSuggestions && allowWalkIn && (
             <>
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={handleSelectWalkIn}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
               >
@@ -121,16 +149,24 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
                 <>
                   <div className="px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent</div>
                   {recents.map((c) => (
-                    <CustomerOption key={c.id} customer={c} onSelect={() => handleSelectCustomer(c)} />
+                    <CustomerOption key={c.id} customer={c} onSelect={() => handleSelectCustomer(c)} showBalance={showBalance} showType={showType} />
                   ))}
                 </>
               )}
             </>
           )}
+          {showSuggestions && !allowWalkIn && hasRecents && (
+            <>
+              <div className="px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent</div>
+              {recents.map((c) => (
+                <CustomerOption key={c.id} customer={c} onSelect={() => handleSelectCustomer(c)} showBalance={showBalance} showType={showType} />
+              ))}
+            </>
+          )}
           {query.trim() && hasResults && (
             <>
               {results.map((c) => (
-                <CustomerOption key={c.id} customer={c} onSelect={() => handleSelectCustomer(c)} />
+                <CustomerOption key={c.id} customer={c} onSelect={() => handleSelectCustomer(c)} showBalance={showBalance} showType={showType} />
               ))}
             </>
           )}
@@ -145,19 +181,30 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
   );
 }
 
-function CustomerOption({ customer, onSelect }: { customer: Customer; onSelect: () => void }) {
+function CustomerOption({ customer, onSelect, showBalance, showType }: { customer: Customer; onSelect: () => void; showBalance: boolean; showType: boolean }) {
   return (
     <button
       type="button"
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onSelect}
       className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
     >
-      <span>
+      <span className="min-w-0 flex-1">
         <span className="font-medium text-foreground">{toTitleCase(customer.name)}</span>
         <span className="ml-2 text-xs text-muted-foreground">{customer.phone}</span>
+        {showType && customer.type_name && (
+          <span className="ml-2 text-xs text-muted-foreground">({customer.type_name})</span>
+        )}
+        {showBalance && customer.opening_balance_paise !== 0 && (
+          <span className={`ml-2 text-xs font-medium ${customer.opening_balance_paise > 0 ? "text-destructive" : "text-emerald-600"}`}>
+            {formatRupeesFromPaise(Math.abs(customer.opening_balance_paise))} {customer.opening_balance_paise > 0 ? "due" : "credit"}
+          </span>
+        )}
       </span>
-      {!customer.is_active && <Badge variant="danger" size="sm">Inactive</Badge>}
-      {customer.is_flagged && <Badge variant="warning" size="sm">Flagged</Badge>}
+      <span className="flex shrink-0 gap-1">
+        {!customer.is_active && <Badge variant="danger" size="sm">Inactive</Badge>}
+        {customer.is_flagged && <Badge variant="warning" size="sm">Flagged</Badge>}
+      </span>
     </button>
   );
 }

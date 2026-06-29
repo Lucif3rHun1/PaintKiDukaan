@@ -25,6 +25,7 @@ pub enum Kind {
     SaleInv,
     SaleQtn,
     SaleRet,
+    SaleFbk,
     Sku,
 }
 
@@ -34,6 +35,7 @@ impl Kind {
             Kind::SaleInv => "sale_inv",
             Kind::SaleQtn => "sale_qtn",
             Kind::SaleRet => "sale_ret",
+            Kind::SaleFbk => "sale_fbk",
             Kind::Sku => "sku",
         }
     }
@@ -44,6 +46,7 @@ impl Kind {
             Kind::SaleInv => "INV",
             Kind::SaleQtn => "QTN",
             Kind::SaleRet => "RET",
+            Kind::SaleFbk => "FBK",
             Kind::Sku => "SKU",
         }
     }
@@ -91,6 +94,23 @@ pub fn mint_next(db: &Db, kind: Kind) -> anyhow::Result<String> {
                 Ok(format_number_daily(kind, next, &date_for_closure))
             })
         }
+        // FBill starts at 1000 so it's visually distinct from real invoices.
+        Kind::SaleFbk => {
+            let date = today_ddmmyyyy();
+            let date_for_closure = date.clone();
+            db.with_conn_immediate(move |c| {
+                let next: i64 = c.query_row(
+                    "INSERT INTO daily_counters(prefix,date,last_serial)
+                         VALUES (?1,?2,1000)
+                         ON CONFLICT(prefix,date) DO UPDATE
+                           SET last_serial = last_serial + 1
+                         RETURNING last_serial",
+                    rusqlite::params![kind.daily_prefix(), &date_for_closure],
+                    |r| r.get(0),
+                )?;
+                Ok(format_number_daily(kind, next, &date_for_closure))
+            })
+        }
     }
 }
 
@@ -99,7 +119,7 @@ pub fn mint_next(db: &Db, kind: Kind) -> anyhow::Result<String> {
 /// internally for sales + day-close rows.
 pub fn mint_next_sale_no(db: &Db, kind: Kind) -> anyhow::Result<String> {
     match kind {
-        Kind::SaleInv | Kind::SaleQtn | Kind::SaleRet => mint_next(db, kind),
+        Kind::SaleInv | Kind::SaleQtn | Kind::SaleRet | Kind::SaleFbk => mint_next(db, kind),
         Kind::Sku => anyhow::bail!("mint_next_sale_no called with Sku"),
     }
 }
@@ -126,6 +146,7 @@ pub fn parse(no: &str) -> Option<(Kind, String, i64)> {
         "INV" => Kind::SaleInv,
         "QTN" => Kind::SaleQtn,
         "RET" => Kind::SaleRet,
+        "FBK" => Kind::SaleFbk,
         _ => return None,
     };
     let seq: i64 = seq.parse().ok()?;
@@ -145,6 +166,7 @@ fn resolve_kind(raw: &str) -> AppResult<Kind> {
         "inv" | "sale_inv" | "INV" => Ok(Kind::SaleInv),
         "qtn" | "sale_qtn" | "QTN" => Ok(Kind::SaleQtn),
         "ret" | "sale_ret" | "RET" => Ok(Kind::SaleRet),
+        "fbk" | "sale_fbk" | "FBK" => Ok(Kind::SaleFbk),
         _ => Err(AppError::Internal(format!(
             "unknown sequence kind: {}",
             raw

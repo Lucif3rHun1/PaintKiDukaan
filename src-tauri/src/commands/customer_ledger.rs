@@ -168,6 +168,7 @@ pub fn create_customer_credit_invoice_impl(
             kind: "item".into(),
             item_id: Some(l.item_id),
             formula_id: None,
+            display_name: None,
             qty: l.qty,
             price: l.unit_price_paise,
             unit_type: "unit".into(),

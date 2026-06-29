@@ -152,13 +152,15 @@ function readTab(): AppShellTab {
   return "dashboard";
 }
 
-function readSalesSubRoute(): "list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail" {
+function readSalesSubRoute(): "list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail" | "edit" {
   const h = window.location.hash.split("?")[0];
   if (h === "#/sales/new") return "new";
   if (h === "#/sales/return/new") return "return";
   const detailMatch = h.match(/^#\/sales\/return\/(.+)$/);
   if (h === "#/sales/return") return "return-list";
   if (detailMatch) return "return-detail";
+  const editMatch = h.match(/^#\/sales\/edit\/(\d+)$/);
+  if (editMatch) return "edit";
   const saleDetail = h.match(/^#\/sales\/(\d+)$/);
   if (saleDetail) return "sale-detail";
   return "list";
@@ -196,7 +198,7 @@ export default function App() {
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [tab, setTab] = useState<AppShellTab>(readTab);
-  const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail">(readSalesSubRoute);
+  const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail" | "edit">(readSalesSubRoute);
   const [inwardRoute, setInwardRoute] = useState<"list" | "new" | "detail">(readInwardSubRoute);
   const [formulasRoute, setFormulasRoute] = useState<"list" | "detail">(readFormulasSubRoute);
 
@@ -425,7 +427,7 @@ export default function App() {
           <Suspense fallback={<RouteFallback />}>
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <ReturnListPage
-                onCreate={() => (window.location.hash = "#/sales/return/new?fresh=1")}
+                onCreate={() => (window.location.hash = "#/sales/return/new")}
                 onSelect={(id) => (window.location.hash = `#/sales/return/${id}`)}
               />
             </div>
@@ -452,7 +454,7 @@ export default function App() {
         <ErrorBoundary context="Sales — list">
           <Suspense fallback={<RouteFallback />}>
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-              <SalesListPage onCreate={() => (window.location.hash = "#/sales/new?fresh=1")} />
+              <SalesListPage onCreate={() => (window.location.hash = "#/sales/new")} />
             </div>
           </Suspense>
         </ErrorBoundary>
@@ -467,6 +469,24 @@ export default function App() {
                 <SaleDetailPage
                   id={id}
                   onBack={() => (window.location.hash = "#/sales")}
+                  onEdit={(sale) => (window.location.hash = `#/sales/edit/${sale.id}`)}
+                />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
+        );
+      })() : null}
+      {tab === "sales" && salesRoute === "edit" ? (() => {
+        const match = window.location.hash.match(/^#\/sales\/edit\/(\d+)$/);
+        const id = match ? Number(match[1]) : 0;
+        return (
+          <ErrorBoundary context="Sales — edit">
+            <Suspense fallback={<RouteFallback />}>
+              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+                <SalesPage
+                  user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
+                  onExit={() => (window.location.hash = "#/sales")}
+                  editSaleId={id}
                 />
               </div>
             </Suspense>
@@ -490,7 +510,7 @@ export default function App() {
           <Suspense fallback={<RouteFallback />}>
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <InwardListPage
-                onCreate={() => (window.location.hash = "#/inward/new?fresh=1")}
+                onCreate={() => (window.location.hash = "#/inward/new")}
                 onSelect={(id) => (window.location.hash = `#/inward/${id}`)}
               />
             </div>

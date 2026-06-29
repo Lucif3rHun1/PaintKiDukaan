@@ -16,6 +16,7 @@ import {
   Printer,
   Save,
   ShoppingCart,
+  Users,
   X,
 } from "lucide-react";
 import {
@@ -46,7 +47,7 @@ import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
-import { getCustomer } from "../../domain/ipc";
+import { getCustomer, editSale } from "../../domain/ipc";
 import { ItemForm } from "../../domain/items/ItemForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
 import { FormulaForm } from "../../domain/formulas/FormulaForm";
@@ -75,11 +76,12 @@ import type {
 } from "../types";
 import type { Customer, CustomerType, Formula, FormulaSearchHit } from "../../domain/types";
 
-type Kind = "quotation" | "final";
+type Kind = "quotation" | "final" | "fbill";
 
 interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
   onExit: () => void;
+  editSaleId?: number;
 }
 
 function lineTotal(line: CartLine): number {
@@ -124,7 +126,7 @@ function formatQty(qty: number, unitType: string): string {
   return String(Math.round(qty));
 }
 
-export default function SalesPage({ user, onExit }: Props) {
+export default function SalesPage({ user, onExit, editSaleId }: Props) {
   const { isOwner } = useSecurity();
   const canOwner = isOwner();
   const queryClient = useQueryClient();
@@ -135,6 +137,7 @@ export default function SalesPage({ user, onExit }: Props) {
   const [billDiscount, setBillDiscount] = useState(0);
   const [splits, setSplits] = useState<PaymentSplit[]>([]);
   const [validityDays, setValidityDays] = useState(7);
+  const [walkIn, setWalkIn] = useState(true);
   const [ackFlag, setAckFlag] = useState(false);
   const [recent, setRecent] = useState<Sale[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
@@ -163,38 +166,32 @@ export default function SalesPage({ user, onExit }: Props) {
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
   const { draft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("sale", draftData);
 
-  const isInitialDraftMount = useRef(true);
   useEffect(() => {
-    if (isInitialDraftMount.current) {
-      isInitialDraftMount.current = false;
-      return;
-    }
-    if (!draftLoading && draftData.lines.length > 0) {
-      markDirty();
-    }
+    if (!draftLoading && draftData.lines.length > 0) markDirty();
   }, [draftData, draftLoading, markDirty]);
 
   const draftRestored = useRef(false);
   useEffect(() => {
-    const isFresh = window.location.search.includes("fresh=1");
-    if (draft && !draftLoading && !draftRestored.current && lines.length === 0 && !isFresh) {
-      draftRestored.current = true;
-      try {
-        const data = JSON.parse(draft.data_json);
-        if (data.kind) setKind(data.kind);
-        if (data.lines) setLines(data.lines);
-        if (data.billDiscount != null) setBillDiscount(data.billDiscount);
-        if (data.splits) setSplits(data.splits);
-        if (data.validityDays != null) setValidityDays(data.validityDays);
-        if (data.ackFlag != null) setAckFlag(data.ackFlag);
-        if (data.customerId != null) {
-          getCustomer(data.customerId)
-            .then((c) => { if (c) setCustomer(c); })
-            .catch(() => {/* ignore */});
-        }
-      } catch {
-        void resetDraft();
+    if (draftRestored.current) return;
+    const inHash = window.location.hash;
+    if (!inHash.includes("restore=1") || !draft || draftLoading || lines.length > 0) return;
+    draftRestored.current = true;
+    window.history.replaceState(null, "", window.location.pathname + "#" + inHash.split("?")[0]);
+    try {
+      const data = JSON.parse(draft.data_json);
+      if (data.kind) setKind(data.kind);
+      if (data.lines) setLines(data.lines);
+      if (data.billDiscount != null) setBillDiscount(data.billDiscount);
+      if (data.splits) setSplits(data.splits);
+      if (data.validityDays != null) setValidityDays(data.validityDays);
+      if (data.ackFlag != null) setAckFlag(data.ackFlag);
+      if (data.customerId != null) {
+        getCustomer(data.customerId)
+          .then((c) => { if (c) setCustomer(c); })
+          .catch(() => {});
       }
+    } catch {
+      void resetDraft();
     }
   }, [draft, draftLoading]);
 
@@ -234,6 +231,23 @@ export default function SalesPage({ user, onExit }: Props) {
   );
   const removeLine = useCallback((index: number) => {
     setLines((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const addCustomLine = useCallback(() => {
+    setLines((prev) => [
+      ...prev,
+      {
+        kind: "item" as const,
+        item_id: null,
+        formula_id: null,
+        item_name: "",
+        qty: 1,
+        price: 0,
+        unit_type: "unit",
+        line_discount: 0,
+        shade_note: null,
+      },
+    ]);
   }, []);
 
   const handleQtyChange = useCallback(
@@ -311,6 +325,7 @@ export default function SalesPage({ user, onExit }: Props) {
   // ---- Draft reset (Esc / post-save) ----
   const clearDraft = useCallback(() => {
     setCustomer(null);
+    setWalkIn(true);
     setLines([]);
     setBillDiscount(0);
     setSplits([]);
@@ -392,9 +407,9 @@ export default function SalesPage({ user, onExit }: Props) {
     setError(null);
     shouldPrintAfterSaveRef.current = false;
     const finalSplits =
-      kind === "final" ? splits.filter((s) => s.amount > 0) : [];
+      kind === "quotation" ? [] : splits.filter((s) => s.amount > 0);
     const finalPaid =
-      kind === "final" ? finalSplits.reduce((sum, s) => sum + s.amount, 0) : 0;
+      kind === "quotation" ? 0 : finalSplits.reduce((sum, s) => sum + s.amount, 0);
     const payload: NewSale = {
       customer_id: customer?.id ?? null,
       kind,
@@ -408,8 +423,10 @@ export default function SalesPage({ user, onExit }: Props) {
     };
     toast
       .promise(createSale(payload), {
-        loading: kind === "final" ? "Saving bill…" : "Saving quotation…",
+        loading: kind === "final" ? "Saving bill…" : kind === "fbill" ? "Saving FBill…" : "Saving quotation…",
         success: (id) => {
+          setCustomer(null);
+          setWalkIn(true);
           setLines([]);
           setBillDiscount(0);
           setSplits([]);
@@ -422,7 +439,7 @@ export default function SalesPage({ user, onExit }: Props) {
             shouldPrintAfterSaveRef.current = false;
             void tryPrintReceipt(id);
           }
-          return kind === "final" ? `Bill #${id} saved` : `Quotation #${id} saved`;
+          return kind === "final" ? `Bill #${id} saved` : kind === "fbill" ? `FBill #${id} saved` : `Quotation #${id} saved`;
         },
         error: (e: unknown) => extractError(e),
       })
@@ -557,11 +574,11 @@ export default function SalesPage({ user, onExit }: Props) {
         </Button>
         <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold text-foreground">
-            {kind === "final" ? "New Bill" : "New Quotation"}
+            {kind === "final" ? "New Bill" : kind === "fbill" ? "New FBill" : "New Quotation"}
           </h1>
         </div>
         <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
-          {(["final", "quotation"] as const).map((k) => (
+          {(["final", "fbill", "quotation"] as const).map((k) => (
             <button
               key={k}
               type="button"
@@ -574,7 +591,7 @@ export default function SalesPage({ user, onExit }: Props) {
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {k === "final" ? "Final Bill" : "Quotation"}
+              {k === "final" ? "Bill" : k === "fbill" ? "FBill" : "Quotation"}
             </button>
           ))}
         </div>
@@ -645,7 +662,30 @@ export default function SalesPage({ user, onExit }: Props) {
                       icon={X}
                       onClick={() => {
                         setCustomer(null);
+                        setWalkIn(false);
                         setAckFlag(false);
+                      }}
+                      title="Change customer"
+                    >
+                      Change
+                    </Button>
+                  </div>
+                ) : walkIn ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                        <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                        <span>Walk-in</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">No customer selected</div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      icon={X}
+                      onClick={() => {
+                        setWalkIn(false);
                       }}
                       title="Change customer"
                     >
@@ -657,7 +697,9 @@ export default function SalesPage({ user, onExit }: Props) {
                     selectedId={null}
                     selectedCustomer={null}
                     onChange={(_id, c) => setCustomer(c)}
+                    onWalkIn={() => setWalkIn(true)}
                     onCreate={() => setCreateCustomerOpen(true)}
+                    display={{ showBalance: true, showType: true }}
                   />
                 )}
                 {isFlagged(customer) ? (
@@ -684,11 +726,27 @@ export default function SalesPage({ user, onExit }: Props) {
                 </span>
               </Card.Header>
               <Card.Body className="space-y-3">
-                <ItemSearchInput
-                  onPick={handleItemPick}
-                  onCreateItem={canOwner ? () => setCreateItemOpen(true) : undefined}
-                  onCreateFormula={canOwner ? () => setCreateFormulaOpen(true) : undefined}
-                />
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <ItemSearchInput
+                      onPick={handleItemPick}
+                      onCreateItem={canOwner ? () => setCreateItemOpen(true) : undefined}
+                      onCreateFormula={canOwner ? () => setCreateFormulaOpen(true) : undefined}
+                    />
+                  </div>
+                  {kind === "fbill" && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={addCustomLine}
+                      className="shrink-0"
+                    >
+                      <PackagePlus className="mr-1 h-3.5 w-3.5" />
+                      Custom
+                    </Button>
+                  )}
+                </div>
 
                 {lines.length === 0 ? (
                   <EmptyState
@@ -698,7 +756,8 @@ export default function SalesPage({ user, onExit }: Props) {
                   />
                 ) : (
                   <div className="rounded border border-border">
-                    <div className="grid grid-cols-[1fr_auto_auto_8rem_2.5rem] items-center gap-2 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    <div className="grid grid-cols-[2.5rem_1fr_auto_auto_8rem_2.5rem] items-center gap-2 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
+                      <div className="text-center">#</div>
                       <div>Item</div>
                       <div>Qty</div>
                       <div className="text-right">Rate</div>
@@ -714,11 +773,22 @@ export default function SalesPage({ user, onExit }: Props) {
                           key={`${l.item_id}-${i}`}
                           className="border-t border-border px-3 py-2"
                         >
-                          <div className="grid grid-cols-[1fr_auto_auto_8rem_2.5rem] items-center gap-2">
+                          <div className="grid grid-cols-[2.5rem_1fr_auto_auto_8rem_2.5rem] items-center gap-2">
+                            <div className="text-center text-xs text-muted-foreground tabular-nums">{i + 1}</div>
                             <div className="min-w-0">
-                              <div className="truncate font-medium text-foreground">
-                                {l.item_name ? toTitleCase(l.item_name) : `#${l.item_id}`}
-                              </div>
+                              {kind === "fbill" ? (
+                                <input
+                                  type="text"
+                                  value={l.item_name ?? ""}
+                                  onChange={(e) => updateLine(i, { item_name: e.target.value })}
+                                  placeholder="Item name..."
+                                  className="w-full truncate border-0 border-b border-transparent bg-transparent p-0 font-medium text-foreground placeholder:text-muted-foreground/50 focus:border-border focus:outline-none"
+                                />
+                              ) : (
+                                <div className="truncate font-medium text-foreground">
+                                  {l.item_name ? toTitleCase(l.item_name) : `#${l.item_id}`}
+                                </div>
+                              )}
                               {l.shade_note ? (
                                 <div className="mt-0.5 truncate text-xs text-muted-foreground">
                                   {l.shade_note}
@@ -877,9 +947,9 @@ export default function SalesPage({ user, onExit }: Props) {
                   className="w-full"
                   shortcut="F9"
                 >
-                  {kind === "final" ? "Save bill" : "Save quotation"}
+                  {kind === "final" ? "Save bill" : kind === "fbill" ? "Save FBill" : "Save quotation"}
                 </Button>
-                {kind === "final" ? (
+                {(kind === "final" || kind === "fbill") ? (
                   <Button
                     type="button"
                     variant="secondary"
@@ -945,7 +1015,7 @@ export default function SalesPage({ user, onExit }: Props) {
                           type="button"
                           onClick={() => (window.location.hash = `#/sales/${s.id}`)}
                           className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                          aria-label={`Open ${s.status === "final" ? "invoice" : "quotation"} ${s.no}`}
+                          aria-label={`Open ${s.status === "fbill" ? "fbill" : s.status === "final" ? "invoice" : "quotation"} ${s.no}`}
                         >
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">

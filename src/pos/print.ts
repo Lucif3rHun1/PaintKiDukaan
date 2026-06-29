@@ -170,10 +170,12 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
 
   const tableX = margin;
   const tableW = right - margin;
-  const colQty = margin + tableW * 0.55;
-  const colRate = margin + tableW * 0.72;
+  const colSn = tableX + 8;
+  const colItem = tableX + 12;
+  const colQty = margin + tableW * 0.52;
+  const colRate = margin + tableW * 0.70;
   const colAmt = right;
-  const nameColW = colQty - tableX - 4;
+  const nameColW = colQty - colItem - 4;
 
   function drawTableHeader(yPos: number): number {
     doc.setFillColor(...PRIMARY);
@@ -181,7 +183,8 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
     doc.setTextColor(255, 255, 255);
-    doc.text("Items", tableX + 2, yPos + 1);
+    doc.text("#", colSn, yPos + 1, { align: "center" });
+    doc.text("Items", colItem + 2, yPos + 1);
     doc.text("Quantity", colQty, yPos + 1, { align: "right" });
     doc.text("Rate", colRate, yPos + 1, { align: "right" });
     doc.text("Amount", colAmt, yPos + 1, { align: "right" });
@@ -191,11 +194,14 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   y = drawTableHeader(y);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...DARK);
+  let itemIdx = 0;
   for (const it of spec.sale.items) {
+    itemIdx++;
     const qtyStr = `${it.qty}${it.unit_type ? " " + it.unit_type : ""}`;
     const lineValue = Math.max(0, it.qty * it.price - it.line_discount);
     const nameLines: string[] = doc.splitTextToSize(it.display_name, nameColW);
-    const rowH = nameLines.length * 4;
+    const skuLine = it.sku_code ? 1 : 0;
+    const rowH = (nameLines.length + skuLine) * 4;
     if (y + rowH > pageH - margin) {
       doc.addPage();
       y = margin;
@@ -203,17 +209,27 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
       doc.setFont("helvetica", "normal");
       doc.setTextColor(...DARK);
     }
+    doc.text(String(itemIdx), colSn, y, { align: "center" });
     for (let i = 0; i < nameLines.length; i++) {
-      doc.text(nameLines[i], tableX + 2, y + i * 4);
+      doc.text(nameLines[i], colItem + 2, y + i * 4);
+    }
+    let textY = y + nameLines.length * 4;
+    if (it.sku_code) {
+      doc.setFontSize(8);
+      doc.setTextColor(...MUTED);
+      doc.text(`SKU: ${it.sku_code}`, colItem + 2, textY);
+      doc.setFontSize(9);
+      doc.setTextColor(...DARK);
+      textY += 4;
     }
     doc.text(qtyStr, colQty, y, { align: "right" });
     doc.text(paiseToPdfRupees(it.price), colRate, y, { align: "right" });
     doc.text(paiseToPdfRupees(lineValue), colAmt, y, { align: "right" });
-    y += rowH;
+    y = textY;
     if (it.shade_note) {
       doc.setFontSize(8);
       doc.setTextColor(...MUTED);
-      doc.text(`shade: ${it.shade_note}`, tableX + 4, y);
+      doc.text(`shade: ${it.shade_note}`, colItem + 4, y);
       doc.setFontSize(9);
       doc.setTextColor(...DARK);
       y += 4;

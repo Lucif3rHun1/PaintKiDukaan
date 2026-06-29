@@ -389,7 +389,7 @@ pub fn cmd_create_formula(
 pub fn cmd_update_formula(
     state: tauri::State<'_, AppState>,
     payload: UpdateFormula,
-) -> AppResult<()> {
+) -> AppResult<Formula> {
     ipc_auth::authorize_err("cmd_update_formula", state.inner())?;
     let guard = state
         .db
@@ -401,8 +401,9 @@ pub fn cmd_update_formula(
         .lock()
         .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
+    let formula_id = payload.id;
     update(db, user.id, payload)?;
-    get_by_id(db, payload.id)?.ok_or_else(|| AppError::Internal("formula not found after update".into()))
+    get_by_id(db, formula_id)?.ok_or_else(|| AppError::Internal("formula not found after update".into()))
 }
 
 #[tauri::command(rename_all = "snake_case")]

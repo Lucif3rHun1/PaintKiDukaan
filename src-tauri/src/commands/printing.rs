@@ -25,6 +25,7 @@ pub struct ReceiptPayment {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReceiptItem {
     pub name: String,
+    pub sku: Option<String>,
     pub qty: String,
     pub unit: String,
     pub unit_price: String,
@@ -219,6 +220,11 @@ fn build_receipt(data: ReceiptData) -> Vec<u8> {
     e.bold_off();
     for it in data.items {
         e.line(&sanitize(&it.name, MAX_LINE_LEN));
+        if let Some(ref sku) = it.sku {
+            if !sku.is_empty() {
+                e.line(&sanitize(&format!("SKU: {}", sku), MAX_LINE_LEN));
+            }
+        }
         let left = format!(
             " {} {} @ {}",
             sanitize(&it.qty, MAX_FIELD_LEN),
@@ -491,6 +497,7 @@ mod tests {
             customer_name: None,
             items: vec![ReceiptItem {
                 name: "Paint".into(),
+                sku: None,
                 qty: "1".into(),
                 unit: "L".into(),
                 unit_price: "Rs.100.00".into(),
@@ -554,6 +561,7 @@ mod tests {
             customer_name: None,
             items: vec![ReceiptItem {
                 name: "Paint".into(),
+                sku: None,
                 qty: "1".into(),
                 unit: "L".into(),
                 unit_price: "Rs.100.00".into(),

@@ -72,7 +72,7 @@ export function ItemList({ role }: Props) {
   const [subLocations, setSubLocations] = useState<SubLocation[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [lowStockOnly, setLowStockOnly] = useState(false);
-  const [includeInactive, setIncludeInactive] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<"active" | "archived" | "all">("active");
   const [sortField, setSortField] = useState<ItemSortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -108,13 +108,14 @@ export function ItemList({ role }: Props) {
     pageSize,
     refetch,
   } = usePaginatedQuery<Item>({
-    queryKey: ["items", lowStockOnly, includeInactive, sortField, sortDirection],
+    queryKey: ["items", lowStockOnly, activeFilter, sortField, sortDirection],
     pageSize: ITEM_PAGE_SIZE,
     queryFn: ({ search: debouncedSearch }) =>
       listItems({
         query: debouncedSearch || undefined,
         low_stock_only: lowStockOnly,
-        include_inactive: includeInactive,
+        include_inactive: activeFilter === "all",
+        archived_only: activeFilter === "archived",
         limit: 500,
       }),
     clientSort: sorted,
@@ -349,8 +350,56 @@ export function ItemList({ role }: Props) {
     });
   }, [allPageSelected, pageIds]);
 
+  // ── Hierarchical select: select all / per-brand / per-category ──
+  const allFilteredSelected = allItems.length > 0 && allItems.every((item) => selectedIds.has(item.id));
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((current) => {
+      if (allFilteredSelected) return new Set<number>();
+      return new Set(allItems.map((item) => item.id));
+    });
+  }, [allFilteredSelected, allItems]);
+
+  const brandItemIds = useCallback((brand: string) => {
+    return allItems.filter((item) => brandGroupLabel(item) === brand).map((item) => item.id);
+  }, [allItems]);
+
+  const isBrandSelected = useCallback((brand: string) => {
+    const ids = brandItemIds(brand);
+    return ids.length > 0 && ids.every((id) => selectedIds.has(id));
+  }, [brandItemIds, selectedIds]);
+
+  const toggleBrand = useCallback((brand: string) => {
+    const ids = brandItemIds(brand);
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (isBrandSelected(brand)) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }, [brandItemIds, isBrandSelected]);
+
+  const isCategorySelected = useCallback((brand: string, category: string) => {
+    const ids = allItems
+      .filter((item) => brandGroupLabel(item) === brand && (item.category?.trim() || "No category") === category)
+      .map((item) => item.id);
+    return ids.length > 0 && ids.every((id) => selectedIds.has(id));
+  }, [allItems, selectedIds]);
+
+  const toggleCategory = useCallback((brand: string, category: string) => {
+    const ids = allItems
+      .filter((item) => brandGroupLabel(item) === brand && (item.category?.trim() || "No category") === category)
+      .map((item) => item.id);
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (isCategorySelected(brand, category)) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }, [allItems, isCategorySelected]);
+
   const exportHeaders = [
-    "SKU", "Barcode", "Name", "Brand", "Category",
+    "SKU", "Barcode", "Name", "Brand", "Brand Prefix", "Category",
     "Unit", "Sell Unit", "Units/Pack",
     "Retail (₹)", "Cost (₹)", "Promo (₹)", "Min Stock",
     "Location", "Sub Location", "Position",
@@ -358,26 +407,31 @@ export function ItemList({ role }: Props) {
   ];
 
   const exportRows = useMemo(() => {
-    return allItems.map((item) => [
-      item.sku_code,
-      item.barcode ?? "",
-      item.name,
-      item.brand ?? "",
-      item.category ?? "",
-      item.unit ?? item.unit_code ?? "",
-      item.sell_unit ?? "",
-      item.units_per_pack ?? 1,
-      (item.retail_price_paise / 100).toFixed(2),
-      (item.cost_paise / 100).toFixed(2),
-      item.promo_price_paise != null ? (item.promo_price_paise / 100).toFixed(2) : "",
-      item.min_stock,
-      item.primary_location_id != null ? (locationNameById.get(item.primary_location_id) ?? "") : "",
-      item.sub_location_id != null ? (subLocationNameById.get(item.sub_location_id) ?? "") : "",
-      item.position ?? "",
-      item.current_qty,
-      item.is_active ? "Yes" : "No",
-    ]);
-  }, [allItems, locationNameById, subLocationNameById]);
+    return allItems.map((item) => {
+      const fullName = brandNameById.get(item.brand_id ?? -1) ?? item.brand ?? "";
+      const prefix = brandPrefixById.get(item.brand_id ?? -1) ?? "";
+      return [
+        item.sku_code,
+        item.barcode ?? "",
+        item.name,
+        fullName,
+        prefix,
+        item.category ?? "",
+        item.unit ?? item.unit_code ?? "",
+        item.sell_unit ?? "",
+        item.units_per_pack ?? 1,
+        (item.retail_price_paise / 100).toFixed(2),
+        (item.cost_paise / 100).toFixed(2),
+        item.promo_price_paise != null ? (item.promo_price_paise / 100).toFixed(2) : "",
+        item.min_stock,
+        item.primary_location_id != null ? (locationNameById.get(item.primary_location_id) ?? "") : "",
+        item.sub_location_id != null ? (subLocationNameById.get(item.sub_location_id) ?? "") : "",
+        item.position ?? "",
+        item.current_qty,
+        item.is_active ? "Yes" : "No",
+      ];
+    });
+  }, [allItems, brandNameById, brandPrefixById, locationNameById, subLocationNameById]);
 
   const handleStockAdjust = useCallback(async () => {
     if (!stockAdjustItem) return;
@@ -499,15 +553,21 @@ export function ItemList({ role }: Props) {
           />
           Low stock
         </label>
-        <label className="flex h-9 items-center gap-1.5 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={includeInactive}
-            onChange={(e) => setIncludeInactive(e.target.checked)}
-            className="h-3.5 w-3.5"
-          />
-          Archived
-        </label>
+        <Select
+          value={activeFilter}
+          onChange={(e) => {
+            setActiveFilter(e.target.value as "active" | "archived" | "all");
+            setPage(1);
+          }}
+          className="w-auto"
+          size="sm"
+          aria-label="Filter by status"
+          options={[
+            { value: "active", label: "Active" },
+            { value: "archived", label: "Archived" },
+            { value: "all", label: "All" },
+          ]}
+        />
 
         <Select
           value={`${sortField}:${sortDirection}`}
@@ -559,6 +619,15 @@ export function ItemList({ role }: Props) {
         >
           Inward
         </Button>
+        {allFilteredSelected ? (
+          <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">
+            Deselect all ({allItems.length})
+          </Button>
+        ) : (
+          <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">
+            Select all ({allItems.length})
+          </Button>
+        )}
         {selectedIds.size > 0 && canEdit ? (
           <Button type="button" size="sm" variant="danger" icon={Archive} onClick={() => void handleBulkArchive()} className="!text-xs">
             Archive {selectedIds.size}

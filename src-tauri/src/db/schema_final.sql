@@ -539,7 +539,7 @@ CREATE TABLE sales (
   customer_id        INTEGER REFERENCES customers(id) ON DELETE NO ACTION,
   date               TEXT    NOT NULL DEFAULT '',
   status             TEXT    NOT NULL DEFAULT 'quotation'
-                       CHECK(status IN ('quotation','final')),
+                       CHECK(status IN ('quotation','final','fbill')),
   subtotal           INTEGER NOT NULL DEFAULT 0,
   bill_discount      INTEGER NOT NULL DEFAULT 0,
   total              INTEGER NOT NULL DEFAULT 0,
@@ -1141,6 +1141,7 @@ CREATE TABLE IF NOT EXISTS sale_items_new (
   kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),
   item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,
   formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
+  display_name  TEXT,
   qty           REAL NOT NULL CHECK(qty > 0),
   price         INTEGER NOT NULL CHECK(price >= 0),
   unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),
@@ -1148,9 +1149,7 @@ CREATE TABLE IF NOT EXISTS sale_items_new (
   shade_note    TEXT,
   line_order    INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
-  created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
-  CHECK ((item_id IS NOT NULL AND formula_id IS NULL)
-      OR (item_id IS NULL AND formula_id IS NOT NULL))
+  created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
 INSERT INTO sale_items_new (id, sale_id, kind, item_id, formula_id, qty, price, unit_type, line_discount, shade_note, line_order, created_at, created_by)
   SELECT id, sale_id, kind, item_id, formula_id, CAST(qty AS REAL), price,

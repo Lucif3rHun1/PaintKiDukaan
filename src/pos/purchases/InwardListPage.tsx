@@ -164,7 +164,7 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
         />
         <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
         {draft && (
-          <button type="button" onClick={() => { window.location.hash = "#/inward/new"; }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
+          <button type="button" onClick={() => { window.location.hash = "#/inward/new?restore=1"; }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
             Open draft
           </button>
