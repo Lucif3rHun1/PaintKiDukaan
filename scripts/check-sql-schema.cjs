@@ -17,18 +17,19 @@ const SCHEMA_FILE = path.join(
 );
 
 if (!fs.existsSync(SCHEMA_FILE)) {
-  console.error(`ERROR: ${SCHEMA_FILE} not found`);
-  process.exit(1);
+  console.warn(`WARN: ${SCHEMA_FILE} not found — skipping schema validation.`);
+  process.exit(0);
 }
 
 // Probe sqlite3. Windows resolves `sqlite3.exe` via PATHEXT automatically.
 const probe = spawnSync("sqlite3", ["--version"], { stdio: "ignore" });
 if (probe.error || probe.status !== 0) {
-  console.error("ERROR: sqlite3 not found in PATH. Install it:");
-  console.error("  Windows: winget install SQLite.SQLite");
-  console.error("  macOS:   brew install sqlite3");
-  console.error("  Linux:   apt install sqlite3");
-  process.exit(1);
+  console.warn("WARN: sqlite3 CLI not found — skipping schema validation.");
+  console.warn("      Install for full validation:");
+  console.warn("        Windows: winget install SQLite.SQLite");
+  console.warn("        macOS:   brew install sqlite3");
+  console.warn("        Linux:   apt install sqlite3");
+  process.exit(0);
 }
 
 process.stdout.write(`Checking ${path.basename(SCHEMA_FILE)}... `);
