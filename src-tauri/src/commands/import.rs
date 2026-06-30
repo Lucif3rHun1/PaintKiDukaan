@@ -6,7 +6,8 @@
 //! Items CSV columns (header required):
 //!   name (required), sku, barcode, brand, category, unit, unit_code,
 //!   units_per_pack, retail_price (rupees), cost_price (rupees),
-//!   promo_price (rupees), min_stock, label_line1, label_line2
+//!   promo_price (rupees), min_stock, label_line1, label_line2,
+//!   stock (optional — sets stock to exact value via adjustment movement)
 //!
 //! Purchases CSV columns (header required):
 //!   item (name/sku/barcode, required), qty (required),
@@ -292,6 +293,8 @@ pub fn cmd_import_items_csv(
                 });
 
             let position = get_field(row, &hmap, &["position", "pos", "shelf"]);
+            let stock_qty = get_field(row, &hmap, &["stock", "qty", "quantity", "stock_qty", "current_stock", "inventory"])
+                .and_then(|s| s.parse::<f64>().ok());
 
             // Validate
             if retail_price_paise < 0 || cost_price_paise < 0 {
@@ -338,6 +341,7 @@ pub fn cmd_import_items_csv(
                 existing_items.iter().find(|it| it.name.to_lowercase() == name.to_lowercase()).map(|it| it.id)
             };
 
+            let mut processed_item_id: Option<i64> = None;
             if let Some(item_id) = existing_id {
                 // ── UPSERT: update existing item's mutable fields ──
                 // SKU is never overwritten; barcode is kept if already set
@@ -401,6 +405,7 @@ pub fn cmd_import_items_csv(
                         item_id,
                     ],
                 )?;
+                processed_item_id = Some(item_id);
                 result.created += 1; // counts as "processed"
             } else {
                 // ── INSERT: new item ──
@@ -444,7 +449,10 @@ pub fn cmd_import_items_csv(
                         now_ms,
                     ],
                 ) {
-                    Ok(_) => result.created += 1,
+                    Ok(_) => {
+                        processed_item_id = Some(tx.last_insert_rowid());
+                        result.created += 1;
+                    }
                     Err(e) => {
                         result.errors.push(ImportRowError {
                             row: row_num,
@@ -452,6 +460,29 @@ pub fn cmd_import_items_csv(
                         });
                         result.skipped += 1;
                     }
+                }
+            }
+
+            if let (Some(item_id), Some(target_stock)) = (processed_item_id, stock_qty) {
+                let current_balance: f64 = tx.query_row(
+                    "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
+                    params![item_id],
+                    |r| r.get(0),
+                ).unwrap_or(0.0);
+                let delta = target_stock - current_balance;
+                if delta.abs() > f64::EPSILON {
+                    tx.execute(
+                        "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
+                         VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='adjustment'), (SELECT sell_unit_id FROM items WHERE id = ?1), 'import', NULL, ?4, ?5, ?6)",
+                        params![
+                            item_id,
+                            primary_location_id,
+                            delta,
+                            "Stock set by CSV import",
+                            now_ms,
+                            user.id,
+                        ],
+                    )?;
                 }
             }
         }

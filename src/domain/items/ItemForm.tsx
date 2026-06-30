@@ -14,6 +14,7 @@ import { listLocations, listSubLocations } from "../locations/api";
 import { createInward } from "../../pos/api";
 import type { NewPurchase } from "../../pos/types";
 import { listCategories } from "../categories/api";
+import { toTitleCase } from "../../lib/format/titleCase";
 import { formatItemName } from "./display";
 import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
 import type { BatchLabel } from "../../pos/print";
@@ -331,6 +332,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onBlur={() => { const n = toTitleCase(name); if (n !== name) setName(n); }}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="none"

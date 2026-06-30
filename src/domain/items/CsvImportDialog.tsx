@@ -4,8 +4,8 @@ import { importItemsCsv } from "./api";
 
 const COLUMNS: ImportColumn[] = [
   { name: "name (or Product, Item Name, Description)", required: true, example: "Asian Paints Apex" },
-  { name: "sku (or SKU Code, Item Code, Product Code)", required: false, example: "AP-APEX-20L" },
-  { name: "barcode (or EAN, UPC, GTIN)", required: false, example: "8901234567890" },
+  { name: "sku (or SKU Code, Item Code, Product Code)", required: false, example: "AP-APEX-20L", readonly: true },
+  { name: "barcode (or EAN, UPC, GTIN)", required: false, example: "8901234567890", readonly: true },
   { name: "brand (or Manufacturer, Company)", required: false, example: "Asian Paints" },
   { name: "category (or Group, Type, Classification)", required: false, example: "Exterior" },
   { name: "sell_unit (or Sale Unit, UOM, Measure)", required: false, example: "unit or box" },
@@ -17,6 +17,7 @@ const COLUMNS: ImportColumn[] = [
   { name: "primary_location (or Location, Warehouse, Store, Godown)", required: false, example: "Shop Floor" },
   { name: "sub_location (or Rack, Zone, Aisle)", required: false, example: "Rack A" },
   { name: "position (or Shelf, Bin, Spot)", required: false, example: "Shelf 3" },
+  { name: "stock (or Quantity, Current Stock, Inventory)", required: false, example: "25", type: "number" },
 ];
 
 interface Props {

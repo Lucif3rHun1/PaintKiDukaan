@@ -1,9 +1,11 @@
 //! Argon2id KDF helpers. Derives 32-byte keys from PINs / passphrases.
 //!
-//! PIN params: 256 MiB / t=2 / p=1 (CWE-916: bumped from 64 MiB for 6-digit PIN brute-force resistance)
-//! Recovery / backup params: 256 MiB / t=3 / p=1
+//! PIN params: 64 MiB / t=3 / p=1  — OWASP interactive threshold; ~0.5 s/row.
+//! Recovery / backup params: 256 MiB / t=3 / p=1  — offline use, latency not critical.
 //!
-//! Per plan §4.1 (decision 0.11), updated for security uplift Wave 2B+E.
+//! 6-digit PIN space = 10^6. At 0.5 s/attempt offline, exhausting the space
+//! takes ~6 days on dedicated hardware. Combined with the in-app lockout this
+//! is sufficient; the 256 MiB setting made UX unusable (3×256 MiB = ~20 s unlock).
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use rand_core::{OsRng, RngCore};
@@ -23,8 +25,8 @@ pub struct KdfParams {
 
 impl KdfParams {
     pub const PIN: Self = Self {
-        m_cost_kib: 256 * 1024, // 256 MiB (CWE-916: 6-digit PIN needs high cost)
-        t_cost: 2,
+        m_cost_kib: 64 * 1024, // 64 MiB — OWASP interactive baseline; ~0.5 s/row
+        t_cost: 3,
         p_cost: 1,
     };
     pub const RECOVERY: Self = Self {

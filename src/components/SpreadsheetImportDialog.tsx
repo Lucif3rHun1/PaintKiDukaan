@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Download,
   Pencil,
+  Lock,
   X,
 } from "lucide-react";
 
@@ -34,6 +35,8 @@ export interface ImportColumn {
   type?: ColumnType;
   /** Example value shown in the template row. */
   example?: string;
+  /** If true, cell is displayed as read-only (auto-generated/prefixed values). */
+  readonly?: boolean;
 }
 
 export interface SpreadsheetImportDialogProps {
@@ -59,6 +62,12 @@ export interface SpreadsheetImportDialogProps {
 /* ── component ───────────────────────────────────────────────── */
 
 type Phase = "select" | "preview" | "importing" | "done";
+
+function parseHeaderDisplay(header: string): string {
+  const orIdx = header.indexOf("(or ");
+  if (orIdx > 0) return header.slice(0, orIdx).trim();
+  return header;
+}
 
 export function SpreadsheetImportDialog({
   open,
@@ -331,26 +340,39 @@ export function SpreadsheetImportDialog({
             <div className="space-y-3">
               {/* Summary bar */}
               <div className="flex items-center justify-between">
-                <p className="text-sm text-foreground">
-                  <strong>{rows.length}</strong> row
-                  {rows.length !== 1 ? "s" : ""} found.{" "}
-                  <span className="text-muted-foreground">
-                    {activeCount} to import
-                    {issueCount > 0 && (
-                      <>
-                        , <span className="text-destructive">{issueCount} with issues</span>
-                      </>
-                    )}
-                    {skipped.size > 0 && `, ${skipped.size} skipped`}
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-foreground">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                    {rows.length} row{rows.length !== 1 ? "s" : ""}
                   </span>
-                </p>
-                <div className="flex items-center gap-1">
-                  {requiredCols.length > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
-                      <span className="inline-block h-2 w-2 rounded-full bg-destructive/40" />
-                      = has issue
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    {activeCount} to import
+                  </span>
+                  {issueCount > 0 && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 dark:bg-red-950/30 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-500" />
+                      {issueCount} with issues
                     </span>
                   )}
+                  {skipped.size > 0 && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+                      {skipped.size} skipped
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {requiredCols.length > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                      <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+                      = required
+                    </span>
+                  )}
+                  <span className="inline-flex items-center gap-1 text-[10px] text-destructive">
+                    <span className="inline-block h-2 w-2 rounded-full bg-destructive/40" />
+                    = has issue
+                  </span>
                 </div>
               </div>
 
@@ -376,20 +398,28 @@ export function SpreadsheetImportDialog({
                           .toLowerCase()
                           .replace(/\s+/g, "_");
                         const isReq = requiredCols.includes(normalized);
+                        const displayName = parseHeaderDisplay(h);
+                        const colDef = colDefByHeader.get(normalized);
+                        const colType = colDef?.type;
                         return (
                           <th
                             key={i}
                             className={cn(
                               "px-3 py-2 text-left font-medium",
                               isReq
-                                ? "text-destructive"
+                                ? "text-amber-700 dark:text-amber-400"
                                 : "text-muted-foreground",
                             )}
                           >
-                            {h}
-                            {isReq && (
-                              <span className="ml-1 text-destructive">
-                                *
+                            <span className="inline-flex items-center gap-1">
+                              {displayName}
+                              {isReq && (
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+                              )}
+                            </span>
+                            {colType && colType !== "string" && (
+                              <span className="mt-0.5 block text-[10px] font-normal text-muted-foreground/60">
+                                {colType}
                               </span>
                             )}
                           </th>
@@ -400,12 +430,19 @@ export function SpreadsheetImportDialog({
                   <tbody>
                     {rows.map((row, ri) => {
                       const isSkipped = skipped.has(ri);
+                      const actualRowErrors = headers.reduce((acc, h, ci) => {
+                        const val = row[ci] ?? "";
+                        const missing = isRequiredMissing(h, val);
+                        const errMsg = cellErrors[ri]?.[ci] ?? null;
+                        return acc + ((missing || errMsg) ? 1 : 0);
+                      }, 0);
                       return (
                         <tr
                           key={ri}
                           className={cn(
                             "border-b border-border transition-colors",
-                            isSkipped && "opacity-40",
+                            isSkipped && "bg-muted/50 opacity-50",
+                            !isSkipped && ri % 2 === 1 && "bg-muted/30",
                           )}
                         >
                           {/* Checkbox */}
@@ -419,11 +456,23 @@ export function SpreadsheetImportDialog({
                           </td>
                           {/* Row number */}
                           <td className="px-2 py-1.5 text-center text-muted-foreground">
-                            {ri + 1}
+                            {actualRowErrors > 0 && !isSkipped ? (
+                              <span className="inline-flex items-center gap-0.5">
+                                {ri + 1}
+                                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/40 px-1 text-[9px] font-bold text-red-700 dark:text-red-400">
+                                  {actualRowErrors}
+                                </span>
+                              </span>
+                            ) : (
+                              ri + 1
+                            )}
                           </td>
                           {/* Data cells */}
                           {headers.map((_, ci) => {
                             const val = row[ci] ?? "";
+                            const normalized = headers[ci].toLowerCase().replace(/\s+/g, "_");
+                            const colDef = colDefByHeader.get(normalized);
+                            const isReadonly = colDef?.readonly === true;
                             const missing = isRequiredMissing(
                               headers[ci],
                               val,
@@ -431,6 +480,7 @@ export function SpreadsheetImportDialog({
                             const errMsg = cellErrors[ri]?.[ci] ?? null;
                             const hasError = !!(missing || errMsg);
                             const isEdit =
+                              !isReadonly &&
                               editing?.row === ri &&
                               editing?.col === ci;
 
@@ -439,9 +489,11 @@ export function SpreadsheetImportDialog({
                                 key={ci}
                                 className={cn(
                                   "px-3 py-1.5",
-                                  hasError
-                                    ? "bg-destructive/10"
-                                    : "",
+                                  hasError && missing && !errMsg
+                                    ? "bg-amber-50 dark:bg-amber-950/30"
+                                    : hasError
+                                      ? "bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
+                                      : "",
                                   isSkipped
                                     ? "text-muted-foreground"
                                     : "text-muted-foreground",
@@ -472,22 +524,37 @@ export function SpreadsheetImportDialog({
                                   />
                                 ) : (
                                   <span
-                                    className="flex cursor-text items-center gap-1"
-                                    onClick={() =>
-                                      setEditing({
-                                        row: ri,
-                                        col: ci,
-                                      })
+                                    className={cn(
+                                      "flex items-center gap-1",
+                                      isReadonly
+                                        ? "cursor-default"
+                                        : "cursor-text",
+                                    )}
+                                    onClick={
+                                      isReadonly
+                                        ? undefined
+                                        : () =>
+                                            setEditing({
+                                              row: ri,
+                                              col: ci,
+                                            })
                                     }
                                   >
                                     <span className="flex-1 truncate">
-                                      {val || (
+                                      {val ? val : missing ? (
+                                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 italic">
+                                          <AlertCircle className="h-3 w-3" />
+                                          required
+                                        </span>
+                                      ) : (
                                         <span className="text-muted-foreground/50 italic">
                                           empty
                                         </span>
                                       )}
                                     </span>
-                                    {errMsg ? (
+                                    {isReadonly ? (
+                                      <span title="Auto-generated — cannot edit"><Lock className="h-3 w-3 flex-shrink-0 text-muted-foreground/20" /></span>
+                                    ) : errMsg ? (
                                       <span title={errMsg} className="inline-flex">
                                         <AlertCircle
                                           className="h-3 w-3 flex-shrink-0 text-destructive"

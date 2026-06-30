@@ -361,14 +361,19 @@ export function BulkLabelsPage() {
 
   // Save/restore labelsPerRow across printer type switches.
   const savedLabelsPerRowRef = useRef(1);
+  const prevPrinterRef = useRef(printer);
+  // Enforce valid sizeChoice for current printer type.
   useEffect(() => {
     const presets = PRINTER_PRESETS[printer];
     if (!presets.includes(sizeChoice)) setSizeChoice(presets[0]);
-    // Restore labelsPerRow when switching back to thermal.
-    if (printer === "thermal") {
+  }, [printer, sizeChoice]);
+  // Restore labelsPerRow only when switching BACK to thermal from another type.
+  useEffect(() => {
+    if (printer === "thermal" && prevPrinterRef.current !== "thermal") {
       setLabelsPerRow(savedLabelsPerRowRef.current || 1);
     }
-  }, [printer, sizeChoice]);
+    prevPrinterRef.current = printer;
+  }, [printer]);
   // Snapshot labelsPerRow whenever it changes while on thermal.
   useEffect(() => {
     if (printer === "thermal") savedLabelsPerRowRef.current = labelsPerRow;

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "check:sql": "bash scripts/check-sql-schema.sh",
+    "check:sql": "node scripts/check-sql-schema.cjs",
     "build": "pnpm run check:sql && tsc -b && vite build",
     "preview": "vite preview",
     "pretauri": "pnpm run check:tauri-cli-native",

@@ -312,7 +312,7 @@ function ChangeDecoyPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
       });
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(extractError(err));
     }
   }
 
@@ -393,7 +393,7 @@ function ChangeDuressPinForm({ onDone, onCancel }: { onDone: () => void; onCance
       });
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(extractError(err));
     }
   }
 
@@ -599,7 +599,7 @@ function ChangeOwnerPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
       reset();
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(extractError(err));
     }
   }
 
@@ -681,7 +681,7 @@ function SetRecoveryPassphraseForm({ onDone, onCancel }: { onDone: () => void; o
       reset();
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(extractError(err));
     }
   }
 

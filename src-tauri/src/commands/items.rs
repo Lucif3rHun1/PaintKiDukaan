@@ -208,32 +208,79 @@ pub fn make_name_abbreviation(name: &str) -> String {
     abbr
 }
 
-/// Title-case an item name and normalize unit abbreviations (ml, ltr, kg, etc. stay lowercase).
+/// Title-case an item name and normalize unit abbreviations.
+///
+/// Handles number+unit adjacency ("1ltr" → "1 Ltr", "500ml" → "500 ml")
+/// and normalizes unit casing ("Ml" → "ml", "LTR" → "Ltr").
+/// Applied on create, update, and CSV import.
 pub fn to_title_case(input: &str) -> String {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return trimmed.to_string();
     }
-    const UNITS: &[&str] = &["ml", "ltr", "l", "kg", "gm", "g", "mm", "cm", "m", "ft", "inch", "in", "pcs", "pc", "nos", "no", "sqft", "sqm"];
-    trimmed
-        .split_whitespace()
-        .map(|w| {
-            let lower = w.to_lowercase();
-            if UNITS.contains(&lower.as_str()) {
-                return lower;
+    // Sorted longest-first so "inch" matches before "in", "sqft" before "ft", etc.
+    const UNITS: &[&str] = &["sqft", "sqm", "inch", "ltr", "pcs", "nos", "ml", "kg", "gm", "mm", "cm", "ft", "pc", "no", "in", "l", "g", "m"];
+    const UNIT_CASING: &[(&str, &str)] = &[
+        ("sqft", "Sqft"), ("sqm", "Sqm"), ("inch", "Inch"),
+        ("ltr", "Ltr"), ("pcs", "Pcs"), ("nos", "Nos"),
+        ("ml", "ml"), ("kg", "Kg"), ("gm", "Gm"),
+        ("mm", "mm"), ("cm", "cm"), ("ft", "Ft"),
+        ("pc", "Pc"), ("no", "No"), ("in", "In"),
+        ("l", "L"), ("g", "G"), ("m", "m"),
+    ];
+
+    fn title_word(s: &str) -> String {
+        let lower = s.to_lowercase();
+        let mut chars = lower.chars();
+        match chars.next() {
+            None => String::new(),
+            Some(first) => {
+                let upper: String = first.to_uppercase().collect();
+                let rest: String = chars.collect();
+                format!("{upper}{rest}")
             }
-            let mut chars = lower.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(first) => {
-                    let upper: String = first.to_uppercase().collect();
-                    let rest: String = chars.collect();
-                    format!("{upper}{rest}")
-                }
+        }
+    }
+
+    fn normalize_unit(s: &str) -> String {
+        let lower = s.to_lowercase();
+        for &(lu, canonical) in UNIT_CASING {
+            if lower == lu {
+                return canonical.to_string();
             }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+        }
+        lower
+    }
+
+    fn is_known_unit(s: &str) -> bool {
+        let lower = s.to_lowercase();
+        UNITS.iter().any(|&u| lower == u)
+    }
+
+    let mut words = Vec::new();
+
+    for token in trimmed.split_whitespace() {
+        if is_known_unit(token) {
+            words.push(normalize_unit(token));
+            continue;
+        }
+        let split_at = token
+            .char_indices()
+            .find(|&(_, c)| !c.is_ascii_digit() && c != '.' && c != ',')
+            .map(|(i, _)| i)
+            .unwrap_or(token.len());
+        if split_at > 0 && split_at < token.len() {
+            let (number, rest) = token.split_at(split_at);
+            if is_known_unit(rest) {
+                words.push(number.to_string());
+                words.push(normalize_unit(rest));
+                continue;
+            }
+        }
+        words.push(title_word(token));
+    }
+
+    words.join(" ")
 }
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]

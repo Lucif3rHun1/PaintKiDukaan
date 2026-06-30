@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
+use crate::crypto::kdf::{self, KdfParams, derive_pin_kek, random_salt};
 use crate::db::keywrap::{self, PinRole};
 use crate::error::AppError;
 
@@ -71,6 +72,43 @@ pub fn try_unlock(
             }
             Err(e) => {
                 last_err = Some(e);
+            }
+        }
+    }
+
+    // Silently upgrade KDF params for the matched row if they are heavier than
+    // the current target. This self-heals existing installs set up with 256 MiB
+    // params without requiring a PIN-change flow.
+    if let Some(ref result) = matched {
+        if let Some(row) = rows.iter().find(|r| r.role == result.role) {
+            let stored: KdfParams = serde_json::from_slice(&row.pin_params)
+                .unwrap_or(KdfParams::PIN);
+            let target = KdfParams::PIN;
+            if stored.m_cost_kib > target.m_cost_kib || stored.t_cost != target.t_cost {
+                let new_salt = random_salt();
+                if let Ok(mut new_kek) = derive_pin_kek(pin, &new_salt, &target) {
+                    let verifier = keywrap::pin_verifier_for_kek(&new_kek).to_vec();
+                    let wrap_result = crate::crypto::wrap::wrap_dek(&*result.dek, &new_kek);
+                    kdf::zeroize_key(&mut new_kek);
+                    if let Ok(wrapped) = wrap_result {
+                        let ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64;
+                        let mut updated = row.clone();
+                        updated.pin_salt = new_salt.to_vec();
+                        updated.pin_params = serde_json::to_vec(&target).unwrap_or_default();
+                        updated.pin_wrapped_dek = wrapped;
+                        updated.pin_verifier = verifier;
+                        updated.updated_at = ts;
+                        if keywrap::update(&*conn, &updated).is_ok() {
+                            log::info!(
+                                "pin_entry: KDF params migrated to 64MiB/t=3 for {:?}",
+                                result.role
+                            );
+                        }
+                    }
+                }
             }
         }
     }
