@@ -148,6 +148,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const [saleUnits, setSaleUnits] = useState<SaleUnit[]>([]);
+  const [lastUsedUnit, setLastUsedUnit] = useState("unit");
 
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
@@ -180,6 +181,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         }))
       );
       setBillDiscount(sale.bill_discount);
+      setSplits(sale.payment_modes ?? []);
       if (sale.customer_id) {
         getCustomer(sale.customer_id).then((c) => {
           if (c) {
@@ -188,7 +190,10 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
           }
         }).catch(() => {});
       }
-    }).catch(() => {});
+    }).catch((e: unknown) => {
+      toast.error(extractError(e));
+      onExit();
+    });
   }, [editSaleId]);
 
   const draftData = useMemo(() => ({
@@ -224,6 +229,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
       if (data.validityDays != null) setValidityDays(data.validityDays);
       if (data.ackFlag != null) setAckFlag(data.ackFlag);
       if (data.customerId != null) {
+        setWalkIn(false);
         getCustomer(data.customerId)
           .then((c) => { if (c) setCustomer(c); })
           .catch(() => {});
@@ -282,12 +288,12 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         display_name: "",
         qty: 1,
         price: 0,
-        unit_type: "unit",
+        unit_type: lastUsedUnit,
         line_discount: 0,
         shade_note: null,
       },
     ]);
-  }, []);
+  }, [lastUsedUnit]);
 
   const handleQtyChange = useCallback(
     (index: number, rawQty: number) => {
@@ -439,7 +445,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
 
   // ---- Save sale / quotation ----
   const walkInUnpaid =
-    kind === "final" && customer === null && balance > 0;
+    kind !== "quotation" && customer === null && balance > 0;
   const canSave = useMemo(() => {
     if (lines.length === 0) return false;
     if (lines.every((l) => l.qty <= 0)) return false;
@@ -892,7 +898,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                               {kind === "fbill" && l.item_id === null ? (
                                 <select
                                   value={l.unit_type}
-                                  onChange={(e) => updateLine(i, { unit_type: e.target.value })}
+                                  onChange={(e) => { setLastUsedUnit(e.target.value); updateLine(i, { unit_type: e.target.value }); }}
                                   className="h-6 rounded border border-border bg-muted px-1 text-[10px] font-medium text-muted-foreground focus:border-ring focus:outline-none"
                                 >
                                   <option value="unit">pc</option>

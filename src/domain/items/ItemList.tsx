@@ -452,7 +452,7 @@ export function ItemList({ role }: Props) {
           lines: [{
             item_id: stockAdjustItem.id,
             qty: absQty,
-            unit_type: stockAdjustItem.unit_code ?? "unit",
+            unit_type: stockAdjustItem.sell_unit || "pcs",
             unit_price_paise: stockAdjustItem.cost_paise,
             location_id: locId,
           }],

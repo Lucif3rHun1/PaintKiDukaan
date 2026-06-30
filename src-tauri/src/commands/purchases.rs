@@ -446,21 +446,33 @@ pub fn adjust_stock(
         return Err(PurchaseError::BadQty(0));
     }
     if req.qty < 0.0 {
-        // Check current balance won't go negative.
+        let loc_active: bool = db
+            .with_conn(|c| {
+                c.query_row(
+                    "SELECT is_active FROM locations WHERE id = ?1",
+                    params![req.location_id],
+                    |r| r.get(0),
+                )
+                .optional()
+            })
+            .map_err(PurchaseError::Db)?
+            .unwrap_or(false);
+        if !loc_active {
+            return Err(PurchaseError::LocationNotFound(0, req.location_id));
+        }
         let current: f64 = db
             .with_conn(|c| {
                 c.query_row(
-                    "SELECT COALESCE(sb.qty, 0) FROM items i \
-                     LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb \
-                     ON sb.item_id = i.id WHERE i.id = ?1",
-                    params![req.item_id],
+                    "SELECT COALESCE(SUM(qty), 0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                    params![req.item_id, req.location_id],
                     |r| r.get(0),
                 )
             })
-            .map_err(|e| PurchaseError::Db(e))?;
+            .map_err(PurchaseError::Db)?;
         if current + req.qty < 0.0 {
             return Err(PurchaseError::Other(anyhow::anyhow!(
-                "stock would go negative (current: {}, reduce: {})",
+                "stock would go negative at location {} (current: {}, reduce: {})",
+                req.location_id,
                 current,
                 req.qty.abs()
             )));
