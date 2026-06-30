@@ -677,7 +677,7 @@ pub fn cmd_import_inward_csv(
             let notes = get_field(row, &hmap, &["notes", "note", "remarks"]);
 
             // Compute base qty
-            let base = crate::commands::purchases::base_qty(qty, "unit", item.units_per_pack as f64);
+            let base = crate::commands::purchases::base_qty(qty, "pcs", item.units_per_pack as f64);
             let line_total = (base * cost_paise as f64).round() as i64;
 
             // Create purchase

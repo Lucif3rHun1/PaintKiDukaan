@@ -149,7 +149,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const [saleUnits, setSaleUnits] = useState<SaleUnit[]>([]);
-  const [lastUsedUnit, setLastUsedUnit] = useState("unit");
+  const [lastUsedUnit, setLastUsedUnit] = useState("pcs");
 
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
@@ -209,7 +209,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
   }), [kind, customer, lines, billDiscount, splits, validityDays, ackFlag]);
 
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
-  const { draft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("sale", draftData);
+  const { draft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave(`sale-${kind}`, draftData);
 
   useEffect(() => {
     if (!draftLoading && draftData.lines.length > 0) markDirty();
@@ -337,7 +337,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
           display_name: formulaLabel,
           qty: 1,
           price: hit.retail_price_paise,
-          unit_type: "unit",
+          unit_type: "pcs",
           line_discount: 0,
           shade_note: null,
         };
@@ -438,7 +438,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
       display_name: f.name ? `${f.id_code} — ${f.name}` : f.id_code,
       qty: 1,
       price: f.retail_price_paise,
-      unit_type: "unit",
+      unit_type: "pcs",
       line_discount: 0,
       shade_note: null,
     };

@@ -701,7 +701,9 @@ impl Db {
             }
         }
 
-        // -- Rename default sale unit code from "unit" to "pcs" (guard: runs once) --
+        // M-INLINE-020: Rename default sale unit code from "unit" to "pcs" (guard: runs once).
+        // Atomic — both the simple UPDATE and the sale_items table recreation must succeed or
+        // roll back together, otherwise we'd leave a half-renamed schema behind.
         {
             let needs_unit_rename: bool = conn
                 .query_row(
@@ -713,41 +715,53 @@ impl Db {
                 )
                 .unwrap_or(false);
             if needs_unit_rename {
-                conn.execute_batch(
-                    "UPDATE sale_units SET code = 'pcs', label = 'Pcs' WHERE code = 'unit';
-                     UPDATE items SET sell_unit = 'pcs' WHERE sell_unit = 'unit';",
-                )?;
-                // Recreate sale_items with updated CHECK constraint
-                conn.execute_batch(
-                    "PRAGMA foreign_keys = OFF;
-                     CREATE TABLE sale_items_new (
-                                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                                 sale_id       INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
-                                 kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),
-                                 item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,
-                                 formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
-                                 qty           REAL NOT NULL CHECK(qty > 0),
-                                 price         INTEGER NOT NULL CHECK(price >= 0),
-                                 unit_type     TEXT    NOT NULL DEFAULT 'pcs' CHECK(unit_type IN ('pcs','mtr','kg')),
-                                 line_discount INTEGER NOT NULL DEFAULT 0,
-                                 shade_note    TEXT,
-                                 line_order    INTEGER NOT NULL DEFAULT 0,
-                                 created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
-                                 created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
-                                 display_name  TEXT
-                             );
-                             INSERT INTO sale_items_new
-                                 SELECT id, sale_id, kind, item_id, formula_id, qty, price,
-                                        CASE WHEN unit_type = 'unit' THEN 'pcs' ELSE unit_type END,
-                                        line_discount, shade_note, line_order, created_at, created_by, display_name
-                                 FROM sale_items;
-                             DROP TABLE sale_items;
-                             ALTER TABLE sale_items_new RENAME TO sale_items;
-                             CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
-                             CREATE INDEX IF NOT EXISTS idx_sale_items_item_id ON sale_items(item_id);
-                             CREATE INDEX IF NOT EXISTS idx_sale_items_formula_id ON sale_items(formula_id);
-                             PRAGMA foreign_keys = ON;",
-                )?;
+                conn.execute_batch("BEGIN")?;
+                let result: Result<(), rusqlite::Error> = (|| {
+                    conn.execute_batch(
+                        "UPDATE sale_units SET code = 'pcs', label = 'Pcs' WHERE code = 'unit';
+                         UPDATE items SET sell_unit = 'pcs' WHERE sell_unit = 'unit';",
+                    )?;
+                    // Recreate sale_items with updated CHECK constraint
+                    conn.execute_batch(
+                        "PRAGMA foreign_keys = OFF;
+                         CREATE TABLE sale_items_new (
+                                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     sale_id       INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
+                                     kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),
+                                     item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,
+                                     formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
+                                     qty           REAL NOT NULL CHECK(qty > 0),
+                                     price         INTEGER NOT NULL CHECK(price >= 0),
+                                     unit_type     TEXT    NOT NULL DEFAULT 'pcs' CHECK(unit_type IN ('pcs','mtr','kg')),
+                                     line_discount INTEGER NOT NULL DEFAULT 0,
+                                     shade_note    TEXT,
+                                     line_order    INTEGER NOT NULL DEFAULT 0,
+                                     created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+                                     created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+                                     display_name  TEXT
+                                 );
+                                 INSERT INTO sale_items_new
+                                     SELECT id, sale_id, kind, item_id, formula_id, qty, price,
+                                            CASE WHEN unit_type = 'unit' THEN 'pcs' ELSE unit_type END,
+                                            line_discount, shade_note, line_order, created_at, created_by, display_name
+                                     FROM sale_items;
+                                 DROP TABLE sale_items;
+                                 ALTER TABLE sale_items_new RENAME TO sale_items;
+                                 CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
+                                 CREATE INDEX IF NOT EXISTS idx_sale_items_item_id ON sale_items(item_id);
+                                 CREATE INDEX IF NOT EXISTS idx_sale_items_formula_id ON sale_items(formula_id);
+                                 PRAGMA foreign_keys = ON;",
+                    )?;
+                    Ok(())
+                })();
+                match result {
+                    Ok(()) => conn.execute_batch("COMMIT")?,
+                    Err(e) => {
+                        // Best-effort rollback; surface the original error either way.
+                        let _ = conn.execute_batch("ROLLBACK");
+                        return Err(e);
+                    }
+                }
             }
         }
 

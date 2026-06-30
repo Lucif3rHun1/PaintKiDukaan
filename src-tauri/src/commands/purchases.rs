@@ -58,7 +58,7 @@ pub struct PurchaseItem {
 pub struct InwardLine {
     pub item_id: i64,
     pub qty: f64,
-    pub unit_type: String, // "unit" | "mtr" | "kg"
+    pub unit_type: String, // "pcs" | "mtr" | "kg"
     pub unit_price_paise: i64,
     pub location_id: i64,
 }
@@ -102,7 +102,7 @@ pub enum PurchaseError {
     BadQty(usize),
     #[error("line {0}: unit_price_paise must be >= 0")]
     BadCost(usize),
-    #[error("line {0}: unit_type must be 'unit', 'mtr', or 'kg'")]
+    #[error("line {0}: unit_type must be 'pcs', 'mtr', or 'kg'")]
     BadUnitType(usize),
     #[error("line {0}: item {1} not found")]
     ItemNotFound(usize, i64),
@@ -340,7 +340,7 @@ pub fn create_inward(
         if l.unit_price_paise < 0 {
             return Err(PurchaseError::BadCost(i));
         }
-        if l.unit_type != "unit" && l.unit_type != "mtr" && l.unit_type != "kg" {
+        if l.unit_type != "pcs" && l.unit_type != "mtr" && l.unit_type != "kg" {
             return Err(PurchaseError::BadUnitType(i));
         }
     }
@@ -652,8 +652,8 @@ mod tests {
     }
 
     #[test]
-    fn base_qty_unit_passes_through() {
-        assert_eq!(base_qty(3.0, "unit", 12.0), 3.0);
+    fn base_qty_pcs_passes_through() {
+        assert_eq!(base_qty(3.0, "pcs", 12.0), 3.0);
     }
 
     #[test]
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn purchase_total_sums_qty_times_cost() {
-        let lines = vec![line(3.0, "unit", 100), line(2.0, "unit", 100)];
+        let lines = vec![line(3.0, "pcs", 100), line(2.0, "pcs", 100)];
         let upb = vec![12.0, 12.0];
         // 3 * 100 + 2 * 100 = 300 + 200 = 500 paise.
         assert_eq!(purchase_total(&lines, &upb), 500);
@@ -712,7 +712,7 @@ mod tests {
                 lines: vec![InwardLine {
                     item_id: 1,
                     qty: 0.0,
-                    unit_type: "unit".into(),
+                    unit_type: "pcs".into(),
                     unit_price_paise: 100,
                     location_id: 1,
                 }],
@@ -759,7 +759,7 @@ mod tests {
                 lines: vec![InwardLine {
                     item_id: 1,
                     qty: 3.0,
-                    unit_type: "unit".into(),
+                    unit_type: "pcs".into(),
                     unit_price_paise: 18000,
                     location_id: 1,
                 }],
@@ -823,7 +823,7 @@ mod tests {
                 lines: vec![InwardLine {
                     item_id: 1,
                     qty: 5.0,
-                    unit_type: "unit".into(),
+                    unit_type: "pcs".into(),
                     unit_price_paise: 18000,
                     location_id: 1,
                 }],
