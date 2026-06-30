@@ -95,14 +95,47 @@ pub fn purge_app_data(app_data_dir: &Path) -> Result<(), AppError> {
         return Ok(());
     }
     let entries: Vec<PathBuf> = walk_dir(app_data_dir)?;
+    // ponytail: aggregate in-use failures instead of spamming WARN per file.
+    let mut in_use: u64 = 0;
+    let mut real: u64 = 0;
     for entry in entries.into_iter().rev() {
         if entry.is_file() {
-            if let Err(e) = secure_delete(&entry) {
-                log::warn!("secure_delete failed for {}: {e}", entry.display());
+            match secure_delete(&entry) {
+                Ok(()) => {}
+                Err(e) if is_in_use_error(&e) => {
+                    in_use += 1;
+                }
+                Err(e) => {
+                    log::warn!("secure_delete failed for {}: {e}", entry.display());
+                    real += 1;
+                }
             }
         }
     }
+    if in_use > 0 {
+        log::debug!(
+            "secure_delete skipped {in_use} in-use file(s) under {}",
+            app_data_dir.display()
+        );
+    }
+    if real > 0 {
+        log::warn!(
+            "secure_delete: {real} unexpected failure(s) under {}",
+            app_data_dir.display()
+        );
+    }
     Ok(())
+}
+
+fn is_in_use_error(e: &AppError) -> bool {
+    let AppError::Internal(msg) = e else { return false; };
+    let m = msg.as_str();
+    m.contains("os error 32")      // Windows ERROR_SHARING_VIOLATION
+        || m.contains("os error 33")   // Windows ERROR_LOCK_VIOLATION
+        || m.contains("os error 16")   // Unix EBUSY
+        || m.contains("os error 26")   // Unix ETXTBSY
+        || m.contains("resource busy")
+        || m.contains("text file busy")
 }
 
 fn walk_dir(dir: &Path) -> Result<Vec<PathBuf>, AppError> {

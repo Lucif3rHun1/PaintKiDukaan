@@ -119,6 +119,13 @@ fn run_security_init_inner(
         })
         .unwrap_or(HostileResponse::Lock);
 
+    // ponytail: dev builds skip hostile-lock so VM/CI dev stays usable. Production untouched.
+    let response_policy = if cfg!(debug_assertions) {
+        HostileResponse::Warn
+    } else {
+        response_policy
+    };
+
     let action = hostile_env::respond(&hostile, response_policy);
     match &action {
         ResponseAction::Log => {}
