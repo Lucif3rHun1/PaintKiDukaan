@@ -317,7 +317,7 @@ pub fn cmd_import_items_csv(
             // Resolve sell_unit_id if sell_unit is provided
             let sell_unit_id: Option<i64> = if let Some(ref su) = sell_unit {
                 let sid = tx.query_row(
-                    "SELECT id FROM units WHERE LOWER(code) = LOWER(?1) AND is_active = 1",
+                    "SELECT id FROM sale_units WHERE LOWER(code) = LOWER(?1) AND is_active = 1",
                     params![su],
                     |r| r.get(0),
                 );
@@ -355,7 +355,7 @@ pub fn cmd_import_items_csv(
                     Err(e) => return Err(AppError::from(e)),
                 };
 
-                let _ = tx.execute(
+                tx.execute(
                     "UPDATE items SET
                         barcode = ?1,
                         name = ?2,
@@ -399,7 +399,7 @@ pub fn cmd_import_items_csv(
                         now_ms,
                         item_id,
                     ],
-                );
+                )?;
                 result.created += 1; // counts as "processed"
             } else {
                 // ── INSERT: new item ──
@@ -721,11 +721,11 @@ pub fn cmd_import_inward_csv(
             }
 
             // Insert stock movement
-            let _ = tx.execute(
+            tx.execute(
                 "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
                  VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='purchase'), ?4, 'purchase', ?5, ?6, ?7, ?8)",
                 params![item.id, location_id, base, item.sell_unit_id, pid, notes, now_ms, user.id],
-            );
+            )?;
 
             result.created += 1;
         }
