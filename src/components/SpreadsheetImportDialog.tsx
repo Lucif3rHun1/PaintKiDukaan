@@ -276,32 +276,8 @@ export function SpreadsheetImportDialog({
                   <code>.xls</code>
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Required:{" "}
-                  {columns
-                    .filter((c) => c.required)
-                    .map((c) => (
-                      <code key={c.name}>{c.name}</code>
-                    ))
-                    .reduce<React.ReactNode[]>(
-                      (acc, el) =>
-                        acc.length === 0
-                          ? [el]
-                          : [...acc, ", ", el],
-                      [],
-                    )}
-                  . Optional:{" "}
-                  {columns
-                    .filter((c) => !c.required)
-                    .map((c) => (
-                      <code key={c.name}>{c.name}</code>
-                    ))
-                    .reduce<React.ReactNode[]>(
-                      (acc, el) =>
-                        acc.length === 0
-                          ? [el]
-                          : [...acc, ", ", el],
-                      [],
-                    )}
+                  {columns.filter((c) => c.required).map((c) => c.name).join(", ")}{" "}
+                  required · {columns.filter((c) => !c.required).length} optional columns supported
                 </p>
               </div>
 

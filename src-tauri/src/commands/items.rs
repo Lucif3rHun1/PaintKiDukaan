@@ -208,6 +208,34 @@ pub fn make_name_abbreviation(name: &str) -> String {
     abbr
 }
 
+/// Title-case an item name and normalize unit abbreviations (ml, ltr, kg, etc. stay lowercase).
+pub fn to_title_case(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+    const UNITS: &[&str] = &["ml", "ltr", "l", "kg", "gm", "g", "mm", "cm", "m", "ft", "inch", "in", "pcs", "pc", "nos", "no", "sqft", "sqm"];
+    trimmed
+        .split_whitespace()
+        .map(|w| {
+            let lower = w.to_lowercase();
+            if UNITS.contains(&lower.as_str()) {
+                return lower;
+            }
+            let mut chars = lower.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let upper: String = first.to_uppercase().collect();
+                    let rest: String = chars.collect();
+                    format!("{upper}{rest}")
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<Item> {
     let guard = state
@@ -220,6 +248,7 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
     if payload.name.trim().is_empty() {
         return Err(AppError::Validation("name is required".into()));
     }
+    let normalized_name = to_title_case(&payload.name);
     if payload.retail_price_paise < 0 || payload.cost_paise < 0 {
         return Err(AppError::Validation("prices must be >= 0".into()));
     }
@@ -253,7 +282,7 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
     });
 
     db.with_tx(|tx| {
-        let sku = mint_next_sku(tx, &payload.name, brand_prefix.as_deref())?;
+        let sku = mint_next_sku(tx, &normalized_name, brand_prefix.as_deref())?;
         // Barcode resolution order:
         // 1. caller-provided value
         // 2. auto-generated: SKU as barcode (CODE128 supports alphanumeric)
@@ -265,7 +294,7 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
                 // Still bump brand_sequences so the counter stays in sync
                 // even though we don't use the return value anymore.
                 #[allow(deprecated)]
-                let _ = crate::commands::brands::generate_brand_barcode(tx, _brand_id, &payload.name);
+                let _ = crate::commands::brands::generate_brand_barcode(tx, _brand_id, &normalized_name);
                 sku.clone()
             } else {
                 sku.clone()
@@ -310,7 +339,7 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
             params![
                 sku,
                 barcode,
-                payload.name,
+                normalized_name,
                 brand_text,
                 payload.brand_id,
                 payload.category,
@@ -357,7 +386,7 @@ pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> Ap
             }};
         }
         if let Some(v) = &patch.name {
-            add!("name =", v.clone())
+            add!("name =", to_title_case(v))
         }
         if let Some(v) = &patch.brand {
             add!("brand =", v.clone())
@@ -595,7 +624,46 @@ pub struct ConversionResult {
     pub qty_in_base_units: f64,
 }
 
+// ---- Bulk normalisation ----
 
+#[derive(Debug, Serialize)]
+pub struct NormalizeResult {
+    pub updated: i64,
+}
+
+/// Normalise every item name to title-case. Returns the count of rows changed.
+#[tauri::command(rename_all = "snake_case")]
+pub fn normalize_item_names(state: State<'_, AppState>) -> AppResult<NormalizeResult> {
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let _user = current_user()?;
+    require_role(&_user, &[Role::Owner])?;
+
+    db.with_raw(|c| {
+        let mut stmt = c.prepare(
+            "SELECT id, name FROM items WHERE is_active = 1",
+        )?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut updated: i64 = 0;
+        for (id, name) in &rows {
+            let normalised = to_title_case(name);
+            if normalised != *name {
+                c.execute(
+                    "UPDATE items SET name = ?1, updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000 WHERE id = ?2",
+                    params![normalised, id],
+                )?;
+                updated += 1;
+            }
+        }
+        Ok(NormalizeResult { updated })
+    })
+}
 
 // ---- internals ----
 

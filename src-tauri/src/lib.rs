@@ -206,7 +206,7 @@ pub fn run() {
                 // Wire security controls that require a live window handle.
                 #[cfg(target_os = "windows")]
                 {
-                    use tauri::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
                     if let Ok(wh) = main.window_handle() {
                         if let RawWindowHandle::Win32(w32) = wh.as_raw() {
                             let hwnd_isize = w32.hwnd.get() as isize;
@@ -291,6 +291,7 @@ pub fn run() {
             commands::items::list_items,
             commands::items::get_item,
             commands::items::lookup_item,
+            commands::items::normalize_item_names,
             // Formulas (Slice B) — custom shade mixes (ADR-011)
             commands::formulas::cmd_list_formulas,
             commands::formulas::cmd_get_formula,

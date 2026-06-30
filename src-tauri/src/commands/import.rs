@@ -251,6 +251,7 @@ pub fn cmd_import_items_csv(
                     continue;
                 }
             };
+            let name = crate::commands::items::to_title_case(&name);
 
             // Optional fields
             let sku_code = get_field(row, &hmap, &["sku", "sku_code"]);

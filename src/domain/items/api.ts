@@ -122,3 +122,7 @@ export async function adjustStock(payload: {
 export async function importItemsCsv(csvData: string): Promise<ImportResult> {
   return invoke<ImportResult>("cmd_import_items_csv", { csv_data: csvData });
 }
+
+export async function normalizeItemNames(): Promise<{ updated: number }> {
+  return invoke<{ updated: number }>("normalize_item_names");
+}

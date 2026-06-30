@@ -23,6 +23,7 @@ import {
   Printer,
   TriangleAlert,
   TrendingDown,
+  Sparkles,
 } from "lucide-react";
 
 import {
@@ -43,7 +44,7 @@ import { formatRupeesFromPaise } from "../../lib/money";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { toast } from "../../lib/feedback/toast";
 import { usePaginatedQuery } from "../../lib/query";
-import { adjustStock, getSetting, listBrands, listItems, updateItem } from "./api";
+import { adjustStock, getSetting, listBrands, listItems, normalizeItemNames, updateItem } from "./api";
 import { formatItemName, brandDisplayName } from "./display";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Brand, Item, SubLocation } from "../types";
@@ -87,6 +88,7 @@ export function ItemList({ role }: Props) {
   const [stockAdjustQty, setStockAdjustQty] = useState("");
   const [stockAdjustDir, setStockAdjustDir] = useState<"add" | "reduce">("add");
   const [adjustBusy, setAdjustBusy] = useState(false);
+  const [normalizeBusy, setNormalizeBusy] = useState(false);
 
 
   const canEdit = role === "owner" || role === "stocker";
@@ -623,7 +625,7 @@ export function ItemList({ role }: Props) {
               Add Item
             </Button>
             <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">
-              Import CSV
+              Import
             </Button>
             <DownloadMenu
               headers={exportHeaders}
@@ -631,6 +633,31 @@ export function ItemList({ role }: Props) {
               filename="items-export"
               title="Items Export"
             />
+            {role === "owner" ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                icon={Sparkles}
+                loading={normalizeBusy}
+                onClick={async () => {
+                  if (!confirm("Normalise all item names to title-case?")) return;
+                  setNormalizeBusy(true);
+                  try {
+                    const res = await normalizeItemNames();
+                    toast.success(`Normalised ${res.updated} item name${res.updated === 1 ? "" : "s"}`);
+                    void refetch();
+                  } catch (e) {
+                    toast.error(extractError(e));
+                  } finally {
+                    setNormalizeBusy(false);
+                  }
+                }}
+                className="!text-xs"
+              >
+                Normalise Names
+              </Button>
+            ) : null}
           </>
         ) : null}
         <Button

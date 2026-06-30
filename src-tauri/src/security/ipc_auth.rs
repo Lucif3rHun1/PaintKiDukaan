@@ -320,6 +320,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "update_item",
         min_role: Role::Cashier,
     },
+    CommandAcl {
+        name: "normalize_item_names",
+        min_role: Role::Owner,
+    },
     // Brands (write)
     CommandAcl {
         name: "create_brand",
@@ -954,8 +958,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            178,
-            "ACL has {} entries, expected 178",
+            179,
+            "ACL has {} entries, expected 179",
             COMMAND_ACL.len()
         );
     }
