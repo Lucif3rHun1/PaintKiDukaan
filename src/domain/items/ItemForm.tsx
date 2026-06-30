@@ -205,7 +205,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             lines: [{
               item_id: item.id,
               qty: openingQty,
-              unit_type: item.sell_unit || "pcs",
+              unit_type: item.sell_unit || "unit",
               unit_price_paise: item.cost_paise,
               location_id: item.primary_location_id,
             }],
@@ -257,7 +257,8 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       return;
     }
 
-    const shopName = await getSetting("shop_name").catch(() => "");
+    const raw = await getSetting("shop_name").catch(() => "");
+    const shopName = (() => { try { return JSON.parse(raw) as string; } catch { return raw; } })();
     const itemName = formatItemName(item, brands);
     const label: BatchLabel = {
       barcode,

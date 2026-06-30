@@ -43,7 +43,7 @@ import { formatRupeesFromPaise } from "../../lib/money";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { toast } from "../../lib/feedback/toast";
 import { usePaginatedQuery } from "../../lib/query";
-import { adjustStock, listBrands, listItems, updateItem } from "./api";
+import { adjustStock, getSetting, listBrands, listItems, updateItem } from "./api";
 import { formatItemName, brandDisplayName } from "./display";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Brand, Item, SubLocation } from "../types";
@@ -52,6 +52,7 @@ import { CsvImportDialog } from "./CsvImportDialog";
 import { printLabel } from "../../pos/print";
 import { listLocations, listSubLocations } from "../locations/api";
 import type { Location } from "../types";
+import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
 import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
@@ -86,7 +87,7 @@ export function ItemList({ role }: Props) {
   const [stockAdjustQty, setStockAdjustQty] = useState("");
   const [stockAdjustDir, setStockAdjustDir] = useState<"add" | "reduce">("add");
   const [adjustBusy, setAdjustBusy] = useState(false);
-  const [printAfterAdjust, setPrintAfterAdjust] = useState(false);
+
 
   const canEdit = role === "owner" || role === "stocker";
 
@@ -423,7 +424,7 @@ export function ItemList({ role }: Props) {
     });
   }, [allItems, brandNameById, brandPrefixById, locationNameById, subLocationNameById]);
 
-  const handleStockAdjust = useCallback(async () => {
+  const handleStockAdjust = useCallback(async (print = false) => {
     if (!stockAdjustItem || adjustBusy) return;
     const absQty = Number(stockAdjustQty);
     if (!absQty || absQty <= 0) {
@@ -441,7 +442,7 @@ export function ItemList({ role }: Props) {
           lines: [{
             item_id: stockAdjustItem.id,
             qty: absQty,
-            unit_type: stockAdjustItem.sell_unit || "pcs",
+            unit_type: stockAdjustItem.sell_unit || "unit",
             unit_price_paise: stockAdjustItem.cost_paise,
             location_id: locId,
           }],
@@ -456,29 +457,35 @@ export function ItemList({ role }: Props) {
         });
       }
       toast.success(`Stock adjusted for ${formatItemName(stockAdjustItem, brands)}`);
-      if (printAfterAdjust && stockAdjustItem.barcode) {
-        try {
-          await printLabel({
+      if (print && stockAdjustItem.barcode) {
+        const raw = await getSetting("shop_name").catch(() => "");
+        const shopName = (() => { try { return JSON.parse(raw) as string; } catch { return raw; } })();
+        const itemName = formatItemName(stockAdjustItem, brands);
+        const rows: SeedRow[] = [{
+          id: 1,
+          label: {
             barcode: stockAdjustItem.barcode,
-            line1: stockAdjustItem.label_line1 ?? formatItemName(stockAdjustItem, brands),
-            line2: stockAdjustItem.label_line2 ?? stockAdjustItem.sku_code,
-          });
-        } catch (e) {
-          console.warn("printLabel failed", e);
-          toast.error("Label print failed");
-        }
+            line1: stockAdjustItem.label_line1 || shopName || undefined,
+            line2: stockAdjustItem.label_line2 || itemName,
+            sku: stockAdjustItem.sku_code ?? undefined,
+          },
+          itemId: stockAdjustItem.id,
+          itemName,
+        }];
+        useLabelBatchSeed.getState().setSeed(rows, `Item ${stockAdjustItem.sku_code ?? stockAdjustItem.name}`);
+        window.location.hash = "#/barcodes";
+        return;
       }
       setStockAdjustItem(null);
       setStockAdjustQty("");
       setStockAdjustDir("add");
-      setPrintAfterAdjust(false);
       refetch();
     } catch (e) {
       toast.error(extractError(e));
     } finally {
       setAdjustBusy(false);
     }
-  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, adjustBusy, printAfterAdjust, refetch]);
+  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, adjustBusy, refetch]);
 
   if (mode === "create") {
     return (
@@ -919,7 +926,6 @@ export function ItemList({ role }: Props) {
                   setStockAdjustItem(null);
                   setStockAdjustQty("");
                   setStockAdjustDir("add");
-                  setPrintAfterAdjust(false);
                 }
               }}
             />
@@ -932,7 +938,6 @@ export function ItemList({ role }: Props) {
                   setStockAdjustItem(null);
                   setStockAdjustQty("");
                   setStockAdjustDir("add");
-                  setPrintAfterAdjust(false);
                 }}
               >
                 Cancel
@@ -943,13 +948,13 @@ export function ItemList({ role }: Props) {
                   size="sm"
                   variant="secondary"
                   icon={Printer}
-                  onClick={() => { setPrintAfterAdjust(true); void handleStockAdjust(); }}
+                  onClick={() => void handleStockAdjust(true)}
                   disabled={adjustBusy || !stockAdjustQty || Number(stockAdjustQty) <= 0}
                 >
                   Add &amp; print label
                 </Button>
               )}
-              <Button type="button" size="sm" onClick={() => { setPrintAfterAdjust(false); void handleStockAdjust(); }}>
+              <Button type="button" size="sm" onClick={() => void handleStockAdjust()}>
                 {stockAdjustDir === "add" ? "Add Stock" : "Reduce Stock"}
               </Button>
             </div>
