@@ -108,7 +108,9 @@ fn parse_csv(raw: &str) -> (Vec<String>, Vec<Vec<String>>) {
 fn header_map(headers: &[String]) -> std::collections::HashMap<String, usize> {
     let mut map = std::collections::HashMap::new();
     for (i, h) in headers.iter().enumerate() {
-        map.insert(h.trim().to_lowercase().replace(' ', "_"), i);
+        // Strip parenthetical annotations like "(₹)", "(or ...)" before normalizing
+        let key = h.split('(').next().unwrap_or(h).trim().to_lowercase().replace(' ', "_");
+        map.insert(key, i);
     }
     map
 }
