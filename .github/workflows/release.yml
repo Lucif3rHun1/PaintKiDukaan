@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write  # required for SignPath OIDC signing
 
 jobs:
   build:
@@ -35,16 +34,13 @@ jobs:
             artifact_name: macos-x86_64
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 11.9.0
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
@@ -52,13 +48,11 @@ jobs:
       - name: Verify release version
         run: node scripts/check-release-version.cjs
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
           key: ${{ matrix.target }}
@@ -67,9 +61,7 @@ jobs:
         if: matrix.target == 'aarch64-pc-windows-msvc'
         shell: pwsh
         run: |
-          # Install the ARM64 build tools so cargo can link for aarch64
           choco install visualstudio2022-workload-vctools -y --params "--quiet --wait" 2>$null
-          # Add ARM64 MSVC host tools to PATH
           $vcInstallDir = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
           if ($vcInstallDir) {
             $arm64Bin = Join-Path $vcInstallDir "VC\Tools\MSVC\*\bin\Hostx64\arm64"
@@ -80,8 +72,7 @@ jobs:
             }
           }
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
       - name: Build Tauri app
         env:
@@ -89,12 +80,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --target ${{ matrix.target }}
 
-      - name: List bundle outputs (debug)
-        shell: bash
-        run: find target/${{ matrix.target }}/release/bundle -type f | sort || true
-
-      - name: Upload build outputs
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           if-no-files-found: error
@@ -102,150 +88,21 @@ jobs:
             ${{ matrix.asset_glob }}
             target/${{ matrix.target }}/release/bundle/*/*.sig
 
-  # ── Windows code-signing via SignPath (free for OSS) ─────────────────────
-  # If SignPath is not configured (SIGNPATH_ORGANIZATION_ID is empty), the
-  # installer ships unsigned → SmartScreen warning on first launch. For local
-  # dev/CI alternatives, see scripts/windows-sign.ps1 (self-signed cert).
-  sign-windows:
-    name: sign Windows installer (SignPath)
-    runs-on: ubuntu-latest
-    needs: build
-    if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-    steps:
-      - name: Submit signing request (x86_64)
-        uses: signpath/github-action-submit-signing-request@v1
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          signing-policy-slug: release-signing
-          artifact-configuration-slug: paintkiduakan-nsis
-          github-artifact-name: windows-x86_64
-          wait-for-completion: true
-          output-artifact-directory: signed-windows-x86_64
-
-      - name: Submit signing request (aarch64)
-        uses: signpath/github-action-submit-signing-request@v1
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          signing-policy-slug: release-signing
-          artifact-configuration-slug: paintkiduakan-nsis
-          github-artifact-name: windows-aarch64
-          wait-for-completion: true
-          output-artifact-directory: signed-windows-aarch64
-
-      - name: Upload signed installers as GitHub artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: signed-windows-x86_64
-          path: signed-windows-x86_64/**/*.exe
-
-      - name: Upload signed installers as GitHub artifacts (aarch64)
-        uses: actions/upload-artifact@v4
-        with:
-          name: signed-windows-aarch64
-          path: signed-windows-aarch64/**/*.exe
-
-  # ── Regenerate updater signatures after external signing ──────────────────
-  # .sig files are generated BEFORE SignPath signs, so they become invalid.
-  # This job re-signs the signed .exe with the Tauri updater key so the
-  # auto-updater can verify the download.
-  regenerate-updater-signatures:
-    name: regenerate updater signatures
-    runs-on: ubuntu-latest
-    needs: [build, sign-windows]
-    if: always() && needs.build.result == 'success' && (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.9.0
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Download build outputs
-        uses: actions/download-artifact@v4
-        with:
-          path: build-artifacts
-
-      - name: Re-sign updater artifacts
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          re_sign() {
-            local exe="$1"
-            local sig_file="${exe}.sig"
-            echo "Re-signing: $exe"
-            rm -f "$sig_file"
-            pnpm tauri signer sign \
-              -k "$TAURI_SIGNING_PRIVATE_KEY" \
-              -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-              "$exe"
-            if [[ -f "$sig_file" ]]; then
-              echo "OK: $(basename "$sig_file") ($(wc -c < "$sig_file") bytes)"
-            else
-              echo "ERROR: .sig not created for $exe" >&2
-              exit 1
-            fi
-          }
-
-          # Prefer signed installer if SignPath ran; fall back to original
-          for arch in x86_64 aarch64; do
-            signed_dir="build-artifacts/signed-windows-${arch}"
-            original_dir="build-artifacts/windows-${arch}"
-
-            if [[ -d "$signed_dir" ]]; then
-              exe="$(find "$signed_dir" -name '*.exe' -type f | head -n 1)"
-            else
-              exe="$(find "$original_dir" -name '*.exe' -type f | head -n 1)"
-            fi
-
-            if [[ -n "$exe" ]]; then
-              re_sign "$exe"
-            else
-              echo "WARNING: No .exe found for ${arch}, skipping" >&2
-            fi
-          done
-
-      - name: Upload regenerated signatures
-        uses: actions/upload-artifact@v4
-        with:
-          name: regenerated-sigs
-          path: |
-            build-artifacts/**/*.exe.sig
-
+  # Ponytail: tauri-plugin-updater verifies the .sig via the pubkey in tauri.conf.json.
+  # No external signing service, no re-sign job — the .sig produced by `tauri build` is
+  # the one the updater verifies. Windows SmartScreen will warn on first install; that's
+  # a UX trade-off, not a security one. See docs/WINDOWS_BUILD.md.
   latest-json:
     name: publish latest.json
     runs-on: ubuntu-latest
-    needs: [build, regenerate-updater-signatures]
+    needs: [build]
     if: always() && needs.build.result == 'success'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download build outputs
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
-
-      - name: Download regenerated signatures
-        uses: actions/download-artifact@v4
-        with:
-          name: regenerated-sigs
-          path: release-artifacts/regenerated-sigs
 
       - name: Generate latest.json
         shell: bash
@@ -258,88 +115,37 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           notes='Release notes here'
           pub_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          repo="${GITHUB_REPOSITORY}"
-          release_url="https://github.com/${repo}/releases/download/${GITHUB_REF_NAME}"
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
 
-          pick_one() {
-            local artifact_dir="$1"
-            local name_glob="$2"
-            local file
-            file="$(find "release-artifacts/$artifact_dir" -type f -name "$name_glob" | sort | head -n 1)"
-            if [[ -z "$file" ]]; then
-              echo "ERROR: no file matching '$name_glob' under release-artifacts/$artifact_dir" >&2
-              find "release-artifacts/$artifact_dir" -type f >&2 || true
+          pick() {
+            local dir="$1" glob="$2"
+            local f
+            f="$(find "release-artifacts/$dir" -type f -name "$glob" | sort | head -n 1)"
+            if [[ -z "$f" ]]; then
+              echo "ERROR: no '$glob' under release-artifacts/$dir" >&2
+              find "release-artifacts/$dir" -type f >&2 || true
               exit 1
             fi
-            printf '%s' "$file"
+            printf '%s' "$f"
           }
 
-          pick_windows_exe() {
-            local arch="$1"
-            local signed_dir="signed-windows-${arch}"
-            local original_dir="windows-${arch}"
+          read_sig() { tr -d '\n' < "$1"; }
 
-            if [[ -d "release-artifacts/${signed_dir}" ]]; then
-              pick_one "$signed_dir" '*.exe'
-              return
-            fi
+          declare -A asset sig
+          asset[macos-aarch64]="$(pick macos-aarch64 '*.app.tar.gz')"
+          sig[macos-aarch64]="$(pick macos-aarch64 '*.app.tar.gz.sig')"
+          asset[macos-x86_64]="$(pick macos-x86_64 '*.app.tar.gz')"
+          sig[macos-x86_64]="$(pick macos-x86_64 '*.app.tar.gz.sig')"
+          asset[windows-x86_64]="$(pick windows-x86_64 '*.exe')"
+          sig[windows-x86_64]="$(pick windows-x86_64 '*.exe.sig')"
+          asset[windows-aarch64]="$(pick windows-aarch64 '*.exe')"
+          sig[windows-aarch64]="$(pick windows-aarch64 '*.exe.sig')"
 
-            pick_one "$original_dir" '*.exe'
-          }
-
-          # Prefer regenerated .sig over original
-          find_sig() {
-            local artifact_dir="$1"
-            local name_glob="$2"
-            # Try regenerated first — search in arch-specific subdir to avoid
-            # cross-arch glob collision (arm64 sorts before x86_64 alphabetically)
-            local regen
-            regen="$(find "release-artifacts/regenerated-sigs/build-artifacts/${artifact_dir}" -type f -name "${name_glob}" 2>/dev/null | sort | head -n 1)"
-            if [[ -n "$regen" ]]; then
-              echo "$regen"
-              return
-            fi
-            # Fall back to original
-            find "release-artifacts/$artifact_dir" -type f -name "${name_glob}" | sort | head -n 1
-          }
-
-          read_sig() {
-            local file="$1"
-            tr -d '\n' < "$file"
-          }
-
-          mac_aarch64_asset="$(pick_one 'macos-aarch64' '*.app.tar.gz')"
-          mac_aarch64_sig="$(pick_one 'macos-aarch64' '*.app.tar.gz.sig')"
-          mac_x86_64_asset="$(pick_one 'macos-x86_64' '*.app.tar.gz')"
-          mac_x86_64_sig="$(pick_one 'macos-x86_64' '*.app.tar.gz.sig')"
-          win_x64_asset="$(pick_windows_exe 'x86_64')"
-          win_x64_sig="$(find_sig 'windows-x86_64' '*.exe.sig')"
-          win_arm64_asset="$(pick_windows_exe 'aarch64')"
-          win_arm64_sig="$(find_sig 'windows-aarch64' '*.exe.sig')"
-
-          release_dir="release-files"
-          rm -rf "$release_dir"
-          mkdir -p "$release_dir"
-
-          copy_release() {
-            local source="$1"
-            local name="$2"
-            cp "$source" "$release_dir/$name"
-          }
-
-          mac_aarch64_name="PaintKiDukaan_${version}_aarch64.app.tar.gz"
-          mac_x86_64_name="PaintKiDukaan_${version}_x64.app.tar.gz"
-          win_x64_name="$(basename "$win_x64_asset")"
-          win_arm64_name="$(basename "$win_arm64_asset")"
-
-          copy_release "$mac_aarch64_asset" "$mac_aarch64_name"
-          copy_release "$mac_aarch64_sig" "${mac_aarch64_name}.sig"
-          copy_release "$mac_x86_64_asset" "$mac_x86_64_name"
-          copy_release "$mac_x86_64_sig" "${mac_x86_64_name}.sig"
-          copy_release "$win_x64_asset" "$win_x64_name"
-          copy_release "$win_x64_sig" "${win_x64_name}.sig"
-          copy_release "$win_arm64_asset" "$win_arm64_name"
-          copy_release "$win_arm64_sig" "${win_arm64_name}.sig"
+          mkdir -p release-files
+          for key in "${!asset[@]}"; do
+            cp "${asset[$key]}" "release-files/$(basename "${asset[$key]}")"
+            cp "${sig[$key]}"   "release-files/$(basename "${asset[$key]}").sig"
+          done
 
           cat > latest.json <<EOF
           {
@@ -347,22 +153,10 @@ jobs:
             "notes": "${notes}",
             "pub_date": "${pub_date}",
             "platforms": {
-              "darwin-aarch64": {
-                "signature": "$(read_sig "$mac_aarch64_sig")",
-                "url": "${release_url}/${mac_aarch64_name}"
-              },
-              "darwin-x86_64": {
-                "signature": "$(read_sig "$mac_x86_64_sig")",
-                "url": "${release_url}/${mac_x86_64_name}"
-              },
-              "windows-x86_64": {
-                "signature": "$(read_sig "$win_x64_sig")",
-                "url": "${release_url}/${win_x64_name}"
-              },
-              "windows-aarch64": {
-                "signature": "$(read_sig "$win_arm64_sig")",
-                "url": "${release_url}/${win_arm64_name}"
-              }
+              "darwin-aarch64":  { "signature": "$(read_sig "${sig[macos-aarch64]}")",  "url": "${release_url}/$(basename "${asset[macos-aarch64]}")" },
+              "darwin-x86_64":   { "signature": "$(read_sig "${sig[macos-x86_64]}")",   "url": "${release_url}/$(basename "${asset[macos-x86_64]}")" },
+              "windows-x86_64":  { "signature": "$(read_sig "${sig[windows-x86_64]}")",  "url": "${release_url}/$(basename "${asset[windows-x86_64]}")" },
+              "windows-aarch64": { "signature": "$(read_sig "${sig[windows-aarch64]}")", "url": "${release_url}/$(basename "${asset[windows-aarch64]}")" }
             }
           }
           EOF

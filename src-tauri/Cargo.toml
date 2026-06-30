@@ -32,11 +32,11 @@ tauri-plugin-process = "2"
 # tauri-plugin-keyring-store — removed (unused, CWE-1104)
 
 # Database (SQLCipher)
-rusqlite = { version = "0.40", features = ["sqlcipher", "bundled-sqlcipher", "backup"] }
+# bundled-sqlcipher-vendored-openssl compiles both SQLCipher and OpenSSL from source;
+# on Windows, libsqlite3-sys build.rs unconditionally panics unless this exact feature
+# is active (it gates the DEP_OPENSSL_INCLUDE path vs. the OPENSSL_DIR env-var check).
+rusqlite = { version = "0.40", features = ["sqlcipher", "bundled-sqlcipher-vendored-openssl", "backup"] }
 rusqlite_migration = "2.6"
-
-# OpenSSL vendored (required by sqlcipher on Windows — eliminates OPENSSL_DIR)
-openssl-sys = { version = "0.9", features = ["vendored"] }
 
 # Crypto
 argon2 = { version = "0.5", features = ["zeroize"] }

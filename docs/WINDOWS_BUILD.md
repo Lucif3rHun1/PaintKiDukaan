@@ -24,48 +24,30 @@ PaintKiDukaan is developed on macOS but ships primarily to Windows. This documen
 - **"WebView2 missing" on launch** — Switch `tauri.conf.json` `bundle.windows.webviewInstallMode.type` from `downloadBootstrapper` to `fixedRuntime` and ship the WebView2 runtime alongside the installer.
 - **"PowerShell Get-Printer not found"** — Some Windows Server / minimal installs don't have the `PrintManagement` module. The app falls back to WMI, then to `wmic`. To enable `Get-Printer`: `Install-WindowsFeature Print-Management`.
 - **Vite dev server slow to start / hangs** — Make sure `vite.config.ts` `server.watch.ignored` excludes `node_modules`, `target`, `dist`, etc. (see the full list in `vite.config.ts`).
-- **"SmartScreen blocked an unrecognized app"** — The app isn't code-signed. For production, obtain a code-signing certificate (DigiCert, Sectigo). For test builds, sign with a self-signed cert. See below.
+- **"SmartScreen blocked an unrecognized app"** — The app isn't Authenticode-signed. First-run warning only; click "More info" → "Run anyway". For higher trust, buy a code-signing cert and set `bundle.windows.certificateThumbprint` in `tauri.conf.json`.
 - **"Part of this app has been blocked" (Windows Smart App Control)** — Smart App Control (SAC) blocks unsigned executables and build scripts. Fixes:
   1. **Disable SAC** (recommended for dev machines): Settings → Privacy & Security → Windows Security → App & browser control → Reputation-based protection → Turn off Smart App Control.
   2. **Allow through Defender**: Windows Security → Virus & threat protection → Manage settings → Exclusions → Add exclusion → Folder → add `src-tauri/target/`.
-  3. **Sign the binary**: SAC trusts signed binaries. Use a self-signed cert for dev (see Code signing below).
-  4. **Run as Administrator**: Some blocked DLLs work when cargo runs elevated. Right-click terminal → Run as administrator.
+  3. **Run as Administrator**: Some blocked DLLs work when cargo runs elevated. Right-click terminal → Run as administrator.
 - **Corrupted cargo registry (missing crates like serde, icu_provider)** — Run `cargo clean` in `src-tauri/`, then `cargo fetch` to re-download. If persistent: delete `~/.cargo/registry/cache/` and `~/.cargo/registry/src/`, then rebuild.
 
-## Code signing
+## Signing
 
-- Windows SmartScreen shows a warning for unsigned binaries.
-- **Production**: Buy a code-signing cert. Set `tauri.conf.json` `bundle.windows.certificateThumbprint` to the cert's SHA1 thumbprint (or use `WINDOWS_CERT_THUMBPRINT` env var).
-- **Test**: Use `signtool` with a self-signed cert:
-  ```powershell
-  # Generate self-signed cert (run once, store in CurrentUser\My)
-  New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=PaintKiDukaan Test" -CertStoreLocation "Cert:\CurrentUser\My"
-  # Sign the .exe
-  signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "C:\path\to\PaintKiDukaan Master.exe"
-  ```
-- For automated CI signing, use AzureSignTool or `signtool` with the cert from a Key Vault.
+The release pipeline uses **only Tauri minisign** for update integrity. No external signing service.
 
-## GitHub Actions release secrets
+- The Tauri updater plugin verifies the minisign signature (`.sig`) of every downloaded installer using the public key embedded in `tauri.conf.json` (`updater.pubkey`).
+- `pnpm tauri build` generates the `.sig` automatically during the build.
+- `latest.json` references the `.exe` and `.sig` so the updater can fetch and verify both.
+- **No Authenticode / SignPath / re-sign step.** First-run Windows SmartScreen warning is the only trade-off.
 
-The release workflow (`.github/workflows/release.yml`) produces signed installers for all platforms. Required GitHub secrets/variables:
+### Secrets
 
 | Secret | Purpose |
 |--------|---------|
-| `TAURI_SIGNING_PRIVATE_KEY` | Tauri updater private key (PEM format) — signs `.exe` so the auto-updater can verify integrity |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for the above key (can be empty if key has no password) |
-| `SIGNPATH_API_TOKEN` | SignPath API token for Authenticode signing (optional — if absent, Windows builds are unsigned) |
+| `TAURI_SIGNING_PRIVATE_KEY` | Tauri updater private key (PEM). Signs `.exe` during build. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for the key (can be empty). |
 
-| Variable | Purpose |
-|----------|---------|
-| `SIGNPATH_ORGANIZATION_ID` | Your SignPath org ID — gates whether Windows signing runs |
-
-**How signing works:**
-1. Tauri build produces unsigned `.exe` + `.sig` files
-2. SignPath (if configured) Authenticode-signs the `.exe` — this invalidates the `.sig`
-3. A regen job re-signs the `.exe` with the Tauri updater key to produce fresh `.sig` files
-4. `latest.json` is built with all 4 platform artifacts and uploaded to the GitHub release
-
-**Without SignPath**: Windows builds ship unsigned (SmartScreen warning). All other platforms (macOS notarization, Linux) are unaffected.
+That is the entire secrets list. No SignPath tokens, no cert thumbprints.
 
 ## Cross-platform notes
 
