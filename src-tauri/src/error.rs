@@ -86,6 +86,17 @@ impl AppError {
         uuid::Uuid::from_slice(&bytes).ok()
     }
 
+    fn safe_message(&self) -> String {
+        match self {
+            AppError::Db(_)
+            | AppError::Internal(_)
+            | AppError::Io(_)
+            | AppError::Crypto(_)
+            | AppError::LockedOut { .. } => self.user_message(),
+            _ => self.to_string(),
+        }
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             AppError::Db(_) => "db",
@@ -168,9 +179,7 @@ impl Serialize for AppError {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("AppError", 3)?;
         st.serialize_field("code", self.code())?;
-        // Raw underlying error — kept in the payload so backend logs
-        // (e.g. `[IPC:ERR]`) preserve traceback. May leak internals.
-        st.serialize_field("message", &self.to_string())?;
+        st.serialize_field("message", &self.safe_message())?;
         // Human-friendly toast text. Frontend extractError() prefers this.
         st.serialize_field("user_message", &self.user_message())?;
         st.end()
