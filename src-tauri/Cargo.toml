@@ -35,6 +35,9 @@ tauri-plugin-process = "2"
 rusqlite = { version = "0.40", features = ["sqlcipher", "bundled-sqlcipher", "backup"] }
 rusqlite_migration = "2.6"
 
+# OpenSSL vendored (required by sqlcipher on Windows — eliminates OPENSSL_DIR)
+openssl-sys = { version = "0.9", features = ["vendored"] }
+
 # Crypto
 argon2 = { version = "0.5", features = ["zeroize"] }
 aes-gcm = "0.10"

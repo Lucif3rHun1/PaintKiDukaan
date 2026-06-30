@@ -18,13 +18,19 @@ PaintKiDukaan is developed on macOS but ships primarily to Windows. This documen
 
 ## Troubleshooting
 
-- **"OpenSSL not found" / linker errors** — The app uses `rusqlite` with the `bundled-sqlcipher` feature, so no system OpenSSL is needed. If you see OpenSSL errors, check that no other transitive dep is pulling in `openssl-sys`. Run `cargo tree -i openssl-sys` to find the culprit.
+- **"Missing environment variable OPENSSL_DIR"** — sqlcipher requires OpenSSL for its crypto backend. The `openssl-sys = { features = ["vendored"] }` dependency in `Cargo.toml` compiles OpenSSL from source during build, so no system install is needed. If you still see this error: `cargo clean` then rebuild. On Windows Smart App Control machines, ensure build scripts aren't blocked (see below).
 - **"hidapi build fails"** — Make sure `Cargo.toml` pins `hidapi = { version = "2.6", features = ["windows-native"] }`. The `windows-native` feature uses Win32 HID APIs (no libusb dependency).
 - **"rdev hook doesn't fire" / scanner not working** — `rdev` uses `SetWindowsHookExW`. Check that no antivirus is blocking the hook (CrowdStrike, SentinelOne are common culprits). Add `target/` and the release `.exe` to AV exclusions.
 - **"WebView2 missing" on launch** — Switch `tauri.conf.json` `bundle.windows.webviewInstallMode.type` from `downloadBootstrapper` to `fixedRuntime` and ship the WebView2 runtime alongside the installer.
 - **"PowerShell Get-Printer not found"** — Some Windows Server / minimal installs don't have the `PrintManagement` module. The app falls back to WMI, then to `wmic`. To enable `Get-Printer`: `Install-WindowsFeature Print-Management`.
 - **Vite dev server slow to start / hangs** — Make sure `vite.config.ts` `server.watch.ignored` excludes `node_modules`, `target`, `dist`, etc. (see the full list in `vite.config.ts`).
 - **"SmartScreen blocked an unrecognized app"** — The app isn't code-signed. For production, obtain a code-signing certificate (DigiCert, Sectigo). For test builds, sign with a self-signed cert. See below.
+- **"Part of this app has been blocked" (Windows Smart App Control)** — Smart App Control (SAC) blocks unsigned executables and build scripts. Fixes:
+  1. **Disable SAC** (recommended for dev machines): Settings → Privacy & Security → Windows Security → App & browser control → Reputation-based protection → Turn off Smart App Control.
+  2. **Allow through Defender**: Windows Security → Virus & threat protection → Manage settings → Exclusions → Add exclusion → Folder → add `src-tauri/target/`.
+  3. **Sign the binary**: SAC trusts signed binaries. Use a self-signed cert for dev (see Code signing below).
+  4. **Run as Administrator**: Some blocked DLLs work when cargo runs elevated. Right-click terminal → Run as administrator.
+- **Corrupted cargo registry (missing crates like serde, icu_provider)** — Run `cargo clean` in `src-tauri/`, then `cargo fetch` to re-download. If persistent: delete `~/.cargo/registry/cache/` and `~/.cargo/registry/src/`, then rebuild.
 
 ## Code signing
 
