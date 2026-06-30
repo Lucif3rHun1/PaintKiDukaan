@@ -46,6 +46,7 @@ import { useSecurity } from "../../lib/security/state";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { toTitleCase } from "../../lib/format/titleCase";
+import { formatHitName } from "../../domain/items/display";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { getCustomer, editSale } from "../../domain/ipc";
@@ -157,6 +158,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
 
   const [showExitModal, setShowExitModal] = useState(false);
   const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
+  const [pendingTabSwitch, setPendingTabSwitch] = useState<Kind | null>(null);
   const [editMode, setEditMode] = useState(false);
 
   // Load sale data when in edit mode
@@ -354,13 +356,13 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         kind: "item",
         item_id: item.id,
         formula_id: null,
-        item_name: item.name,
-        display_name: item.name,
+        item_name: formatHitName(item),
+        display_name: formatHitName(item),
         in_stock_at_add: item.current_qty > 0,
         current_qty_at_add: item.current_qty,
         qty: 1,
         price: item.retail_price_paise,
-        unit_type: item.sell_unit || "unit",
+        unit_type: item.sell_unit || "pcs",
         line_discount: 0,
         shade_note: null,
       };
@@ -620,6 +622,14 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
   }, [refreshRecent]);
 
   function handleSaveDraftAndExit() {
+    if (pendingTabSwitch) {
+      resetDirty();
+      setShowExitModal(false);
+      setLines((prev) => prev.filter((l) => l.item_id !== null || l.formula_id !== null));
+      setKind(pendingTabSwitch);
+      setPendingTabSwitch(null);
+      return;
+    }
     const exit = pendingExit ?? onExit;
     resetDirty();
     setShowExitModal(false);
@@ -628,17 +638,27 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
   }
 
   function handleDiscardAndExit() {
+    if (pendingTabSwitch) {
+      resetDirty();
+      setShowExitModal(false);
+      setLines([]);
+      setSplits([]);
+      setKind(pendingTabSwitch);
+      setPendingTabSwitch(null);
+      return;
+    }
     const exit = pendingExit ?? onExit;
     resetDirty();
     setShowExitModal(false);
     setPendingExit(null);
-    void deleteDraft("sale");
+    void deleteDraft(`sale-${kind}`);
     exit();
   }
 
   function handleCancelExit() {
     setShowExitModal(false);
     setPendingExit(null);
+    setPendingTabSwitch(null);
   }
 
   // ---- Render ----
@@ -669,24 +689,36 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
           </h1>
         </div>
         <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
-          {(["final", "fbill", "quotation"] as const).map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setKind(k)}
-              disabled={editMode}
-              aria-pressed={kind === k}
-              className={cn(
-                "rounded px-3 py-1 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-                kind === k
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-                editMode && "cursor-not-allowed opacity-50",
-              )}
-            >
-              {k === "final" ? "Bill" : k === "fbill" ? "FBill" : "Quotation"}
-            </button>
-          ))}
+          {(["final", "fbill", "quotation"] as const).map((k) => {
+            const hasCustomLines = kind === "fbill" && lines.some((l) => l.item_id === null && l.formula_id === null);
+            const isGuarded = hasCustomLines && k !== kind;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  if (isGuarded) {
+                    setPendingTabSwitch(k);
+                    setShowExitModal(true);
+                    return;
+                  }
+                  setKind(k);
+                }}
+                disabled={editMode}
+                aria-pressed={kind === k}
+                className={cn(
+                  "rounded px-3 py-1 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                  kind === k
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                  editMode && "cursor-not-allowed opacity-50",
+                )}
+              >
+                {k === "final" ? "Bill" : k === "fbill" ? "FBill" : "Quotation"}
+                {isGuarded ? " 🔒" : ""}
+              </button>
+            );
+          })}
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Button
@@ -896,22 +928,13 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                                 onChange={(v) => handleQtyChange(i, v)}
                               />
                               {kind === "fbill" && l.item_id === null ? (
-                                <select
+                                <Select
+                                  size="sm"
+                                  className="w-20"
                                   value={l.unit_type}
                                   onChange={(e) => { setLastUsedUnit(e.target.value); updateLine(i, { unit_type: e.target.value }); }}
-                                  className="h-6 rounded border border-border bg-muted px-1 text-[10px] font-medium text-muted-foreground focus:border-ring focus:outline-none"
-                                >
-                                  <option value="unit">pc</option>
-                                  <option value="box">box</option>
-                                  <option value="bundle">bndl</option>
-                                  <option value="roll">roll</option>
-                                  <option value="kg">kg</option>
-                                  <option value="mtr">mtr</option>
-                                  <option value="L">L</option>
-                                  <option value="ml">ml</option>
-                                  <option value="sqft">sqft</option>
-                                  <option value="sqm">sqm</option>
-                                </select>
+                                  options={saleUnits.map((u) => ({ value: u.code, label: u.label }))}
+                                />
                               ) : (
                                 <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                                   {uLabel}
@@ -1220,6 +1243,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         onSaveDraft={handleSaveDraftAndExit}
         onDiscard={handleDiscardAndExit}
         onCancel={handleCancelExit}
+        description={pendingTabSwitch ? "Your FBill has custom items that can't transfer to a Bill. Save or discard to switch." : undefined}
       />
 
     </div>

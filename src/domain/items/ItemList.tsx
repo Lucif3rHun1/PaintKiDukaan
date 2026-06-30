@@ -20,6 +20,7 @@ import {
   FileUp,
   IndianRupee,
   PackagePlus,
+  Printer,
   TriangleAlert,
   TrendingDown,
 } from "lucide-react";
@@ -43,6 +44,7 @@ import { toTitleCase } from "../../lib/format/titleCase";
 import { toast } from "../../lib/feedback/toast";
 import { usePaginatedQuery } from "../../lib/query";
 import { adjustStock, listBrands, listItems, updateItem } from "./api";
+import { formatItemName, brandDisplayName } from "./display";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Brand, Item, SubLocation } from "../types";
 import { ItemForm } from "./ItemForm";
@@ -83,6 +85,8 @@ export function ItemList({ role }: Props) {
   const [stockAdjustItem, setStockAdjustItem] = useState<Item | null>(null);
   const [stockAdjustQty, setStockAdjustQty] = useState("");
   const [stockAdjustDir, setStockAdjustDir] = useState<"add" | "reduce">("add");
+  const [adjustBusy, setAdjustBusy] = useState(false);
+  const [printAfterAdjust, setPrintAfterAdjust] = useState(false);
 
   const canEdit = role === "owner" || role === "stocker";
 
@@ -182,21 +186,7 @@ export function ItemList({ role }: Props) {
     return where;
   }
 
-  function displayName(item: Item): string {
-    if (item.brand_id != null) {
-      const prefix = brandPrefixById.get(item.brand_id);
-      if (prefix) return `${prefix}-${toTitleCase(item.name)}`;
-    }
-    return toTitleCase(item.name);
-  }
 
-  function brandGroupLabel(item: Item): string {
-    if (item.brand_id != null) {
-      const fullName = brandNameById.get(item.brand_id);
-      if (fullName) return fullName;
-    }
-    return item.brand?.trim() || "No brand";
-  }
 
   useFocusShortcut({ key: "F2", selector: '[data-shortcut="search"]', description: "Focus search" });
   useShortcut({
@@ -248,14 +238,14 @@ export function ItemList({ role }: Props) {
   const grouped = useMemo(() => {
     const map = new Map<string, Map<string, Item[]>>();
     for (const item of items) {
-      const b = brandGroupLabel(item);
+      const b = brandDisplayName(item, brands);
       const c = item.category?.trim() || "No category";
       if (!map.has(b)) map.set(b, new Map());
       if (!map.get(b)!.has(c)) map.get(b)!.set(c, []);
       map.get(b)!.get(c)!.push(item);
     }
     return map;
-  }, [items, brandNameById]);
+  }, [items, brands]);
 
   useEffect(() => {
     setSelectedIds((current) => {
@@ -308,7 +298,7 @@ export function ItemList({ role }: Props) {
     try {
       await printLabel({
         barcode: item.barcode,
-        line1: item.label_line1 ?? item.name,
+        line1: item.label_line1 ?? formatItemName(item, brands),
         line2:
           item.label_line2 ??
           item.sku_code,
@@ -362,8 +352,8 @@ export function ItemList({ role }: Props) {
   }, [allFilteredSelected, allItems]);
 
   const brandItemIds = useCallback((brand: string) => {
-    return allItems.filter((item) => brandGroupLabel(item) === brand).map((item) => item.id);
-  }, [allItems]);
+    return allItems.filter((item) => brandDisplayName(item, brands) === brand).map((item) => item.id);
+  }, [allItems, brands]);
 
   const isBrandSelected = useCallback((brand: string) => {
     const ids = brandItemIds(brand);
@@ -382,14 +372,14 @@ export function ItemList({ role }: Props) {
 
   const isCategorySelected = useCallback((brand: string, category: string) => {
     const ids = allItems
-      .filter((item) => brandGroupLabel(item) === brand && (item.category?.trim() || "No category") === category)
+      .filter((item) => brandDisplayName(item, brands) === brand && (item.category?.trim() || "No category") === category)
       .map((item) => item.id);
     return ids.length > 0 && ids.every((id) => selectedIds.has(id));
-  }, [allItems, selectedIds]);
+  }, [allItems, brands, selectedIds]);
 
   const toggleCategory = useCallback((brand: string, category: string) => {
     const ids = allItems
-      .filter((item) => brandGroupLabel(item) === brand && (item.category?.trim() || "No category") === category)
+      .filter((item) => brandDisplayName(item, brands) === brand && (item.category?.trim() || "No category") === category)
       .map((item) => item.id);
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -397,11 +387,11 @@ export function ItemList({ role }: Props) {
       else ids.forEach((id) => next.add(id));
       return next;
     });
-  }, [allItems, isCategorySelected]);
+  }, [allItems, brands, isCategorySelected]);
 
   const exportHeaders = [
     "SKU", "Barcode", "Name", "Brand", "Brand Prefix", "Category",
-    "Unit", "Sell Unit", "Units/Pack",
+    "Sell Unit", "Units/Pack",
     "Retail (₹)", "Cost (₹)", "Promo (₹)", "Min Stock",
     "Location", "Sub Location", "Position",
     "Stock", "Active",
@@ -418,7 +408,6 @@ export function ItemList({ role }: Props) {
         fullName,
         prefix,
         item.category ?? "",
-        item.unit ?? item.unit_code ?? "",
         item.sell_unit ?? "",
         item.units_per_pack ?? 1,
         (item.retail_price_paise / 100).toFixed(2),
@@ -435,12 +424,13 @@ export function ItemList({ role }: Props) {
   }, [allItems, brandNameById, brandPrefixById, locationNameById, subLocationNameById]);
 
   const handleStockAdjust = useCallback(async () => {
-    if (!stockAdjustItem) return;
+    if (!stockAdjustItem || adjustBusy) return;
     const absQty = Number(stockAdjustQty);
     if (!absQty || absQty <= 0) {
       toast.error("Enter a valid quantity");
       return;
     }
+    setAdjustBusy(true);
     try {
       const qty = stockAdjustDir === "add" ? absQty : -absQty;
       const locId = stockAdjustItem.primary_location_id ?? 1;
@@ -448,7 +438,6 @@ export function ItemList({ role }: Props) {
         const req: NewPurchase = {
           vendor_id: null,
           notes: "Stock adjustment — add",
-          auto_print_label: false,
           lines: [{
             item_id: stockAdjustItem.id,
             qty: absQty,
@@ -466,15 +455,30 @@ export function ItemList({ role }: Props) {
           notes: "Stock adjustment — reduce",
         });
       }
-      toast.success(`Stock adjusted for ${stockAdjustItem.name}`);
+      toast.success(`Stock adjusted for ${formatItemName(stockAdjustItem, brands)}`);
+      if (printAfterAdjust && stockAdjustItem.barcode) {
+        try {
+          await printLabel({
+            barcode: stockAdjustItem.barcode,
+            line1: stockAdjustItem.label_line1 ?? formatItemName(stockAdjustItem, brands),
+            line2: stockAdjustItem.label_line2 ?? stockAdjustItem.sku_code,
+          });
+        } catch (e) {
+          console.warn("printLabel failed", e);
+          toast.error("Label print failed");
+        }
+      }
       setStockAdjustItem(null);
       setStockAdjustQty("");
       setStockAdjustDir("add");
+      setPrintAfterAdjust(false);
       refetch();
     } catch (e) {
       toast.error(extractError(e));
+    } finally {
+      setAdjustBusy(false);
     }
-  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, refetch]);
+  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, adjustBusy, printAfterAdjust, refetch]);
 
   if (mode === "create") {
     return (
@@ -745,7 +749,7 @@ export function ItemList({ role }: Props) {
                               type="checkbox"
                               checked={selectedIds.has(item.id)}
                               onChange={() => toggleSelected(item.id)}
-                              aria-label={`Select ${item.name}`}
+                              aria-label={`Select ${formatItemName(item, brands)}`}
                               className="h-3.5 w-3.5"
                             />
                           </td>
@@ -755,7 +759,7 @@ export function ItemList({ role }: Props) {
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-medium text-foreground">
-                                {displayName(item)}
+                                {formatItemName(item, brands, { style: "prefix" })}
                               </span>
                               {!item.is_active ? (
                                 <Badge variant="muted">Archived</Badge>
@@ -790,7 +794,7 @@ export function ItemList({ role }: Props) {
                             onClick={(e) => e.stopPropagation()}
                           >
                             <ActionMenu
-                              label={`Actions for ${item.name}`}
+                              label={`Actions for ${formatItemName(item, brands)}`}
                               items={[
                                 ...(canEdit
                                   ? [
@@ -915,6 +919,7 @@ export function ItemList({ role }: Props) {
                   setStockAdjustItem(null);
                   setStockAdjustQty("");
                   setStockAdjustDir("add");
+                  setPrintAfterAdjust(false);
                 }
               }}
             />
@@ -927,11 +932,24 @@ export function ItemList({ role }: Props) {
                   setStockAdjustItem(null);
                   setStockAdjustQty("");
                   setStockAdjustDir("add");
+                  setPrintAfterAdjust(false);
                 }}
               >
                 Cancel
               </Button>
-              <Button type="button" size="sm" onClick={() => void handleStockAdjust()}>
+              {stockAdjustDir === "add" && stockAdjustItem.barcode && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  icon={Printer}
+                  onClick={() => { setPrintAfterAdjust(true); void handleStockAdjust(); }}
+                  disabled={adjustBusy || !stockAdjustQty || Number(stockAdjustQty) <= 0}
+                >
+                  Add &amp; print label
+                </Button>
+              )}
+              <Button type="button" size="sm" onClick={() => { setPrintAfterAdjust(false); void handleStockAdjust(); }}>
                 {stockAdjustDir === "add" ? "Add Stock" : "Reduce Stock"}
               </Button>
             </div>
