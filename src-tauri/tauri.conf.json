@@ -32,7 +32,7 @@
     "updater": {
       "active": true,
       "endpoints": ["https://github.com/Lucif3rHun1/PaintKiDukaan/releases/latest/download/latest.json"],
-      "dialog": false,
+      "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXkgRjhGMzJEMjAxNkFDNzU5MwpSV1NUZGF3V0lDM3orQk1MR0h3Z2w2aTkveGdmUk81UEpvNjE5SlpyaTJIcVJrUFVQTjNsL01JTwo=",
       "windows": {
         "installMode": "quiet"

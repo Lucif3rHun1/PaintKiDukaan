@@ -1,6 +1,5 @@
 use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
-use tokio::sync::mpsc;
 
 pub mod commands;
 pub mod crypto;
@@ -19,10 +18,6 @@ pub mod sys_tool;
 pub use error::AppError;
 
 pub mod obs;
-
-struct UpdateGateState {
-    retry_tx: mpsc::UnboundedSender<()>,
-}
 
 const ALLOWED_LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 const MAX_LOG_MSG_LEN: usize = 4096;
@@ -59,19 +54,6 @@ fn log_frontend(level: String, message: String) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn retry_update(state: tauri::State<'_, UpdateGateState>) -> Result<(), String> {
-    state
-        .retry_tx
-        .send(())
-        .map_err(|_| "update gate closed".into())
-}
-
-#[tauri::command]
-fn quit_app(app: tauri::AppHandle) {
-    app.exit(1);
-}
-
 pub fn run() {
     // ── Session log setup ────────────────────────────────────────────
     // Compute the app data directory using `dirs` (available before Tauri builder).
@@ -95,8 +77,6 @@ pub fn run() {
     let log_file = log_dir.join(&log_name);
     // Secure-delete the previous session log before starting a new one.
     let _ = security::anti_forensic::secure_delete(&log_file);
-
-    let (retry_tx, retry_rx) = mpsc::unbounded_channel::<()>();
 
     let app = tauri::Builder::default()
         .plugin(
@@ -133,7 +113,6 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(UpdateGateState { retry_tx })
         .manage(commands::auth::AppState::default())
         .setup(move |app| {
             log::info!("=== PKB session started ===");
@@ -245,7 +224,7 @@ pub fn run() {
             if !cfg!(debug_assertions) {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    run_update_gate_async(app_handle, retry_rx).await;
+                    run_auto_update(app_handle).await;
                 });
             }
 
@@ -254,8 +233,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             log_frontend,
-            retry_update,
-            quit_app,
             // Auth & security (Slice A)
             commands::auth::app_bootstrap,
             commands::auth::unlock,
@@ -491,142 +468,17 @@ pub fn run() {
     });
 }
 
-async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::UnboundedReceiver<()>) {
-    let mut attempt: u32 = 0;
-    loop {
-        attempt = attempt.wrapping_add(1);
-        let splash_label = format!("splash-{attempt}");
-        let splash = match tauri::WebviewWindowBuilder::new(
-            &app,
-            &splash_label,
-            tauri::WebviewUrl::App("splash.html".into()),
-        )
-        .inner_size(480.0, 320.0)
-        .decorations(false)
-        .center()
-        .always_on_top(true)
-        .build()
-        {
-            Ok(w) => w,
-            Err(e) => {
-                log::warn!("Failed to create splash window: {e}");
-                show_main(&app);
-                return;
-            }
-        };
-
-        let updater = match app.updater() {
-            Ok(u) => u,
-            Err(e) => {
-                log::warn!("Updater plugin unavailable: {e}");
-                let _ = splash.close();
-                show_main(&app);
-                return;
-            }
-        };
-
-        let check_outcome =
-            tokio::time::timeout(std::time::Duration::from_secs(30), updater.check()).await;
-
-        let update = match check_outcome {
-            Ok(Ok(Some(update))) => update,
-            Ok(Ok(None)) => {
-                let _ = splash.close();
-                show_main(&app);
-                return;
-            }
-            Ok(Err(e)) => {
-                log::warn!("Update check failed: {e}");
-                show_update_error(
-                    &splash,
-                    &format!("Update check failed. Check your connection and try again.\n\n{e}"),
-                );
-                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
-                continue;
-            }
-            Err(_) => {
-                log::warn!("Update check timed out after 30 s");
-                show_update_error(
-                    &splash,
-                    "Update check timed out. Check your connection and try again.",
-                );
-                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
-                continue;
-            }
-        };
-
-        let downloaded = std::sync::atomic::AtomicU64::new(0);
-        let splash_cb = splash.clone();
-
-        let dl_outcome = tokio::time::timeout(
-            std::time::Duration::from_secs(300),
-            update.download_and_install(
-                move |chunk_len, total| {
-                    let so_far = downloaded
-                        .fetch_add(chunk_len as u64, std::sync::atomic::Ordering::Relaxed)
-                        + chunk_len as u64;
-                    let total_val = total.unwrap_or(0);
-                    let _ = splash_cb.eval(&format!(
-                        "window.__updateProgress({{stage:'downloading', downloaded:{so_far}, total:{total_val}}})"
-                    ));
-                },
-                || {},
-            ),
-        )
-        .await;
-
-        match dl_outcome {
-            Ok(Ok(())) => {
-                // Save current route so the app can resume where it left off.
-                // ponytail: localStorage survives Tauri restart; one eval is enough.
-                if let Some(main) = app.get_webview_window("main") {
-                    let _ = main.eval("localStorage.setItem('pkb:lastHash', window.location.hash)");
-                }
-                let _ = splash.close();
+async fn run_auto_update(app: tauri::AppHandle) {
+    if let Ok(updater) = app.updater() {
+        if let Ok(Some(update)) = updater.check().await {
+            if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
                 log::info!("Update installed — restarting");
                 app.restart();
             }
-            Ok(Err(e)) => {
-                log::warn!("Download/install failed: {e}");
-                show_update_error(&splash, &format!("Update failed. Please try again.\n\n{e}"));
-                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
-                continue;
-            }
-            Err(_) => {
-                log::warn!("Download/install timed out after 5 min");
-                show_update_error(&splash, "Update timed out. Please try again.");
-                wait_for_retry_or_quit(&app, &splash, &mut retry_rx).await;
-                continue;
-            }
         }
     }
-}
-
-async fn wait_for_retry_or_quit(
-    app: &tauri::AppHandle,
-    splash: &tauri::WebviewWindow,
-    retry_rx: &mut mpsc::UnboundedReceiver<()>,
-) {
-    match retry_rx.recv().await {
-        Some(()) => {
-            let _ = splash.close();
-        }
-        None => {
-            let _ = splash.close();
-            app.exit(1);
-        }
-    }
-}
-
-fn show_main(app: &tauri::AppHandle) {
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.show();
-    }
-}
-
-fn show_update_error(splash: &tauri::WebviewWindow, message: &str) {
-    if let Ok(message_json) = serde_json::to_string(message) {
-        let _ = splash.eval(&format!("window.__showError({message_json})"));
     }
 }
 
