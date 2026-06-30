@@ -444,14 +444,14 @@ pub fn cmd_last_opening_for(
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_backup_gate_check(
     state: tauri::State<'_, AppState>,
-    now_epoch_secs: Option<i64>,
+    now_epoch_ms: Option<i64>,
 ) -> AppResult<BackupGate> {
     let guard = state
         .db
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let now = now_epoch_secs.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    let now = now_epoch_ms.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
     backup_gate_check(db, now).map_err(|e| AppError::Internal(e.to_string()))
 }
 
