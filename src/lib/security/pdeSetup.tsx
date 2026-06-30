@@ -14,6 +14,7 @@ import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { provisionDecoyDb } from "../../domain/ipc";
+import { extractError } from "../../lib/extractError";
 import {
   pdeSetupSchema,
   type PdeSetupInput,
@@ -140,6 +141,11 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
 
   async function goNext() {
     if (step === "opt-in") {
+      const enabled = getValues("enabled");
+      if (!enabled) {
+        onComplete();
+        return;
+      }
       setStep("decoy-pin");
       return;
     }
@@ -169,7 +175,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       });
       onComplete();
     } catch (err) {
-      setBackendError(err instanceof Error ? err.message : String(err));
+      setBackendError(extractError(err));
     } finally {
       setSubmitting(false);
     }
@@ -427,7 +433,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
         )}
         {step === "opt-in" && (
           <button className={ghostButtonClass} type="button" onClick={onCancel}>
-            Cancel
+            Skip
           </button>
         )}
         {step !== "confirm" ? (

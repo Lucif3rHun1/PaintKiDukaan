@@ -125,6 +125,11 @@ export const changeDuressPinSchema = z
   .refine((d) => d.currentRealPin !== d.newDuressPin, {
     path: ["newDuressPin"],
     message: "Duress PIN must differ from real PIN",
+  })
+  .superRefine((data, ctx) => {
+    if (data.newDuressPin === data.currentRealPin) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Must be different from your owner PIN", path: ["newDuressPin"] });
+    }
   });
 
 export const changeRecoveryPassphraseSchema = z

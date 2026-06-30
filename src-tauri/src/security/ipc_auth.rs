@@ -737,6 +737,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "change_duress_pin",
         min_role: Role::Owner,
     },
+    CommandAcl {
+        name: "disable_pde",
+        min_role: Role::Owner,
+    },
     // ── Import (S-3) ───────────────────────────────────────────────────
     CommandAcl {
         name: "cmd_import_items_csv",
@@ -958,8 +962,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            179,
-            "ACL has {} entries, expected 179",
+            180,
+            "ACL has {} entries, expected 180",
             COMMAND_ACL.len()
         );
     }

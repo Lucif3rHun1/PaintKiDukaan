@@ -24,6 +24,8 @@ pub(crate) fn wipe_existing_setup(db_path: &Path) -> std::io::Result<()> {
         db_path.with_extension("db-wal"),
         db_path.with_extension("db-shm"),
         db_path.with_extension("keystore"),
+        // ponytail: decoy DB lives next to the real one
+        db_path.parent().unwrap_or(db_path).join(crate::obs!("pkb_cache_v2.db")),
     ];
     // de-duplicate in case with_extension collapsed to the same path
     to_remove.sort();
@@ -224,9 +226,7 @@ pub fn first_launch_setup<R: tauri::Runtime>(
 
     if let (Some(dp), Some(dup), Some(fs)) = (decoy_pin, duress_pin, fake_shop_name) {
         log::info!("[SETUP] Provisioning decoy DB (PDE)...");
-        if let Err(e) = crate::security::pde::provision_decoy_db_impl(&db_path, &dp, &dup, &fs) {
-            log::warn!("[SETUP] PDE provisioning failed (non-fatal): {e}");
-        }
+        crate::security::pde::provision_decoy_db_impl(&db_path, &dp, &dup, &fs)?;
     }
 
     Ok(session)

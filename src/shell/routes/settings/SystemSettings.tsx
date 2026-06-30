@@ -7,7 +7,7 @@ import {
   Shield,
 } from "lucide-react";
 
-import { Card, Section, Button, Badge, Select } from "../../../components/ui";
+import { Card, Section, Button, Badge, Select, Alert } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import { getPdeStatus, changeDecoyPin, changeDuressPin } from "../../../domain/ipc";
 import { changePin, setRecoveryPassphrase } from "../../../lib/security/pin";
@@ -171,6 +171,7 @@ function HealthRow({ k, v }: { k: string; v: string | undefined }) {
 
 function PdeSettingsCard() {
   const [pdeStatus, setPdeStatus] = useState<PdeStatus | null>(null);
+  const [policy, setPolicy] = useState<SecurityPolicy | null>(null);
   const [loading, setLoading] = useState(true);
   const [showWizard, setShowWizard] = useState(false);
   const [showDecoyChange, setShowDecoyChange] = useState(false);
@@ -178,10 +179,12 @@ function PdeSettingsCard() {
 
   async function loadStatus() {
     try {
-      const status = await getPdeStatus();
+      const [status, pol] = await Promise.all([getPdeStatus(), ipc.getSecurityPolicy()]);
       setPdeStatus(status);
-    } catch {
+      setPolicy(pol);
+    } catch (err) {
       setPdeStatus({ enabled: false, has_decoy: false, has_duress: false });
+      toast.error("Failed to load PDE status", extractError(err));
     } finally {
       setLoading(false);
     }
@@ -245,6 +248,15 @@ function PdeSettingsCard() {
           </div>
         ) : (
           <div className="space-y-4">
+            {pdeStatus?.has_duress && policy && !policy.wipe_on_duress && (
+              <Alert variant="warning" title="Duress PIN without self-destruct">
+                The emergency PIN currently shows the same fake shop as your decoy PIN.
+                Enable "Delete data on duress" in Safety Settings for the emergency PIN to actually protect your data.
+              </Alert>
+            )}
+
+            {/* ponytail: fake shop preview — PdeStatus doesn't include fake_shop_name yet. Add when backend returns it. */}
+
             <div className="rounded-lg border border-border bg-muted p-3 space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Decoy PIN</span>
@@ -356,7 +368,7 @@ function ChangeDecoyPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
             autoComplete="off"
             inputMode="numeric"
             maxLength={6}
-            type="password"
+            type={showPins ? "text" : "password"}
             {...register("newDecoyPinConfirm")}
           />
         </div>
@@ -432,7 +444,7 @@ function ChangeDuressPinForm({ onDone, onCancel }: { onDone: () => void; onCance
           autoComplete="off"
           inputMode="numeric"
           maxLength={6}
-          type="password"
+          type={showPins ? "text" : "password"}
           {...register("newDuressPinConfirm")}
         />
         {errors.newDuressPinConfirm && <p className="text-xs text-destructive">{errors.newDuressPinConfirm.message}</p>}
@@ -463,7 +475,7 @@ function SecurityPolicyCard() {
       const loaded = await ipc.getSecurityPolicy();
       setPolicy(loaded);
     } catch (e) {
-      console.warn("Failed to load security policy, using defaults", e);
+      toast.error("Failed to load safety settings", extractError(e));
     } finally {
       setLoading(false);
     }

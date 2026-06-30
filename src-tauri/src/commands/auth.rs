@@ -578,14 +578,15 @@ pub(crate) fn unlock_into_decoy(
     let kp = keystore_path(db_path);
     let conn = open_keystore(&kp)?;
 
-    if let Ok(decoy_row) = keywrap::read_by_role(&conn, PinRole::Decoy) {
+        if let Ok(decoy_row) = keywrap::read_by_role(&conn, PinRole::Decoy) {
         if let Ok(dek) = keywrap::unwrap_with_pin(&decoy_row, pin) {
             let decoy_db_path = crate::security::pde::decoy_db_path(db_path);
-            let db = if decoy_db_path.exists() {
-                db::Db::open(&decoy_db_path, &dek).map_err(AppError::Db)?
-            } else {
-                db::Db::open(db_path, &dek).map_err(AppError::Db)?
-            };
+            if !decoy_db_path.exists() {
+                return Err(AppError::NotFound(
+                    "Decoy shop not found. Re-enable from Settings → Security.".into(),
+                ));
+            }
+            let db = db::Db::open(&decoy_db_path, &dek).map_err(AppError::Db)?;
 
             let user = db
                 .with_conn(|c| {
@@ -651,11 +652,12 @@ pub(crate) fn unlock_into_decoy(
             );
 
             let decoy_db_path = crate::security::pde::decoy_db_path(db_path);
-            let db = if decoy_db_path.exists() {
-                db::Db::open(&decoy_db_path, &dek).map_err(AppError::Db)?
-            } else {
-                db::Db::open(db_path, &dek).map_err(AppError::Db)?
-            };
+            if !decoy_db_path.exists() {
+                return Err(AppError::NotFound(
+                    "Decoy shop not found. Re-enable from Settings → Security.".into(),
+                ));
+            }
+            let db = db::Db::open(&decoy_db_path, &dek).map_err(AppError::Db)?;
 
             let user = db
                 .with_conn(|c| {

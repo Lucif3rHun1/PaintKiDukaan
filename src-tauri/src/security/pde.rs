@@ -176,6 +176,21 @@ pub fn migrate_single_to_pde(db_path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Remove PDE keywrap rows (decoy + duress) and delete the decoy DB file.
+#[tauri::command]
+pub async fn disable_pde(state: State<'_, AppState>) -> Result<(), AppError> {
+    ipc_auth::authorize("disable_pde", state.inner())?;
+    let db_path = state.db_path.lock().unwrap().clone().ok_or(AppError::NoDb)?;
+    let keystore_path = db_path.with_extension("keystore");
+    let conn = crate::commands::auth::open_keystore(&keystore_path)?;
+    keywrap::delete_by_role(&conn, PinRole::Decoy)?;
+    keywrap::delete_by_role(&conn, PinRole::Duress)?;
+    conn.close()?;
+    let decoy_path = decoy_db_path(&db_path);
+    std::fs::remove_file(&decoy_path).ok();
+    Ok(())
+}
+
 /// Compute the decoy DB path next to the real DB.
 pub fn decoy_db_path(real_db_path: &Path) -> std::path::PathBuf {
     real_db_path

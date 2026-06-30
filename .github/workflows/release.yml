@@ -171,3 +171,6 @@ jobs:
             gh release create "$tag" --title "$tag" --notes "Release $tag"
           fi
           gh release upload "$tag" latest.json release-files/* --clobber
+
+      - name: Verify updater pubkey matches published signatures
+        run: python3 scripts/verify_updater_pubkey.py

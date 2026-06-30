@@ -364,7 +364,7 @@ pub fn seed_decoy_data(
         // pick 5-8 items for this purchase
         let n_items = prng.range(5, 8) as usize;
         let mut subtotal: i64 = 0;
-        let mut pi_stmt_items: Vec<(i64, f64, i64)> = Vec::new(); // (item_id, qty, line_total)
+        let mut pi_stmt_items: Vec<(i64, f64, i64, i64)> = Vec::new(); // (item_id, qty, unit_price, line_total)
 
         for j in 0..n_items {
             let idx = (pi * 7 + j) % item_ids.len();
@@ -372,7 +372,7 @@ pub fn seed_decoy_data(
             let unit_price = item_costs[idx]; // cost price
             let line_total = unit_price * qty as i64;
             subtotal += line_total;
-            pi_stmt_items.push((item_ids[idx], qty, line_total));
+            pi_stmt_items.push((item_ids[idx], qty, unit_price, line_total));
         }
 
         conn.execute(
@@ -386,13 +386,13 @@ pub fn seed_decoy_data(
         let pid = conn.last_insert_rowid();
         purchase_ids.push(pid);
 
-        for (iid, qty, lt) in &pi_stmt_items {
+        for (iid, qty, unit_price, lt) in &pi_stmt_items {
             conn.execute(
                 "INSERT INTO purchase_items \
                  (purchase_id,item_id,qty,sale_unit_id,unit_price_paise,line_total_paise, \
                   created_at,created_by) \
                  VALUES (?1,?2,?3,?4,?5,?6,?7,1)",
-                rusqlite::params![pid, iid, qty, unit_sid, item_costs[0], lt, pepoch],
+                rusqlite::params![pid, iid, qty, unit_sid, unit_price, lt, pepoch],
             )?;
         }
     }
@@ -468,15 +468,12 @@ pub fn seed_decoy_data(
 
             // sale_items
             for (iid, qty, price, lo) in &sale_item_data {
-                let unit_type = if *iid == item_ids[item_defs
+                let unit_type = item_ids
                     .iter()
-                    .position(|d| d.6 == "kg")
-                    .unwrap_or(28)]
-                {
-                    "kg"
-                } else {
-                    "pcs"
-                };
+                    .position(|id| id == iid)
+                    .and_then(|pos| item_defs.get(pos))
+                    .map(|d| if d.6 == "kg" { "kg" } else { "pcs" })
+                    .unwrap_or("pcs");
                 conn.execute(
                     "INSERT INTO sale_items \
                      (sale_id,kind,item_id,qty,price,unit_type,line_order,created_at,created_by) \

@@ -14,6 +14,7 @@ import { listLocations, listSubLocations } from "../locations/api";
 import { createInward } from "../../pos/api";
 import type { NewPurchase } from "../../pos/types";
 import { listCategories } from "../categories/api";
+import { loadString } from "../../shell/routes/settings/components/SettingsFields";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { formatItemName } from "./display";
 import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
@@ -258,8 +259,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       return;
     }
 
-    const raw = await getSetting("shop_name").catch(() => "");
-    const shopName = (() => { try { return JSON.parse(raw) as string; } catch { return raw; } })();
+    const shopName = await loadString(getSetting, "shop_name", "");
     const itemName = formatItemName(item, brands);
     const label: BatchLabel = {
       barcode,

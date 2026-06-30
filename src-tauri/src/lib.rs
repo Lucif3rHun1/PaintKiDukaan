@@ -391,6 +391,7 @@ pub fn run() {
             security::pde::provision_decoy_db,
             security::pde::change_decoy_pin,
             security::pde::change_duress_pin,
+            security::pde::disable_pde,
             // Settings (Slice D)
             commands::settings::get_setting,
             commands::settings::set_setting,

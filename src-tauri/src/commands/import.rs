@@ -131,15 +131,23 @@ fn get_field(
     None
 }
 
-/// Parse a rupee amount string (e.g. "250", "250.50") into paise.
+/// Parse a rupee amount string (e.g. "250", "250.50", "₹1,250", "Rs. 500/-") into paise.
 fn parse_paise(s: &str) -> Option<i64> {
-    let trimmed = s.trim().replace(',', "");
-    if trimmed.is_empty() {
+    let cleaned = s.trim()
+        .replace(',', "")
+        .replace("₹", "")
+        .replace("Rs.", "")
+        .replace("Rs", "")
+        .replace("/-", "")
+        .replace("INR", "")
+        .trim()
+        .to_string();
+    if cleaned.is_empty() {
         return None;
     }
-    if let Some(dot_pos) = trimmed.find('.') {
-        let int_part = &trimmed[..dot_pos];
-        let mut frac_part = &trimmed[dot_pos + 1..];
+    if let Some(dot_pos) = cleaned.find('.') {
+        let int_part = &cleaned[..dot_pos];
+        let mut frac_part = &cleaned[dot_pos + 1..];
         if frac_part.len() > 2 {
             frac_part = &frac_part[..2];
         }
@@ -147,7 +155,7 @@ fn parse_paise(s: &str) -> Option<i64> {
         let paise: i64 = frac_part.parse().ok()?;
         Some(rupees * 100 + if rupees < 0 { -paise } else { paise })
     } else {
-        let rupees: i64 = trimmed.parse().ok()?;
+        let rupees: i64 = cleaned.parse().ok()?;
         Some(rupees * 100)
     }
 }
@@ -266,11 +274,23 @@ pub fn cmd_import_items_csv(
             let sell_unit = get_field(row, &hmap, &["sell_unit", "sell"]);
 
             let retail_price_paise = match get_field(row, &hmap, &["retail_price", "retail", "mrp", "selling_price", "price"]) {
-                Some(s) => parse_paise(&s).unwrap_or(0),
+                Some(s) => match parse_paise(&s) {
+                    Some(v) => v,
+                    None => {
+                        result.errors.push(ImportRowError { row: row_num, message: format!("unparseable retail_price: \"{s}\"") });
+                        0
+                    }
+                },
                 None => 0,
             };
             let cost_price_paise = match get_field(row, &hmap, &["cost_price", "cost", "purchase_price", "buying_price"]) {
-                Some(s) => parse_paise(&s).unwrap_or(0),
+                Some(s) => match parse_paise(&s) {
+                    Some(v) => v,
+                    None => {
+                        result.errors.push(ImportRowError { row: row_num, message: format!("unparseable cost_price: \"{s}\"") });
+                        0
+                    }
+                },
                 None => 0,
             };
             let promo_price_paise = get_field(row, &hmap, &["promo_price", "promo", "offer_price"])
@@ -471,9 +491,9 @@ pub fn cmd_import_items_csv(
                 ).unwrap_or(0.0);
                 let delta = target_stock - current_balance;
                 if delta.abs() > f64::EPSILON {
-                    tx.execute(
+                    if let Err(e) = tx.execute(
                         "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
-                         VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='adjustment'), (SELECT sell_unit_id FROM items WHERE id = ?1), 'import', NULL, ?4, ?5, ?6)",
+                         VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='adjustment'), (SELECT sell_unit_id FROM items WHERE id = ?1), 'adjustment', NULL, ?4, ?5, ?6)",
                         params![
                             item_id,
                             primary_location_id,
@@ -482,7 +502,9 @@ pub fn cmd_import_items_csv(
                             now_ms,
                             user.id,
                         ],
-                    )?;
+                    ) {
+                        log::warn!("stock replacement failed for item {item_id}: {e}");
+                    }
                 }
             }
         }

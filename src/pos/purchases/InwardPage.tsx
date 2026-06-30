@@ -17,6 +17,7 @@ import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { ItemForm } from "../../domain/items/ItemForm";
 import { getSetting, listBrands, listItems, previewNextBarcode, updateItem } from "../../domain/items/api";
+import { loadString } from "../../shell/routes/settings/components/SettingsFields";
 import type { Brand } from "../../domain/types";
 import { formatItemName } from "../../domain/items/display";
 import type { BatchLabel } from "../print";
@@ -528,7 +529,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     const res = await submit();
     if (!res) return;
 
-    const shopName = await getSetting("shop_name").catch(() => "");
+    const shopName = await loadString(getSetting, "shop_name", "");
     const seedRows: SeedRow[] = [];
     let nextId = 1;
     for (const line of filled) {
