@@ -219,7 +219,7 @@ export function buildReturnReceiptData(ret: SaleReturn, settings: ReceiptPrintSe
       name: it.item_name,
       sku: null,
       qty: formatQty(it.qty),
-      unit: "pc",
+      unit: it.unit_code || "pc",
       unit_price: formatRupeesForThermal(it.refund_paise),
       line_total: formatRupeesForThermal(it.qty * it.refund_paise),
     })),

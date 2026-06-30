@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
+  Alert,
   Badge,
   Button,
   EmptyState,
@@ -160,12 +161,7 @@ export function FormulasPage({ role }: Props) {
       </div>
 
       {error ? (
-        <p
-          role="alert"
-          className="rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          {extractError(error)}
-        </p>
+        <Alert variant="destructive">{extractError(error)}</Alert>
       ) : null}
       {isLoading || isFetching ? <Skeleton variant="card" className="h-40" /> : null}
 

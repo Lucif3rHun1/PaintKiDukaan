@@ -197,15 +197,15 @@ impl Db {
                        formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,\
                        qty           REAL NOT NULL CHECK(qty > 0),\
                        price         INTEGER NOT NULL CHECK(price >= 0),\
-                       unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),\
-                       line_discount INTEGER NOT NULL DEFAULT 0,\
-                       shade_note    TEXT,\
-                       line_order    INTEGER NOT NULL DEFAULT 0,\
-                       created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),\
-                       created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,\
-                       CHECK ((item_id IS NOT NULL AND formula_id IS NULL)\
-                           OR (item_id IS NULL     AND formula_id IS NOT NULL))\
-                     );",
+                        unit_type     TEXT    NOT NULL DEFAULT 'pcs' CHECK(unit_type IN ('pcs','mtr','kg')),\
+                        line_discount INTEGER NOT NULL DEFAULT 0,\
+                        shade_note    TEXT,\
+                        line_order    INTEGER NOT NULL DEFAULT 0,\
+                        created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),\
+                        created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,\
+                        CHECK ((item_id IS NOT NULL AND formula_id IS NULL)\
+                            OR (item_id IS NULL     AND formula_id IS NOT NULL))\
+                      );",
                 )?;
 
                 // Copy data if a source table exists (either the original or the
@@ -317,20 +317,26 @@ impl Db {
 
         // M-INLINE-007: add print config columns to label_print_log
         {
-            let has_tspl_config: bool = conn
-                .query_row(
-                    "SELECT COUNT(*) > 0 FROM pragma_table_info('label_print_log') WHERE name = 'tspl_config'",
-                    [],
-                    |r| r.get(0),
-                )
-                .unwrap_or(false);
-            if !has_tspl_config {
-                conn.execute_batch(
-                    "ALTER TABLE label_print_log ADD COLUMN tspl_config TEXT;\
-                     ALTER TABLE label_print_log ADD COLUMN printer TEXT;\
-                     ALTER TABLE label_print_log ADD COLUMN label_size TEXT;\
-                     ALTER TABLE label_print_log ADD COLUMN labels_per_row INTEGER;",
-                )?;
+            let columns: Vec<String> = conn
+                .prepare("SELECT name FROM pragma_table_info('label_print_log')")?
+                .query_map([], |r| r.get::<_, String>(0))?
+                .filter_map(Result::ok)
+                .collect();
+            let mut batch = String::new();
+            if !columns.contains(&"tspl_config".to_string()) {
+                batch.push_str("ALTER TABLE label_print_log ADD COLUMN tspl_config TEXT;");
+            }
+            if !columns.contains(&"printer".to_string()) {
+                batch.push_str("ALTER TABLE label_print_log ADD COLUMN printer TEXT;");
+            }
+            if !columns.contains(&"label_size".to_string()) {
+                batch.push_str("ALTER TABLE label_print_log ADD COLUMN label_size TEXT;");
+            }
+            if !columns.contains(&"labels_per_row".to_string()) {
+                batch.push_str("ALTER TABLE label_print_log ADD COLUMN labels_per_row INTEGER;");
+            }
+            if !batch.is_empty() {
+                conn.execute_batch(&batch)?;
             }
         }
 
@@ -384,7 +390,7 @@ impl Db {
                         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
                      );
                      INSERT INTO sale_units (code, label, quantity_precision) VALUES
-                        ('unit', 'Unit', 0),
+                        ('pcs', 'Pcs', 0),
                         ('mtr', 'Metre', 3),
                         ('kg', 'Kg', 3);",
                 )?;
@@ -606,7 +612,7 @@ impl Db {
                          formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
                          qty           REAL NOT NULL CHECK(qty > 0),
                          price         INTEGER NOT NULL CHECK(price >= 0),
-                         unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),
+                         unit_type     TEXT    NOT NULL DEFAULT 'pcs' CHECK(unit_type IN ('pcs','mtr','kg')),
                          line_discount INTEGER NOT NULL DEFAULT 0,
                          shade_note    TEXT,
                          line_order    INTEGER NOT NULL DEFAULT 0,
@@ -623,6 +629,7 @@ impl Db {
                      ALTER TABLE sale_items_new RENAME TO sale_items;
                      CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
                      CREATE INDEX IF NOT EXISTS idx_sale_items_item_id ON sale_items(item_id);
+                     CREATE INDEX IF NOT EXISTS idx_sale_items_formula_id ON sale_items(formula_id);
                      PRAGMA foreign_keys = ON;",
                 )?;
             }
@@ -650,25 +657,20 @@ impl Db {
                 .unwrap_or(false)
             }
 
-            if has_col(&conn, "items", "unit_id") {
-                // --- stock_movements ---
-                // Always drop trigger before backfill to prevent abort
+            // --- stock_movements (independently idempotent) ---
+            if has_col(&conn, "stock_movements", "unit_id") {
                 conn.execute_batch("DROP TRIGGER IF EXISTS stock_movements_bu;")?;
                 if !has_col(&conn, "stock_movements", "sale_unit_id") {
                     conn.execute_batch(
                         "ALTER TABLE stock_movements ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);",
                     )?;
                 }
-                // Backfill sale_unit_id from items (safe: trigger dropped)
                 conn.execute_batch(
                     "UPDATE stock_movements SET sale_unit_id = \
                      (SELECT sell_unit_id FROM items WHERE id = stock_movements.item_id) \
                      WHERE sale_unit_id IS NULL;",
                 )?;
-                if has_col(&conn, "stock_movements", "unit_id") {
-                    conn.execute_batch("ALTER TABLE stock_movements DROP COLUMN unit_id;")?;
-                }
-                // Recreate append-only trigger after backfill is complete
+                conn.execute_batch("ALTER TABLE stock_movements DROP COLUMN unit_id;")?;
                 conn.execute_batch(
                     "CREATE TRIGGER IF NOT EXISTS stock_movements_bu \
                      BEFORE UPDATE ON stock_movements \
@@ -676,8 +678,10 @@ impl Db {
                        SELECT RAISE(ABORT, 'stock_movements is append-only; insert a corrective movement instead'); \
                      END;",
                 )?;
+            }
 
-                // --- purchase_items ---
+            // --- purchase_items (independently idempotent) ---
+            if has_col(&conn, "purchase_items", "unit_id") {
                 if !has_col(&conn, "purchase_items", "sale_unit_id") {
                     conn.execute_batch(
                         "ALTER TABLE purchase_items ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);",
@@ -688,12 +692,62 @@ impl Db {
                      (SELECT sell_unit_id FROM items WHERE id = purchase_items.item_id) \
                      WHERE sale_unit_id IS NULL;",
                 )?;
-                if has_col(&conn, "purchase_items", "unit_id") {
-                    conn.execute_batch("ALTER TABLE purchase_items DROP COLUMN unit_id;")?;
-                }
+                conn.execute_batch("ALTER TABLE purchase_items DROP COLUMN unit_id;")?;
+            }
 
-                // --- items ---
+            // --- items (last, independently idempotent) ---
+            if has_col(&conn, "items", "unit_id") {
                 conn.execute_batch("ALTER TABLE items DROP COLUMN unit_id;")?;
+            }
+        }
+
+        // -- Rename default sale unit code from "unit" to "pcs" (guard: runs once) --
+        {
+            let needs_unit_rename: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sale_units WHERE code = 'unit'
+                      OR EXISTS (SELECT 1 FROM sale_items WHERE unit_type = 'unit')
+                      OR EXISTS (SELECT 1 FROM items WHERE sell_unit = 'unit')",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if needs_unit_rename {
+                conn.execute_batch(
+                    "UPDATE sale_units SET code = 'pcs', label = 'Pcs' WHERE code = 'unit';
+                     UPDATE items SET sell_unit = 'pcs' WHERE sell_unit = 'unit';",
+                )?;
+                // Recreate sale_items with updated CHECK constraint
+                conn.execute_batch(
+                    "PRAGMA foreign_keys = OFF;
+                     CREATE TABLE sale_items_new (
+                                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                                 sale_id       INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
+                                 kind          TEXT    NOT NULL DEFAULT 'item' CHECK(kind IN ('item','formula')),
+                                 item_id       INTEGER REFERENCES items(id) ON DELETE NO ACTION,
+                                 formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
+                                 qty           REAL NOT NULL CHECK(qty > 0),
+                                 price         INTEGER NOT NULL CHECK(price >= 0),
+                                 unit_type     TEXT    NOT NULL DEFAULT 'pcs' CHECK(unit_type IN ('pcs','mtr','kg')),
+                                 line_discount INTEGER NOT NULL DEFAULT 0,
+                                 shade_note    TEXT,
+                                 line_order    INTEGER NOT NULL DEFAULT 0,
+                                 created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+                                 created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+                                 display_name  TEXT
+                             );
+                             INSERT INTO sale_items_new
+                                 SELECT id, sale_id, kind, item_id, formula_id, qty, price,
+                                        CASE WHEN unit_type = 'unit' THEN 'pcs' ELSE unit_type END,
+                                        line_discount, shade_note, line_order, created_at, created_by, display_name
+                                 FROM sale_items;
+                             DROP TABLE sale_items;
+                             ALTER TABLE sale_items_new RENAME TO sale_items;
+                             CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
+                             CREATE INDEX IF NOT EXISTS idx_sale_items_item_id ON sale_items(item_id);
+                             CREATE INDEX IF NOT EXISTS idx_sale_items_formula_id ON sale_items(formula_id);
+                             PRAGMA foreign_keys = ON;",
+                )?;
             }
         }
 

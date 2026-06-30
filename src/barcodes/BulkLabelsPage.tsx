@@ -18,6 +18,7 @@ import { getSetting, listBrands, listItems, listLabelPrints, recordLabelPrint } 
 import type { Brand, LabelPrintRecord } from "../domain/types";
 import { ipc } from "../shell/lib/ipc";
 import { BarcodeThumb } from "../components/ui/BarcodeThumb";
+import { formatItemName } from "../domain/items/display";
 import { Select } from "../components/ui/Select";
 import {
   LOCKED_FORMAT,
@@ -29,12 +30,13 @@ import {
 } from "../pos/print";
 import { buildTsplBytes, buildTsplString, calcLabelCapacity, calcOptimalFont, calcOptimalFontFill } from "../pos/tspl";
 import { TsplLabelPreview } from "../pos/TsplLabelPreview";
-import { DEFAULT_TSPL_CONFIG, type TsplConfig } from "../pos/tsplConfig";
+import { DEFAULT_TSPL_CONFIG, normalizeTsplConfig, type TsplConfig } from "../pos/tsplConfig";
 import { Button, Skeleton } from "../components/ui";
 import { useShortcut } from "../lib/shortcuts";
 import { useFocusShortcut } from "../lib/shortcuts/useFocusShortcut";
 import { extractError } from "../lib/extractError";
 import { generateSimpleSequence, type SequenceType } from "./sequence";
+import { useLabelBatchSeed } from "./seed";
 
 type PrinterType = "thermal" | "laser-a4";
 type LaserPerSheet = 21 | 65;
@@ -110,9 +112,11 @@ export function BulkLabelsPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
-  const [shopName, setShopName] = useState("");
+  const shopNameRef = useRef(""); // ponytail: ref avoids re-triggering auto-fill useEffect on async load
   const [defaultPrinterName, setDefaultPrinterName] = useState<string | null>(null);
   const [hasPrintedBatch, setHasPrintedBatch] = useState(false);
+  const busyRef = useRef(false); // ponytail: prevents double-click on Print/Download
+  const [seedSource, setSeedSource] = useState<string | null>(null);
 
   const [itemSearchQuery, setItemSearchQuery] = useState("");
   const [showItemDropdown, setShowItemDropdown] = useState(false);
@@ -159,7 +163,7 @@ export function BulkLabelsPage() {
   useEffect(() => {
     let cancelled = false;
     getSetting("shop_name")
-      .then((v) => !cancelled && setShopName(v || "")).catch((err: unknown) => console.error("Silent catch replaced:", err));
+      .then((v) => { if (!cancelled) shopNameRef.current = v || ""; }).catch(() => {});
     // Load per-section print config (items tab on mount)
     getSetting("label.print_config_items").then((raw) => {
       if (cancelled) return;
@@ -169,7 +173,7 @@ export function BulkLabelsPage() {
           if (cfg.printer) setPrinter(cfg.printer);
           if (cfg.sizeChoice) setSizeChoice(cfg.sizeChoice);
           if (cfg.labelsPerRow != null) setLabelsPerRow(cfg.labelsPerRow);
-          if (cfg.tsplConfig) setTsplConfig(cfg.tsplConfig);
+          if (cfg.tsplConfig) setTsplConfig(normalizeTsplConfig(cfg.tsplConfig));
         } catch { /* ignore corrupt */ }
       } else {
         // Legacy fallback: load old single-section tspl_config key
@@ -177,7 +181,7 @@ export function BulkLabelsPage() {
           if (!legacyRaw || cancelled) return;
           try {
             const saved = JSON.parse(legacyRaw) as Partial<TsplConfig>;
-            setTsplConfig((prev) => ({ ...prev, ...saved }));
+            setTsplConfig(normalizeTsplConfig(saved));
           } catch { /* ignore corrupt */ }
         }).catch(() => {});
       }
@@ -214,8 +218,19 @@ export function BulkLabelsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const seed = useLabelBatchSeed.getState();
+    if (seed.rows.length === 0) return;
+    setBatch(seed.rows);
+    setSeedSource(seed.source);
+    setHasPrintedBatch(false);
+    setActionMsg(`Loaded ${seed.rows.length} labels from ${seed.source ?? "inward"}.`);
+    seed.consume();
+  }, []);
+
   // --- Per-section persistence ---
   const activeTabRef = useRef(activeTab);
+  const tabLoadSeqRef = useRef(0);
 
   // Save departing tab's config and load arriving tab's config on tab switch
   useEffect(() => {
@@ -227,18 +242,21 @@ export function BulkLabelsPage() {
     ipc.setSetting(`label.print_config_${prevTab}`, JSON.stringify(departingCfg)).catch(() => {});
 
     // Load arriving tab
+    let cancelled = false;
     const arrivingTab = activeTab;
+    const loadSeq = tabLoadSeqRef.current + 1;
+    tabLoadSeqRef.current = loadSeq;
     getSetting(`label.print_config_${arrivingTab}`).then((raw) => {
+      if (cancelled || tabLoadSeqRef.current !== loadSeq) return; // stale
       if (raw) {
         try {
           const cfg = JSON.parse(raw) as Partial<SectionPrintConfig>;
           if (cfg.printer) setPrinter(cfg.printer);
           if (cfg.sizeChoice) setSizeChoice(cfg.sizeChoice);
-          if (cfg.labelsPerRow != null) setLabelsPerRow(cfg.labelsPerRow);
-          if (cfg.tsplConfig) setTsplConfig(cfg.tsplConfig);
+          if (cfg.labelsPerRow != null) setLabelsPerRow(Math.max(1, Math.min(500, cfg.labelsPerRow)));
+          if (cfg.tsplConfig) setTsplConfig(normalizeTsplConfig(cfg.tsplConfig));
         } catch { /* ignore corrupt */ }
       } else {
-        // Reset to defaults for new tab
         setPrinter(DEFAULT_SECTION_CONFIG.printer);
         setSizeChoice(DEFAULT_SECTION_CONFIG.sizeChoice);
         setLabelsPerRow(DEFAULT_SECTION_CONFIG.labelsPerRow);
@@ -247,6 +265,7 @@ export function BulkLabelsPage() {
     }).catch(() => {});
 
     activeTabRef.current = activeTab;
+    return () => { cancelled = true; };
   }, [activeTab]);
 
   // Persist within-tab config changes (debounced)
@@ -271,7 +290,19 @@ export function BulkLabelsPage() {
   }
 
   useEffect(() => {
-    void loadHistory();
+    let cancelled = false;
+    (async () => {
+      setHistoryLoading(true);
+      try {
+        const rows = await listLabelPrints({ limit: 50 });
+        if (!cancelled) setHistory(rows);
+      } catch (e) {
+        if (!cancelled) setActionMsg(`Failed to load print history: ${extractError(e)}`);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useFocusShortcut({ key: "F2", selector: '[data-shortcut="item-picker"]', description: "Focus item picker" });
@@ -320,15 +351,13 @@ export function BulkLabelsPage() {
       setSkuOverride("");
       return;
     }
-    const rawLine1 = shopName || selectedItem.label_line1 || "";
+    const rawLine1 = shopNameRef.current || selectedItem.label_line1 || "";
     setLine1(rawLine1.replace(/^"|"$/g, ""));
-    const brandPart = selectedItem.brand_id != null ? (brandMap.get(selectedItem.brand_id) ?? "") : "";
-    const brandName = typeof brandPart === "string" ? brandPart : "";
     setLine2(
-      [brandName, selectedItem.name].filter(Boolean).join(" "),
+      formatItemName(selectedItem, brandsQuery.data ?? []),
     );
     setSkuOverride(selectedItem.sku_code);
-  }, [selectedItem, shopName]);
+  }, [selectedItem, brandsQuery.data]);
 
   // Save/restore labelsPerRow across printer type switches.
   const savedLabelsPerRowRef = useRef(1);
@@ -362,7 +391,7 @@ export function BulkLabelsPage() {
           sku: skuOverride.trim() || selectedItem.sku_code,
         },
         itemId: selectedItem.id,
-        itemName: selectedItem.name,
+        itemName: formatItemName(selectedItem, brandsQuery.data ?? []),
       });
     }
     setBatch((prev) => [...rows, ...prev]);
@@ -415,6 +444,14 @@ export function BulkLabelsPage() {
       start: seqStart,
       count: Math.max(1, Math.floor(seqCount)),
     });
+    // Auto-fit: adjust font to largest entry so multi-digit numbers don't clip
+    const longest = texts.reduce((a, b) => (b.length > a.length ? b : a), "");
+    if (longest) {
+      const usableW = Math.floor((rollW * 8) / cols) - Math.round(tsplConfig.sideMarginMm * 8) * 2;
+      const availH = Math.max(0, rollH * 8 - Math.round(tsplConfig.topMarginMm * 8));
+      const opt = calcOptimalFontFill(longest, usableW, availH);
+      setTsplConfig((c) => ({ ...c, font: opt.font, xmul: opt.xmul, ymul: opt.ymul }));
+    }
     const rows: GeneratedRow[] = texts.map((text) => ({
       id: nextRowId++,
       label: { line1: text || undefined },
@@ -460,16 +497,17 @@ export function BulkLabelsPage() {
 
   function loadRecordConfig(record: LabelPrintRecord) {
     if (record.tsplConfig) {
-      try { setTsplConfig(JSON.parse(record.tsplConfig) as typeof tsplConfig); } catch { /* keep current */ }
+      try { setTsplConfig(normalizeTsplConfig(JSON.parse(record.tsplConfig))); } catch { /* keep current */ }
     }
     if (record.printer) setPrinter(record.printer as PrinterType);
     if (record.labelSize) setSizeChoice(record.labelSize);
-    if (record.labelsPerRow != null) setLabelsPerRow(record.labelsPerRow);
+    if (record.labelsPerRow != null) setLabelsPerRow(Math.max(1, Math.min(500, record.labelsPerRow)));
     setActionMsg(`Loaded config from "${record.itemName}" print — review and Print when ready.`);
   }
 
   async function handleDownload() {
-    if (batch.length === 0) return;
+    if (batch.length === 0 || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setActionMsg(null);
     try {
@@ -485,11 +523,13 @@ export function BulkLabelsPage() {
       setActionMsg(`Failed: ${extractError(e)}`);
     } finally {
       setBusy(false);
+      busyRef.current = false;
     }
   }
 
   async function handlePrint() {
-    if (batch.length === 0) return;
+    if (batch.length === 0 || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setActionMsg(null);
     try {
@@ -564,6 +604,7 @@ export function BulkLabelsPage() {
       setActionMsg(`Failed: ${extractError(e)}`);
     } finally {
       setBusy(false);
+      busyRef.current = false;
     }
   }
 
@@ -606,7 +647,7 @@ export function BulkLabelsPage() {
               data-shortcut="item-picker"
               className="input w-full"
               placeholder={loadingItems ? "Loading items…" : "Search by name, SKU, or barcode…"}
-              value={showItemDropdown ? itemSearchQuery : (selectedItem ? `${(() => { const b = selectedItem.brand_id != null ? brandMap.get(selectedItem.brand_id) : undefined; return b ? `${b} · ` : ""; })()}${selectedItem.name}${selectedItem.barcode ? ` · ${selectedItem.barcode}` : ""}` : itemSearchQuery)}
+              value={showItemDropdown ? itemSearchQuery : (selectedItem ? `${formatItemName(selectedItem, brandsQuery.data ?? [])}${selectedItem.barcode ? ` · ${selectedItem.barcode}` : ""}` : itemSearchQuery)}
               onChange={(e) => {
                 setItemSearchQuery(e.target.value);
                 setShowItemDropdown(true);
@@ -660,7 +701,7 @@ export function BulkLabelsPage() {
                         setShowItemDropdown(false);
                       }}
                     >
-                      <span>{(() => { const b = i.brand_id != null ? brandMap.get(i.brand_id) : undefined; return b ? `${b} · ${i.name}` : i.name; })()}</span>
+                      <span>{formatItemName(i, brandsQuery.data ?? [])}</span>
                       {inBatch > 0 && (
                         <span className="ml-1.5 inline-block rounded bg-primary/15 px-1 text-[10px] font-medium text-primary">
                           {inBatch} in batch
@@ -684,8 +725,8 @@ export function BulkLabelsPage() {
               type="number"
               min={1}
               max={500}
-              value={count}
-              onChange={(e) => setCount(Number(e.target.value) || 1)}
+              value={count || ""}
+              onChange={(e) => setCount(e.target.value === "" ? 0 : Number(e.target.value))}
               className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
           </div>
@@ -785,8 +826,8 @@ export function BulkLabelsPage() {
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Count</label>
-              <input type="number" min={1} max={500} value={customCount}
-                onChange={(e) => setCustomCount(Number(e.target.value) || 1)}
+              <input type="number" min={1} max={500} value={customCount || ""}
+                onChange={(e) => setCustomCount(e.target.value === "" ? 0 : Number(e.target.value))}
                 className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
             </div>
           </div>
@@ -828,8 +869,8 @@ export function BulkLabelsPage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Count</label>
-                <input type="number" min={1} max={500} value={seqCount}
-                  onChange={(e) => setSeqCount(Number(e.target.value) || 1)}
+                <input type="number" min={1} max={500} value={seqCount || ""}
+                  onChange={(e) => setSeqCount(e.target.value === "" ? 0 : Number(e.target.value))}
                   className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
               </div>
             </div>
@@ -1056,7 +1097,7 @@ export function BulkLabelsPage() {
             shortcut="F6"
             className="w-full"
           >
-            + Add {count} label{count === 1 ? "" : "s"} to batch
+            + Add {Math.max(1, count)} label{count === 1 ? "" : "s"} to batch
           </Button>
         )}
         {activeTab === "custom" && customMode === "freetext" && (() => {
@@ -1078,7 +1119,7 @@ export function BulkLabelsPage() {
             disabled={!customText.trim() || textOverflows}
             className="w-full"
           >
-            + Add {customCount} custom label{customCount === 1 ? "" : "s"} to batch
+            + Add {Math.max(1, customCount)} custom label{customCount === 1 ? "" : "s"} to batch
           </Button>
           );
         })()}
@@ -1090,10 +1131,20 @@ export function BulkLabelsPage() {
             disabled={seqCount < 1}
             className="w-full"
           >
-            + Add {seqCount} sequence label{seqCount === 1 ? "" : "s"} to batch
+            + Add {Math.max(1, seqCount)} sequence label{seqCount === 1 ? "" : "s"} to batch
           </Button>
         )}
 
+        {hasPrintedBatch && batch.length > 0 && (
+          <Button
+            type="button"
+            variant="danger"
+            onClick={clearBatch}
+            className="w-full"
+          >
+            Clear all ({batch.length})
+          </Button>
+        )}
 
 
         {actionMsg && (
@@ -1106,13 +1157,20 @@ export function BulkLabelsPage() {
         {/* Batch table */}
         <div className="rounded-lg border border-border bg-card/60 p-4">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground">
-              Batch <span className="text-muted-foreground">({batch.length})</span>
-            </h3>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">
+                Batch <span className="text-muted-foreground">({batch.length})</span>
+              </h3>
+              {seedSource && (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  Seeded from {seedSource}. Review, then Print.
+                </p>
+              )}
+            </div>
             {batch.length > 0 && (
               <button
                 type="button"
-                onClick={() => { if (window.confirm("Clear all labels from the batch?")) clearBatch(); }}
+                onClick={clearBatch}
                 className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted"
               >
                 Clear all

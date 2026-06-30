@@ -302,7 +302,7 @@ CREATE TABLE items (
   unit_code           TEXT    NOT NULL,           -- denormalized for cashier projection
   unit_label          TEXT    NOT NULL,           -- denormalized for cashier projection
   unit                TEXT    NOT NULL DEFAULT 'pc',  -- denormalized unit code (legacy compat)
-  sell_unit           TEXT    NOT NULL DEFAULT 'unit', -- "unit", "mtr", or "kg"
+  sell_unit           TEXT    NOT NULL DEFAULT 'pcs', -- "pcs", "mtr", or "kg"
   retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),
   cost_paise          INTEGER NOT NULL CHECK(cost_paise >= 0),
   promo_price_paise   INTEGER CHECK(promo_price_paise >= 0),
@@ -575,12 +575,12 @@ CREATE TABLE sale_items (
   formula_id    INTEGER REFERENCES formulas(id) ON DELETE NO ACTION,
   qty           REAL NOT NULL CHECK(qty > 0),
   price         INTEGER NOT NULL CHECK(price >= 0),
-  unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),
+  unit_type     TEXT    NOT NULL DEFAULT 'pcs' CHECK(unit_type IN ('pcs','mtr','kg')),
   line_discount INTEGER NOT NULL DEFAULT 0,
   shade_note    TEXT,
   line_order    INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
-  created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+  created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION
 -- CHECK removed: custom fbill lines may have both item_id and formula_id null.
 );
 
@@ -997,7 +997,7 @@ CREATE TABLE IF NOT EXISTS sale_units (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 INSERT OR IGNORE INTO sale_units (code, label, quantity_precision) VALUES
-  ('unit', 'Unit', 0),
+  ('pcs', 'Pcs', 0),
   ('mtr', 'Metre', 3),
   ('kg', 'Kg', 3);
 
@@ -1025,7 +1025,7 @@ CREATE TABLE IF NOT EXISTS item_purchase_packaging (
 
 -- N4. Migrate items.sell_unit to new values
 -- pc/box/bundle/roll/L/ml → unit, kg/g → kg, sqft/sqm → mtr
-UPDATE items SET sell_unit = 'unit'
+UPDATE items SET sell_unit = 'pcs'
   WHERE sell_unit IN ('pc','box','bundle','roll','L','ml') OR sell_unit IS NULL;
 UPDATE items SET sell_unit = 'kg'
   WHERE sell_unit IN ('kg','g');
@@ -1039,7 +1039,7 @@ UPDATE items
   SET retail_price_paise = CAST(retail_price_paise / units_per_pack AS INTEGER),
       cost_paise = CAST(cost_paise / units_per_pack AS INTEGER),
       units_per_pack = 1
-  WHERE sell_unit = 'unit' AND units_per_pack > 1
+  WHERE sell_unit = 'pcs' AND units_per_pack > 1
     AND retail_price_paise > 0;
 
 -- N6. Seed purchase_units from distinct unit_code values in items
@@ -1142,7 +1142,7 @@ CREATE TABLE IF NOT EXISTS sale_items_new (
   display_name  TEXT,
   qty           REAL NOT NULL CHECK(qty > 0),
   price         INTEGER NOT NULL CHECK(price >= 0),
-  unit_type     TEXT    NOT NULL DEFAULT 'unit' CHECK(unit_type IN ('unit','mtr','kg')),
+  unit_type     TEXT    NOT NULL DEFAULT 'pcs' CHECK(unit_type IN ('pcs','mtr','kg')),
   line_discount INTEGER NOT NULL DEFAULT 0,
   shade_note    TEXT,
   line_order    INTEGER NOT NULL DEFAULT 0,
@@ -1151,7 +1151,7 @@ CREATE TABLE IF NOT EXISTS sale_items_new (
 );
 INSERT INTO sale_items_new (id, sale_id, kind, item_id, formula_id, qty, price, unit_type, line_discount, shade_note, line_order, created_at, created_by)
   SELECT id, sale_id, kind, item_id, formula_id, CAST(qty AS REAL), price,
-         CASE WHEN unit_type = 'box' THEN 'unit' ELSE 'unit' END,
+         CASE WHEN unit_type = 'box' THEN 'pcs' ELSE 'pcs' END,
          line_discount, shade_note, line_order, created_at, created_by
   FROM sale_items;
 DROP TABLE sale_items;
@@ -1184,12 +1184,4 @@ CREATE INDEX idx_purchase_items_item_id ON purchase_items(item_id);
 -- N16. Drop unit_conversions table (no longer needed with 3 fixed units)
 DROP TABLE IF EXISTS unit_conversions;
 
--- N17: Drop legacy unit_id from items, stock_movements, purchase_items.
--- items already has sell_unit_id. stock_movements/purchase_items get sale_unit_id backfilled from items.sell_unit_id.
-ALTER TABLE stock_movements ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
-UPDATE stock_movements SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = stock_movements.item_id) WHERE sale_unit_id IS NULL;
-ALTER TABLE stock_movements DROP COLUMN unit_id;
-ALTER TABLE purchase_items ADD COLUMN sale_unit_id INTEGER REFERENCES sale_units(id);
-UPDATE purchase_items SET sale_unit_id = (SELECT sell_unit_id FROM items WHERE id = purchase_items.item_id) WHERE sale_unit_id IS NULL;
-ALTER TABLE purchase_items DROP COLUMN unit_id;
-ALTER TABLE items DROP COLUMN unit_id;
+-- N17: legacy unit_id already removed — CREATE TABLE definitions above use sale_unit_id directly.

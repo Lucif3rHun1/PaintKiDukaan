@@ -1,8 +1,9 @@
 import { tauriInvoke as invoke } from "./lib/security/tauri";
 import { toast } from "./lib/feedback/toast";
+import { Toaster } from "./components/ui/Toaster";
 import logo from "./assets/logo-64.png";
 import { Loader2 } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
 /* ── Security UI ─────────────────────────────────────────── */
@@ -25,6 +26,8 @@ import { listCustomerTypes } from "./domain/customerTypes/api";
 import { AppShell, type AppShellTab } from "./shell/AppShell";
 import { InlineDialog } from "./components/ui/InlineDialog";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
+import { UnsavedChangesModal } from "./components/ui/UnsavedChangesModal";
+import { isAnyFormDirty } from "./pos/hooks";
 import type { Customer, CustomerType, Vendor } from "./domain/types";
 
 /* Route pages are split into per-route Vite chunks via React.lazy so the
@@ -197,6 +200,7 @@ export default function App() {
   const setSession = useSecurity((s) => s.setSession);
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [keystoreErrorReason, setKeystoreErrorReason] = useState<string | null>(null);
   const [tab, setTab] = useState<AppShellTab>(readTab);
   const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail" | "edit">(readSalesSubRoute);
   const [inwardRoute, setInwardRoute] = useState<"list" | "new" | "detail">(readInwardSubRoute);
@@ -215,6 +219,10 @@ export default function App() {
   const [customerPaymentTarget, setCustomerPaymentTarget] = useState<Customer | null>(null);
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showNavGuard, setShowNavGuard] = useState(false);
+  const [pendingNav, setPendingNav] = useState<{ tab: AppShellTab; hash?: string } | null>(null);
+  const [wipeConfirm, setWipeConfirm] = useState(false);
+  const [wipeLoading, setWipeLoading] = useState(false);
 
   // Fetch customer types once the app is unlocked
   useEffect(() => {
@@ -248,6 +256,10 @@ export default function App() {
         if (b.kind === "first_launch") {
           setSession(LOCKED_SESSION);
           setPhase("first-launch");
+        } else if (b.kind === "keystore_error") {
+          setSession(LOCKED_SESSION);
+          setKeystoreErrorReason(b.reason);
+          setPhase("keystore-error");
         } else if (b.kind === "locked") {
           setSession(LOCKED_SESSION);
           setPhase("locked");
@@ -344,35 +356,90 @@ export default function App() {
   }
 
   function navigate(t: AppShellTab, hash?: string) {
+    if (isAnyFormDirty()) {
+      setPendingNav({ tab: t, hash });
+      setShowNavGuard(true);
+      return;
+    }
     setTab(t);
     window.location.hash = hash ?? (t === "dashboard" ? "#/" : `#/${t}`);
   }
 
-  /* ── Security phases ───────────────────────────────────── */
-  if (phase === "loading") {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-zinc-900/80 p-8 backdrop-blur">
-          <img
-            src={logo}
-            alt="PaintKiDukaan"
-            className="h-8 w-8 rounded-lg ring-1 ring-inset ring-border/40"
-          />
-          <Loader2 className="h-5 w-5 animate-spin text-indigo-400" aria-hidden="true" />
-          <p className="text-sm text-zinc-400">Opening secure shop data…</p>
-        </div>
-      </main>
-    );
+  function executeNav(t: AppShellTab, hash?: string) {
+    setTab(t);
+    window.location.hash = hash ?? (t === "dashboard" ? "#/" : `#/${t}`);
   }
 
-  if (phase === "first-launch") return <FirstLaunch />;
-  if (phase === "locked") return <LockScreen />;
-  if (phase === "restore-recovery") return <RestoreFromRecovery />;
-  if (phase === "user-management") {
+  const doWipe = useCallback(async () => {
+    setWipeLoading(true);
+    try {
+      await invoke("wipe_and_reset");
+      setKeystoreErrorReason(null);
+      setWipeConfirm(false);
+      setSession(LOCKED_SESSION);
+      setPhase("first-launch");
+    } catch (e) {
+      toast.error("Wipe failed: " + String(e));
+    } finally {
+      setWipeLoading(false);
+    }
+  }, [setSession, setPhase, setKeystoreErrorReason]);
+
+  /* ── Security phases (before unlock) ────────────────────── */
+  if (phase !== "loading" && phase !== "unlocked") {
     return (
-      <RoleGuard minRole="owner">
-        <UserManagement />
-      </RoleGuard>
+      <>
+        <Toaster />
+        {phase === "first-launch" && <FirstLaunch />}
+        {phase === "locked" && <LockScreen />}
+        {phase === "restore-recovery" && <RestoreFromRecovery />}
+        {phase === "user-management" && <UserManagement />}
+        {phase === "keystore-error" && (
+          <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+            <div className="w-full max-w-sm space-y-4 p-8">
+              <h2 className="text-xl font-bold text-red-400">Security Store Unavailable</h2>
+              <p className="text-sm text-zinc-400">{keystoreErrorReason}</p>
+              <button
+                className="w-full rounded bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700"
+                onClick={() => {
+                  setKeystoreErrorReason(null);
+                  setPhase("locked");
+                }}
+              >
+                Try PIN Unlock
+              </button>
+              {!wipeConfirm ? (
+                <button
+                  className="w-full rounded border border-red-800 px-4 py-2 text-sm text-red-400 hover:bg-red-950"
+                  onClick={() => setWipeConfirm(true)}
+                >
+                  Erase &amp; Start Fresh
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-red-400/80">This will permanently erase all data. Click again to confirm.</p>
+                  <div className="flex gap-2">
+                    <button
+                      className="flex-1 rounded border border-zinc-700 px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800"
+                      onClick={() => setWipeConfirm(false)}
+                      disabled={wipeLoading}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="flex-1 rounded bg-red-800 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+                      onClick={doWipe}
+                      disabled={wipeLoading}
+                    >
+                      {wipeLoading ? "Erasing…" : "Confirm Erase"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -801,6 +868,26 @@ export default function App() {
           />
         )}
       </InlineDialog>
+
+      <UnsavedChangesModal
+        open={showNavGuard}
+        onSaveDraft={() => {
+          const nav = pendingNav;
+          setShowNavGuard(false);
+          setPendingNav(null);
+          if (nav) executeNav(nav.tab, nav.hash);
+        }}
+        onDiscard={() => {
+          const nav = pendingNav;
+          setShowNavGuard(false);
+          setPendingNav(null);
+          if (nav) executeNav(nav.tab, nav.hash);
+        }}
+        onCancel={() => {
+          setShowNavGuard(false);
+          setPendingNav(null);
+        }}
+      />
     </AppShell>
   );
 }

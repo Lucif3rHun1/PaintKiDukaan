@@ -50,6 +50,12 @@ const RULE_NAME_OUTBOUND: &str = "PaintKiDukaan_Block_Outbound";
 const RULE_NAME_LOOPBACK: &str = "PaintKiDukaan_Allow_Loopback";
 #[cfg(target_os = "windows")]
 const APP_NAME: &str = "paintkiduakan-master.exe";
+#[cfg(target_os = "windows")]
+const RULE_NAME_WEBVIEW2_OUTBOUND: &str = "PaintKiDukaan_Block_WebView2_Outbound";
+#[cfg(target_os = "windows")]
+const RULE_NAME_WEBVIEW2_LOOPBACK: &str = "PaintKiDukaan_Allow_WebView2_Loopback";
+#[cfg(target_os = "windows")]
+const WEBVIEW2_APP_NAME: &str = "msedgewebview2.exe";
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -506,6 +512,113 @@ fn windows_block_outbound() -> Result<FirewallReport, AppError> {
         ));
     }
 
+    // ─── Create WebView2 outbound block rule ────────────────────────────────
+    // msedgewebview2.exe is a separate process from the main exe, so the
+    // existing block rule does not cover it. Any XSS in WebView2 can otherwise
+    // make unrestricted outbound fetch() calls via the child process.
+
+    let mut rule_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = unsafe {
+        win::CoCreateInstance(
+            &win::CLSID_NET_FW_RULE,
+            std::ptr::null_mut(),
+            win::CLSCTX_ALL,
+            &win::IID_NET_FW_RULE,
+            &mut rule_ptr,
+        )
+    };
+
+    if hr == win::S_OK && !rule_ptr.is_null() {
+        let rule = unsafe { &*(rule_ptr as *mut win::INetFwRule) };
+
+        let name_bstr = alloc_bstr(RULE_NAME_WEBVIEW2_OUTBOUND);
+        let app_bstr = alloc_bstr(WEBVIEW2_APP_NAME);
+        let remote_bstr = alloc_bstr("*");
+        let local_bstr = alloc_bstr("*");
+
+        unsafe {
+            let vtbl = &*rule.vtable;
+            (vtbl.put_name)(rule_ptr as *mut win::INetFwRule, name_bstr);
+            (vtbl.put_application_name)(rule_ptr as *mut win::INetFwRule, app_bstr);
+            (vtbl.put_direction)(rule_ptr as *mut win::INetFwRule, win::NET_FW_RULE_DIR_OUT);
+            (vtbl.put_action)(rule_ptr as *mut win::INetFwRule, win::NET_FW_ACTION_BLOCK);
+            (vtbl.put_remote_addresses)(rule_ptr as *mut win::INetFwRule, remote_bstr);
+            (vtbl.put_local_addresses)(rule_ptr as *mut win::INetFwRule, local_bstr);
+            (vtbl.put_enabled)(rule_ptr as *mut win::INetFwRule, -1);
+
+            let rules_vtbl = &*rules.vtable;
+            let hr2 = (rules_vtbl.add)(rules_ptr as *mut win::INetFwRules, rule_ptr);
+            if hr2 != win::S_OK {
+                report
+                    .errors
+                    .push(format!("Add WebView2 outbound rule failed: 0x{hr2:08X}"));
+            }
+
+            win::SysFreeString(name_bstr);
+            win::SysFreeString(app_bstr);
+            win::SysFreeString(remote_bstr);
+            win::SysFreeString(local_bstr);
+        }
+
+        unsafe { release_com(rule_ptr); }
+    } else {
+        report.errors.push(format!(
+            "CoCreateInstance(INetFwRule) for WebView2 block failed: 0x{hr:08X}"
+        ));
+    }
+
+    // ─── Create WebView2 loopback allow rule ────────────────────────────────
+
+    let mut rule_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hr = unsafe {
+        win::CoCreateInstance(
+            &win::CLSID_NET_FW_RULE,
+            std::ptr::null_mut(),
+            win::CLSCTX_ALL,
+            &win::IID_NET_FW_RULE,
+            &mut rule_ptr,
+        )
+    };
+
+    if hr == win::S_OK && !rule_ptr.is_null() {
+        let rule = unsafe { &*(rule_ptr as *mut win::INetFwRule) };
+
+        let name_bstr = alloc_bstr(RULE_NAME_WEBVIEW2_LOOPBACK);
+        let app_bstr = alloc_bstr(WEBVIEW2_APP_NAME);
+        let local_bstr = alloc_bstr("127.0.0.1");
+        let remote_bstr = alloc_bstr("127.0.0.1");
+
+        unsafe {
+            let vtbl = &*rule.vtable;
+            (vtbl.put_name)(rule_ptr as *mut win::INetFwRule, name_bstr);
+            (vtbl.put_application_name)(rule_ptr as *mut win::INetFwRule, app_bstr);
+            (vtbl.put_direction)(rule_ptr as *mut win::INetFwRule, win::NET_FW_RULE_DIR_OUT);
+            (vtbl.put_action)(rule_ptr as *mut win::INetFwRule, win::NET_FW_ACTION_ALLOW);
+            (vtbl.put_local_addresses)(rule_ptr as *mut win::INetFwRule, local_bstr);
+            (vtbl.put_remote_addresses)(rule_ptr as *mut win::INetFwRule, remote_bstr);
+            (vtbl.put_enabled)(rule_ptr as *mut win::INetFwRule, -1);
+
+            let rules_vtbl = &*rules.vtable;
+            let hr2 = (rules_vtbl.add)(rules_ptr as *mut win::INetFwRules, rule_ptr);
+            if hr2 != win::S_OK {
+                report
+                    .errors
+                    .push(format!("Add WebView2 loopback rule failed: 0x{hr2:08X}"));
+            }
+
+            win::SysFreeString(name_bstr);
+            win::SysFreeString(app_bstr);
+            win::SysFreeString(local_bstr);
+            win::SysFreeString(remote_bstr);
+        }
+
+        unsafe { release_com(rule_ptr); }
+    } else {
+        report.errors.push(format!(
+            "CoCreateInstance(INetFwRule) for WebView2 loopback failed: 0x{hr:08X}"
+        ));
+    }
+
     unsafe {
         release_com(rules_ptr);
         release_com(policy_ptr);
@@ -562,8 +675,13 @@ fn windows_unblock() -> Result<(), AppError> {
 
     let rules = unsafe { &*(rules_ptr as *mut win::INetFwRules) };
 
-    // Remove both rules.
-    for rule_name in &[RULE_NAME_OUTBOUND, RULE_NAME_LOOPBACK] {
+    // Remove all four rules (main exe + WebView2).
+    for rule_name in &[
+        RULE_NAME_OUTBOUND,
+        RULE_NAME_LOOPBACK,
+        RULE_NAME_WEBVIEW2_OUTBOUND,
+        RULE_NAME_WEBVIEW2_LOOPBACK,
+    ] {
         let name_bstr = alloc_bstr(rule_name);
         unsafe {
             let rules_vtbl = &*rules.vtable;

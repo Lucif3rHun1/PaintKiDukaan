@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Button, Field, Money, MoneyInput, DatePicker, Select } from "../../components/ui";
+import { Alert, Button, Field, Money, MoneyInput, DatePicker, Select } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
+import { getPref, setPref } from "../../lib/storage";
 import { recordCustomerPayment } from "./api";
 import type { AppError, Customer, CustomerOutstanding, RecordCustomerPaymentArgs } from "../types";
 
@@ -22,7 +23,7 @@ const MODES = [
 
 export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
   const [amount, setAmount] = useState(0);
-  const [mode, setMode] = useState("upi");
+  const [mode, setMode] = useState(getPref("customerPayment:lastMode", "upi"));
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
         },
       );
       setOutstanding(out);
+      setPref("customerPayment:lastMode", mode);
       onSaved?.(out);
     } catch (e) {
       setError(extractError(e));
@@ -106,14 +108,16 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
         <input
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           className="input"
         />
       </Field>
 
       {error && (
-        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">{error}</Alert>
       )}
 
       <div className="flex justify-end gap-2 border-t border-border pt-4">
@@ -134,4 +138,3 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
     </form>
   );
 }
-

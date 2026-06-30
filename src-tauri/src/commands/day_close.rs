@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::commands::auth::AppState;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::security::ipc_auth;
 
 // -----------------------------------------------------------------------------
 // Public types.
@@ -419,6 +420,7 @@ pub fn cmd_cash_sales_for(
     user_id: i64,
     date: String,
 ) -> AppResult<CashSalesSummary> {
+    ipc_auth::authorize_err("cmd_cash_sales_for", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -433,6 +435,7 @@ pub fn cmd_last_opening_for(
     user_id: i64,
     date: String,
 ) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_last_opening_for", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -446,6 +449,7 @@ pub fn cmd_backup_gate_check(
     state: tauri::State<'_, AppState>,
     now_epoch_ms: Option<i64>,
 ) -> AppResult<BackupGate> {
+    ipc_auth::authorize_err("cmd_backup_gate_check", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -460,6 +464,7 @@ pub fn cmd_trigger_day_close(
     state: tauri::State<'_, AppState>,
     req: NewDayClose,
 ) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_trigger_day_close", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -479,6 +484,7 @@ pub fn cmd_lock_state(
     user_id: i64,
     date: String,
 ) -> AppResult<DayLockState> {
+    ipc_auth::authorize_err("cmd_lock_state", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -492,6 +498,7 @@ pub fn cmd_list_day_close(
     state: tauri::State<'_, AppState>,
     limit: Option<i64>,
 ) -> AppResult<Vec<DayClose>> {
+    ipc_auth::authorize_err("cmd_list_day_close", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -505,6 +512,7 @@ pub fn cmd_get_day_close(
     state: tauri::State<'_, AppState>,
     id: i64,
 ) -> AppResult<Option<DayClose>> {
+    ipc_auth::authorize_err("cmd_get_day_close", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -515,6 +523,7 @@ pub fn cmd_get_day_close(
 
 #[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
 pub fn cmd_admin_reopen_day(state: tauri::State<'_, AppState>, id: i64) -> AppResult<bool> {
+    ipc_auth::authorize_err("cmd_admin_reopen_day", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -663,7 +672,7 @@ mod tests {
                     formula_id: None,
                     qty: 1.0,
                     price: 300,
-                    unit_type: "unit".into(),
+                    unit_type: "pcs".into(),
                     line_discount: 0,
                     shade_note: None,
                 }],
@@ -692,7 +701,7 @@ mod tests {
                     formula_id: None,
                     qty: 1.0,
                     price: 50,
-                    unit_type: "unit".into(),
+                    unit_type: "pcs".into(),
                     line_discount: 0,
                     shade_note: None,
                 }],
@@ -733,7 +742,7 @@ mod tests {
                         formula_id: None,
                         qty: 1.0,
                         price: amt,
-                        unit_type: "unit".into(),
+                        unit_type: "pcs".into(),
                         line_discount: 0,
                         shade_note: None,
                     }],

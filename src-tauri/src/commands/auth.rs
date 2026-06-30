@@ -16,7 +16,6 @@ use crate::crypto::wrap;
 use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
 use crate::error::AppError;
-use crate::obs;
 use crate::security::dpapi_keystore;
 
 // ---------------------------------------------------------------------------
@@ -102,6 +101,10 @@ pub enum Bootstrap {
     FirstLaunch,
     Locked,
     Unlocked { user: String, role: String },
+    /// Keystore file exists but could not be decrypted (DPAPI/keychain mismatch).
+    /// The DB is intact — do NOT auto-wipe. Let the user confirm an explicit wipe
+    /// or restore from recovery. Serialises as { kind: "keystore_error", reason: "..." }.
+    KeystoreError { reason: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +321,7 @@ pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap
         .path()
         .app_data_dir()
         .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
-    let db_path = app_dir.join("paintkiduakan.db");
+    let db_path = app_dir.join(crate::security::app_paths::db_name());
     let db_exists = db_path.exists();
 
     // Source of truth for first-launch is the ENCRYPTED DB, not the keystore.
@@ -328,22 +331,34 @@ pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap
         return Ok(Bootstrap::FirstLaunch);
     }
 
-    // DB exists. Verify the keystore holds a valid keywrap row. If the row is
-    // missing (the previous setup crashed after opening the DB but before
-    // committing the row, or the user manually cleared the keystore), the
-    // state is unrecoverable from inside the wizard — wipe DB + keystore
-    // and return FirstLaunch so the wizard starts from a clean slate. This
-    // is destructive; the user has explicitly authorized destructive recovery.
-    if let Err(e) = read_keywrap_from_keystore(&db_path) {
-        log::warn!(
-            "[BOOTSTRAP] Stale state detected (db_exists=true, keywrap unreadable: {e}); wiping and returning FirstLaunch"
-        );
-        crate::commands::recovery::wipe_existing_setup(&db_path)
-            .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
-        return Ok(Bootstrap::FirstLaunch);
-    }
+    // DB exists. Verify the keystore holds a valid keywrap row.
+    //
+    // Only auto-wipe when the keystore structurally has no keywrap row (e.g.
+    // setup crashed after creating the DB but before committing the row).
+    // DPAPI/keychain crypto failures must NOT trigger an auto-wipe — the DB
+    // is intact, only the OS-level envelope key is unavailable (stale keychain
+    // entry, OS reinstall, etc.). Wiping on a crypto error would silently
+    // destroy recoverable data every time the keychain drifts.
 
+    // ponytail: set db_path BEFORE keystore check so KeystoreError branch
+    // still allows the "Try PIN Unlock" path to call unlock().
     *state.db_path.lock().unwrap() = Some(db_path.clone());
+
+    if let Err(e) = read_keywrap_from_keystore(&db_path) {
+        let is_empty_keystore =
+            matches!(&e, AppError::Db(rusqlite::Error::QueryReturnedNoRows));
+        if is_empty_keystore {
+            log::warn!("[BOOTSTRAP] Stale state (no keywrap row); wiping for fresh setup");
+            crate::commands::recovery::wipe_existing_setup(&db_path)
+                .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
+            return Ok(Bootstrap::FirstLaunch);
+        } else {
+            log::warn!("[BOOTSTRAP] Keystore unreadable (data preserved): {e}");
+            return Ok(Bootstrap::KeystoreError {
+                reason: e.to_string(),
+            });
+        }
+    }
 
     // Load persisted lockout counter so it survives process restarts.
     match read_lockout_from_keystore(&db_path) {
@@ -362,6 +377,20 @@ pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap
             role: s.role.clone(),
         }),
     }
+}
+
+/// Explicit user-confirmed wipe called from the `keystore_error` recovery screen.
+/// Requires the user to actively choose this path — never triggered automatically.
+#[tauri::command(rename_all = "snake_case")]
+pub fn wipe_and_reset(app: AppHandle) -> Result<(), AppError> {
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
+    let db_path = app_dir.join(crate::security::app_paths::db_name());
+    log::warn!("[WIPE_AND_RESET] User-confirmed explicit wipe");
+    crate::commands::recovery::wipe_existing_setup(&db_path)
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))
 }
 
 /// Default maximum wrong PIN attempts before lockout triggers (spec §4.4 / §9.8).
@@ -748,9 +777,9 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
     }
 }
 
-/// Snapshot the live encrypted DB to a PKB1 envelope under
-/// `<app_data>/.duress_backup/duress-wipe-<ts>.pkb1` BEFORE secure-delete
-/// fires in `handle_lockout`. Uses the in-memory recovery passphrase.
+/// Snapshot the live encrypted DB to a PKB1 envelope under the opaque snapshot
+/// directory BEFORE secure-delete fires in `handle_lockout`. Uses the
+/// in-memory recovery passphrase.
 ///
 /// Returns `Ok` even on inner failure so callers can proceed with the wipe —
 /// log + continue. The function never panics and never propagates an
@@ -772,7 +801,7 @@ fn backup_before_wipe(state: &AppState, db_path: &Path) -> Result<(), AppError> 
     let app_dir = db_path
         .parent()
         .ok_or_else(|| AppError::Internal("db_path has no parent".into()))?;
-    let backup_dir = app_dir.join(obs!(".duress_backup"));
+    let backup_dir = app_dir.join(crate::security::app_paths::snap_dir());
     if let Err(e) = std::fs::create_dir_all(&backup_dir) {
         log::error!(
             "backup-before-wipe: mkdir {} failed: {e}",
@@ -782,7 +811,7 @@ fn backup_before_wipe(state: &AppState, db_path: &Path) -> Result<(), AppError> 
     }
 
     let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
-    let envelope_path = backup_dir.join(format!("duress-wipe-{ts}.pkb1"));
+    let envelope_path = backup_dir.join(format!("{}-{ts}.pkb1", crate::security::app_paths::snap_prefix()));
 
     let temp_snapshot = match NamedTempFile::new() {
         Ok(f) => f,
@@ -1330,6 +1359,7 @@ mod tests {
             "Shop".to_string(),
             "Addr".to_string(),
             "+919876543210".to_string(),
+            None,
         )
         .expect("setup must succeed");
 
@@ -1371,6 +1401,7 @@ mod tests {
             "Real Shop".to_string(),
             "1 Real St".to_string(),
             "+910000000000".to_string(),
+            None,
         )
         .expect("setup must succeed");
 
@@ -1433,20 +1464,24 @@ mod tests {
 
         assert!(!db_path.exists(), "CWE-693: wipe must remove live DB");
 
-        let backup_dir = db_path.parent().unwrap().join(".duress_backup");
+        let backup_dir = db_path
+            .parent()
+            .unwrap()
+            .join(crate::security::app_paths::snap_dir());
         assert!(
             backup_dir.exists(),
-            "backup-before-wipe must create .duress_backup dir at {}",
+            "backup-before-wipe must create snap dir at {}",
             backup_dir.display()
         );
+        let pfx = crate::security::app_paths::snap_prefix();
         let entries: Vec<_> = std::fs::read_dir(&backup_dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().starts_with("duress-wipe-"))
+            .filter(|e| e.file_name().to_string_lossy().starts_with(pfx))
             .collect();
         assert!(
             !entries.is_empty(),
-            "at least one duress-wipe-<ts>.pkb1 envelope must exist"
+            "at least one {pfx}-<ts>.pkb1 envelope must exist"
         );
     }
 }

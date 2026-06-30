@@ -194,7 +194,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
                 {i < stepIndex ? "✓" : i + 1}
               </div>
               <span
-                className={`text-xs font-medium hidden sm:inline ${
+                className={`text-xs font-medium hidden ${
                   i === stepIndex ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
@@ -293,7 +293,6 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
                 {showPins ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-            <PinStrengthMeter pin={values.decoyPin ?? ""} />
             {fieldError(errors.decoyPin?.message)}
           </div>
           <div>

@@ -24,10 +24,6 @@ export async function listVendors(
   });
 }
 
-export async function getVendor(id: number): Promise<Vendor> {
-  return invoke<Vendor>("get_vendor", { id });
-}
-
 export async function updateVendor(
   id: number,
   patch: VendorUpdate,

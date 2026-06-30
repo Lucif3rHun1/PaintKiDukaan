@@ -20,13 +20,15 @@ import {
   topItemsPurchased,
   topItemsSold,
 } from "../../../pos/api";
-import { listItems } from "../../../domain/items/api";
+import { listBrands, listItems } from "../../../domain/items/api";
+import { formatItemName } from "../../../domain/items/display";
 import { formatDateForDisplay, todayLocalYyyymmdd, shiftDaysLocal } from "../../../lib/date";
 import { Donut } from "./shared";
 
 const STAGGER_INVENTORY = 32_000;
 
 export function InventoryTab() {
+  const brands = useQuery({ queryKey: ["brands"], queryFn: listBrands });
   const [byCategoryMode, setByCategoryMode] = useState<"value" | "qty">("value");
   const [fromDate, setFromDate] = useState(() => shiftDaysLocal(6));
   const [toDate, setToDate] = useState(() => todayLocalYyyymmdd());
@@ -208,7 +210,7 @@ export function InventoryTab() {
                     key={item.id}
                     className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
                   >
-                    <span className="truncate font-medium">{item.name}</span>
+                    <span className="truncate font-medium">{formatItemName(item, brands.data ?? [])}</span>
                     <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${
                       item.current_qty <= 0
                         ? "bg-destructive/15 text-destructive"
@@ -232,16 +234,7 @@ export function InventoryTab() {
         <Card>
           <Card.Header className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Top Moving Items</h3>
-            <div className="flex gap-1 rounded-md border border-border bg-card p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => undefined}
-                aria-pressed={true}
-                className="rounded bg-primary px-2 py-0.5 text-primary-foreground"
-              >
-                Top Sellers
-              </button>
-            </div>
+
           </Card.Header>
           <Card.Body className="p-0">
             {topSold.isLoading ? (

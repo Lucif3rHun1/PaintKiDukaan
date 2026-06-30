@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useQuery, type QueryKey } from "@tanstack/react-query";
 
@@ -6,7 +5,7 @@ import { useDebounce } from "../hooks/useDebounce";
 
 export interface PaginatedRows<TItem> {
   rows: TItem[];
-  total_paise: number;
+  total: number;
 }
 
 type QueryRows<TItem> = TItem[] | PaginatedRows<TItem>;
@@ -85,7 +84,7 @@ export function usePaginatedQuery<TItem>({
     queryKey: normalizedKey,
     enabled,
     queryFn: async () => normalizeRows(await queryFn({ search: debouncedSearch, page, pageSize })),
-    placeholderData: (previous) => previous,
+    // ponytail: removed placeholderData — stale data during filter/search changes causes UX bugs
   });
 
   const preparedRows = useMemo(() => {

@@ -132,11 +132,12 @@ pub fn list_label_prints(
     let _ = current_user()?;
     let limit = limit.unwrap_or(50).clamp(1, 200);
     db.with_raw(|conn| {
-        let base = "SELECT l.id, l.item_id, COALESCE(i.name, ''), l.barcode, l.qty,
+        let base = "SELECT l.id, l.item_id, COALESCE(b.name || ' · ' || i.name, i.name), l.barcode, l.qty,
                     l.format, l.line1, l.line2, l.created_at, u.name,
                     l.tspl_config, l.printer, l.label_size, l.labels_per_row
                     FROM label_print_log l
                     LEFT JOIN items i ON i.id = l.item_id
+                    LEFT JOIN brands b ON b.id = i.brand_id
                     LEFT JOIN users u ON u.id = l.user_id";
         let mut out = Vec::new();
         if let Some(item_id) = item_id {

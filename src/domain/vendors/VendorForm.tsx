@@ -2,7 +2,7 @@
  * VendorForm — create / edit.
  */
 import { useState } from "react";
-import { Button, Field } from "../../components/ui";
+import { Alert, Button, Field } from "../../components/ui";
 import { createVendor, updateVendor } from "./api";
 import { extractError } from "../../lib/extractError";
 import type { NewVendor, Vendor, VendorUpdate } from "../types";
@@ -74,6 +74,10 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           className="input"
         />
       </Field>
@@ -83,6 +87,10 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           inputMode="numeric"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           className="input"
         />
       </Field>
@@ -93,6 +101,10 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
           onChange={(e) => setOpeningBalance(e.target.value)}
           type="number"
           step="0.01"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           className="input"
         />
       </Field>
@@ -107,9 +119,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
       </Field>
 
       {error && (
-        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">{error}</Alert>
       )}
 
       <div className="flex justify-end gap-2 border-t border-border pt-4">
@@ -128,4 +138,3 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
     </form>
   );
 }
-

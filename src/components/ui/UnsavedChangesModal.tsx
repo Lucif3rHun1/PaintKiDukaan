@@ -6,6 +6,7 @@ interface UnsavedChangesModalProps {
   readonly onSaveDraft: () => void;
   readonly onDiscard: () => void;
   readonly onCancel: () => void;
+  readonly description?: string;
 }
 
 export function UnsavedChangesModal({
@@ -13,6 +14,7 @@ export function UnsavedChangesModal({
   onSaveDraft,
   onDiscard,
   onCancel,
+  description,
 }: UnsavedChangesModalProps) {
   if (!open) return null;
 
@@ -31,7 +33,7 @@ export function UnsavedChangesModal({
           Unsaved Changes
         </h2>
         <p className="text-sm text-muted-foreground">
-          You have unsaved changes. What would you like to do?
+          {description ?? "You have unsaved changes. What would you like to do?"}
         </p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={onCancel}>

@@ -59,7 +59,7 @@ pub struct SaleItem {
     pub sku_code: Option<String>,
     pub qty: f64,
     pub price: i64,
-    pub unit_type: String, // "unit" | "mtr" | "kg"
+    pub unit_type: String, // "pcs" | "mtr" | "kg"
     pub line_discount: i64,
     pub shade_note: Option<String>,
     pub line_order: i64,
@@ -487,20 +487,17 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
         }
     }
     let payment_json = serde_json::to_string(&sale.payment_modes).unwrap_or_else(|_| "[]".into());
-    let no =
-        sequences::mint_next_sale_no(db, sequences::Kind::SaleInv).map_err(SaleError::Other)?;
     let date = sale.date.unwrap_or_else(today);
-    // Default location: the row flagged is_default=1.
-    let default_location: i64 = db.with_conn(|c| -> Result<i64, SaleError> {
-        // Canonical §5.1 has no `is_default` on locations; pick the lowest id.
-        Ok(c.query_row(
+
+    let id = db.with_conn_immediate(|c| -> Result<i64, SaleError> {
+        // M3: mint sequence inside the transaction so a rollback doesn't waste a number.
+        let no = sequences::mint_next_sale_no_with_conn(c, sequences::Kind::SaleInv)
+            .map_err(SaleError::Other)?;
+        let default_location: i64 = c.query_row(
             "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
             [],
             |r| r.get(0),
-        )?)
-    })?;
-
-    let id = db.with_conn_immediate(|c| -> Result<i64, SaleError> {
+        )?;
         let id: i64 = c.query_row(
             "INSERT INTO sales
                 (no,customer_id,date,status,subtotal,bill_discount,total,
@@ -539,17 +536,17 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                     i as i64
                 ],
             )?;
-            // Stock movements for real items AND formulas with a linked base item.
             if let Some(item_id) = l.item_id {
                 let requested = l.qty;
+                // H3: check stock at the specific deduction location, not globally.
                 let available: f64 = c.query_row(
-                    "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
-                    params![item_id],
+                    "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                    params![item_id, default_location],
                     |r| r.get(0),
                 ).unwrap_or(0.0);
                 if available < requested {
                     let item_name: String = c.query_row(
-                        "SELECT name FROM items WHERE id = ?1",
+                        "SELECT COALESCE(b.name || ' · ' || i.name, i.name) FROM items i LEFT JOIN brands b ON b.id = i.brand_id WHERE i.id = ?1",
                         params![item_id],
                         |r| r.get(0),
                     ).unwrap_or_else(|_| "unknown".into());
@@ -569,23 +566,23 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                     ],
                 )?;
             } else if l.kind == "formula" {
-                // Formulas with a linked base item move that base item from stock.
                 if let Some(fid) = l.formula_id {
+                    // M2: propagate DB errors instead of silently swallowing them.
                     let base_item_id: Option<i64> = c.query_row(
                         "SELECT base_item_id FROM formulas WHERE id = ?1",
                         params![fid],
                         |r| r.get(0),
-                    ).unwrap_or(None);
+                    ).optional()?;
                     if let Some(base_id) = base_item_id {
                         let requested = l.qty;
                         let available: f64 = c.query_row(
-                            "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
-                            params![base_id],
+                            "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                            params![base_id, default_location],
                             |r| r.get(0),
                         ).unwrap_or(0.0);
                         if available < requested {
                             let item_name: String = c.query_row(
-                                "SELECT name FROM items WHERE id = ?1",
+                                "SELECT COALESCE(b.name || ' · ' || i.name, i.name) FROM items i LEFT JOIN brands b ON b.id = i.brand_id WHERE i.id = ?1",
                                 params![base_id],
                                 |r| r.get(0),
                             ).unwrap_or_else(|_| "unknown".into());
@@ -601,7 +598,6 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                 }
             }
         }
-        // Normalize payment splits into sale_payments for cash-summary queries.
         let now_epoch = chrono::Utc::now().timestamp_millis();
         for pm in &sale.payment_modes {
             c.execute(
@@ -618,19 +614,18 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
 /// Convert a quotation to a final bill. Creates new INV-no, inserts stock
 /// movements, links back via converted_from_id.
 pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result<i64, SaleError> {
-    let no =
-        sequences::mint_next_sale_no(db, sequences::Kind::SaleInv).map_err(SaleError::Other)?;
     let date = today();
-    let default_location: i64 = db.with_conn(|c| -> Result<i64, SaleError> {
-        Ok(c.query_row(
-            "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
-            [],
-            |r| r.get(0),
-        )?)
-    })?;
 
     let (new_id, _customer_id) =
         db.with_conn_immediate(|c| -> Result<(i64, Option<i64>), SaleError> {
+            // M3: mint sequence inside the transaction so a rollback doesn't waste a number.
+            let no = sequences::mint_next_sale_no_with_conn(c, sequences::Kind::SaleInv)
+                .map_err(SaleError::Other)?;
+            let default_location: i64 = c.query_row(
+                "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
+                [],
+                |r| r.get(0),
+            )?;
             let row = c
                 .query_row(
                     "SELECT id,customer_id,subtotal,bill_discount,total,status
@@ -656,7 +651,6 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
             if status != "quotation" {
                 return Err(SaleError::NotAQuotation(qid, status));
             }
-            // Apply credit rules to the converted bill.
             let customer = match cust {
                 Some(id) => Some(
                     customers::get_by_id(c, id)
@@ -690,7 +684,6 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
             }
             let payment_json =
                 serde_json::to_string(&req.payment_modes).unwrap_or_else(|_| "[]".into());
-            // Insert the new final sale, pointing back at the quotation.
             let new_id: i64 = c.query_row(
                 "INSERT INTO sales
                 (no,customer_id,date,status,subtotal,bill_discount,total,
@@ -711,7 +704,6 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                 ],
                 |r| r.get(0),
             )?;
-            // Copy sale_items; insert stock_movements for each line.
             let mut stmt = c.prepare(
                 "SELECT kind,item_id,formula_id,display_name,qty,price,unit_type,line_discount,shade_note,line_order
              FROM sale_items WHERE sale_id = ?1 ORDER BY line_order",
@@ -746,16 +738,16 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                         line_order
                     ],
                 )?;
-                // Stock movements for real items AND formulas with a linked base item.
                 if let Some(item_id) = item_id {
+                    // H3: check stock at the specific deduction location, not globally.
                     let available: f64 = c.query_row(
-                        "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
-                        params![item_id],
+                        "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                        params![item_id, default_location],
                         |r| r.get(0),
                     ).unwrap_or(0.0);
                     if available < qty {
                         let item_name: String = c.query_row(
-                            "SELECT name FROM items WHERE id = ?1",
+                            "SELECT COALESCE(b.name || ' · ' || i.name, i.name) FROM items i LEFT JOIN brands b ON b.id = i.brand_id WHERE i.id = ?1",
                             params![item_id],
                             |r| r.get(0),
                         ).unwrap_or_else(|_| "unknown".into());
@@ -769,20 +761,21 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                     )?;
                 } else if kind == "formula" {
                     if let Some(fid) = formula_id {
+                        // M2: propagate DB errors instead of silently swallowing them.
                         let base_item_id: Option<i64> = c.query_row(
                             "SELECT base_item_id FROM formulas WHERE id = ?1",
                             params![fid],
                             |r| r.get(0),
-                        ).unwrap_or(None);
+                        ).optional()?;
                         if let Some(base_id) = base_item_id {
                             let available: f64 = c.query_row(
-                                "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
-                                params![base_id],
+                                "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                                params![base_id, default_location],
                                 |r| r.get(0),
                             ).unwrap_or(0.0);
                             if available < qty {
                                 let item_name: String = c.query_row(
-                                    "SELECT name FROM items WHERE id = ?1",
+                                    "SELECT COALESCE(b.name || ' · ' || i.name, i.name) FROM items i LEFT JOIN brands b ON b.id = i.brand_id WHERE i.id = ?1",
                                     params![base_id],
                                     |r| r.get(0),
                                 ).unwrap_or_else(|_| "unknown".into());
@@ -911,12 +904,13 @@ pub fn list(db: &Db, status: Option<&str>, limit: i64) -> anyhow::Result<Vec<Sal
 fn load_items(c: &rusqlite::Connection, sale_id: i64) -> anyhow::Result<Vec<SaleItem>> {
     let mut stmt = c.prepare(
         "SELECT si.id, si.kind, si.item_id, si.formula_id,
-                COALESCE(si.display_name, i.name, f.id_code, '') AS display_name,
+                COALESCE(si.display_name, COALESCE(b.name || ' · ' || i.name, i.name), f.id_code, '') AS display_name,
                 i.sku_code,
                 si.qty, si.price, si.unit_type, si.line_discount,
                 si.shade_note, si.line_order
          FROM sale_items si
          LEFT JOIN items i ON i.id = si.item_id
+         LEFT JOIN brands b ON b.id = i.brand_id
          LEFT JOIN formulas f ON f.id = si.formula_id
          WHERE si.sale_id = ?1
          ORDER BY si.line_order",
@@ -1382,11 +1376,12 @@ fn row_to_sale_return(
     header: &SaleReturnHeader,
 ) -> AppResult<SaleReturn> {
     let mut stmt = c.prepare(
-        "SELECT sil.sale_item_id, COALESCE(i.name, ''), sil.qty, sil.refund_paise, sil.shade_note
+        "SELECT sil.sale_item_id, COALESCE(b.name || ' · ' || COALESCE(i.name, ''), COALESCE(i.name, '')), sil.qty, sil.refund_paise, sil.shade_note
          FROM sale_return_lines sil
          LEFT JOIN items i ON i.id = (
              SELECT si.item_id FROM sale_items si WHERE si.id = sil.sale_item_id
          )
+         LEFT JOIN brands b ON b.id = i.brand_id
          WHERE sil.sale_return_id = ?1
          ORDER BY sil.id",
     )?;
@@ -1603,7 +1598,7 @@ mod tests {
             formula_id: None,
             qty,
             price,
-            unit_type: "unit".into(),
+            unit_type: "pcs".into(),
             line_discount: disc,
             shade_note: None,
         }
@@ -1820,7 +1815,7 @@ mod tests {
             .unwrap();
             c.execute(
                 "INSERT INTO sale_items (sale_id, item_id, qty, price, unit_type, line_discount, line_order) \
-                 VALUES (1, 1, 10, 10, 'unit', 0, 0)",
+                 VALUES (1, 1, 10, 10, 'pcs', 0, 0)",
                 [],
             )
             .unwrap();

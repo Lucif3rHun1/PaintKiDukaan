@@ -376,13 +376,39 @@ fn get_own_exe_path_inner() -> Result<PathBuf, AppError> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn verify_authenticode_inner(_path: &std::path::Path) -> Result<AuthenticodeReport, AppError> {
-    // Authenticode is Windows-only.
-    Ok(AuthenticodeReport {
-        signed: false,
-        signer: None,
-        trusted: false,
-    })
+fn verify_authenticode_inner(path: &std::path::Path) -> Result<AuthenticodeReport, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("codesign")
+            .args(["--verify", "--deep", "--strict", "--"])
+            .arg(path)
+            .output()
+            .map_err(|e| AppError::Internal(format!("codesign exec: {e}")))?;
+
+        let signed = output.status.success();
+        let signer = if signed {
+            std::process::Command::new("codesign")
+                .args(["-dv", "--"])
+                .arg(path)
+                .output()
+                .ok()
+                .and_then(|o| {
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    stderr
+                        .lines()
+                        .find(|l| l.starts_with("Authority="))
+                        .map(|l| l.trim_start_matches("Authority=").to_string())
+                })
+        } else {
+            None
+        };
+
+        return Ok(AuthenticodeReport { signed, signer, trusted: signed });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(AuthenticodeReport { signed: false, signer: None, trusted: false })
+    }
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────

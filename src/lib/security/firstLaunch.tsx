@@ -3,6 +3,7 @@ import { tauriInvoke as invoke } from "./tauri";
 import logo from "../../assets/logo-128.png";
 import {
   AlertCircle,
+  ChevronRight,
   Eye,
   EyeOff,
   HardDrive,
@@ -11,8 +12,12 @@ import {
   Lock,
   FileKey,
   Check,
+  Package,
+  Store,
+  Warehouse,
+  Shield,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import {
@@ -25,6 +30,7 @@ import {
   shopNameSchema,
 } from "./pin";
 import { FirstLaunchRestore } from "./firstLaunchRestore";
+import { PdeSetupWizard } from "./pdeSetup";
 import { type Role, type Session, type User, useSecurity } from "./state";
 
 interface SetupResponse {
@@ -34,29 +40,37 @@ interface SetupResponse {
   role?: Role;
   locked?: boolean;
 }
-type Step = "path" | "shop" | "pin" | "passphrase";
-type FreshStep = Exclude<Step, "path">;
+type Step = "path" | "shop" | "pin" | "passphrase" | "inventory" | "pde"
+type FreshStep = Exclude<Step, "path">
 
 const STEPS = [
-  { key: "path", label: "Path", icon: ShoppingBag, description: "Choose how you want to start PaintKiDukaan" },
-  { label: "Shop", icon: ShoppingBag, description: "Basic information about your shop" },
-  { label: "PIN", icon: Lock, description: "Set a 6-digit PIN to lock and unlock the app" },
-  { label: "Recovery", icon: FileKey, description: "A secret phrase to recover your data if you forget your PIN" },
+  { key: "path", label: "Path", shortLabel: "Path", icon: Store, description: "Choose how you want to start PaintKiDukaan" },
+  { label: "Shop", shortLabel: "Shop", icon: ShoppingBag, description: "Basic information about your shop" },
+  { label: "PIN", shortLabel: "PIN", icon: Lock, description: "Set a 6-digit PIN to lock and unlock the app" },
+  { label: "Recovery", shortLabel: "Recov...", icon: FileKey, description: "A secret phrase to recover your data if you forget your PIN" },
+  { label: "Inventory", shortLabel: "Inven...", icon: Package, description: "Your inventory setup" },
+  { label: "Security", shortLabel: "Secur...", icon: Shield, description: "Emergency protection" },
 ] as const;
-const FRESH_STEP_INDEX: Record<FreshStep, 0 | 1 | 2> = {
+const FRESH_STEP_INDEX: Record<FreshStep, number> = {
   shop: 0,
   pin: 1,
   passphrase: 2,
+  inventory: 3,
+  pde: 4,
 };
 const NEXT_STEP: Record<FreshStep, FreshStep> = {
   shop: "pin",
   pin: "passphrase",
-  passphrase: "passphrase",
+  passphrase: "inventory",
+  inventory: "pde",
+  pde: "pde",
 };
 const PREVIOUS_STEP: Record<FreshStep, Step> = {
   shop: "path",
   pin: "shop",
   passphrase: "pin",
+  inventory: "passphrase",
+  pde: "inventory",
 };
 
 const inputClass =
@@ -87,37 +101,39 @@ function fieldError(message?: string) {
 
 function StepIndicator({ current }: { current: number }) {
   return (
-    <div className="flex items-center gap-2" aria-label="Setup progress">
+    <nav className="w-full" aria-label="Setup progress">
+      <ol className="flex w-full items-start">
       {STEPS.map((s, i) => {
         const done = i < current;
         const active = i === current;
         return (
-          <div key={i} className="flex items-center gap-2">
-            {i > 0 && (
-              <div className={`h-px w-6 ${i <= current ? "bg-success" : "bg-border"}`} />
-            )}
-            <div className="flex flex-col items-center gap-1">
+          <li key={i} className="relative flex min-w-0 flex-1 flex-col items-center gap-2">
+            {i < STEPS.length - 1 ? (
+              <div className={`absolute left-1/2 right-[-50%] top-[18px] h-0.5 ${done ? "bg-success" : "bg-border"}`} />
+            ) : null}
               <div
-                className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition-all duration-200 ${
+                className={`relative z-10 flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-all duration-200 ${
                   done
                     ? "bg-success text-success-foreground"
                     : active
-                      ? "bg-primary text-primary-foreground ring-2 ring-primary/30"
-                      : "bg-muted text-muted-foreground"
+                      ? "bg-primary text-primary-foreground ring-4 ring-primary/20"
+                      : "bg-muted text-muted-foreground ring-1 ring-border"
                 }`}
+                aria-current={active ? "step" : undefined}
               >
-                {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                {done ? <Check className="h-4 w-4" aria-hidden="true" /> : i + 1}
               </div>
               <span
-                className={`text-[10px] font-medium leading-none ${active ? "text-foreground" : "text-muted-foreground"}`}
+                className={`max-w-12 truncate text-center text-[11px] font-medium leading-none sm:max-w-none sm:text-xs ${active ? "text-foreground" : "text-muted-foreground"}`}
               >
-                {s.label}
+                <span className="sm:hidden">{s.shortLabel}</span>
+                <span className="hidden sm:inline">{s.label}</span>
               </span>
-            </div>
-          </div>
+          </li>
         );
       })}
-    </div>
+      </ol>
+    </nav>
   );
 }
 
@@ -126,6 +142,7 @@ export function FirstLaunch() {
   const [showRestore, setShowRestore] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [showPassphrase, setShowPassphrase] = useState(false);
+  const [sessionData, setSessionData] = useState<Session | null>(null);
 
   const {
     register,
@@ -144,6 +161,7 @@ export function FirstLaunch() {
       shopName: "",
       address: "",
       phone: "",
+      gstin: "",
     },
   });
 
@@ -162,11 +180,13 @@ export function FirstLaunch() {
     values.passphrase === values.passphraseConfirm;
 
   const currentFreshIndex = step === "path" ? 0 : FRESH_STEP_INDEX[step];
-  const canContinue = step === "path" ? false : [shopStepValid, pinStepValid, recoveryStepValid][currentFreshIndex];
+  const canContinue = step === "path" ? false : [shopStepValid, pinStepValid, recoveryStepValid, true, true][currentFreshIndex];
   const stepFields: Record<FreshStep, readonly (keyof FirstLaunchInput)[]> = {
     shop: ["shopName", "address", "phone"],
     pin: ["pin", "pinConfirm"],
     passphrase: ["passphrase", "passphraseConfirm"],
+    inventory: [],
+    pde: [],
   };
 
   async function goNext() {
@@ -185,15 +205,23 @@ export function FirstLaunch() {
           shop_name: input.shopName,
           address: input.address,
           phone: input.phone,
+          gstin: input.gstin || null,
         }),
       );
-      const security = useSecurity.getState();
-      security.setSession(session);
-      security.setPhase("unlocked");
+      setSessionData(session);
+      setStep("inventory");
     } catch (error) {
       setBackendError(error instanceof Error ? error.message : String(error));
     }
   }
+
+  const finalizeSetup = useCallback(() => {
+    if (sessionData) {
+      const security = useSecurity.getState();
+      security.setSession(sessionData);
+      security.setPhase("unlocked");
+    }
+  }, [sessionData]);
 
   if (showRestore) {
     return (
@@ -207,8 +235,6 @@ export function FirstLaunch() {
   }
 
   const stepNumber = step === "path" ? 0 : currentFreshIndex + 1;
-  const currentStepMeta = step === "path" ? STEPS[0] : STEPS[currentFreshIndex + 1];
-  const CurrentStepIcon = currentStepMeta.icon;
 
   return (
     <main className="flex h-screen w-screen bg-background text-foreground">
@@ -249,31 +275,21 @@ export function FirstLaunch() {
           <div className="flex flex-col items-center text-center lg:hidden">
             <img src={logo} alt="PaintKiDukaan" className="mb-3 h-16 w-16 rounded-xl" />
             <h1 className="text-2xl font-bold tracking-tight text-foreground">PaintKiDukaan</h1>
-            <p className="mt-1 text-xs font-medium uppercase tracking-[3px] text-muted-foreground">Paint Shop Manager</p>
           </div>
 
-          {/* Header */}
+           {/* Header */}
           <div className="flex items-center gap-3">
             <div className="flex-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-primary">PaintKiDukaan</p>
-              <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground">Set up your shop</h2>
+              <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground">
+                {step === "pde" ? "Emergency Protection" : step === "inventory" ? "Inventory Ready" : "Set up your shop"}
+              </h2>
             </div>
             <img src={logo} alt="" className="h-10 w-10 rounded-xl lg:hidden" />
           </div>
 
-          {/* Step indicator */}
-          <StepIndicator current={stepNumber} />
-
-          {/* Step description */}
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-3.5 py-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <CurrentStepIcon className="h-4 w-4" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">{currentStepMeta.label}</p>
-              <p className="text-xs text-muted-foreground">{currentStepMeta.description}</p>
-            </div>
-          </div>
+          {/* Step indicator — hidden on PDE step (PDE wizard has its own) */}
+          {step !== "pde" ? <StepIndicator current={stepNumber} /> : null}
 
           {/* Backend error */}
           {backendError ? (
@@ -283,45 +299,48 @@ export function FirstLaunch() {
             </div>
           ) : null}
 
-          {/* ── Step: Path ── */}
-          {step === "path" ? (
-            <div className="space-y-3">
-              <button
-                className="group flex w-full items-start gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-all duration-150 hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                type="button"
-                onClick={() => setStep("shop")}
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-all duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
-                  <ShoppingBag className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <span>
-                  <span className="block text-sm font-semibold text-foreground">Set up a new shop</span>
-                  <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Start fresh with a new shop. You'll set your shop details, owner PIN, and recovery password.
+          <div key={step} className="animate-in fade-in slide-in-from-right-2 duration-300 motion-reduce:animate-none">
+            {/* ── Step: Path ── */}
+            {step === "path" ? (
+              <div className="space-y-3">
+                <button
+                  className="group flex w-full items-center gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-all duration-150 hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  type="button"
+                  onClick={() => setStep("shop")}
+                >
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-all duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
+                    <Store className="h-5 w-5" aria-hidden="true" />
                   </span>
-                </span>
-              </button>
-              <button
-                className="group flex w-full items-start gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-all duration-150 hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                type="button"
-                onClick={() => setShowRestore(true)}
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-all duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
-                  <HardDrive className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <span>
-                  <span className="block text-sm font-semibold text-foreground">Restore from a backup</span>
-                  <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Restore from a backup file. Use this if you previously backed up and want to continue.
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-foreground">Set up a new shop</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                      Start fresh with a new shop. You'll set your shop details, owner PIN, and recovery password.
+                    </span>
                   </span>
-                </span>
-              </button>
-            </div>
-          ) : null}
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />
+                </button>
+                <button
+                  className="group flex w-full items-center gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-all duration-150 hover:border-info/50 hover:bg-info/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  type="button"
+                  onClick={() => setShowRestore(true)}
+                >
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-info/10 text-info transition-all duration-150 group-hover:bg-info group-hover:text-info-foreground">
+                    <HardDrive className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-foreground">Restore from a backup</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                      Restore from a backup file. Use this if you previously backed up and want to continue.
+                    </span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-info" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
 
-          {/* ── Step: Shop ── */}
-          {step === "shop" ? (
-            <div className="space-y-4">
+            {/* ── Step: Shop ── */}
+            {step === "shop" ? (
+              <div className="space-y-4">
               <div>
                 <label className={labelClass} htmlFor="shopName">Shop name</label>
                 <input
@@ -361,12 +380,29 @@ export function FirstLaunch() {
                 <p className="mt-1 text-xs text-muted-foreground">10-digit Indian mobile number.</p>
                 {fieldError(errors.phone?.message)}
               </div>
-            </div>
-          ) : null}
+              <div>
+                <label className={labelClass} htmlFor="gstin">
+                  GSTIN <span className="text-muted-foreground/60">(optional)</span>
+                </label>
+                <input
+                  id="gstin"
+                  className={inputClass}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  placeholder="22AAAAA0000A1Z5"
+                  maxLength={15}
+                  {...register("gstin")}
+                />
+                <p className="mt-1 text-xs text-muted-foreground/70">Required for tax invoices. You can add this later from Settings.</p>
+              </div>
+              </div>
+            ) : null}
 
-          {/* ── Step: PIN ── */}
-          {step === "pin" ? (
-            <div className="space-y-4">
+            {/* ── Step: PIN ── */}
+            {step === "pin" ? (
+              <div className="space-y-4">
               <div>
                 <label className={labelClass} htmlFor="pin">Create owner PIN</label>
                 <input
@@ -400,12 +436,12 @@ export function FirstLaunch() {
                 />
                 {fieldError(errors.pinConfirm?.message)}
               </div>
-            </div>
-          ) : null}
+              </div>
+            ) : null}
 
-          {/* ── Step: Passphrase ── */}
-          {step === "passphrase" ? (
-            <div className="space-y-4">
+            {/* ── Step: Passphrase ── */}
+            {step === "passphrase" ? (
+              <div className="space-y-4">
               <div className="rounded-xl border border-warning/30 bg-warning/10 p-3.5">
                 <p className="text-sm font-semibold text-warning">Important — read this first</p>
                 <p className="mt-1 text-xs leading-5 text-warning/80">
@@ -453,11 +489,66 @@ export function FirstLaunch() {
                 />
                 {fieldError(errors.passphraseConfirm?.message)}
               </div>
-            </div>
-          ) : null}
+              </div>
+            ) : null}
+
+            {/* ── Step: Inventory ── */}
+            {step === "inventory" ? (
+              <div className="space-y-4">
+              <div className="text-center mb-6">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
+                  <Package className="h-6 w-6 text-success" />
+                </div>
+                <h2 className="text-lg font-semibold text-foreground">Your Inventory is Ready</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  We've set up your default locations. You can add items and customize further from the Items page.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Store className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Shop</p>
+                    <p className="text-xs text-muted-foreground">Default location with rack storage</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Warehouse className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Godown</p>
+                    <p className="text-xs text-muted-foreground">Warehouse storage location</p>
+                  </div>
+                </div>
+              </div>
+              </div>
+            ) : null}
+
+            {/* ── Step: PDE ── */}
+            {step === "pde" ? (
+              <div className="-mx-1 space-y-4">
+                <button
+                  type="button"
+                  onClick={() => finalizeSetup()}
+                  className="w-full rounded-lg border border-border bg-muted/30 px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/50 hover:text-foreground"
+                >
+                  Skip for now — I'll set this up later from Settings
+                </button>
+                <div className="px-1">
+                  <PdeSetupWizard
+                    onComplete={() => finalizeSetup()}
+                    onCancel={() => finalizeSetup()}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           {/* Navigation */}
-          {step !== "path" ? (
+          {step !== "path" && step !== "pde" ? (
             <div className="flex gap-3 pt-1">
               <button
                 className={ghostButtonClass}

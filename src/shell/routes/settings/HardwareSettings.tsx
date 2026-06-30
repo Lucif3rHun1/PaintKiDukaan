@@ -521,10 +521,7 @@ function ScannerPanel() {
           {error}
         </div>
       ) : null}
-      <Section
-        title="Scanner behaviour"
-        description="Fine-tune how the scanner reads barcode input."
-      >
+      <Section title="Scanner behaviour" description="Fine-tune how the scanner reads barcode input.">
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Min length (chars)">
             <input
@@ -557,25 +554,30 @@ function ScannerPanel() {
               size="md"
             />
           </Field>
-          <Field label="Timeout ms (time-gap mode)">
-            <input
-              className="input"
-              type="number"
-              min={50}
-              value={timeoutMs}
-              onChange={(e) => setTimeoutMs(Number(e.target.value))}
-            />
-          </Field>
-          <Field label="Max inter-key SD (ms)">
-            <input
-              className="input"
-              type="number"
-              min={1}
-              step={0.5}
-              value={maxSdMs}
-              onChange={(e) => setMaxSdMs(Number(e.target.value))}
-            />
-          </Field>
+          <details className="col-span-full rounded-lg border border-border bg-muted/20 px-3 py-2">
+            <summary className="cursor-pointer select-none text-sm font-medium text-foreground">Advanced scanner settings</summary>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <Field label="Timeout ms (time-gap mode)">
+                <input
+                  className="input"
+                  type="number"
+                  min={50}
+                  value={timeoutMs}
+                  onChange={(e) => setTimeoutMs(Number(e.target.value))}
+                />
+              </Field>
+              <Field label="Max inter-key SD (ms)">
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  step={0.5}
+                  value={maxSdMs}
+                  onChange={(e) => setMaxSdMs(Number(e.target.value))}
+                />
+              </Field>
+            </div>
+          </details>
         </div>
         <div className="flex justify-end">
           <Button onClick={save} disabled={!loaded || saving} shortcut="F9">

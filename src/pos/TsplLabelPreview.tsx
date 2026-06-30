@@ -55,7 +55,7 @@ export function TsplLabelPreview({
 
     const GAP     = Math.round(config.spacingMm * d);
     const SIDE    = Math.round(config.sideMarginMm * d);
-    const tf      = FONT[config.font];
+    const tf      = FONT[config.font] ?? FONT["3"];
     const sf      = FONT["2"];
     const xm      = config.xmul ?? 1;
     const ym      = config.ymul ?? 1;

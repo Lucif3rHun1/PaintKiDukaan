@@ -3,8 +3,9 @@
  */
 import { useState } from "react";
 import { recordVendorPayment } from "./api";
-import { Button, Field, MoneyInput, DatePicker, Select } from "../../components/ui";
+import { Alert, Button, Field, MoneyInput, DatePicker, Select } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
+import { getPref, setPref } from "../../lib/storage";
 import { toast } from "../../lib/feedback/toast";
 import { type Vendor, type VendorOutstanding } from "../types";
 
@@ -25,7 +26,7 @@ const MODES = [
 
 export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
   const [amount, setAmount] = useState(0);
-  const [mode, setMode] = useState("upi");
+  const [mode, setMode] = useState(getPref("vendorPayment:lastMode", "upi"));
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
         notes: notes || null,
       });
       toast.success("Payment recorded");
+      setPref("vendorPayment:lastMode", mode);
       onSaved?.(out);
     } catch (e) {
       setError(extractError(e));
@@ -80,14 +82,16 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
         <input
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           className="input"
         />
       </Field>
 
       {error && (
-        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">{error}</Alert>
       )}
 
       <div className="flex justify-end gap-2 border-t border-border pt-4">

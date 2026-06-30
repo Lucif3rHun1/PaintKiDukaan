@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { Button, MoneyInput } from "../../components/ui";
+import { Alert, Button, MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { extractError } from "../../lib/extractError";
@@ -116,6 +116,10 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
               onChange={(e) => setIdCode(e.target.value)}
               readOnly={mode === "edit"}
               placeholder="e.g. 8827"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               className="input font-mono"
               aria-readonly={mode === "edit"}
             />
@@ -125,6 +129,10 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Rose Beige"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               className="input"
             />
           </Field>
@@ -146,6 +154,10 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
                 setBaseItemName("");
               }
             }}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             className="h-4 w-4"
           />
           Mixed on a base (white / neutral / deep)
@@ -196,12 +208,7 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
       </section>
 
       {error ? (
-        <p
-          role="alert"
-          className="rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          {error}
-        </p>
+        <Alert variant="destructive">{error}</Alert>
       ) : null}
 
       <div className="flex justify-end gap-2 border-t border-border pt-6">

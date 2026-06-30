@@ -12,6 +12,7 @@ import {
   DataTable,
   DownloadMenu,
   Money,
+  PageHeader,
   Section,
   SearchInput,
   Skeleton,
@@ -82,7 +83,7 @@ function AnalyticsCard({ title, headers, rows }: { title: string; headers: strin
   return (
     <Card>
       <Card.Header>
-        <h3 className="text-sm font-semibold">{title}</h3>
+        <h3 className="text-lg font-semibold">{title}</h3>
       </Card.Header>
       <Card.Body className="p-0">
         <DataTable
@@ -106,7 +107,7 @@ function AnalyticsCard({ title, headers, rows }: { title: string; headers: strin
 function ComparisonChip({ label, metric, format }: { label: string; metric: ComparisonMetric; format: (v: number) => string }) {
   const pct = metric.change_pct;
   const arrow = pct > 0 ? "↑" : pct < 0 ? "↓" : "→";
-  const color = pct > 0 ? "text-green-600" : pct < 0 ? "text-red-600" : "text-muted-foreground";
+  const color = pct > 0 ? "text-success" : pct < 0 ? "text-destructive" : "text-muted-foreground";
   return (
     <div className="flex flex-col items-center gap-0.5 text-sm">
       <span className="text-muted-foreground">{label}</span>
@@ -439,7 +440,13 @@ export default function ReportsPage({ user }: Props) {
 
   return (
     <div className="space-y-4">
-      <ReportSubNav active={activeSection} onSelect={setActiveSection} />
+      <PageHeader
+        title="Reports"
+        description="Analyze sales, stock health, and outstanding balances across the shop."
+        accent="purple"
+      >
+        <ReportSubNav active={activeSection} onSelect={setActiveSection} />
+      </PageHeader>
 
       {status && (
         <p className="rounded-md bg-warning/10 px-3 py-1.5 text-xs text-warning">

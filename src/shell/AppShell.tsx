@@ -89,7 +89,7 @@ interface SidebarGroup {
 
 export const SETTINGS_CATEGORIES: ReadonlyArray<{ id: SettingsCategoryId; label: string; icon: LucideIcon }> = [
   { id: "shop", label: "Shop", icon: Building2 },
-  { id: "catalog", label: "Catalog", icon: Package },
+  { id: "catalog", label: "Inventory", icon: Package },
   { id: "printing", label: "Printing", icon: Printer },
   { id: "team", label: "Team & Devices", icon: Users },
   { id: "system", label: "System", icon: HardDrive },

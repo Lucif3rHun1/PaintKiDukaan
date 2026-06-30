@@ -29,6 +29,7 @@ export type Bootstrap =
   | { kind: "first_launch" }
   | { kind: "locked" }
   | { kind: "unlocked"; user: string; role: Role }
+  | { kind: "keystore_error"; reason: string }
   | { kind: "error"; message: string };
 
 export type ScanTarget = "sales" | "inward" | "stocktake" | "locked" | null;
@@ -113,6 +114,7 @@ export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<
 
 export const ipc = {
   appBootstrap: () => invoke<Bootstrap>("app_bootstrap"),
+  wipeAndReset: () => invoke<void>("wipe_and_reset"),
 
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: unknown) =>
@@ -233,7 +235,7 @@ export const ipc = {
     return {
       wipe_on_duress: Boolean(wipeOnDuressRaw ?? true),
       wipe_timeout_minutes: Number(wipeTimeoutRaw ?? 5),
-      hostile_response: (hostileRaw as any) === "warn" || (hostileRaw as any) === "wipe"
+      hostile_response: hostileRaw === "warn" || hostileRaw === "wipe"
         ? (hostileRaw as "warn" | "wipe")
         : "lock",
     };

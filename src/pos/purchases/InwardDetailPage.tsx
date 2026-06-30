@@ -1,13 +1,24 @@
 // Inward detail page — read-only view of a past inward.
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Truck } from "lucide-react";
+import { ArrowLeft, Printer, Truck } from "lucide-react";
 
 import { Badge, Button, Card, EmptyState, Money } from "../../components/ui";
 import { getPurchase } from "../api";
 import type { Purchase } from "../types";
 import { formatDateForDisplay } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
+import { toast } from "../../lib/feedback/toast";
+import {
+  getSetting,
+  listItems,
+  listBrands,
+  previewNextBarcode,
+  updateItem,
+} from "../../domain/items/api";
+import { formatItemName } from "../../domain/items/display";
+import type { BatchLabel } from "../print";
+import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
 
 interface Props {
   id: number;
@@ -42,6 +53,57 @@ export function InwardDetailPage({ id, onBack }: Props) {
       cancelled = true;
     };
   }, [id]);
+
+  async function handleBatchPrint() {
+    if (!purchase) return;
+    try {
+      const [shopName, allItems, brands] = await Promise.all([
+        getSetting("shop_name").catch(() => ""),
+        listItems({ limit: 1000 }),
+        listBrands(),
+      ]);
+      const seedRows: SeedRow[] = [];
+      let nextId = 1;
+      for (const line of purchase.items) {
+        const item = allItems.find((i) => i.id === line.item_id);
+        if (!item) continue;
+        let barcode = item.barcode;
+        if (!barcode) {
+          try {
+            barcode = await previewNextBarcode(item.brand_id ?? null, item.name);
+            await updateItem(item.id, { barcode });
+          } catch (e) {
+            console.warn(`[InwardDetailPage] barcode gen failed for ${item.name}:`, e);
+            continue;
+          }
+        }
+        const count = Math.max(1, Math.floor(line.qty));
+        const itemName = formatItemName(item, brands);
+        const label: BatchLabel = {
+          barcode,
+          line1: shopName || undefined,
+          line2: itemName,
+          sku: item.sku_code ?? undefined,
+        };
+        for (let i = 0; i < count; i++) {
+          seedRows.push({
+            id: nextId++,
+            label: { ...label },
+            itemId: item.id,
+            itemName,
+          });
+        }
+      }
+      if (seedRows.length === 0) {
+        toast.warning("No labels to print — items missing barcodes");
+        return;
+      }
+      useLabelBatchSeed.getState().setSeed(seedRows, `Inward #${purchase.id}`);
+      window.location.hash = "#/barcodes";
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  }
 
   if (loading) {
     return (
@@ -85,6 +147,17 @@ export function InwardDetailPage({ id, onBack }: Props) {
           </h1>
           <Badge variant="info" size="sm">inward</Badge>
         </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          icon={Printer}
+          onClick={() => void handleBatchPrint()}
+          disabled={purchase.items.length === 0}
+          data-testid="inward-detail-batch-print"
+        >
+          Print labels
+        </Button>
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">

@@ -37,9 +37,19 @@ export function BarcodeThumb({
     };
     try {
       JsBarcode(ref.current, value, { ...baseOpts, format: "CODE128" });
-    } catch (err) {
-      console.warn(`BarcodeThumb CODE128 encode failed for '${value}':`, err);
-      if (ref.current) ref.current.innerHTML = "";
+    } catch {
+      if (ref.current) {
+        ref.current.innerHTML = "";
+        const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        txt.setAttribute("x", "50%");
+        txt.setAttribute("y", "50%");
+        txt.setAttribute("dominant-baseline", "central");
+        txt.setAttribute("text-anchor", "middle");
+        txt.setAttribute("fill", "#94a3b8");
+        txt.setAttribute("font-size", "10");
+        txt.textContent = "invalid";
+        ref.current.appendChild(txt);
+      }
     }
   }, [value, containerHeight]);
 

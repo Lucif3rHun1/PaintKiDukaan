@@ -236,6 +236,7 @@ mod win {
         pub fn GetCurrentProcess() -> *mut c_void;
         pub fn GetThreadContext(hThread: *mut c_void, lpContext: *mut CONTEXT) -> i32;
         pub fn GetCurrentThread() -> *mut c_void;
+        #[cfg(target_arch = "x86_64")]
         pub fn GetCurrentProcessId() -> u32;
     }
 

@@ -3,10 +3,11 @@
 // pushes a read-only line into the draft. Save finalizes all accumulated lines.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, PackagePlus, Truck, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, PackagePlus, Printer, Truck, X } from "lucide-react";
 import { EmptyState, Skeleton } from "../../components/ui";
 
-import { Button, InlineDialog, Money, MoneyInput, QtyInput } from "../../components/ui";
+import { Button, InlineDialog, Money, MoneyInput, PageHeader, QtyInput } from "../../components/ui";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
@@ -15,18 +16,23 @@ import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { ItemForm } from "../../domain/items/ItemForm";
-import { listItems, updateItem } from "../../domain/items/api";
+import { getSetting, listBrands, listItems, previewNextBarcode, updateItem } from "../../domain/items/api";
+import type { Brand } from "../../domain/types";
+import { formatItemName } from "../../domain/items/display";
+import type { BatchLabel } from "../print";
+import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
 import { listLocations } from "../../domain/locations/api";
 import { VendorForm } from "../../domain/vendors/VendorForm";
 import { listVendors } from "../../domain/vendors/api";
 import { outstandingReport } from "../api";
 import type { FormulaSearchHit, Item, Location, Vendor, PurchaseUnit, ItemPurchasePackaging } from "../../domain/types";
 import { createInward, deleteDraft, lastCost, lastRetail, listPurchases } from "../api";
-import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
+import { PageBadgeCtx, useAutosave, useDirtyForm, registerDirtyChecker, unregisterDirtyChecker } from "../hooks";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay } from "../../lib/date";
 import { ItemSearchInput } from "../sales/ItemSearchInput";
-import type { InwardLine, ItemSearchHit, NewPurchase, Purchase } from "../types";
+import type { InwardLine, ItemSearchHit, NewPurchase, Purchase, PurchaseCreated } from "../types";
+import { getPref, setPref } from "../../lib/storage";
 
 // ponytail: packaging APIs — import from shared module
 import {
@@ -56,7 +62,7 @@ interface DraftLine {
   row_id: string;
   item_id: number;
   qty: number;
-  unit_type: "unit" | "mtr" | "kg";
+  unit_type: "pcs" | "mtr" | "kg";
   unit_code: string;
   cost_price: number;
   retail_price: number;
@@ -72,7 +78,6 @@ interface PurchaseDraftData {
   readonly draftLines?: DraftLine[];
   readonly vendorId?: number | null;
   readonly notes?: string;
-  readonly autoPrint?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,7 +87,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isDraftLine(value: unknown): value is DraftLine {
   if (!isRecord(value)) return false;
   const ut = value.unit_type;
-  const validUnitType = ut === "unit" || ut === "mtr" || ut === "kg";
+  const validUnitType = ut === "pcs" || ut === "mtr" || ut === "kg";
   return (
     typeof value.row_id === "string" &&
     typeof value.item_id === "number" &&
@@ -120,7 +125,6 @@ function parsePurchaseDraft(dataJson: string): PurchaseDraftData | null {
         ? parsed.vendorId
         : undefined,
     notes: typeof parsed.notes === "string" ? parsed.notes : undefined,
-    autoPrint: typeof parsed.autoPrint === "boolean" ? parsed.autoPrint : undefined,
   };
 }
 
@@ -133,7 +137,7 @@ function emptyEntry(locationId: number): DraftLine {
     row_id: newRowId(),
     item_id: 0,
     qty: 1,
-    unit_type: "unit",
+    unit_type: "pcs",
     unit_code: "",
     cost_price: 0,
     retail_price: 0,
@@ -152,18 +156,19 @@ function lineTotalPaise(l: DraftLine): number {
 }
 
 export default function InwardPage({ user: _user, onExit }: Props) {
+  const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftLine[]>([]);
   const [entry, setEntry] = useState<DraftLine>(() => emptyEntry(0));
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [vendorId, setVendorId] = useState<number | null>(null);
+  const [vendorId, setVendorId] = useState<number | null>(getPref("inward:lastVendor", null));
   const [vendorQuery, setVendorQuery] = useState("");
   const [vendorMenuOpen, setVendorMenuOpen] = useState(false);
   const [notes, setNotes] = useState("");
-  const [autoPrint, setAutoPrint] = useState(true);
   const [recent, setRecent] = useState<Purchase[]>([]);
   const [status, setStatus] = useState<string | null>(null);
 
   const [items, setItems] = useState<Item[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [defaultLocationId, setDefaultLocationId] = useState<number>(0);
@@ -182,8 +187,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     draftLines: draft,
     vendorId,
     notes,
-    autoPrint,
-  }), [draft, vendorId, notes, autoPrint]);
+  }), [draft, vendorId, notes]);
 
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
   const { draft: savedDraft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("purchase", draftData);
@@ -191,6 +195,11 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   useEffect(() => {
     if (!draftLoading && draftData.draftLines.length > 0) markDirty();
   }, [draftData, draftLoading, markDirty]);
+
+  useEffect(() => {
+    registerDirtyChecker(() => isDirty);
+    return () => unregisterDirtyChecker();
+  }, [isDirty]);
 
   const draftRestored = useRef(false);
   useEffect(() => {
@@ -205,7 +214,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       if (data.draftLines) setDraft(data.draftLines);
       if (data.vendorId !== undefined) setVendorId(data.vendorId);
       if (data.notes !== undefined) setNotes(data.notes);
-      if (data.autoPrint !== undefined) setAutoPrint(data.autoPrint);
     } catch {
       void resetDraft();
     }
@@ -231,11 +239,15 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       listVendors().then((d) => setVendors(d ?? [])),
       listLocations(false).then((locs) => {
         setLocations(locs);
-        const firstLoc = locs[0]?.id ?? 0;
-        setDefaultLocationId(firstLoc);
-        setEntry(emptyEntry(firstLoc));
+        const savedLoc = getPref<number>("inward:lastLocation", 0);
+        const loc = savedLoc > 0 && locs.some((l) => l.id === savedLoc)
+          ? savedLoc
+          : locs[0]?.id ?? 0;
+        setDefaultLocationId(loc);
+        setEntry(emptyEntry(loc));
       }),
       listPurchaseUnits().then((pus) => setPurchaseUnits(pus)),
+      listBrands().then((d) => setBrands(d ?? [])),
     ]).then(([purchases, itemsResult, vendorsResult, locationsResult, purchaseUnitsResult]) => {
       setInitialLoading(false);
       if (purchases.status === "rejected") {
@@ -318,7 +330,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       const pu = purchaseUnits.find((p) => p.id === l.purchase_unit_id);
       if (pu) return pu.label;
     }
-    return l.unit_code || "unit";
+    return l.unit_code || "pcs";
   }
 
   async function selectItemForEntry(itemId: number) {
@@ -326,8 +338,8 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     const item = items.find((i) => i.id === itemId);
     const unitCode = item?.unit_code ?? "";
     const rawSell = item?.sell_unit;
-    const sellUnit: "unit" | "mtr" | "kg" =
-      rawSell === "mtr" ? "mtr" : rawSell === "kg" ? "kg" : "unit";
+    const sellUnit: "pcs" | "mtr" | "kg" =
+      rawSell === "mtr" ? "mtr" : rawSell === "kg" ? "kg" : "pcs";
     setEntry((e) => ({
       ...e,
       item_id: itemId,
@@ -379,7 +391,8 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     }));
     // Save as item default (override always overwrites)
     if (entry.item_id > 0) {
-      const itemNameVal = items.find((i) => i.id === entry.item_id)?.name ?? "item";
+      const foundItem = items.find((i) => i.id === entry.item_id);
+      const itemNameVal = foundItem ? formatItemName(foundItem, brands) : "item";
       void setItemPackaging(entry.item_id, purchaseUnitId, newQtyPerPkg)
         .then(() => {
           toast.success(`Updated default packaging for ${itemNameVal}`);
@@ -444,37 +457,36 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   function itemName(id: number): string {
     const item = items.find((i) => i.id === id);
     if (!item) return id > 0 ? `#${id}` : "—";
-    return item.sku_code ? `${item.name} · ${item.sku_code}` : item.name;
+    return item.sku_code ? `${formatItemName(item, brands)} · ${item.sku_code}` : formatItemName(item, brands);
   }
 
   function itemSellUnit(id: number): string {
     const item = items.find((i) => i.id === id);
-    return item?.sell_unit || "unit";
+    return item?.sell_unit || "pcs";
   }
 
-  async function submit() {
+  async function submit(): Promise<PurchaseCreated | null> {
     const filled = draft.filter((l) => l.item_id > 0);
     const lines: InwardLine[] = filled.map((l) => ({
       item_id: l.item_id,
       qty: l.qty * l.qty_per_purchase_unit,
-      unit_type: (l.unit_type === "mtr" || l.unit_type === "kg") ? l.unit_type : "unit",
+      unit_type: (l.unit_type === "mtr" || l.unit_type === "kg") ? l.unit_type : "pcs",
       unit_price_paise: l.cost_price,
       location_id: l.location_id,
     }));
     if (lines.length === 0) {
       toast.warning("Pick at least one item before saving");
-      return;
+      return null;
     }
     const req: NewPurchase = {
       vendor_id: vendorId,
       notes: notes || null,
-      auto_print_label: autoPrint,
       lines,
     };
     try {
       const res = await toast.promise(createInward(req), {
         loading: "Saving inward…",
-        success: (r) => `Inward #${r.id} saved${r.print_label ? " — label will print" : ""}`,
+        success: (r) => `Inward #${r.id} saved`,
         error: (e) => extractError(e),
       });
       const overrides = filled.filter(
@@ -490,15 +502,71 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           }),
         ),
       );
-      setStatus(`Inward #${res.id} saved${res.print_label ? " — label will print" : ""}`);
+      setStatus(`Inward #${res.id} saved`);
+      setPref("inward:lastVendor", vendorId);
+      setPref("inward:lastLocation", defaultLocationId);
       setDraft([]);
       setNotes("");
       void resetDraft();
       resetDirty();
       setRecent(await listPurchases());
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      return res;
     } catch (e) {
       setStatus(`Error: ${extractError(e)}`);
+      return null;
     }
+  }
+
+  async function handleSaveAndBatchPrint() {
+    const filled = draft.filter((l) => l.item_id > 0);
+    if (filled.length === 0) {
+      toast.warning("Pick at least one item before saving");
+      return;
+    }
+    const res = await submit();
+    if (!res) return;
+
+    const shopName = await getSetting("shop_name").catch(() => "");
+    const seedRows: SeedRow[] = [];
+    let nextId = 1;
+    for (const line of filled) {
+      const item = items.find((i) => i.id === line.item_id);
+      if (!item) continue;
+      let barcode = item.barcode;
+      if (!barcode) {
+        try {
+          barcode = await previewNextBarcode(item.brand_id ?? null, item.name);
+          await updateItem(item.id, { barcode });
+        } catch (e) {
+          console.warn(`[InwardPage] failed to generate barcode for ${item.name}:`, e);
+          continue;
+        }
+      }
+      const count = Math.max(1, line.qty * line.qty_per_purchase_unit);
+      const itemName = formatItemName(item, brands);
+      const label: BatchLabel = {
+        barcode,
+        line1: shopName || undefined,
+        line2: itemName,
+        sku: item.sku_code ?? undefined,
+      };
+      for (let i = 0; i < count; i++) {
+        seedRows.push({
+          id: nextId++,
+          label: { ...label },
+          itemId: item.id,
+          itemName,
+        });
+      }
+    }
+    if (seedRows.length === 0) {
+      toast.warning("No labels to print — all items missing barcodes");
+      return;
+    }
+    useLabelBatchSeed.getState().setSeed(seedRows, `Inward #${res.id}`);
+    window.location.hash = "#/barcodes";
   }
 
   useFormShortcuts({
@@ -558,9 +626,12 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   return (
     <PageBadgeCtx.Provider value={{ status: draftStatus, draft: savedDraft }}>
     <div className="space-y-4">
-      {/* ── Sticky toolbar: meta + new-item + save ─────────── */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card/95 px-4 py-2.5 backdrop-blur">
-        {onExit ? (
+      <PageHeader
+        title="New Inward"
+        description="Receive incoming stock, update costs, and prepare barcode labels from one draft."
+        accent="green"
+        actions={
+          onExit ? (
           <Button
             type="button"
             variant="ghost"
@@ -571,11 +642,11 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           >
             Back to inward
           </Button>
-        ) : null}
+          ) : null
+        }
+      />
 
-        <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold text-foreground">New Inward</h1>
-        </div>
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card/95 px-4 py-2.5 backdrop-blur">
 
         {/* Vendor typeahead — search + add combined into one input */}
         <div className="relative min-w-[200px] flex-1 sm:flex-none sm:w-64">
@@ -673,20 +744,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           className="input h-8 w-36 flex-1 px-2 text-xs sm:w-48"
         />
 
-        {/* Auto-print */}
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={autoPrint}
-            onChange={(e) => setAutoPrint(e.target.checked)}
-            className="h-3.5 w-3.5"
-            data-testid="auto-print-label"
-          />
-          Auto-print
-        </label>
-
-        <div className="h-5 w-px bg-border" />
-
         {/* Total */}
         <span className="text-sm font-semibold text-foreground" data-testid="inward-total">
           <Money paise={total} />
@@ -703,6 +760,20 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           data-testid="inward-new-item"
         >
           New item
+        </Button>
+
+        {/* Save & batch print */}
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          icon={Printer}
+          onClick={() => void handleSaveAndBatchPrint()}
+          disabled={draft.length === 0}
+          className="!h-8 !px-3 !text-xs"
+          data-testid="inward-save-batch-print"
+        >
+          Save &amp; batch print
         </Button>
 
         {/* Save */}
@@ -725,7 +796,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       {/* ── Entry pad + accumulated lines ───────────────────── */}
       <section className="rounded-lg border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-foreground">
+          <h2 className="text-lg font-semibold text-foreground">
             Items{" "}
             {draft.length > 0 && (
               <span className="text-muted-foreground">
@@ -795,7 +866,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                 <input
                   type="number"
                   min={0}
-                  step={entry.unit_type === "unit" ? 1 : 0.001}
+                  step={entry.unit_type === "pcs" ? 1 : 0.001}
                   value={entry.qty}
                   onChange={(e) => setEntry((p) => ({ ...p, qty: Math.max(0, Number(e.target.value)) }))}
                   className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
@@ -957,7 +1028,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       {recent.length > 0 && (
         <section className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-2.5">
-            <h2 className="text-sm font-semibold text-muted-foreground">Recent inwards</h2>
+          <h2 className="text-lg font-semibold text-foreground">Recent inwards</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

@@ -4,6 +4,7 @@
 const VARIANCE_TOLERANCE_PAISE = 500; // ₹5 — matches day_close::VARIANCE_TOLERANCE_PAISE
 
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
@@ -95,6 +96,7 @@ function RecentClosesTable({ rows }: { rows: DayClose[] }) {
 const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
 
 export default function DayClosePage({ user }: Props) {
+  const queryClient = useQueryClient();
   const [date, setDate] = useState(() => todayLocalYyyymmdd());
   const [openingRupees, setOpeningRupees] = useState("0");
   const [cashInRupees, setCashInRupees] = useState("0");
@@ -161,6 +163,8 @@ export default function DayClosePage({ user }: Props) {
       });
       setStatus(`Day closed (id=${id}, decision=${decision})`);
       setRecent(await listDayClose(30));
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["dayClose"] });
     } catch (e) {
       setStatus(`Close failed: ${extractError(e)}`);
     }

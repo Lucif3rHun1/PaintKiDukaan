@@ -32,15 +32,18 @@ export interface SimpleSequenceOptions {
 
 export function generateSimpleSequence(opts: SimpleSequenceOptions): string[] {
   const { type, prefix, suffix, start, count } = opts;
+  const safeStart = Math.max(0, Math.floor(start));
+  const safeCount = Math.max(0, Math.min(500, Math.floor(count)));
   const result: string[] = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < safeCount; i++) {
     let value: string;
     if (type === "numeric") {
-      value = String(start + i);
+      value = String(safeStart + i);
     } else {
       const code = type === "lowercase" ? 97 : 65;
-      const charCode = code + ((start - 1 + i) % 26);
-      const cycle = Math.floor((start - 1 + i) / 26);
+      const pos = Math.max(0, safeStart - 1 + i);
+      const charCode = code + (pos % 26);
+      const cycle = Math.floor(pos / 26);
       value = String.fromCharCode(charCode);
       if (cycle > 0) value = value + "'".repeat(cycle);
     }

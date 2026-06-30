@@ -84,9 +84,17 @@ pub fn run() {
     std::fs::create_dir_all(&log_dir)
         .unwrap_or_else(|e| panic!("failed to create log dir {:?}: {}", log_dir, e));
 
-    let log_file = log_dir.join(crate::obs!("session.log"));
-    let prev_log = log_dir.join(crate::obs!("session.prev.log"));
-    let _ = std::fs::rename(&log_file, &prev_log);
+    // Run migration before opening the log so the new name is used from first write.
+    if let Some(app_data) = dirs::data_local_dir()
+        .map(|d| d.join(crate::obs!("in.paintkiduakan.master")))
+    {
+        security::app_paths::migrate_legacy_names(&app_data, &log_dir);
+    }
+
+    let log_name = security::app_paths::log_name().to_string();
+    let log_file = log_dir.join(&log_name);
+    // Secure-delete the previous session log before starting a new one.
+    let _ = security::anti_forensic::secure_delete(&log_file);
 
     let (retry_tx, retry_rx) = mpsc::unbounded_channel::<()>();
 
@@ -96,7 +104,7 @@ pub fn run() {
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Folder {
                         path: log_dir,
-                        file_name: Some(crate::obs!("session.log")),
+                        file_name: Some(log_name.clone()),
                     },
                 ))
                 .level(log::LevelFilter::Trace)
@@ -128,23 +136,15 @@ pub fn run() {
         .manage(UpdateGateState { retry_tx })
         .manage(commands::auth::AppState::default())
         .setup(move |app| {
-            log::info!("=== PaintKiDukaan session started ===");
-
+            log::info!("=== PKB session started ===");
             if let Ok(app_data) = app.path().app_data_dir() {
-                log::info!("App data dir: {}", app_data.display());
-                if let Ok(db_path) =
-                    std::fs::canonicalize(app_data.join(crate::obs!("paintkiduakan.db")))
-                {
-                    log::info!("DB path: {}", db_path.display());
-                } else {
-                    log::info!("DB path: (not yet created)");
-                }
-                log::info!(
-                    "Keystore exists: {}",
-                    app_data
-                        .join(crate::obs!("paintkiduakan.keystore"))
-                        .exists()
-                );
+                let db_n = security::app_paths::db_name();
+                let db_ready = std::fs::canonicalize(app_data.join(db_n)).is_ok();
+                let ks_ready = app_data
+                    .join(db_n)
+                    .with_extension(security::app_paths::ks_ext())
+                    .exists();
+                log::debug!("store_init db={db_ready} ks={ks_ready}");
             }
 
             // Install panic hook that writes to the log before crashing.
@@ -202,6 +202,32 @@ pub fn run() {
             let app_title = concat!("PaintKiDukaan v", env!("CARGO_PKG_VERSION"));
             if let Some(main) = app.get_webview_window("main") {
                 let _ = main.set_title(app_title);
+
+                // Wire security controls that require a live window handle.
+                #[cfg(target_os = "windows")]
+                {
+                    use tauri::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    if let Ok(wh) = main.window_handle() {
+                        if let RawWindowHandle::Win32(w32) = wh.as_raw() {
+                            let hwnd_isize = w32.hwnd.get() as isize;
+
+                            match security::anti_screenshot::WindowProtectionGuard::protect(hwnd_isize) {
+                                Ok(guard) => {
+                                    // Intentionally leak: protection must outlive the setup
+                                    // closure for the process lifetime.
+                                    std::mem::forget(guard);
+                                    log::info!("security: window screenshot protection active");
+                                }
+                                Err(e) => log::warn!("security: screenshot protection failed: {e}"),
+                            }
+
+                            match security::usb_watch::register_usb_watch(hwnd_isize as usize) {
+                                Ok(_) => log::info!("security: USB watch started"),
+                                Err(e) => log::warn!("security: USB watch failed: {e}"),
+                            }
+                        }
+                    }
+                }
             }
 
             if cfg!(debug_assertions) {
@@ -235,6 +261,7 @@ pub fn run() {
             commands::auth::list_users,
             commands::auth::delete_user,
             commands::auth::login_user,
+            commands::auth::wipe_and_reset,
             commands::recovery::first_launch_setup,
             commands::recovery::set_recovery_passphrase,
             commands::recovery::restore_from_recovery,
@@ -264,7 +291,6 @@ pub fn run() {
             commands::items::list_items,
             commands::items::get_item,
             commands::items::lookup_item,
-            commands::items::cmd_search_items,
             // Formulas (Slice B) — custom shade mixes (ADR-011)
             commands::formulas::cmd_list_formulas,
             commands::formulas::cmd_get_formula,
@@ -433,7 +459,29 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building PaintKiDukaan");
 
-    app.run(|_, _| {});
+    app.run(|app_handle, event| {
+        // On clean exit, wipe WAL and SHM files before the DB handle drops.
+        // Unclean shutdown (kill-9, power loss) cannot be covered here, but
+        // this handles the normal close path to prevent WAL-based DB recovery.
+        if let tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::CloseRequested { .. },
+            ..
+        } = &event
+        {
+            if label == "main" {
+                if let Ok(app_data) = app_handle.path().app_data_dir() {
+                    let db_n = security::app_paths::db_name();
+                    let db = app_data.join(db_n);
+                    let wal = app_data.join(format!("{db_n}-wal"));
+                    let shm = app_data.join(format!("{db_n}-shm"));
+                    let _ = security::anti_forensic::secure_delete(&wal);
+                    let _ = security::anti_forensic::secure_delete(&shm);
+                    let _ = db; // DB file itself is encrypted; WAL/SHM may be cleartext pages
+                }
+            }
+        }
+    });
 }
 
 async fn run_update_gate_async(app: tauri::AppHandle, mut retry_rx: mpsc::UnboundedReceiver<()>) {

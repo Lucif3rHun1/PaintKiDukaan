@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 import { SETTINGS_CATEGORIES, type SettingsCategoryId } from "../AppShell";
-import { Button } from "../../components/ui";
+import { Button, PageHeader } from "../../components/ui";
 import { CustomerTypesSettings, LocationsSettings, CatalogSettingsCombined } from "./settings/CatalogSettings";
 import { HardwareSettings } from "./settings/HardwareSettings";
 import { SettingsCategory } from "./settings/SettingsCategory";
@@ -56,7 +56,7 @@ interface ParsedSettingsRoute {
 
 const CATEGORY_DESCRIPTIONS: Record<SettingsCategoryId, string> = {
   shop: "Identity, currency, and tax defaults for this local shop profile.",
-  catalog: "Reusable catalog lists that shape inventory, customers, and stock movement.",
+  catalog: "Manage inventory categories, brands, units, and locations.",
   printing: "Printers and barcode scanners used for receipts, labels, and stock ops.",
   team: "Users, devices, and permissions for sign-in.",
   system: "Backup, security, and health checks.",
@@ -170,20 +170,18 @@ export function Settings() {
 
 function SettingsSubPageHeader({ categoryLabel, itemTitle, description, backHref }: { categoryLabel: string; itemTitle: string; description: string; backHref: string }) {
   return (
-    <header className="space-y-3">
-      <Button type="button" variant="ghost" size="sm" className="-ml-2" onClick={() => {
-        window.location.hash = backHref;
-      }}>
-        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-        Back to {categoryLabel}
-      </Button>
-      <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-          Settings &gt; {categoryLabel} &gt; {itemTitle}
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{itemTitle}</h1>
-        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
-      </div>
-    </header>
+    <PageHeader
+      title={itemTitle}
+      description={`Settings > ${categoryLabel}. ${description}`}
+      accent="slate"
+      actions={
+        <Button type="button" variant="ghost" size="sm" onClick={() => {
+          window.location.hash = backHref;
+        }}>
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          Back to {categoryLabel}
+        </Button>
+      }
+    />
   );
 }

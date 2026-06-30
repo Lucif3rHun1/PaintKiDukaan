@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { MasterHealth } from "../lib/ipc";
 import { fetchMasterHealth } from "./api";
-import { SkeletonRow } from "../components/SkeletonRow";
+import { SkeletonRow } from "../../components/ui/SkeletonRow";
 import { extractError } from "../../lib/extractError";
 
 export function MasterHealthPage() {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Field, Select } from "../../components/ui";
+import { Alert, Button, Field, Select } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { createCustomer, updateCustomer } from "./api";
 import type {
@@ -87,6 +87,10 @@ export function CustomerForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           className="input"
         />
       </Field>
@@ -99,6 +103,10 @@ export function CustomerForm({
           pattern="[6-9][0-9]{9}"
           maxLength={10}
           required
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           className="input"
         />
       </Field>
@@ -121,14 +129,16 @@ export function CustomerForm({
           onChange={(e) => setOpeningBalance(e.target.value)}
           type="number"
           step="0.01"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           className="input"
         />
       </Field>
 
       {error && (
-        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">{error}</Alert>
       )}
 
       <div className="flex justify-end gap-2 border-t border-border pt-4">
@@ -147,4 +157,3 @@ export function CustomerForm({
     </form>
   );
 }
-

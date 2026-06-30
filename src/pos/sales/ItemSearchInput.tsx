@@ -9,6 +9,8 @@ import {
   ScanBarcode,
 } from "lucide-react";
 import { createItem, listItems, lookupItem } from "../../domain/items/api";
+import { listSaleUnits } from "../../domain/units/api";
+import { formatHitName } from "../../domain/items/display";
 import { listFormulas } from "../../domain/formulas/api";
 import { listLocations } from "../../domain/locations/api";
 import { useBarcodeScan } from "../../shell/hooks/useBarcodeScan";
@@ -18,7 +20,7 @@ import { toTitleCase } from "../../lib/format/titleCase";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
-import type { FormulaSearchHit, Item, ItemLookup, Location } from "../../domain/types";
+import type { FormulaSearchHit, Item, ItemLookup, Location, SaleUnit } from "../../domain/types";
 import type { ItemSearchHit } from "../types";
 
 export interface SearchDisplayConfig {
@@ -89,7 +91,7 @@ function itemToSearchHit(item: Item): ItemSearchHit {
     cost_paise: item.cost_paise,
     unit_code: item.unit_code ?? "",
     unit_label: item.unit_label ?? "",
-    sell_unit: item.sell_unit || "unit",
+    sell_unit: item.sell_unit || "pcs",
     current_qty: item.current_qty,
     min_stock: item.min_stock,
   };
@@ -118,6 +120,7 @@ export function ItemSearchInput({
   const [quickBusy, setQuickBusy] = useState(false);
   const [quickError, setQuickError] = useState<string | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [saleUnits, setSaleUnits] = useState<SaleUnit[]>([]);
   const [quickSuggestions, setQuickSuggestions] = useState<ItemSearchHit[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listboxRef = useRef<HTMLDivElement>(null);
@@ -207,10 +210,11 @@ export function ItemSearchInput({
 
   useEffect(() => {
     let mounted = true;
-    Promise.allSettled([listLocations(false)]).then((settled) => {
+    Promise.allSettled([listLocations(false), listSaleUnits()]).then((settled) => {
       if (!mounted) return;
-      const [locationsResult] = settled;
+      const [locationsResult, saleUnitsResult] = settled;
       if (locationsResult.status === "fulfilled") setLocations(locationsResult.value);
+      if (saleUnitsResult.status === "fulfilled") setSaleUnits(saleUnitsResult.value);
     });
     return () => {
       mounted = false;
@@ -248,7 +252,7 @@ export function ItemSearchInput({
         cost_paise: 0,
         unit_code: "",
         unit_label: "",
-        sell_unit: "unit",
+        sell_unit: "pcs",
         current_qty,
         min_stock: item.min_stock ?? 0,
       };
@@ -262,8 +266,8 @@ export function ItemSearchInput({
         brand: null,
         retail_price_paise: item.retail_price_paise,
         cost_paise: 0,
-        unit_code: item.unit_code,
-        unit_label: item.unit_label ?? "",
+        unit_code: item.unit,
+        unit_label: item.unit,
         sell_unit: item.sell_unit,
         current_qty: item.in_stock,
         min_stock: 0,
@@ -365,6 +369,7 @@ export function ItemSearchInput({
     }
     setQuickBusy(true);
     setQuickError(null);
+    const defaultUnit = saleUnits.find((su) => su.code === "unit") ?? saleUnits[0] ?? null;
     try {
       const item = await toast.promise(
         createItem({
@@ -372,8 +377,8 @@ export function ItemSearchInput({
           retail_price_paise: quickPrice,
           cost_paise: 0,
           min_stock: quickMinStock,
-          sell_unit: "unit",
-          sell_unit_id: null,
+          sell_unit: defaultUnit?.code ?? "unit",
+          sell_unit_id: defaultUnit?.id ?? null,
           primary_location_id: location.id,
         }),
         {
@@ -415,6 +420,10 @@ export function ItemSearchInput({
               if (scanHint) setScanHint(null);
             }}
             onFocus={() => setOpen(true)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 if (results.length === 1) {
@@ -562,9 +571,7 @@ export function ItemSearchInput({
                           status === "out" ? "text-muted-foreground line-through" : "text-foreground",
                         )}
                       >
-                        {display?.showBrand && hit.brand
-                          ? `${hit.brand} · ${toTitleCase(hit.name)}`
-                          : toTitleCase(hit.name)}
+                        {display?.showBrand ? formatHitName(hit) : toTitleCase(hit.name)}
                       </span>
                       {showStock && (
                         <span
@@ -627,6 +634,10 @@ export function ItemSearchInput({
                     }
                   }}
                   placeholder="Item name"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   className="input h-9 flex-1"
                 />
                 <MoneyInput
@@ -654,6 +665,10 @@ export function ItemSearchInput({
                     value={quickMinStock}
                     onChange={(e) => setQuickMinStock(Number(e.target.value) || 0)}
                     min={0}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     className="input h-8 w-16 text-xs"
                   />
                 </label>

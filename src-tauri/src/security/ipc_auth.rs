@@ -98,6 +98,14 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "restore_from_recovery",
         min_role: Role::Public,
     },
+    CommandAcl {
+        name: "retry_update",
+        min_role: Role::Public,
+    },
+    CommandAcl {
+        name: "quit_app",
+        min_role: Role::Public,
+    },
     // ── Owner-only (23) ────────────────────────────────────────────────
     // Auth & user management
     CommandAcl {
@@ -118,6 +126,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "delete_user",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "wipe_and_reset",
         min_role: Role::Owner,
     },
     // Recovery setup
@@ -153,6 +165,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "restore_into_first_launch",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_pick_backup_file",
         min_role: Role::Owner,
     },
     CommandAcl {
@@ -208,10 +224,6 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "lookup_item",
-        min_role: Role::Stocker,
-    },
-    CommandAcl {
-        name: "cmd_search_items",
         min_role: Role::Stocker,
     },
     CommandAcl {
@@ -429,6 +441,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "record_customer_payment",
         min_role: Role::Cashier,
     },
+    CommandAcl {
+        name: "get_customer",
+        min_role: Role::Cashier,
+    },
     // Vendors
     CommandAcl {
         name: "create_vendor",
@@ -591,6 +607,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Cashier,
     },
     CommandAcl {
+        name: "cmd_comparison_metrics",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
         name: "cmd_top_items_sold",
         min_role: Role::Cashier,
     },
@@ -625,6 +645,18 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     // Sequences
     CommandAcl {
         name: "cmd_mint_next_sale_no",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "get_next_invoice_number",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "get_next_quotation_number",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "get_next_return_number",
         min_role: Role::Cashier,
     },
     // Settings (read)
@@ -922,8 +954,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            170,
-            "ACL has {} entries, expected 170",
+            178,
+            "ACL has {} entries, expected 178",
             COMMAND_ACL.len()
         );
     }
@@ -956,7 +988,6 @@ mod tests {
             "list_items",
             "get_item",
             "lookup_item",
-            "cmd_search_items",
             "list_brands",
             "get_brand",
             "list_units",

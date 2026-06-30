@@ -12,6 +12,7 @@ use crate::db::keywrap::{self, KeywrapRow, PinRole};
 use crate::error::AppError;
 use crate::obs;
 use crate::security::ipc_auth;
+use crate::security::pde_seed::seed_decoy_data;
 
 /// Provision a decoy DB with plausible fake data and set up decoy + duress
 /// keywrap rows. Both decoy and duress share the same DEK_decoy so a single
@@ -56,6 +57,7 @@ pub fn provision_decoy_db_impl(
                  VALUES ('PR004', 'Primer 4L', 'L', 'Litre', 120000, 80000, 1, ?1, ?1)",
                 params![now],
             )?;
+            seed_decoy_data(&conn, fake_shop_name, now)?;
             Ok::<_, rusqlite::Error>(())
         })?;
     }
@@ -174,12 +176,12 @@ pub fn migrate_single_to_pde(db_path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Compute the decoy DB path: `paintkiduakan.decoy.db` next to the real DB.
+/// Compute the decoy DB path next to the real DB.
 pub fn decoy_db_path(real_db_path: &Path) -> std::path::PathBuf {
     real_db_path
         .parent()
         .unwrap_or(std::path::Path::new("."))
-        .join(obs!("paintkiduakan.decoy.db"))
+        .join(obs!("pkb_cache_v2.db"))
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +314,7 @@ mod tests {
         let decoy = decoy_db_path(&real);
         assert_eq!(
             decoy,
-            std::path::PathBuf::from("/data/paintkiduakan.decoy.db")
+            std::path::PathBuf::from("/data/pkb_cache_v2.db")
         );
     }
 

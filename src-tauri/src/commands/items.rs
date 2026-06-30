@@ -5,7 +5,6 @@
 //! server-side so a malicious frontend cannot see cost_paise as a cashier.
 
 use crate::commands::auth::AppState;
-use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
@@ -294,9 +293,9 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
                 "SELECT code, label FROM sale_units WHERE id = ?1",
                 params![suid],
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-            ).unwrap_or_else(|_| ("unit".into(), "Unit".into()))
+            ).unwrap_or_else(|_| ("pcs".into(), "Pcs".into()))
         } else {
-            (payload.unit_code.clone().unwrap_or_else(|| "unit".into()),
+            (payload.unit_code.clone().unwrap_or_else(|| "pcs".into()),
              payload.unit_label.clone().unwrap_or_else(|| "Unit".into()))
         };
         tx.execute(
@@ -317,9 +316,9 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
                 payload.category,
                 unit_code_val,
                 unit_label_val,
-                payload.unit.unwrap_or_else(|| "unit".into()),
+                payload.unit.unwrap_or_else(|| "pcs".into()),
                 payload.units_per_pack.unwrap_or(1.0),
-                payload.sell_unit.clone().unwrap_or_else(|| "unit".into()),
+                payload.sell_unit.clone().unwrap_or_else(|| "pcs".into()),
                 payload.sell_unit_id,
                 payload.retail_price_paise,
                 payload.cost_paise,
@@ -596,86 +595,7 @@ pub struct ConversionResult {
     pub qty_in_base_units: f64,
 }
 
-#[derive(Debug, Serialize, Clone)]
-pub struct ItemSearchHit {
-    pub id: i64,
-    pub sku_code: String,
-    pub barcode: Option<String>,
-    pub name: String,
-    pub brand: Option<String>,
-    pub retail_price_paise: i64,
-    pub cost_paise: i64,
-    pub sell_unit: String,
-    pub unit: String,
-    pub units_per_pack: Option<f64>,
-    pub current_qty: f64,
-}
 
-pub fn search_items(db: &Db, query: &str, limit: i64) -> anyhow::Result<Vec<ItemSearchHit>> {
-    let q = query.trim();
-    db.with_raw(|c| {
-        // Sanitize for FTS5: strip double quotes, append * for prefix matching
-        let sanitized: String = q.chars().filter(|c| *c != '"').collect();
-        if sanitized.is_empty() {
-            return Ok(vec![]);
-        }
-        let fts_query = format!("{}*", sanitized);
-
-        // Exact barcode/sku match wins first (scanner flow), then FTS5 text search.
-        let mut stmt = c.prepare(
-            "SELECT i.id, i.sku_code, i.barcode, i.name, COALESCE(b.name, i.brand) AS brand,
-                    i.retail_price_paise, i.cost_paise, i.sell_unit, i.unit, i.units_per_pack,
-                    COALESCE(sb.qty, 0) AS current_qty
-              FROM items i
-              LEFT JOIN brands b ON b.id = i.brand_id
-              LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id
-              WHERE i.is_active = 1
-                AND i.id IN (
-                    SELECT rowid FROM items_fts WHERE items_fts MATCH ?1
-                    UNION
-                    SELECT id FROM items WHERE barcode = ?2 OR sku_code = ?2
-                )
-             ORDER BY
-               CASE WHEN i.barcode = ?2 THEN 0
-                    WHEN i.sku_code = ?2 THEN 1
-                    ELSE 2 END,
-               i.name
-             LIMIT ?3",
-        )?;
-        let rows = stmt.query_map(params![fts_query, q, limit], |r| {
-            Ok(ItemSearchHit {
-                id: r.get(0)?,
-                sku_code: r.get(1)?,
-                barcode: r.get(2)?,
-                name: r.get(3)?,
-                brand: r.get(4)?,
-                retail_price_paise: r.get(5)?,
-                cost_paise: r.get(6)?,
-                sell_unit: r.get(7)?,
-                unit: r.get(8)?,
-                units_per_pack: r.get(9)?,
-                current_qty: r.get(10)?,
-            })
-        })?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
-    })
-}
-
-#[allow(dead_code)]
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
-pub fn cmd_search_items(
-    state: State<'_, AppState>,
-    query: String,
-    limit: Option<i64>,
-) -> AppResult<Vec<ItemSearchHit>> {
-    let guard = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
-    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
-    search_items(db, &query, limit.unwrap_or(10)).map_err(|e| AppError::Internal(e.to_string()))
-}
 
 // ---- internals ----
 
@@ -728,7 +648,7 @@ mod tests {
     #[test]
     fn to_base_units_handles_box() {
         assert_eq!(to_base_units(3.0, "box", Some(6.0)), 3.0);
-        assert_eq!(to_base_units(3.0, "unit", Some(6.0)), 3.0);
+        assert_eq!(to_base_units(3.0, "pcs", Some(6.0)), 3.0);
         assert_eq!(to_base_units(2.0, "box", None), 2.0);
     }
 }

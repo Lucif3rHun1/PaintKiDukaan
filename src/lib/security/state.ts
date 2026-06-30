@@ -18,7 +18,8 @@ export interface Session {
 export type Bootstrap =
   | { kind: "first_launch" }
   | { kind: "locked" }
-  | { kind: "unlocked"; user: string; role: Role; pin_role?: PinRole };
+  | { kind: "unlocked"; user: string; role: Role; pin_role?: PinRole }
+  | { kind: "keystore_error"; reason: string };
 
 export type AppPhase =
   | "loading"
@@ -26,7 +27,8 @@ export type AppPhase =
   | "locked"
   | "unlocked"
   | "restore-recovery"
-  | "user-management";
+  | "user-management"
+  | "keystore-error";
 
 interface SecurityState {
   phase: AppPhase;

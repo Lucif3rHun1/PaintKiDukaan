@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { ArrowRight } from "lucide-react";
 
-import { Card, cn } from "../../../components/ui";
+import { Card, PageHeader, cn } from "../../../components/ui";
 
 export interface SettingsCardItem {
   id: string;
@@ -14,13 +14,7 @@ export interface SettingsCardItem {
 export function SettingsCategory({ title, description, items }: { title: string; description: string; items: SettingsCardItem[] }) {
   return (
     <div className="space-y-5">
-      <header className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">
-          Settings
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
-        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
-      </header>
+      <PageHeader title={title} description={`Settings. ${description}`} accent="slate" />
 
       <div className="grid gap-3 md:grid-cols-2">
         {items.map((item) => (

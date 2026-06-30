@@ -13,7 +13,6 @@ import type {
   ReceivableAgingReport,
   DailySalesReport,
   DayClose,
-  DayLockState,
   DeadStockRow,
   ExpenseSummary,
   InventoryAgingReport,
@@ -27,11 +26,9 @@ import type {
   PurchaseSummary,
   Sale,
   StockHealthSummary,
-  StockMovement,
   StockReport,
   TopCustomerRow,
   TopItemRow,
-  TopVendorRow,
 } from "./types";
 
 const isTauri = (): boolean =>
@@ -52,7 +49,7 @@ export const listSales = (fromDate?: string, toDate?: string, limit = 100): Prom
     : Promise.resolve([]);
 // ----- Inward / purchases -----
 export const createInward = (req: NewPurchase): Promise<PurchaseCreated> =>
-  isTauri() ? tauriInvoke<PurchaseCreated>("cmd_create_inward", { req }) : Promise.resolve({ id: 0, print_label: false });
+  isTauri() ? tauriInvoke<PurchaseCreated>("cmd_create_inward", { req }) : Promise.resolve({ id: 0 });
 export const lastCost = (itemId: number): Promise<number | null> =>
   isTauri() ? tauriInvoke<number | null>("cmd_last_cost", { item_id: itemId }) : Promise.resolve(null);
 export const lastRetail = (itemId: number): Promise<number | null> =>
@@ -67,11 +64,6 @@ export const listPurchases = (fromDate?: string, toDate?: string, limit = 100): 
     : Promise.resolve([]);
 export const getPurchase = (id: number): Promise<Purchase | null> =>
   isTauri() ? tauriInvoke<Purchase | null>("cmd_get_purchase", { id }) : Promise.resolve(null);
-export const movementsForItem = (itemId: number, limit = 200): Promise<StockMovement[]> =>
-  isTauri()
-    ? tauriInvoke<StockMovement[]>("cmd_movements_for_item", { item_id: itemId, limit })
-    : Promise.resolve([]);
-
 export const saveDraft = (formType: string, dataJson: string): Promise<Draft> =>
   isTauri() ? tauriInvoke<Draft>("cmd_save_draft", { payload: { form_type: formType, data_json: dataJson } }) : Promise.resolve({ id: 0, user_id: 0, form_type: formType, data_json: dataJson, created_at: 0, updated_at: 0 });
 export const getDraft = (formType: string): Promise<Draft | null> =>
@@ -92,17 +84,8 @@ export const backupGateCheck = (): Promise<BackupGate> =>
   isTauri() ? tauriInvoke<BackupGate>("cmd_backup_gate_check", {}) : Promise.resolve({ needs_prompt: false, age_hours: null, reason: "browser", last_backup_unix_ms: null });
 export const triggerDayClose = (req: NewDayClose): Promise<number> =>
   isTauri() ? tauriInvoke<number>("cmd_trigger_day_close", { req }) : Promise.resolve(0);
-export const lockState = (userId: number, date: string): Promise<DayLockState> =>
-  isTauri()
-    ? tauriInvoke<DayLockState>("cmd_lock_state", { user_id: userId, date })
-    : Promise.resolve({ date, user_id: userId, is_locked: false, day_close_id: null });
 export const listDayClose = (limit = 60): Promise<DayClose[]> =>
   isTauri() ? tauriInvoke<DayClose[]>("cmd_list_day_close", { limit }) : Promise.resolve([]);
-export const getDayClose = (id: number): Promise<DayClose | null> =>
-  isTauri() ? tauriInvoke<DayClose | null>("cmd_get_day_close", { id }) : Promise.resolve(null);
-export const adminReopenDay = (id: number): Promise<boolean> =>
-  isTauri() ? tauriInvoke<boolean>("cmd_admin_reopen_day", { id }) : Promise.resolve(false);
-
 // ----- Reports -----
 export const dailySales = (fromDate: string, toDate: string): Promise<DailySalesReport> =>
   isTauri()
@@ -137,10 +120,6 @@ export const topCustomers = (fromDate: string, toDate: string, limit = 5): Promi
 export const topItemsPurchased = (fromDate?: string, toDate?: string, limit = 5): Promise<TopItemRow[]> =>
   isTauri()
     ? tauriInvoke<TopItemRow[]>("cmd_top_items_purchased", { from_date: fromDate, to_date: toDate, limit })
-    : Promise.resolve([]);
-export const topVendors = (fromDate: string, toDate: string, limit = 5): Promise<TopVendorRow[]> =>
-  isTauri()
-    ? tauriInvoke<TopVendorRow[]>("cmd_top_vendors", { from_date: fromDate, to_date: toDate, limit })
     : Promise.resolve([]);
 export const stockHealthSummary = (): Promise<StockHealthSummary> =>
   isTauri()

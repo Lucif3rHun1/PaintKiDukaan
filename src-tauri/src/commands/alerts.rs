@@ -377,20 +377,22 @@ fn upsert_alert(
 
 fn refresh_low_stock_alerts(conn: &rusqlite::Connection) -> Result<(), AppError> {
     let mut stmt = conn.prepare(
-        "SELECT i.id, i.name, i.min_stock, COALESCE(SUM(sm.qty), 0) as balance
+        "SELECT i.id, COALESCE(b.name || ' · ' || i.name, i.name), COALESCE(sb.qty, 0) as balance
          FROM items i
-         LEFT JOIN stock_movements sm ON sm.item_id = i.id
+         LEFT JOIN brands b ON b.id = i.brand_id
+         LEFT JOIN stock_balances sb ON sb.item_id = i.id
          WHERE i.is_active = 1
          GROUP BY i.id
          HAVING balance <= i.min_stock",
     )?;
     let rows = stmt.query_map([], |row| {
+        let id: i64 = row.get(0)?;
         let name: String = row.get(1)?;
-        let balance: f64 = row.get(3)?;
-        Ok((name, balance))
+        let balance: f64 = row.get(2)?;
+        Ok((id, name, balance))
     })?;
     for row in rows {
-        let (name, balance) = row?;
+        let (id, name, balance) = row?;
         let title = "Low stock".to_string();
         let message = format!("{} is below reorder level (balance: {})", name, balance);
         upsert_alert(
@@ -400,9 +402,20 @@ fn refresh_low_stock_alerts(conn: &rusqlite::Connection) -> Result<(), AppError>
             title,
             message,
             vec!["owner".into(), "stocker".into()],
-            Some(name),
+            Some(id.to_string()),
         )?;
     }
+    // Resolve alerts for items that are no longer low stock
+    conn.execute(
+        "UPDATE alerts SET resolved_at = ?1
+         WHERE kind = 'low_stock' AND resolved_at IS NULL
+         AND entity_id NOT IN (
+             SELECT CAST(i.id AS TEXT) FROM items i
+             LEFT JOIN stock_balances sb ON sb.item_id = i.id
+             WHERE i.is_active = 1 AND COALESCE(sb.qty, 0) <= i.min_stock
+         )",
+        params![now_ms()],
+    )?;
     Ok(())
 }
 

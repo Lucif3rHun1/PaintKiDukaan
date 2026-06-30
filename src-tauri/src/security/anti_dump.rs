@@ -334,48 +334,56 @@ fn setup_page_guard_inner(_addr_hint: *mut c_void) -> Result<PageGuardGuard, App
 
 #[cfg(target_os = "linux")]
 fn exclude_wer_inner() -> Result<(), AppError> {
-    log::trace!("anti_dump: exclude_wer is a no-op on Linux");
+    extern "C" {
+        fn setrlimit(resource: i32, rlim: *const [u64; 2]) -> i32;
+    }
+    // RLIMIT_CORE = 4 on Linux.
+    unsafe { setrlimit(4, &[0u64, 0u64]); }
     Ok(())
 }
 
 // ─── macOS implementation ─────────────────────────────────────────────────
 
 #[cfg(target_os = "macos")]
-fn lock_memory_inner(_addr: *mut c_void, _size: usize) -> Result<(), AppError> {
-    // macOS restricts mlock to root / processes with the right entitlements.
-    // Return Ok — this is best-effort.
-    log::trace!("anti_dump: lock_memory_in_ram is a no-op stub on macOS");
+fn lock_memory_inner(addr: *mut c_void, size: usize) -> Result<(), AppError> {
+    extern "C" {
+        fn madvise(addr: *mut c_void, len: usize, advice: i32) -> i32;
+    }
+    // MADV_NOCORE (8) excludes pages from core dumps on macOS. No entitlement needed.
+    unsafe { madvise(addr, size, 8); }
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-fn unlock_memory_inner(_addr: *mut c_void, _size: usize) {
-    // No-op on macOS.
-}
+fn unlock_memory_inner(_addr: *mut c_void, _size: usize) {}
 
 #[cfg(target_os = "macos")]
-fn hide_page_inner(_addr: *mut c_void) -> Result<u32, AppError> {
-    log::trace!("anti_dump: hide_page is a no-op on macOS");
+fn hide_page_inner(addr: *mut c_void) -> Result<u32, AppError> {
+    extern "C" {
+        fn madvise(addr: *mut c_void, len: usize, advice: i32) -> i32;
+    }
+    unsafe { madvise(addr, PAGE_SIZE, 8); }
     Ok(0)
 }
 
 #[cfg(target_os = "macos")]
 fn restore_page_inner(_addr: *mut c_void, _original_protect: u32) -> Result<(), AppError> {
-    log::trace!("anti_dump: restore_page is a no-op on macOS");
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
 fn setup_page_guard_inner(_addr_hint: *mut c_void) -> Result<PageGuardGuard, AppError> {
-    log::trace!("anti_dump: setup_page_guard_canary is a no-op on macOS");
-    Ok(PageGuardGuard {
-        _phantom: std::marker::PhantomData,
-    })
+    Ok(PageGuardGuard { _phantom: std::marker::PhantomData })
 }
 
 #[cfg(target_os = "macos")]
 fn exclude_wer_inner() -> Result<(), AppError> {
-    log::trace!("anti_dump: exclude_wer is a no-op on macOS");
+    // Disable core dump generation for this process on macOS.
+    extern "C" {
+        fn setrlimit(resource: i32, rlim: *const [u64; 2]) -> i32;
+    }
+    // RLIMIT_CORE = 4 on macOS. Set both soft and hard to 0.
+    unsafe { setrlimit(4, &[0u64, 0u64]); }
     Ok(())
 }
 

@@ -20,6 +20,7 @@ export interface TsplLabel {
   line1?: string;
   line2?: string;
   line3?: string;
+  sku?: string;
 }
 
 export const DOTS_PER_MM = 8;
@@ -41,7 +42,7 @@ const BAR_HEIGHT = 80; // 10mm — sharp and scannable at 203 DPI
 
 export function wordWrap(text: string, maxDots: number, charW: number): string[] {
   const maxChars = Math.floor(maxDots / charW);
-  if (maxChars <= 0) return [text.slice(0, 1) || ""];
+  if (maxChars <= 0) return [text];
   const words = text.split(" ");
   const lines: string[] = [];
   let current = "";
@@ -51,7 +52,9 @@ export function wordWrap(text: string, maxDots: number, charW: number): string[]
       current = candidate;
     } else {
       if (current) lines.push(current);
-      current = word.length > maxChars ? word.slice(0, maxChars) : word;
+      // ponytail: don't truncate single words — overflow is clipped by the
+      // printer / canvas, which is better than silently showing wrong text.
+      current = word;
     }
   }
   if (current) lines.push(current);
@@ -192,8 +195,8 @@ export function buildTsplBytes(
   const cellW  = Math.floor(totalW / cols);
 
   const GAP     = Math.round(config.spacingMm * d);
-  const SIDE    = Math.round(config.sideMarginMm * d);
-  const tf      = FONT[config.font];
+  const SIDE    = Math.min(Math.round(config.sideMarginMm * d), Math.floor(cellW / 2));
+  const tf      = FONT[config.font] ?? FONT["3"];
   const sf      = FONT["2"]; // SKU always in smallest font
   const effW    = tf.w * (config.xmul ?? 1);
   const effH    = tf.h * (config.ymul ?? 1);
@@ -274,7 +277,8 @@ export function buildTsplBytes(
         const barcodeX = centerX(barcodeW, xOrig, cellW, SIDE);
         out.push(`BARCODE ${barcodeX},${y},"128",${BAR_HEIGHT},0,0,${NARROW},${NARROW},"${esc(label.barcode)}"`);
 
-        const skuT = fit(label.barcode, usableW, sf.w);
+        const skuText = label.sku || label.barcode;
+        const skuT = fit(skuText, usableW, sf.w);
         const skuX = centerX(skuT.length * sf.w, xOrig, cellW, SIDE);
         out.push(`TEXT ${skuX},${y + BAR_HEIGHT + GAP},"2",0,1,1,"${esc(skuT)}"`);
       } else if (line3Rows.length > 0) {

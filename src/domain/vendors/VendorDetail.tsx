@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Money, Button } from "../../components/ui";
+import { Alert, Money, Button } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { vendorOutstanding } from "./api";
@@ -93,9 +93,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
       </div>
 
       {error && (
-        <p className="mb-3 rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive" className="mb-3">{error}</Alert>
       )}
 
       <dl className="mb-4 grid grid-cols-3 gap-3 text-sm">

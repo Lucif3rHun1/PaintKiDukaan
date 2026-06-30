@@ -87,6 +87,10 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   const DARK: [number, number, number] = [15, 23, 42]; // slate-900 — matches --foreground
   const BORDER: [number, number, number] = [226, 232, 240]; // slate-200 — matches --border
 
+  const receiptTitle =
+    spec.sale.status === "quotation" ? "QUOTATION" :
+    spec.sale.status === "fbill" ? "F BILL" :
+    "INVOICE";
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.setTextColor(...DARK);
@@ -100,7 +104,7 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
     doc.setFontSize(14);
     doc.setTextColor(...DARK);
   }
-  doc.text("INVOICE", margin, y);
+  doc.text(receiptTitle, margin, y);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(...PRIMARY);
@@ -542,21 +546,17 @@ export async function makeBarcodePng(value: string): Promise<string> {
   const canvas = document.createElement("canvas");
   canvas.width = 900;
   canvas.height = 300;
-  const ctx = canvas.getContext("2d")!;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Failed to get canvas 2D context");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  try {
-    JsBarcode(canvas, value, {
-      ...BARCODE_OPTIONS,
-      format: LOCKED_FORMAT,
-      width: 2,
-      background: "transparent",
-    });
-    return canvas.toDataURL("image/png");
-  } catch (codeErr) {
-    console.warn(`CODE128 encode failed for value='${value}':`, codeErr);
-    return TRANSPARENT_PNG;
-  }
+  JsBarcode(canvas, value, {
+    ...BARCODE_OPTIONS,
+    format: LOCKED_FORMAT,
+    width: 2,
+    background: "transparent",
+  });
+  return canvas.toDataURL("image/png");
 }
 
 const TRANSPARENT_PNG =

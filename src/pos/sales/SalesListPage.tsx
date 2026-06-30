@@ -2,6 +2,7 @@
 // pagination, and at-a-glance totals (count, value, outstanding due).
 
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Download, Eye, Plus, Printer, Receipt, Share2, FilePenLine } from "lucide-react";
 import { PeriodDropdown } from "../../components/ui";
 
@@ -29,6 +30,8 @@ import {
   safePrintSaleById,
   safeShareSalePdfById,
 } from "./printOrDownload";
+import { toast } from "../../lib/feedback/toast";
+import { extractError } from "../../lib/extractError";
 import { saleStatus } from "./saleStatus";
 
 interface Props {
@@ -40,6 +43,7 @@ const PAGE_SIZE = 25;
 type PaymentFilter = "all" | "paid" | "partial" | "due";
 
 export function SalesListPage({ onCreate }: Props) {
+  const queryClient = useQueryClient();
   const [from, setFrom] = useState(() => shiftDaysLocal(6));
   const [to, setTo] = useState(() => todayLocalYyyymmdd());
   const [payFilter, setPayFilter] = useState<PaymentFilter>("all");
@@ -99,7 +103,7 @@ export function SalesListPage({ onCreate }: Props) {
         dueTotal += s.total;
       }
     }
-    return { count: allData.length, totalValue, paidCount, paidTotal, partialCount, partialTotal, dueCount, dueTotal };
+    return { count: finals.length, totalValue, paidCount, paidTotal, partialCount, partialTotal, dueCount, dueTotal };
   }, [allData]);
 
   const statusFilterFn = useMemo(() => {
@@ -227,10 +231,14 @@ export function SalesListPage({ onCreate }: Props) {
                       icon: FilePenLine,
                       onSelect: async () => {
                         try {
-const newId = await convertToFbill(s.id);
-                           window.location.hash = `#/sales/edit/${newId}`;
+                          const newId = await convertToFbill(s.id);
+                          toast.success("Bill converted successfully");
+                          void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+                          void queryClient.invalidateQueries({ queryKey: ["items"] });
+                          void queryClient.invalidateQueries({ queryKey: ["sales-list"] });
+                          window.location.hash = `#/sales/edit/${newId}`;
                         } catch (e) {
-                          console.error(e);
+                          toast.error(`Convert failed: ${extractError(e)}`);
                         }
                       },
                     },

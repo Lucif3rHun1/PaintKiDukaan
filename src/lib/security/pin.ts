@@ -19,6 +19,7 @@ export const firstLaunchSchema = z
     shopName: shopNameSchema,
     address: addressSchema,
     phone: phoneSchema,
+    gstin: z.string().optional(),
   })
   .refine((d) => d.pin === d.pinConfirm, {
     path: ["pinConfirm"],

@@ -15,7 +15,6 @@ use crate::crypto::wrap::wrap_dek;
 use crate::db;
 use crate::db::keywrap::{self, KeywrapRow, PinRole};
 use crate::error::AppError;
-use crate::obs;
 use crate::security::ipc_auth;
 
 /// Wipe any leftover database files and sidecar before first-launch setup.
@@ -59,6 +58,7 @@ pub(crate) fn first_launch_setup_at_path(
     shop_name: String,
     address: String,
     phone: String,
+    gstin: Option<String>,
 ) -> Result<Session, AppError> {
     log::info!("[SETUP] first_launch_setup_at_path called");
     log::info!(
@@ -115,9 +115,9 @@ pub(crate) fn first_launch_setup_at_path(
         )?;
 
         conn.execute(
-            "INSERT OR REPLACE INTO settings (id, shop_name, address, phone, created_at, updated_at) \
-             VALUES (1, ?1, ?2, ?3, ?4, ?5)",
-            params![shop_name, address, phone, ts, ts],
+            "INSERT OR REPLACE INTO settings (id, shop_name, address, phone, gstin, created_at, updated_at) \
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)",
+            params![shop_name, address, phone, gstin, ts, ts],
         )?;
 
         conn.execute(
@@ -204,6 +204,7 @@ pub fn first_launch_setup<R: tauri::Runtime>(
     shop_name: String,
     address: String,
     phone: String,
+    gstin: Option<String>,
     decoy_pin: Option<String>,
     duress_pin: Option<String>,
     fake_shop_name: Option<String>,
@@ -216,10 +217,10 @@ pub fn first_launch_setup<R: tauri::Runtime>(
         .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
     log::info!("[SETUP] App dir: {:?}", app_dir);
     std::fs::create_dir_all(&app_dir)?;
-    let db_path: PathBuf = app_dir.join(obs!("paintkiduakan.db"));
+    let db_path: PathBuf = app_dir.join(crate::security::app_paths::db_name());
 
     let session =
-        first_launch_setup_at_path(&state, &db_path, pin, passphrase, shop_name, address, phone)?;
+        first_launch_setup_at_path(&state, &db_path, pin, passphrase, shop_name, address, phone, gstin)?;
 
     if let (Some(dp), Some(dup), Some(fs)) = (decoy_pin, duress_pin, fake_shop_name) {
         log::info!("[SETUP] Provisioning decoy DB (PDE)...");
@@ -278,7 +279,7 @@ pub fn restore_from_recovery(
                 .path()
                 .app_data_dir()
                 .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
-            app_dir.join(obs!("paintkiduakan.db"))
+            app_dir.join(crate::security::app_paths::db_name())
         }
     };
 
@@ -605,6 +606,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .expect("first_launch_setup should succeed");
 
@@ -671,6 +673,7 @@ mod tests {
             "Test Shop".to_string(),
             "123 Test St".to_string(),
             "+919876543210".to_string(),
+            None,
         )
         .expect("first_launch_setup_at_path should succeed");
 
@@ -737,6 +740,7 @@ mod tests {
             "Roundtrip Shop".to_string(),
             "Addr".to_string(),
             "+919876543210".to_string(),
+            None,
         )
         .expect("setup must succeed");
 
@@ -786,6 +790,7 @@ mod tests {
             "Shop".to_string(),
             "Addr".to_string(),
             "+919876543210".to_string(),
+            None,
         )
         .expect("setup must succeed");
 
@@ -826,6 +831,7 @@ mod tests {
             "Shop".to_string(),
             "Addr".to_string(),
             "+919876543210".to_string(),
+            None,
         )
         .expect("setup must succeed");
 
@@ -864,6 +870,7 @@ mod tests {
             "Old Shop".to_string(),
             "Old Addr".to_string(),
             "+919876543210".to_string(),
+            None,
         )
         .expect("first setup must succeed");
         drop(state);
@@ -878,6 +885,7 @@ mod tests {
             "New Shop".to_string(),
             "New Addr".to_string(),
             "+919876543210".to_string(),
+            None,
         )
         .expect("re-setup on existing files must wipe and rebuild");
         drop(state);

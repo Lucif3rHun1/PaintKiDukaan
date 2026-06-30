@@ -9,7 +9,7 @@ import {
   listCustomerTypes,
   renameCustomerType,
 } from "./api";
-import { DataTable } from "../../components/ui";
+import { Alert, DataTable } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { type CustomerType } from "../types";
@@ -93,9 +93,7 @@ export function ManageTypes() {
       </form>
 
       {error && (
-        <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">{error}</Alert>
       )}
 
       <DataTable

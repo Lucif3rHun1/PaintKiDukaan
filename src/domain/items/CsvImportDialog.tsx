@@ -3,21 +3,20 @@ import type { ImportColumn } from "../../components/SpreadsheetImportDialog";
 import { importItemsCsv } from "./api";
 
 const COLUMNS: ImportColumn[] = [
-  { name: "name", required: true, example: "Asian Paints Apex" },
-  { name: "sku", required: false, example: "AP-APEX-20L" },
-  { name: "barcode", required: false, example: "8901234567890" },
-  { name: "brand", required: false, example: "Asian Paints" },
-  { name: "category", required: false, example: "Exterior" },
-  { name: "unit", required: false, example: "L / kg / pc / box / bundle / roll" },
-  { name: "sell_unit", required: false, example: "unit or box" },
-  { name: "units_per_pack", required: false, example: "1", type: "number" },
-  { name: "retail_price", required: false, example: "1500", type: "number" },
-  { name: "cost_price", required: false, example: "1200", type: "number" },
-  { name: "promo_price", required: false, example: "1400", type: "number" },
-  { name: "min_stock", required: false, example: "5", type: "number" },
-  { name: "primary_location", required: false, example: "Shop Floor" },
-  { name: "sub_location", required: false, example: "Rack A" },
-  { name: "position", required: false, example: "Shelf 3" },
+  { name: "name (or Product, Item Name, Description)", required: true, example: "Asian Paints Apex" },
+  { name: "sku (or SKU Code, Item Code, Product Code)", required: false, example: "AP-APEX-20L" },
+  { name: "barcode (or EAN, UPC, GTIN)", required: false, example: "8901234567890" },
+  { name: "brand (or Manufacturer, Company)", required: false, example: "Asian Paints" },
+  { name: "category (or Group, Type, Classification)", required: false, example: "Exterior" },
+  { name: "sell_unit (or Sale Unit, UOM, Measure)", required: false, example: "unit or box" },
+  { name: "units_per_pack (or Pack Size, Pack Qty)", required: false, example: "1", type: "number" },
+  { name: "retail_price (or MRP, Selling Price, Price)", required: false, example: "1500", type: "number" },
+  { name: "cost_price (or Cost, Purchase Price, Buy Price)", required: false, example: "1200", type: "number" },
+  { name: "promo_price (or Offer Price, Discount Price, Special Price)", required: false, example: "1400", type: "number" },
+  { name: "min_stock (or Reorder Level, Minimum Stock, Alert Level)", required: false, example: "5", type: "number" },
+  { name: "primary_location (or Location, Warehouse, Store, Godown)", required: false, example: "Shop Floor" },
+  { name: "sub_location (or Rack, Zone, Aisle)", required: false, example: "Rack A" },
+  { name: "position (or Shelf, Bin, Spot)", required: false, example: "Shelf 3" },
 ];
 
 interface Props {

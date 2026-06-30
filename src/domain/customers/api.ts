@@ -35,12 +35,6 @@ export async function listCustomers(
   });
 }
 
-export async function lookupCustomer(
-  phone: string,
-): Promise<Customer | null> {
-  return invoke<Customer | null>("lookup_customer", { phone });
-}
-
 export async function customerOutstanding(
   id: number,
 ): Promise<CustomerOutstanding> {

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Save, Search, Trash2, UserMinus, UserPlus } from "lucide-react";
 
-import { Alert, Badge, Button, Card, InlineDialog, KbdHint, Money, MoneyInput, QtyInput, Select } from "../../components/ui";
+import { Alert, Badge, Button, Card, InlineDialog, KbdHint, Money, MoneyInput, PageHeader, QtyInput, Select } from "../../components/ui";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
@@ -15,8 +16,10 @@ import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
 import type { ItemSearchHit, PaymentSplit, ReturnCartLine } from "../types";
 import type { FormulaSearchHit } from "../../domain/types";
+import { formatHitName } from "../../domain/items/display";
+import { formatRupeesFromPaise } from "../../lib/money";
 import { deleteDraft } from "../api";
-import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
+import { PageBadgeCtx, useAutosave, useDirtyForm, registerDirtyChecker, unregisterDirtyChecker } from "../hooks";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
@@ -29,6 +32,7 @@ interface Props {
 }
 
 export default function ReturnPage({ user, onBack }: Props) {
+  const queryClient = useQueryClient();
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
@@ -61,6 +65,11 @@ export default function ReturnPage({ user, onBack }: Props) {
   useEffect(() => {
     if (!draftLoading && draftData.lines.length > 0) markDirty();
   }, [draftData, draftLoading, markDirty]);
+
+  useEffect(() => {
+    registerDirtyChecker(() => isDirty);
+    return () => unregisterDirtyChecker();
+  }, [isDirty]);
 
   useEffect(() => {
     if (draftRestored.current) return;
@@ -150,7 +159,7 @@ export default function ReturnPage({ user, onBack }: Props) {
     lines.some((line) => line.qty > 0) &&
     locationId > 0 &&
     (user.role === "owner" || ownerPin.trim().length > 0) &&
-    refundAmount <= subtotal;
+    refundAmount === subtotal;
 
   function addLineFromItem(hit: ItemSearchHit | FormulaSearchHit) {
     if ("kind" in hit && hit.kind === "formula") {
@@ -171,7 +180,7 @@ export default function ReturnPage({ user, onBack }: Props) {
         {
           sale_item_id: 0,
           item_id: item.id,
-          item_name: item.name,
+          item_name: formatHitName(item),
           qty: 1,
           price: item.retail_price_paise,
           unit_code: item.unit_code,
@@ -244,8 +253,8 @@ export default function ReturnPage({ user, onBack }: Props) {
   async function submit() {
     if (submitting) return;
     if (lines.length === 0) return;
-    if (refundAmount > subtotal) {
-      setFormError("Refund tenders cannot exceed the return total.");
+    if (refundAmount !== subtotal) {
+      setFormError("Refund tenders must equal the return total.");
       return;
     }
     if (subtotal > 0 && paymentSplits.length === 0) {
@@ -262,6 +271,14 @@ export default function ReturnPage({ user, onBack }: Props) {
         setFormError(`Return qty for ${line.item_name} exceeds sold qty (${line.original_qty}).`);
         return;
       }
+      if (line.sale_item_id === 0) {
+        setFormError(`Item ${line.item_name} is not linked to an original sale line. Remove it or start the return from a sale.`);
+        return;
+      }
+    }
+    if (subtotal > 0 && refundAmount !== subtotal) {
+      setFormError(`Refund total must equal the return subtotal (${formatRupeesFromPaise(subtotal)}).`);
+      return;
     }
     const saleIds = returnLines.map((l) => l.sale_id).filter((id): id is number => id != null && id > 0);
     const derivedSaleId = saleIds.length > 0 && saleIds.every((id) => id === saleIds[0]) ? saleIds[0] : 0;
@@ -290,6 +307,9 @@ export default function ReturnPage({ user, onBack }: Props) {
       clearAll();
       void resetDraft();
       resetDirty();
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["sales-list"] });
       setStatus(`Return #${saved} saved`);
     } catch (e) {
       setStatus(`Error: ${extractError(e)}`);
@@ -321,8 +341,11 @@ export default function ReturnPage({ user, onBack }: Props) {
     <PageBadgeCtx.Provider value={{ status: draftStatus, draft }}>
     <div className="pb-32" data-pos-tab="sales-return">
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+        <PageHeader
+          title="New return"
+          description="Reverse sold items, record refund tenders, and keep stock movement traceable."
+          accent="red"
+          actions={
             <Button
               type="button"
               variant="ghost"
@@ -338,8 +361,8 @@ export default function ReturnPage({ user, onBack }: Props) {
             >
               Returns
             </Button>
-            <h1 className="text-base font-semibold text-foreground">New return</h1>
-          </div>
+          }
+        >
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <KbdHint keys="F9" /> Save
@@ -348,12 +371,12 @@ export default function ReturnPage({ user, onBack }: Props) {
               <KbdHint keys="Esc" /> Clear
             </span>
           </div>
-        </div>
+        </PageHeader>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="space-y-4">
             <Card as="section" className="space-y-3 p-4">
-              <h2 className="text-sm font-semibold text-foreground">Customer</h2>
+              <h2 className="text-lg font-semibold text-foreground">Customer</h2>
               {customer ? (
                 <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm">
                   <div className="min-w-0">
@@ -395,7 +418,7 @@ export default function ReturnPage({ user, onBack }: Props) {
 
             <Card as="section" className="space-y-4 p-4">
               <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
-                <h2 className="text-sm font-semibold text-foreground">Cart</h2>
+                <h2 className="text-lg font-semibold text-foreground">Cart</h2>
                 <span className="text-xs text-muted-foreground">
                   {lines.length} {lines.length === 1 ? "item" : "items"}
                 </span>
@@ -479,13 +502,13 @@ export default function ReturnPage({ user, onBack }: Props) {
                 </table>
               </div>
 
-              <ItemSearchInput onPick={addLineFromItem} allowOutOfStock acceptFormula={false} display={{ showBrand: true }} />
+              {/* Manual item search removed: returns must be linked to an original sale line. */}
             </Card>
           </div>
 
           <div className="space-y-4">
             <Card as="section" className="space-y-4 p-4">
-              <h2 className="text-sm font-semibold text-foreground">Return summary</h2>
+              <h2 className="text-lg font-semibold text-foreground">Return summary</h2>
 
               <label className="block space-y-1 text-sm">
                 <span className="font-medium text-foreground">Return location</span>
@@ -530,7 +553,7 @@ export default function ReturnPage({ user, onBack }: Props) {
 
             <Card as="section" className="space-y-4 p-4">
               <div>
-                <h2 className="text-sm font-semibold text-foreground">Refund tenders</h2>
+                <h2 className="text-lg font-semibold text-foreground">Refund tenders</h2>
                 <p className="text-xs text-muted-foreground">Splits represent money returned to the customer.</p>
               </div>
               <SplitPayment total={subtotal} splits={paymentSplits} onChange={setPaymentSplits} />

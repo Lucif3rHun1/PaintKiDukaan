@@ -23,7 +23,7 @@ export function Section({
     <section className={cn("space-y-3", className)}>
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <h3 className="text-lg font-semibold text-foreground">{title}</h3>
           {description && (
             <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
           )}

@@ -290,7 +290,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
                       </td>
                       <td className="py-2 text-right tabular-nums">
                         {line.qty}
-                        {line.unit_type && line.unit_type !== "unit" ? ` ${line.unit_type}` : ""}
+                        {line.unit_type && line.unit_type !== "pcs" ? ` ${line.unit_type}` : ""}
                       </td>
                       <td className="py-2 text-right">
                         <Money paise={line.price} />

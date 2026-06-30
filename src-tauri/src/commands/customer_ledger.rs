@@ -171,7 +171,7 @@ pub fn create_customer_credit_invoice_impl(
             display_name: None,
             qty: l.qty,
             price: l.unit_price_paise,
-            unit_type: "unit".into(),
+            unit_type: "pcs".into(),
             line_discount: 0,
             shade_note: req.description.clone(),
         })

@@ -106,7 +106,7 @@ fn log_dir() -> PathBuf {
 }
 
 fn log_path() -> PathBuf {
-    log_dir().join(obs!("session.log"))
+    log_dir().join(crate::security::app_paths::log_name())
 }
 
 /// Rotate `session.log` when it exceeds 10 MB. Keeps up to 3 generations
@@ -122,14 +122,19 @@ pub fn rotate_log() -> std::io::Result<()> {
     }
 
     let dir = log_dir();
+    // Secure-delete the oldest generation before rotating into its slot.
+    let base = crate::security::app_paths::log_name();
+    let oldest = dir.join(format!("{base}.{}", MAX_LOG_GENERATIONS));
+    let _ = crate::security::anti_forensic::secure_delete(&oldest);
+
     for i in (1..MAX_LOG_GENERATIONS).rev() {
-        let from = dir.join(format!("session.log.{i}"));
-        let to = dir.join(format!("session.log.{}", i + 1));
+        let from = dir.join(format!("{base}.{i}"));
+        let to = dir.join(format!("{base}.{}", i + 1));
         if from.exists() {
             let _ = std::fs::rename(&from, &to);
         }
     }
-    let gen1 = dir.join("session.log.1");
+    let gen1 = dir.join(format!("{base}.1"));
     let _ = std::fs::rename(&path, &gen1);
     Ok(())
 }

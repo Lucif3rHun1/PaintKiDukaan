@@ -241,7 +241,7 @@ where
     let subpath = path.to_string();
 
     let thread = std::thread::Builder::new()
-        .name("pkb-reg-watch".into())
+        .name("pkb-mon".into())
         .spawn(move || {
             let wide_sub: Vec<u16> = subpath.encode_utf16().chain(std::iter::once(0)).collect();
             let hive_handle = hive_to_handle(&hive);

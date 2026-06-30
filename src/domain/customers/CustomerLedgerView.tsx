@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import {
+  Alert,
   Button,
   DataTable,
   InlineDialog,
@@ -12,11 +13,13 @@ import {
 import type { ColumnDef } from "../../components/ui";
 import { formatDateForDisplay } from "../../lib/date";
 import { fetchCustomerLedger, createCustomerCreditInvoice } from "./api";
-import { listItems } from "../items/api";
+import { listBrands, listItems } from "../items/api";
+import { formatItemName } from "../items/display";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import type {
   AppError,
+  Brand,
   Customer,
   CustomerLedger,
   CustomerLedgerTransaction,
@@ -58,7 +61,7 @@ export function CustomerLedgerView({ customer }: Props) {
       </div>
 
       {error && (
-        <p className="mb-3 rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+        <Alert variant="destructive" className="mb-3">{error}</Alert>
       )}
 
       {!ledger ? (
@@ -175,6 +178,7 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
   const [description, setDescription] = useState("");
   const [lines, setLines] = useState<LocalLine[]>([{ item_id: 0, qty: 1, unit_price_paise: 0 }]);
   const [items, setItems] = useState<Item[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -185,6 +189,9 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
         console.error("[CustomerLedgerView] failed to load items", e);
         setItems([]);
       });
+    listBrands()
+      .then((d) => setBrands(d ?? []))
+      .catch(() => setBrands([]));
   }, []);
 
   const total = useMemo(
@@ -280,7 +287,7 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
                         { value: "0", label: "Select item…" },
                         ...items.map((item) => ({
                           value: String(item.id),
-                          label: `${item.name} (${item.unit_code})`,
+                          label: `${formatItemName(item, brands)} (${item.unit_code})`,
                         })),
                       ]}
                       size="md"
@@ -336,7 +343,7 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
             Total: <Money paise={total} className="ml-1" />
           </div>
 
-          {error && <p className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+          {error && <Alert variant="destructive">{error}</Alert>}
 
           <div className="flex justify-end gap-2 border-t border-border pt-4">
             <Button

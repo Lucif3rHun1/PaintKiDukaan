@@ -130,9 +130,10 @@ pub fn list(db: &Db, filter: FormulaFilter) -> AppResult<Vec<Formula>> {
                   WHERE si.formula_id = f.id AND s.status = 'final') AS sales_count, \
                 (SELECT MAX(s.created_at) FROM sale_items si JOIN sales s ON s.id = si.sale_id \
                   WHERE si.formula_id = f.id AND s.status = 'final') AS last_sold_at, \
-                f.base_item_id, bi.name AS base_item_name \
+                f.base_item_id, COALESCE(b.name || ' · ' || bi.name, bi.name) AS base_item_name \
          FROM formulas f \
          LEFT JOIN items bi ON bi.id = f.base_item_id \
+         LEFT JOIN brands b ON b.id = bi.brand_id \
          WHERE 1=1",
     );
     let mut bound: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -171,9 +172,10 @@ pub fn get_by_id(db: &Db, id: i64) -> AppResult<Option<Formula>> {
                           WHERE si.formula_id = f.id AND s.status = 'final') AS sales_count, \
                         (SELECT MAX(s.created_at) FROM sale_items si JOIN sales s ON s.id = si.sale_id \
                           WHERE si.formula_id = f.id AND s.status = 'final') AS last_sold_at, \
-                        f.base_item_id, bi.name AS base_item_name \
+                        f.base_item_id, COALESCE(b.name || ' · ' || bi.name, bi.name) AS base_item_name \
                  FROM formulas f \
                  LEFT JOIN items bi ON bi.id = f.base_item_id \
+                 LEFT JOIN brands b ON b.id = bi.brand_id \
                  WHERE f.id = ?1",
                 params![id],
                 row_to_formula,
@@ -491,7 +493,7 @@ mod tests {
                 "INSERT INTO items (id, sku_code, name, unit_code, unit_label, unit, sell_unit, \
                                     retail_price_paise, cost_paise, primary_location_id, min_stock, is_active, \
                                     created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, 'pc', 'piece', 'pc', 'unit', 100, 50, 1, 0, 1, 0, 0)",
+                 VALUES (?1, ?2, ?3, 'pc', 'piece', 'pc', 'pcs', 100, 50, 1, 0, 1, 0, 0)",
                 rusqlite::params![id, sku, name],
             )?;
             Ok(())
@@ -680,8 +682,8 @@ mod tests {
             )?;
             c.execute(
                 "INSERT INTO sale_items (sale_id, kind, item_id, formula_id, qty, price, unit_type, line_discount, shade_note, line_order) \
-                 VALUES (?1, 'formula', NULL, ?2, 1, 250, 'unit', 0, NULL, 0)",
-                rusqlite::params![qtn, formula_id],
+                 VALUES (?1, 'formula', NULL, ?2, 1, 250, 'pcs', 0, NULL, 0)",
+                 rusqlite::params![qtn, formula_id],
             )?;
             let fin: i64 = c.query_row(
                 "INSERT INTO sales (no, customer_id, date, status, subtotal, bill_discount, total, paid_amount, payment_modes_json, user_id) \
@@ -691,8 +693,8 @@ mod tests {
             )?;
             c.execute(
                 "INSERT INTO sale_items (sale_id, kind, item_id, formula_id, qty, price, unit_type, line_discount, shade_note, line_order) \
-                 VALUES (?1, 'formula', NULL, ?2, 1, 250, 'unit', 0, NULL, 0)",
-                rusqlite::params![fin, formula_id],
+                 VALUES (?1, 'formula', NULL, ?2, 1, 250, 'pcs', 0, NULL, 0)",
+                 rusqlite::params![fin, formula_id],
             )?;
             Ok(())
         })
@@ -749,9 +751,10 @@ mod tests {
                     kind: "formula".into(),
                     item_id: None,
                     formula_id: Some(formula_id),
+                    display_name: None,
                     qty: 1.0,
                     price: 250,
-                    unit_type: "unit".into(),
+                    unit_type: "pcs".into(),
                     line_discount: 0,
                     shade_note: None,
                 }],
@@ -814,8 +817,8 @@ mod tests {
                 )?;
                 c.execute(
                     "INSERT INTO sale_items (sale_id, kind, item_id, formula_id, qty, price, unit_type, line_discount, shade_note, line_order) \
-                     VALUES (?1, 'formula', NULL, ?2, 1, 100, 'unit', 0, NULL, 0)",
-                    rusqlite::params![sale_id, formula_id],
+                     VALUES (?1, 'formula', NULL, ?2, 1, 100, 'pcs', 0, NULL, 0)",
+                     rusqlite::params![sale_id, formula_id],
                 )?;
             }
             Ok(())
@@ -849,8 +852,8 @@ mod tests {
             )?;
             c.execute(
                 "INSERT INTO sale_items (sale_id, kind, item_id, formula_id, qty, price, unit_type, line_discount, shade_note, line_order) \
-                 VALUES (?1, 'formula', NULL, ?2, 1, 100, 'unit', 0, NULL, 0)",
-                rusqlite::params![walkin, formula_id],
+                 VALUES (?1, 'formula', NULL, ?2, 1, 100, 'pcs', 0, NULL, 0)",
+                 rusqlite::params![walkin, formula_id],
             )?;
             let acme: i64 = c.query_row(
                 "INSERT INTO sales (no, customer_id, date, status, subtotal, bill_discount, total, paid_amount, payment_modes_json, user_id) \
@@ -861,8 +864,8 @@ mod tests {
             )?;
             c.execute(
                 "INSERT INTO sale_items (sale_id, kind, item_id, formula_id, qty, price, unit_type, line_discount, shade_note, line_order) \
-                 VALUES (?1, 'formula', NULL, ?2, 1, 100, 'unit', 0, NULL, 0)",
-                rusqlite::params![acme, formula_id],
+                 VALUES (?1, 'formula', NULL, ?2, 1, 100, 'pcs', 0, NULL, 0)",
+                 rusqlite::params![acme, formula_id],
             )?;
             Ok(())
         })
@@ -899,9 +902,10 @@ mod tests {
                         kind: "item".into(),
                         item_id: Some(1),
                         formula_id: None,
+                        display_name: None,
                         qty: 1.0,
                         price: 100,
-                        unit_type: "unit".into(),
+                        unit_type: "pcs".into(),
                         line_discount: 0,
                         shade_note: None,
                     },
@@ -909,9 +913,10 @@ mod tests {
                         kind: "formula".into(),
                         item_id: None,
                         formula_id: Some(formula_id),
+                        display_name: None,
                         qty: 1.0,
                         price: 100,
-                        unit_type: "unit".into(),
+                        unit_type: "pcs".into(),
                         line_discount: 0,
                         shade_note: None,
                     },
@@ -964,9 +969,10 @@ mod tests {
                         kind: "item".into(),
                         item_id: Some(1),
                         formula_id: None,
+                        display_name: None,
                         qty: 2.0,
                         price: 100,
-                        unit_type: "unit".into(),
+                        unit_type: "pcs".into(),
                         line_discount: 0,
                         shade_note: None,
                     },
@@ -974,9 +980,10 @@ mod tests {
                         kind: "formula".into(),
                         item_id: None,
                         formula_id: Some(formula_id),
+                        display_name: None,
                         qty: 1.0,
                         price: 250,
-                        unit_type: "unit".into(),
+                        unit_type: "pcs".into(),
                         line_discount: 0,
                         shade_note: None,
                     },

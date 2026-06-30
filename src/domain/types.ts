@@ -71,12 +71,17 @@ export interface Item {
   name: string;
   brand: string | null;
   category: string | null;
+  /** Denormalized from sale_units.code — display only, never mutate via this */
   unit_code: string;
+  /** Denormalized from sale_units.label — display only */
   unit_label: string;
+  /** @deprecated Alias for unit_code. Kept for migration compat. */
   unit: string;
-  /** @deprecated Use sell_unit ("unit" | "mtr" | "kg") instead. Kept for migration compat. */
+  /** @deprecated Use sell_unit instead. Kept for migration compat. */
   units_per_pack: number | null;
+  /** Denormalized sale unit code ("unit" | "mtr" | "kg") — display only */
   sell_unit: string;
+  /** Canonical FK to sale_units table — use this for all mutations */
   sell_unit_id: number | null;
   retail_price_paise: number;
   cost_paise: number;
@@ -109,8 +114,7 @@ export type ItemLookup =
       name: string;
       retail_price_paise: number;
       sell_unit: string;
-      unit_code: string;
-      unit_label: string | null;
+      unit: string;
       /** @deprecated Kept for migration compat. */
       units_per_pack: number | null;
       in_stock: number;
@@ -139,11 +143,15 @@ export interface NewItem {
   brand?: string | null;
   brand_id?: number | null;
   category?: string | null;
+  /** Optional — backend auto-fills from sell_unit_id if provided */
   unit_code?: string | null;
+  /** Optional — backend auto-fills from sell_unit_id if provided */
   unit_label?: string | null;
   /** @deprecated Use sell_unit instead. Kept for migration compat. */
   units_per_pack?: number | null;
+  /** Denormalized unit code — optional, backend derives from sell_unit_id */
   sell_unit?: string;
+  /** Canonical FK — prefer setting this over sell_unit string */
   sell_unit_id?: number | null;
   retail_price_paise: number;
   cost_paise: number;
@@ -165,7 +173,9 @@ export interface ItemUpdate {
   category?: string | null;
   /** @deprecated Use sell_unit instead. Kept for migration compat. */
   units_per_pack?: number | null;
+  /** Denormalized unit code — optional, backend derives from sell_unit_id */
   sell_unit?: string | null;
+  /** Canonical FK — prefer setting this over sell_unit string */
   sell_unit_id?: number | null;
   retail_price_paise?: number | null;
   cost_paise?: number | null;
@@ -350,15 +360,12 @@ export interface Category {
   is_active: boolean;
 }
 
-export interface ConversionResult {
-  unit_code: string;
-  units_per_pack: number | null;
-  qty_in_base_units: number;
-}
-
-// ── New 3-unit system ────────────────────────────────────────────────
-
-export type SellUnitCode = "unit" | "mtr" | "kg";
+// ── Unit model ──────────────────────────────────────────────────────
+// Every item has exactly two independent unit FKs:
+//   sell_unit_id     → sale_units table     (what the item is sold as)
+//   purchase_unit_id → purchase_units table  (via item_purchase_packaging)
+// The denormalized string fields (unit_code, unit_label, unit, sell_unit)
+// are returned by the backend for display — never use them for mutations.
 
 export interface SaleUnit {
   id: number;

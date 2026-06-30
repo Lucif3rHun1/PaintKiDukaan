@@ -123,13 +123,11 @@ export interface NewPurchase {
   vendor_id: number | null;
   date?: string | null;
   notes?: string | null;
-  auto_print_label: boolean;
   lines: InwardLine[];
 }
 
 export interface PurchaseCreated {
   id: number;
-  print_label: boolean;
 }
 
 export interface PurchaseItem {

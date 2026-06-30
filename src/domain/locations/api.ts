@@ -1,6 +1,6 @@
 /**
  * Locations API. Slice B owns the table and the create/rename/deactivate
- * commands. Read by ItemForm's LocationAutocomplete and Settings (Slice D).
+ * commands. Read by ItemForm and Settings (Slice D).
  */
 import { invoke } from "../ipc";
 import type { Location, NewLocation, SubLocation } from "../types";
@@ -27,10 +27,6 @@ export async function renameLocation(
     new_name: newName,
     new_zone: newZone,
   });
-}
-
-export async function deactivateLocation(id: number): Promise<void> {
-  return invoke<void>("deactivate_location", { id });
 }
 
 export async function listSubLocations(

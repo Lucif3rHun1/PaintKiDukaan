@@ -146,6 +146,14 @@ export function DataTable<T>({
                     rowExtra,
                   )}
                   onClick={onRowClick ? () => onRowClick(row, index) : undefined}
+                  tabIndex={onRowClick ? 0 : undefined}
+                  role={onRowClick ? "button" : undefined}
+                  onKeyDown={onRowClick ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onRowClick(row, index);
+                    }
+                  } : undefined}
                 >
                 {columns.map((col) => (
                   <td

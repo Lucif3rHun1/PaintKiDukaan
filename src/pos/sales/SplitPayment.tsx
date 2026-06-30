@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { Button, MoneyInput } from "../../components/ui";
 import type { PaymentMode, PaymentSplit } from "../types";
+import { getPref, setPref } from "../../lib/storage";
 
 interface Props {
   total: number;
@@ -37,7 +38,8 @@ export function SplitPayment({ total, splits, onChange }: Props) {
     if (!initializedDefaultSplit.current) {
       initializedDefaultSplit.current = true;
       if (total > 0 && splits.length === 0) {
-        onChange([{ mode: "cash", amount: total }]);
+        const savedMode = getPref<QuickPaymentMode>("sale:lastPaymentMode", "cash");
+        onChange([{ mode: savedMode, amount: total }]);
       }
       return;
     }
@@ -67,6 +69,7 @@ export function SplitPayment({ total, splits, onChange }: Props) {
   }
 
   function addOrFocusSplit(mode: QuickPaymentMode) {
+    setPref("sale:lastPaymentMode", mode);
     const existingIndex = splits.findIndex((split) => split.mode === mode);
     if (existingIndex >= 0) {
       focusAmountInput(existingIndex);

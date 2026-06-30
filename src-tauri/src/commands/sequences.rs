@@ -66,13 +66,13 @@ impl Kind {
     }
 }
 
-/// Mint the next number for `kind` and return it as a fully-formatted string.
-///
-/// Atomic increments of either `daily_counters` (INV/QTN/RET) or the legacy
-/// `sequences` table (SKU), and reads it back.
-pub fn mint_next(db: &Db, kind: Kind) -> anyhow::Result<String> {
+/// Mint the next number using an existing connection (for use inside a
+/// caller-managed transaction). This avoids the reentrant-mutex deadlock that
+/// would occur if `mint_next` (which calls `db.with_conn_immediate`) were
+/// called from inside another `with_conn_immediate` closure.
+pub fn mint_next_with_conn(c: &rusqlite::Connection, kind: Kind) -> anyhow::Result<String> {
     match kind {
-        Kind::Sku => db.with_conn_immediate(|c| {
+        Kind::Sku => {
             let next: i64 = c.query_row(
                 "INSERT INTO sequences(name,last_value)
                      VALUES (?1, 1)
@@ -83,41 +83,43 @@ pub fn mint_next(db: &Db, kind: Kind) -> anyhow::Result<String> {
                 |r| r.get(0),
             )?;
             Ok(format_number_sku(next))
-        }),
+        }
         Kind::SaleInv | Kind::SaleQtn | Kind::SaleRet => {
             let date = today_ddmmyyyy();
-            let date_for_closure = date.clone();
-            db.with_conn_immediate(move |c| {
-                let next: i64 = c.query_row(
-                    "INSERT INTO daily_counters(prefix,date,last_serial)
-                         VALUES (?1,?2,1)
-                         ON CONFLICT(prefix,date) DO UPDATE
-                           SET last_serial = last_serial + 1
-                         RETURNING last_serial",
-                    rusqlite::params![kind.daily_prefix(), &date_for_closure],
-                    |r| r.get(0),
-                )?;
-                Ok(format_number_daily(kind, next, &date_for_closure))
-            })
+            let next: i64 = c.query_row(
+                "INSERT INTO daily_counters(prefix,date,last_serial)
+                     VALUES (?1,?2,1)
+                     ON CONFLICT(prefix,date) DO UPDATE
+                       SET last_serial = last_serial + 1
+                     RETURNING last_serial",
+                rusqlite::params![kind.daily_prefix(), &date],
+                |r| r.get(0),
+            )?;
+            Ok(format_number_daily(kind, next, &date))
         }
         // FBill starts at 101 so it continues after invoice/quote/return (which start at 1).
         Kind::SaleFbk => {
             let date = today_ddmmyyyy();
-            let date_for_closure = date.clone();
-            db.with_conn_immediate(move |c| {
-                let next: i64 = c.query_row(
-                    "INSERT INTO daily_counters(prefix,date,last_serial)
-                         VALUES (?1,?2,101)
-                         ON CONFLICT(prefix,date) DO UPDATE
-                           SET last_serial = last_serial + 1
-                         RETURNING last_serial",
-                    rusqlite::params![kind.counter_key(), &date_for_closure],
-                    |r| r.get(0),
-                )?;
-                Ok(format_number_daily(kind, next, &date_for_closure))
-            })
+            let next: i64 = c.query_row(
+                "INSERT INTO daily_counters(prefix,date,last_serial)
+                     VALUES (?1,?2,101)
+                     ON CONFLICT(prefix,date) DO UPDATE
+                       SET last_serial = last_serial + 1
+                     RETURNING last_serial",
+                rusqlite::params![kind.counter_key(), &date],
+                |r| r.get(0),
+            )?;
+            Ok(format_number_daily(kind, next, &date))
         }
     }
+}
+
+/// Mint the next number for `kind` and return it as a fully-formatted string.
+///
+/// Atomic increments of either `daily_counters` (INV/QTN/RET) or the legacy
+/// `sequences` table (SKU), and reads it back.
+pub fn mint_next(db: &Db, kind: Kind) -> anyhow::Result<String> {
+    db.with_conn_immediate(move |c| mint_next_with_conn(c, kind))
 }
 
 /// Mint only when the kind is sale-style (Invoice, Quotation, or Return). SKU
@@ -127,6 +129,18 @@ pub fn mint_next_sale_no(db: &Db, kind: Kind) -> anyhow::Result<String> {
     match kind {
         Kind::SaleInv | Kind::SaleQtn | Kind::SaleRet | Kind::SaleFbk => mint_next(db, kind),
         Kind::Sku => anyhow::bail!("mint_next_sale_no called with Sku"),
+    }
+}
+
+pub fn mint_next_sale_no_with_conn(
+    c: &rusqlite::Connection,
+    kind: Kind,
+) -> anyhow::Result<String> {
+    match kind {
+        Kind::SaleInv | Kind::SaleQtn | Kind::SaleRet | Kind::SaleFbk => {
+            mint_next_with_conn(c, kind)
+        }
+        Kind::Sku => anyhow::bail!("mint_next_sale_no_with_conn called with Sku"),
     }
 }
 

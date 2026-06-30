@@ -1,4 +1,5 @@
 pub mod amsi_check;
+pub mod app_paths;
 pub mod anti_debug;
 pub mod anti_dump;
 pub mod anti_forensic;
@@ -16,6 +17,7 @@ pub mod ipc_auth;
 pub mod mitigation_policy;
 pub mod ntdll_integrity;
 pub mod pde;
+pub mod pde_seed;
 pub mod pin_entry;
 pub mod priv_strip;
 pub mod raw_input;
@@ -27,6 +29,7 @@ pub mod secure_log;
 pub mod self_integrity;
 pub mod string_obfusc;
 pub mod syscall;
+pub mod telemetry_suppress;
 pub mod usb_watch;
 
 pub use amsi_check::*;
@@ -217,10 +220,14 @@ fn run_security_init_inner(
     // Registry watch (non-blocking, spawns thread)
     match registry_watch::watch_critical_keys(|| {
         log::warn!("security: critical registry key changed");
+        hostile_env::increment_registry_change_count();
     }) {
         Ok(_) => log::info!("security: registry watch started"),
         Err(e) => log::warn!("security: registry watch failed: {e}"),
     }
+
+    // Telemetry suppression (ETW/AppCompat/Prefetch/Timeline)
+    telemetry_suppress::suppress_all();
 
     // Anti-forensic periodic scrub
     if let Err(e) = anti_forensic::install(app, state) {

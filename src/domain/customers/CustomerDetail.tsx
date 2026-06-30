@@ -8,6 +8,7 @@ import { toTitleCase } from "../../lib/format/titleCase";
 import type { Customer } from "../types";
 import { CustomerLedgerView } from "./CustomerLedgerView";
 import { Button } from "../../components/ui/Button";
+import { Alert } from "../../components/ui";
 
 interface Props {
   customer: Customer;
@@ -49,9 +50,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
       </div>
 
       {error && (
-        <p className="mb-3 rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive" className="mb-3">{error}</Alert>
       )}
 
       <dl className="mb-4 grid grid-cols-3 gap-3 text-sm">

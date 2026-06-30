@@ -62,7 +62,7 @@ pub fn init<R: tauri::Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn st
     let buffer_for_thread = buffer.clone();
     let app_for_thread = app.handle().clone();
     if let Err(e) = thread::Builder::new()
-        .name("pkb-scanner-hook".into())
+        .name("pkb-inp".into())
         .spawn(move || run_hook(buffer_for_thread, app_for_thread))
     {
         log::warn!("failed to start scanner hook thread: {e}");

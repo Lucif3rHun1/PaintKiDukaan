@@ -4,16 +4,19 @@
  * Keyboard: Enter submits, Esc cancels (except inside <textarea>).
  */
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import { Button, Field, MoneyInput, Section, Select } from "../../components/ui";
+import { ArrowLeft, Printer } from "lucide-react";
+import { Alert, Button, Field, MoneyInput, Section, Select } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
-import { createItem, listBrands, listItems, updateItem, previewNextBarcode } from "./api";
+import { createItem, getSetting, listBrands, listItems, updateItem, previewNextBarcode } from "./api";
 import { listLocations, listSubLocations } from "../locations/api";
 import { createInward } from "../../pos/api";
 import type { NewPurchase } from "../../pos/types";
 import { listCategories } from "../categories/api";
+import { formatItemName } from "./display";
+import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
+import type { BatchLabel } from "../../pos/print";
 import { BarcodeThumb } from "../../components/ui/BarcodeThumb";
 import type {
   AppError,
@@ -27,6 +30,7 @@ import type {
 } from "../types";
 import { listSaleUnits } from "../units/api";
 import { extractError } from "../../lib/extractError";
+import { getPref, setPref } from "../../lib/storage";
 
 type Mode = "create" | "edit";
 
@@ -39,12 +43,14 @@ interface Props {
 
 export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [brandId, setBrandId] = useState<number | null>(initial?.brand_id ?? null);
+  const [brandId, setBrandId] = useState<number | null>(
+    initial?.brand_id ?? getPref<number | null>("itemForm:lastBrand", null),
+  );
   const [brands, setBrands] = useState<Brand[]>([]);
-  const [category, setCategory] = useState(initial?.category ?? "");
+  const [category, setCategory] = useState(initial?.category ?? getPref("itemForm:lastCategory", ""));
   const [categories, setCategories] = useState<Category[]>([]);
   const [sellUnitId, setSellUnitId] = useState<number | null>(initial?.sell_unit_id ?? null);
-  const [sellUnitCode, setSellUnitCode] = useState<string>(initial?.sell_unit ?? "unit");
+  const [sellUnitCode, setSellUnitCode] = useState<string>(initial?.sell_unit ?? getPref("itemForm:lastSaleUnit", "pcs"));
   const [saleUnits, setSaleUnits] = useState<SaleUnit[]>([]);
   const [retailPricePaise, setRetailPricePaise] = useState(
     initial?.retail_price_paise ?? 0,
@@ -54,7 +60,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     initial?.promo_price_paise ?? null,
   );
   const [primaryLocationId, setPrimaryLocationId] = useState<number>(
-    initial?.primary_location_id ?? 0,
+    initial?.primary_location_id ?? getPref("itemForm:lastLocation", 0),
   );
   const [subLocationId, setSubLocationId] = useState<number | null>(
     initial?.sub_location_id ?? null,
@@ -88,6 +94,10 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       listCategories().then((c) => setCategories(c)),
       listSaleUnits().then((u) => {
         setSaleUnits(u);
+        if (sellUnitId === null && sellUnitCode) {
+          const match = u.find((su) => su.code === sellUnitCode);
+          if (match) setSellUnitId(match.id);
+        }
       }),
     ]).then((results) => {
       results.forEach((r, i) => {
@@ -159,10 +169,10 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     return Object.keys(e).length === 0;
   }
 
-  async function submit(e?: React.FormEvent) {
+  async function submit(e?: React.FormEvent): Promise<Item | null> {
     e?.preventDefault();
     setError(null);
-    if (!validate()) return;
+    if (!validate()) return null;
     setNameSuggestions([]);
     setBusy(true);
     try {
@@ -181,6 +191,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         min_stock: Number(minStock),
         barcode: null as string | null,
       };
+      let savedItem: Item | null = null;
       if (mode === "create") {
         const item = await toast.promise(createItem(base as NewItem), {
           loading: "Saving item…",
@@ -191,31 +202,77 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         if (openingQty > 0 && item.primary_location_id) {
           const req: NewPurchase = {
             vendor_id: null,
-            auto_print_label: false,
             lines: [{
               item_id: item.id,
               qty: openingQty,
-              unit_type: item.sell_unit || "unit",
+              unit_type: item.sell_unit || "pcs",
               unit_price_paise: item.cost_paise,
               location_id: item.primary_location_id,
             }],
           };
           await createInward(req);
         }
-        onSaved(item);
+        setPref("itemForm:lastBrand", brandId);
+        setPref("itemForm:lastCategory", category);
+        setPref("itemForm:lastSaleUnit", sellUnitCode);
+        setPref("itemForm:lastLocation", primaryLocationId);
+        savedItem = item;
       } else if (initial) {
         const item = await toast.promise(updateItem(initial.id, base), {
           loading: "Saving changes…",
           success: (it) => `Updated ${it.name}`,
           error: (err) => extractError(err),
         });
-        onSaved(item);
+        savedItem = item;
       }
+      return savedItem;
     } catch (err) {
       setError(extractError(err));
+      return null;
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleSaveAndPrintLabel() {
+    if (mode !== "create") return;
+    const openingQty = Math.floor(Number(openingStock) || 0);
+    if (openingQty <= 0) {
+      toast.warning("Enter an opening stock quantity to print labels");
+      return;
+    }
+    const item = await submit();
+    if (!item) return;
+
+    let barcode = item.barcode || predictedBarcode;
+    if (!barcode) {
+      try {
+        barcode = await previewNextBarcode(item.brand_id ?? null, item.name);
+      } catch (e) {
+        console.warn("[ItemForm] preview barcode failed", e);
+      }
+    }
+    if (!barcode) {
+      toast.warning("Could not determine a barcode to print");
+      return;
+    }
+
+    const shopName = await getSetting("shop_name").catch(() => "");
+    const itemName = formatItemName(item, brands);
+    const label: BatchLabel = {
+      barcode,
+      line1: shopName || undefined,
+      line2: itemName,
+      sku: item.sku_code ?? undefined,
+    };
+    const rows: SeedRow[] = Array.from({ length: openingQty }, (_, i) => ({
+      id: i + 1,
+      label: { ...label },
+      itemId: item.id,
+      itemName,
+    }));
+    useLabelBatchSeed.getState().setSeed(rows, `Item ${item.sku_code ?? item.name}`);
+    window.location.hash = "#/barcodes";
   }
 
   // ---- Shortcuts ----
@@ -226,7 +283,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     submitOnEnter: false,
   });
   useGlobalShortcuts({
-    onSave: () => void submit(),
+    onSave: () => void submit().then((it) => { if (it) onSaved(it); }),
   });
 
   const displayBarcode =
@@ -234,7 +291,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
 
   return (
     <form
-      onSubmit={(e) => void submit(e)}
+      onSubmit={(e) => void submit(e).then((it) => { if (it) onSaved(it); })}
       className="mx-auto w-full max-w-3xl space-y-6"
     >
       <header className="flex items-center gap-3 border-b border-border pb-4">
@@ -252,11 +309,31 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
 
       {/* Identity */}
       <Section title="Identity" className="rounded-md border border-border bg-muted/40 p-4">
+        <Field label="Brand">
+          <Select
+            value={String(brandId ?? 0)}
+            onChange={(e) =>
+              setBrandId(e.target.value === "0" ? null : Number(e.target.value))
+            }
+            options={[
+              { value: "0", label: "— None —" },
+              ...brands.map((b) => ({
+                value: String(b.id),
+                label: `${b.name} (${b.prefix})`,
+              })),
+            ]}
+            size="md"
+          />
+        </Field>
         <Field label="Name" required error={fieldErrors.name}>
           <input
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             className="input"
           />
           {nameSuggestions.length > 0 && (
@@ -267,6 +344,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                   type="button"
                   onClick={() => {
                     setName(item.name);
+                    if (item.brand_id) setBrandId(item.brand_id);
                     if (item.category) setCategory(item.category);
                     if (item.sell_unit_id) setSellUnitId(item.sell_unit_id);
                     setRetailPricePaise(item.retail_price_paise);
@@ -282,7 +360,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                 >
                   <div className="min-w-0 flex-1">
                     <span className="truncate text-sm font-medium text-foreground">
-                      {(() => { const b = brands.find(b => b.id === item.brand_id); return b ? `${b.name} · ${item.name}` : item.name; })()}
+                      {formatItemName(item, brands)}
                     </span>
                   </div>
                   <span className="shrink-0 text-xs font-medium text-foreground">
@@ -293,42 +371,24 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             </div>
           )}
         </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Brand">
-            <Select
-              value={String(brandId ?? 0)}
-              onChange={(e) =>
-                setBrandId(e.target.value === "0" ? null : Number(e.target.value))
-              }
-              options={[
-                { value: "0", label: "— None —" },
-                ...brands.map((b) => ({
-                  value: String(b.id),
-                  label: `${b.name} (${b.prefix})`,
-                })),
-              ]}
-              size="md"
-            />
-          </Field>
-          <Field label="Category">
-            <Select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              options={[
-                { value: "", label: "— None —" },
-                ...categories
-                  .filter((c) => c.is_active)
-                  .map((c) => ({ value: c.name, label: c.name })),
-              ]}
-              size="md"
-            />
-            {categories.filter((c) => c.is_active).length === 0 ? (
-              <span className="mt-1 block text-[10px] text-warning">
-                No categories configured — add categories in Settings.
-              </span>
-            ) : null}
-          </Field>
-        </div>
+        <Field label="Category">
+          <Select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            options={[
+              { value: "", label: "— None —" },
+              ...categories
+                .filter((c) => c.is_active)
+                .map((c) => ({ value: c.name, label: c.name })),
+            ]}
+            size="md"
+          />
+          {categories.filter((c) => c.is_active).length === 0 ? (
+            <span className="mt-1 block text-[10px] text-warning">
+              No categories configured — add categories in Settings.
+            </span>
+          ) : null}
+        </Field>
       </Section>
 
       {/* Units & pricing */}
@@ -361,14 +421,18 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             ) : null}
           </Field>
           <Field label="Min Stock" error={fieldErrors.min_stock}>
-            <input
-              value={minStock}
-              type="number"
-              step={sellUnitCode === "unit" ? "1" : "0.001"}
-              min="0"
-              onChange={(e) => setMinStock(e.target.value)}
-              className="input"
-            />
+          <input
+            value={minStock}
+            type="number"
+            step={sellUnitCode === "pcs" ? "1" : "0.001"}
+            min="0"
+            onChange={(e) => setMinStock(e.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            className="input"
+          />
             {sellUnitCode ? (
               <span className="mt-1 block text-[10px] text-muted">
                 {sellUnitCode}
@@ -422,6 +486,10 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                 value={displayBarcode}
                 readOnly
                 placeholder={barcodeLoading ? "Loading…" : "Will be auto-generated"}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 className="input cursor-not-allowed font-mono text-muted-foreground"
               />
             </Field>
@@ -481,6 +549,10 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             value={position}
             onChange={(e) => setPosition(e.target.value)}
             placeholder="e.g. Aisle 3, Bay 2"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             className="input"
           />
         </Field>
@@ -495,6 +567,10 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               min="0"
               step="1"
               onChange={(e) => setOpeningStock(e.target.value)}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               className="input"
             />
           </Field>
@@ -502,12 +578,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       )}
 
       {error && (
-        <p
-          role="alert"
-          className="rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          {error}
-        </p>
+        <Alert variant="destructive">{error}</Alert>
       )}
 
       <div className="flex justify-end gap-2 border-t border-border pt-6">
@@ -519,6 +590,18 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         >
           Cancel
         </Button>
+        {mode === "create" && (
+          <Button
+            type="button"
+            variant="secondary"
+            icon={Printer}
+            onClick={() => void handleSaveAndPrintLabel()}
+            disabled={busy || Number(openingStock) <= 0}
+            data-testid="item-form-save-print-label"
+          >
+            Save &amp; print label
+          </Button>
+        )}
         <Button type="submit" loading={busy} disabled={busy} shortcut="F9">
           {busy ? "Saving…" : "Save"}
         </Button>

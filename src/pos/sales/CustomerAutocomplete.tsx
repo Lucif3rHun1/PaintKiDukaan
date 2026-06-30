@@ -129,6 +129,10 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
             // Defer blur so click events on dropdown items fire first
             blurTimeoutRef.current = setTimeout(() => setFocused(false), 150);
           }}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           className="input h-10 w-full pl-9 pr-3"
         />
       </div>
@@ -208,4 +212,3 @@ function CustomerOption({ customer, onSelect, showBalance, showType }: { custome
     </button>
   );
 }
-

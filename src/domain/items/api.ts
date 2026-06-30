@@ -5,7 +5,6 @@
 import { invoke } from "../ipc";
 import type {
   Brand,
-  ConversionResult,
   ImportResult,
   Item,
   ItemFilter,
@@ -38,22 +37,8 @@ export async function lookupItem(code: string): Promise<ItemLookup | null> {
   return invoke<ItemLookup | null>("lookup_item", { code });
 }
 
-export async function boxUnitConversion(
-  itemId: number,
-  qty: number,
-): Promise<ConversionResult> {
-  return invoke<ConversionResult>("box_unit_conversion", {
-    item_id: itemId,
-    qty,
-  });
-}
-
 export async function listBrands(): Promise<Brand[]> {
   return invoke<Brand[]>("list_brands");
-}
-
-export async function getBrand(id: number): Promise<Brand> {
-  return invoke<Brand>("get_brand", { id });
 }
 
 export async function createBrand(name: string, codePrefix: string): Promise<Brand> {

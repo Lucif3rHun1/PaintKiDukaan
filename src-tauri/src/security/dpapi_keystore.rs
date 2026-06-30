@@ -223,27 +223,66 @@ mod platform {
 
     use crate::crypto::wrap;
 
-    const SERVICE: &str = "paintkiduakan-master";
+    fn service() -> String { crate::obs!("paintkiduakan-master") }
 
     /// Per-DB keyring user derived from SHA-256 of the db_id (first 8 bytes → 16 hex chars).
     fn keyring_user(db_id: &str) -> String {
         let digest = Sha256::digest(db_id.as_bytes());
         let hex_id: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
-        format!("keystore-aes-key-v1-{hex_id}")
+        format!("{}-{hex_id}", crate::obs!("keystore-aes-key-v1"))
     }
 
     fn keyring_entry(user: &str) -> Result<Entry, super::DpapiError> {
-        Entry::new(SERVICE, user).map_err(|e| super::DpapiError::KeyringStore(e.to_string()))
+        Entry::new(&service(), user).map_err(|e| super::DpapiError::KeyringStore(e.to_string()))
     }
 
-    /// Deterministic key from APP_DPAPI_ENTROPY + hostname + db_id.
+    fn read_machine_id() -> String {
+        #[cfg(target_os = "macos")]
+        {
+            read_macos_platform_uuid().unwrap_or_default()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            std::fs::read_to_string("/etc/machine-id")
+                .or_else(|_| std::fs::read_to_string("/proc/sys/kernel/random/boot_id"))
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn read_macos_platform_uuid() -> Option<String> {
+        extern "C" {
+            fn sysctlbyname(
+                name: *const u8,
+                oldp: *mut u8,
+                oldlenp: *mut usize,
+                newp: *const u8,
+                newlen: usize,
+            ) -> i32;
+        }
+        let name = b"kern.uuid\0";
+        let mut buf = vec![0u8; 64];
+        let mut len = buf.len();
+        let ret = unsafe {
+            sysctlbyname(name.as_ptr(), buf.as_mut_ptr(), &mut len, std::ptr::null(), 0)
+        };
+        if ret != 0 {
+            return None;
+        }
+        while buf.last() == Some(&0) {
+            buf.pop();
+        }
+        String::from_utf8(buf).ok()
+    }
+
+    /// Deterministic key from APP_DPAPI_ENTROPY + stable machine ID + db_id.
     fn derive_key(db_id: &str) -> [u8; 32] {
-        let hostname = std::env::var("HOSTNAME")
-            .or_else(|_| std::env::var("COMPUTERNAME"))
-            .unwrap_or_default();
+        let machine_id = read_machine_id();
         let mut hasher = Sha256::new();
-        hasher.update(super::APP_DPAPI_ENTROPY);
-        hasher.update(hostname.as_bytes());
+        hasher.update(crate::obs!("paintkiduakan-master.keystore.v1").as_bytes());
+        hasher.update(machine_id.as_bytes());
         hasher.update(db_id.as_bytes());
         let digest = hasher.finalize();
         let mut key = [0u8; 32];
@@ -280,8 +319,20 @@ mod platform {
 
     pub fn dpapi_decrypt(ciphertext: &[u8], db_id: &str) -> Result<Vec<u8>, super::DpapiError> {
         let key = get_or_create_key(db_id)?;
-        wrap::decrypt_blob(&key, ciphertext)
-            .map_err(|e| super::DpapiError::KeyringRetrieve(e.to_string()))
+        if let Ok(plain) = wrap::decrypt_blob(&key, ciphertext) {
+            return Ok(plain);
+        }
+        // Keyring entry drifted (e.g. macOS Keychain cleared); fall back to the
+        // deterministic derivation. On success, re-store the derived key so future
+        // decryptions use the fast cached path again.
+        let fallback = derive_key(db_id);
+        let plain = wrap::decrypt_blob(&fallback, ciphertext)
+            .map_err(|e| super::DpapiError::KeyringRetrieve(e.to_string()))?;
+        if let Ok(entry) = keyring_entry(&keyring_user(db_id)) {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(fallback);
+            let _ = entry.set_password(&encoded);
+        }
+        Ok(plain)
     }
 }
 

@@ -2,11 +2,21 @@
 //! score, triggers configurable response (warn / lock / wipe).
 
 use serde::Serialize;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::anti_debug::{self, DebugReport};
 use super::anti_sniff::{self, SniffReport};
 use super::anti_vm::{self, VmReport};
 use super::ntdll_integrity::{self, NtdllReport};
+
+/// Counts registry change events fired by the background `registry_watch` thread.
+/// Incremented via `increment_registry_change_count()` from the watch callback.
+static REGISTRY_CHANGES: AtomicU8 = AtomicU8::new(0);
+
+/// Called from the registry watch callback when a monitored key changes.
+pub fn increment_registry_change_count() {
+    REGISTRY_CHANGES.fetch_add(1, Ordering::Relaxed);
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -55,16 +65,33 @@ const NTDLL_WEIGHT: u8 = 15;
 /// Run all hostile environment detectors and compute a weighted risk score.
 ///
 /// Score weighting:
-/// - debug:  35 points max
-/// - vm:     35 points max
-/// - sniff:  15 points max
-/// - ntdll:  15 points max (hooks detected = 100 → 15 weighted)
+/// - debug:          35 points max
+/// - vm:             35 points max
+/// - sniff:          15 points max
+/// - ntdll:          15 points max (hooks detected = 100 → 15 weighted)
+/// - amsi bypass:    +30 flat (Windows only — non-Windows returns "unknown")
+/// - registry changes: +20 per change, capped at +40
 pub fn check_all() -> HostileEnvReport {
     let debug = anti_debug::detect();
     let vm = anti_vm::detect();
     let sniff = anti_sniff::detect();
     let ntdll = ntdll_integrity::check_ntdll_integrity();
-    let score = compute_score(&debug, &vm, &sniff, &ntdll);
+    let mut score = compute_score(&debug, &vm, &sniff, &ntdll);
+
+    // AMSI bypass detection (Windows only — is_amsi_bypassed() returns true on
+    // non-Windows because AMSI is unavailable, which would always add 30 pts).
+    #[cfg(target_os = "windows")]
+    {
+        if super::amsi_check::is_amsi_bypassed() {
+            score = score.saturating_add(30);
+        }
+    }
+
+    // Registry changes detected by the background watch thread.
+    let reg_changes = REGISTRY_CHANGES.load(Ordering::Relaxed);
+    score = score.saturating_add(reg_changes.saturating_mul(20).min(40));
+
+    score = score.min(100);
 
     HostileEnvReport {
         debug,

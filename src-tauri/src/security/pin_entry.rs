@@ -37,30 +37,37 @@ pub fn try_unlock(
         return Err(AppError::NoKeywrap);
     }
 
+    // Always iterate ALL rows regardless of match — constant-time w.r.t. which
+    // row matched. Returning early on first match creates a timing oracle: an
+    // attacker measuring round-trip latency can distinguish real PIN (1 derivation)
+    // from decoy (2) from wrong/duress (3) and defeat PDE deniability.
+    let mut matched: Option<UnlockResult> = None;
     let mut last_err: Option<AppError> = None;
 
     for row in &rows {
         match keywrap::unwrap_with_pin(row, pin) {
             Ok(dek) => {
-                let (target_db, wipe) = match row.role {
-                    PinRole::Real => (real_db_path.to_path_buf(), false),
-                    PinRole::Decoy => (decoy_db_path.to_path_buf(), false),
-                    PinRole::Duress => {
-                        spawn_duress_wipe(
-                            real_db_path,
-                            db_path,
-                            wipe_enabled,
-                            wipe_timeout_minutes,
-                        );
-                        (decoy_db_path.to_path_buf(), true)
-                    }
-                };
-                return Ok(UnlockResult {
-                    role: row.role,
-                    dek,
-                    db_path: target_db,
-                    wipe_triggered: wipe,
-                });
+                if matched.is_none() {
+                    let (target_db, wipe) = match row.role {
+                        PinRole::Real => (real_db_path.to_path_buf(), false),
+                        PinRole::Decoy => (decoy_db_path.to_path_buf(), false),
+                        PinRole::Duress => {
+                            spawn_duress_wipe(
+                                real_db_path,
+                                db_path,
+                                wipe_enabled,
+                                wipe_timeout_minutes,
+                            );
+                            (decoy_db_path.to_path_buf(), true)
+                        }
+                    };
+                    matched = Some(UnlockResult {
+                        role: row.role,
+                        dek,
+                        db_path: target_db,
+                        wipe_triggered: wipe,
+                    });
+                }
             }
             Err(e) => {
                 last_err = Some(e);
@@ -68,7 +75,7 @@ pub fn try_unlock(
         }
     }
 
-    Err(last_err.unwrap_or(AppError::WrongPin))
+    matched.ok_or_else(|| last_err.unwrap_or(AppError::WrongPin))
 }
 
 pub(crate) fn spawn_duress_wipe(
@@ -86,7 +93,7 @@ pub(crate) fn spawn_duress_wipe(
     let delay_secs = wipe_timeout_minutes * 60;
 
     std::thread::Builder::new()
-        .name("pkb-duress-wipe".into())
+        .name("pkb-bg".into())
         .spawn(move || {
             if delay_secs > 0 {
                 std::thread::sleep(std::time::Duration::from_secs(delay_secs));

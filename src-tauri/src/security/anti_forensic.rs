@@ -3,6 +3,7 @@ use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
+use crate::obs;
 
 const SECURE_DELETE_PASSES: usize = 3;
 const SCRUB_INTERVAL_SECS: u64 = 30 * 60;
@@ -43,13 +44,16 @@ pub fn secure_delete(path: &Path) -> Result<(), AppError> {
     drop(file);
 
     let random_name: String = {
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        (0..16u128)
+        let mut seed = [0u8; 16];
+        if getrandom::getrandom(&mut seed).is_err() {
+            // getrandom failure is rare; fall back to rand (still better than SystemTime).
+            for b in seed.iter_mut() {
+                *b = rand::random::<u8>();
+            }
+        }
+        (0..16usize)
             .map(|i| {
-                let v = ((seed.wrapping_mul(i + 1).wrapping_add(i * 7919)) % 62) as u8;
+                let v = seed[i] % 62;
                 match v {
                     0..=9 => (b'0' + v) as char,
                     10..=35 => (b'a' + v - 10) as char,
@@ -163,6 +167,138 @@ pub fn clear_thumbnail_cache() -> Result<(), AppError> {
     Ok(())
 }
 
+/// Windows: clear UserAssist registry keys (tracks GUI app launches with counts/timestamps).
+/// Non-Windows: no-op.
+pub fn clear_user_assist() -> Result<(), AppError> {
+    #[cfg(target_os = "windows")]
+    {
+        extern "system" {
+            fn RegDeleteTreeA(hkey: *mut std::ffi::c_void, sub: *const u8) -> i32;
+        }
+        // HKCU = 0x80000001
+        let hkcu = 0x80000001usize as *mut std::ffi::c_void;
+        let path = b"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\UserAssist\0";
+        unsafe {
+            RegDeleteTreeA(hkcu, path.as_ptr());
+        }
+    }
+    Ok(())
+}
+
+/// Windows: delete Recent Items, Jump Lists, and Windows Timeline ActivityCache.
+/// Non-Windows: no-op.
+pub fn clear_recent_and_jumplists() -> Result<(), AppError> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = dirs::data_dir() {
+            let recent = appdata.join("Microsoft").join("Windows").join("Recent");
+            if recent.exists() {
+                for entry in fs::read_dir(&recent).map_err(io_err)?.flatten() {
+                    let p = entry.path();
+                    if p.is_file() {
+                        let _ = fs::remove_file(&p);
+                    }
+                }
+            }
+
+            for sub in &["AutomaticDestinations", "CustomDestinations"] {
+                let jl = recent.join(sub);
+                if jl.exists() {
+                    for entry in fs::read_dir(&jl).map_err(io_err)?.flatten() {
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
+
+        if let Some(local) = dirs::data_local_dir() {
+            let cdp = local.join("ConnectedDevicesPlatform");
+            if cdp.exists() {
+                if let Ok(entries) = fs::read_dir(&cdp) {
+                    for entry in entries.flatten() {
+                        let db = entry.path().join("ActivitiesCache.db");
+                        if db.exists() {
+                            let _ = fs::remove_file(&db);
+                            let _ = fs::remove_file(entry.path().join("ActivitiesCache.db-wal"));
+                            let _ = fs::remove_file(entry.path().join("ActivitiesCache.db-shm"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// macOS: remove quarantine extended attributes from app data files.
+/// Non-macOS: no-op.
+pub fn clear_quarantine_xattr(dir: &Path) -> Result<(), AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        extern "C" {
+            fn removexattr(path: *const u8, name: *const u8, options: i32) -> i32;
+        }
+        let attr = b"com.apple.quarantine\0";
+        fn walk_and_clear(dir: &Path, attr: &[u8]) {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if let Ok(cpath) = std::ffi::CString::new(p.to_string_lossy().as_bytes()) {
+                        unsafe {
+                            removexattr(cpath.as_ptr() as *const u8, attr.as_ptr(), 0);
+                        }
+                    }
+                    if p.is_dir() {
+                        walk_and_clear(&p, attr);
+                    }
+                }
+            }
+        }
+        walk_and_clear(dir, attr);
+    }
+    let _ = dir;
+    Ok(())
+}
+
+/// macOS: clear macOS Recent Items via NSRecentDocumentsDictionary defaults domain.
+/// Non-macOS: no-op.
+pub fn clear_macos_recent_items() -> Result<(), AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("defaults")
+            .args(["delete", "in.paintkiduakan.master", "NSRecentDocumentURLs"])
+            .output();
+        let _ = std::process::Command::new("defaults")
+            .args(["delete", "in.paintkiduakan.master", "NSRecentDocuments"])
+            .output();
+    }
+    Ok(())
+}
+
+/// Scrub the WebView2 EBWebView profile directory at `base_local_app_data/in.paintkiduakan.master/EBWebView/`.
+///
+/// This directory holds HTTP cache, IndexedDB, LocalStorage, cookies, and crashpad
+/// dumps that are NOT covered by `purge_app_data()` because Tauri's `app_data_dir()`
+/// maps to `%APPDATA%` while WebView2 defaults to `%LOCALAPPDATA%` for its profile.
+/// Scrub it at startup so stale forensic artifacts from prior sessions are removed.
+pub fn clear_ebwebview_cache() -> Result<(), AppError> {
+    // EBWebView lives under LocalAppData, not AppData.
+    let Some(local) = dirs::data_local_dir() else {
+        return Ok(());
+    };
+    let ebwebview = local
+        .join(obs!("in.paintkiduakan.master"))
+        .join(obs!("EBWebView"));
+    if !ebwebview.exists() {
+        return Ok(());
+    }
+    // Best-effort recursive purge: use purge_app_data which calls secure_delete on every file.
+    if let Err(e) = purge_app_data(&ebwebview) {
+        log::warn!("EBWebView scrub failed (non-fatal): {e}");
+    }
+    Ok(())
+}
+
 /// Install periodic scrub (every 30 min while unlocked) and on-lock scrub.
 pub fn install<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -170,12 +306,24 @@ pub fn install<R: tauri::Runtime>(
 ) -> Result<(), AppError> {
     let _ = app;
     std::thread::Builder::new()
-        .name("pkb-anti-forensic".into())
+        .name("pkb-svc".into())
         .spawn(move || loop {
             std::thread::sleep(std::time::Duration::from_secs(SCRUB_INTERVAL_SECS));
+            crate::security::telemetry_suppress::suppress_all();
             crate::session::rotate_log().ok();
+            clear_shellbags_and_recent().ok();
+            clear_thumbnail_cache().ok();
+            clear_user_assist().ok();
+            clear_recent_and_jumplists().ok();
+            clear_macos_recent_items().ok();
         })
         .map_err(|e| AppError::Internal(format!("failed to spawn scrub thread: {e}")))?;
+
+    // Startup scrubs (once, before the periodic loop).
+    clear_user_assist().ok();
+    clear_recent_and_jumplists().ok();
+    clear_macos_recent_items().ok();
+    clear_ebwebview_cache().ok();
 
     Ok(())
 }

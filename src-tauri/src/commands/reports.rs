@@ -161,12 +161,13 @@ pub fn stock_report(db: &Db) -> Result<StockReport, ReportsError> {
         let mut by_location: Vec<StockRow> = Vec::new();
         {
             let mut stmt = c.prepare(
-                "SELECT sb.item_id, i.sku_code, i.name, sb.location_id, l.name, sb.qty,
+                "SELECT sb.item_id, i.sku_code, COALESCE(b.name || ' · ' || i.name, i.name), sb.location_id, l.name, sb.qty,
                         i.min_stock
                  FROM stock_balances sb
                  JOIN items i ON i.id = sb.item_id
+                 LEFT JOIN brands b ON b.id = i.brand_id
                  JOIN locations l ON l.id = sb.location_id
-                 ORDER BY i.name, l.name",
+                 ORDER BY COALESCE(b.name || ' · ' || i.name, i.name), l.name",
             )?;
             let rows = stmt.query_map([], |r| {
                 Ok(StockRow {
@@ -497,7 +498,7 @@ pub struct TopItemRow {
     pub item_id: i64,
     pub name: String,
     pub total_qty: f64,
-    pub total_value: i64,
+    pub total_value: f64,
 }
 
 pub fn top_items_sold(
@@ -508,11 +509,12 @@ pub fn top_items_sold(
 ) -> Result<Vec<TopItemRow>, ReportsError> {
     db.with_conn(|c| -> Result<Vec<TopItemRow>, ReportsError> {
         let mut stmt = c.prepare(
-            "SELECT si.item_id, i.name, SUM(si.qty) AS total_qty,
+            "SELECT si.item_id, COALESCE(b.name || ' · ' || i.name, i.name), SUM(si.qty) AS total_qty,
                     SUM(si.qty * si.price) AS total_value
              FROM sale_items si
              JOIN sales s ON s.id = si.sale_id
              JOIN items i ON i.id = si.item_id
+             LEFT JOIN brands b ON b.id = i.brand_id
              WHERE s.status = 'final'
                AND si.item_id IS NOT NULL
                AND date(s.date) BETWEEN ?1 AND ?2
@@ -552,7 +554,7 @@ pub fn cmd_top_items_sold(
 pub struct TopCustomerRow {
     pub customer_id: Option<i64>,
     pub name: String,
-    pub total_value: i64,
+    pub total_value: f64,
     pub bill_count: i64,
 }
 
@@ -611,11 +613,12 @@ pub fn top_items_purchased(
         let from_ms = date_to_ms(from_date);
         let to_ms = date_to_ms(to_date).saturating_add(86_400_000);
         let mut stmt = c.prepare(
-            "SELECT pi.item_id, i.name, SUM(pi.qty) AS total_qty,
+            "SELECT pi.item_id, COALESCE(b.name || ' · ' || i.name, i.name), SUM(pi.qty) AS total_qty,
                     SUM(pi.line_total_paise) AS total_value
              FROM purchase_items pi
              JOIN purchases p ON p.id = pi.purchase_id
              JOIN items i ON i.id = pi.item_id
+             LEFT JOIN brands b ON b.id = i.brand_id
              WHERE p.bill_date >= ?1 AND p.bill_date < ?2
              GROUP BY pi.item_id
              ORDER BY total_qty DESC
@@ -654,7 +657,7 @@ pub fn cmd_top_items_purchased(
 pub struct TopVendorRow {
     pub vendor_id: Option<i64>,
     pub name: String,
-    pub total_value: i64,
+    pub total_value: f64,
 }
 
 pub fn top_vendors(
@@ -775,16 +778,17 @@ pub fn dead_stock(db: &Db, days_idle: i64) -> Result<Vec<DeadStockRow>, ReportsE
         let threshold_ms =
             chrono::Utc::now().timestamp_millis() - days_idle.saturating_mul(86_400_000);
         let mut stmt = c.prepare(
-            "SELECT i.id, i.name, COALESCE(SUM(sb.qty), 0) AS current_qty,
+            "SELECT i.id, COALESCE(b.name || ' · ' || i.name, i.name), COALESCE(SUM(sb.qty), 0) AS current_qty,
                     MAX(sm.created_at) AS last_sale_ms
              FROM items i
+             LEFT JOIN brands b ON b.id = i.brand_id
              LEFT JOIN stock_balances sb ON sb.item_id = i.id
              LEFT JOIN stock_movements sm
                     ON sm.item_id = i.id AND sm.type = 'sale' AND sm.created_at >= ?1
              WHERE i.is_active = 1
              GROUP BY i.id
              HAVING current_qty > 0 AND last_sale_ms IS NULL
-             ORDER BY i.name
+             ORDER BY COALESCE(b.name || ' · ' || i.name, i.name)
              LIMIT 50",
         )?;
         let rows = stmt.query_map(params![threshold_ms], |r| {
@@ -1132,12 +1136,12 @@ mod tests {
             )?;
             c.execute(
                 "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
-                 VALUES ('SK001','111','Red 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior','L','Liter',1,10000,5000,1,'unit',NULL,2,0,0)",
+                 VALUES ('SK001','111','Red 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior','L','Liter',1,10000,5000,1,'pcs',NULL,2,0,0)",
                 [],
             )?;
             c.execute(
                 "INSERT INTO items (sku_code, barcode, name, brand_id, category, unit_code, unit_label, units_per_pack, retail_price_paise, cost_paise, is_active, sell_unit, sell_unit_id, min_stock, created_at, updated_at)
-                 VALUES ('SK002','222','Blue 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior','L','Liter',1,15000,8000,1,'unit',NULL,2,0,0)",
+                 VALUES ('SK002','222','Blue 4L',(SELECT id FROM brands WHERE name='AsianPaints' LIMIT 1),'Interior','L','Liter',1,15000,8000,1,'pcs',NULL,2,0,0)",
                 [],
             )?;
             c.execute(
@@ -1190,7 +1194,7 @@ mod tests {
                     formula_id: None,
                     qty: 1.0,
                     price: amt,
-                    unit_type: "unit".into(),
+                    unit_type: "pcs".into(),
                     line_discount: 0,
                     shade_note: None,
                 }],
@@ -1276,11 +1280,10 @@ mod tests {
                 vendor_id: Some(1),
                 date: Some("2026-06-18".into()),
                 notes: None,
-                auto_print_label: false,
                 lines: vec![crate::commands::purchases::InwardLine {
                     item_id: 1,
                     qty: 2.0,
-                    unit_type: "unit".into(),
+                    unit_type: "pcs".into(),
                     unit_price_paise: 5000,
                     location_id: 1,
                 }],
