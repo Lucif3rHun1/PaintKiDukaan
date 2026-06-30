@@ -211,14 +211,20 @@ pub fn run() {
                         if let RawWindowHandle::Win32(w32) = wh.as_raw() {
                             let hwnd_isize = w32.hwnd.get() as isize;
 
-                            match security::anti_screenshot::WindowProtectionGuard::protect(hwnd_isize) {
-                                Ok(guard) => {
-                                    // Intentionally leak: protection must outlive the setup
-                                    // closure for the process lifetime.
-                                    std::mem::forget(guard);
-                                    log::info!("security: window screenshot protection active");
+                            // WDA_EXCLUDEFROMCAPTURE breaks WebView2 rendering in VM
+                            // environments because the virtual GPU driver uses the
+                            // same capture path that the flag blocks.
+                            let in_vm = security::anti_vm::detect().hypervisor_cpu;
+                            if in_vm {
+                                log::info!("security: window screenshot protection skipped (VM/hypervisor detected)");
+                            } else {
+                                match security::anti_screenshot::WindowProtectionGuard::protect(hwnd_isize) {
+                                    Ok(guard) => {
+                                        std::mem::forget(guard);
+                                        log::info!("security: window screenshot protection active");
+                                    }
+                                    Err(e) => log::warn!("security: screenshot protection failed: {e}"),
                                 }
-                                Err(e) => log::warn!("security: screenshot protection failed: {e}"),
                             }
 
                             match security::usb_watch::register_usb_watch(hwnd_isize as usize) {

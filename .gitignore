@@ -57,3 +57,4 @@ vite.config.js
 # Tauri signing (platform-specific)
 src-tauri/bundle/**
 src-tauri/updater.key
+src-tauri/*.bak
