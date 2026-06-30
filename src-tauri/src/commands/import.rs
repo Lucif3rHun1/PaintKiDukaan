@@ -107,7 +107,7 @@ fn parse_csv(raw: &str) -> (Vec<String>, Vec<Vec<String>>) {
 fn header_map(headers: &[String]) -> std::collections::HashMap<String, usize> {
     let mut map = std::collections::HashMap::new();
     for (i, h) in headers.iter().enumerate() {
-        map.insert(h.to_lowercase().replace(' ', "_"), i);
+        map.insert(h.trim().to_lowercase().replace(' ', "_"), i);
     }
     map
 }
@@ -171,6 +171,9 @@ pub fn cmd_import_items_csv(
     if headers.is_empty() {
         return Err(AppError::Validation("CSV has no headers".into()));
     }
+    if rows.is_empty() {
+        return Err(AppError::Validation("CSV has headers but no data rows".into()));
+    }
     let hmap = header_map(&headers);
 
     // name is required
@@ -218,17 +221,15 @@ pub fn cmd_import_items_csv(
     // Default location
     let default_location_id = locations.values().next().copied().unwrap_or(1);
 
-    // Fetch existing items for upsert matching (name, sku, barcode → id)
     let existing_items: Vec<ExistingItemRow> = db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT id, name, sku_code, barcode FROM items WHERE is_active = 1",
+            "SELECT id, name, sku_code FROM items WHERE is_active = 1",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(ExistingItemRow {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 sku_code: r.get(2)?,
-                barcode: r.get(3)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -339,11 +340,20 @@ pub fn cmd_import_items_csv(
             if let Some(item_id) = existing_id {
                 // ── UPSERT: update existing item's mutable fields ──
                 // SKU is never overwritten; barcode is kept if already set
-                let final_barcode = tx
-                    .query_row("SELECT barcode FROM items WHERE id = ?1", params![item_id], |r| r.get::<_, Option<String>>(0))
-                    .unwrap_or(None)
-                    .or(barcode)
-                    .unwrap_or_else(|| sku_code.clone().unwrap_or_else(|| auto_sku(tx)));
+                let final_barcode = match tx.query_row(
+                    "SELECT barcode FROM items WHERE id = ?1",
+                    params![item_id],
+                    |r| r.get::<_, Option<String>>(0),
+                ) {
+                    Ok(Some(existing)) => existing,
+                    Ok(None) | Err(rusqlite::Error::QueryReturnedNoRows) => {
+                        match barcode.or(sku_code.clone()) {
+                            Some(value) => value,
+                            None => auto_sku(tx)?,
+                        }
+                    }
+                    Err(e) => return Err(AppError::from(e)),
+                };
 
                 let _ = tx.execute(
                     "UPDATE items SET
@@ -393,7 +403,10 @@ pub fn cmd_import_items_csv(
                 result.created += 1; // counts as "processed"
             } else {
                 // ── INSERT: new item ──
-                let final_sku = sku_code.unwrap_or_else(|| auto_sku(tx));
+                let final_sku = match sku_code {
+                    Some(sku) => sku,
+                    None => auto_sku(tx)?,
+                };
                 let final_barcode = barcode.unwrap_or_else(|| final_sku.clone());
                 let barcode_format = "CODE128";
 
@@ -434,7 +447,7 @@ pub fn cmd_import_items_csv(
                     Err(e) => {
                         result.errors.push(ImportRowError {
                             row: row_num,
-                            message: format!("DB error: {}", e),
+                            message: import_db_error_message(&e),
                         });
                         result.skipped += 1;
                     }
@@ -448,17 +461,28 @@ pub fn cmd_import_items_csv(
 }
 
 /// Generate next SKU from the sequences table within a transaction.
-fn auto_sku(tx: &rusqlite::Connection) -> String {
-    let _ = tx.execute(
+fn auto_sku(tx: &rusqlite::Connection) -> AppResult<String> {
+    tx.execute(
         "UPDATE sequences SET value = value + 1 WHERE name = 'sku'",
         [],
-    );
+    )?;
     let n: i64 = tx
         .query_row("SELECT value FROM sequences WHERE name = 'sku'", [], |r| {
             r.get(0)
-        })
-        .unwrap_or(1);
-    format!("SKU-{n:06}")
+        })?;
+    Ok(format!("SKU-{n:06}"))
+}
+
+fn import_db_error_message(e: &rusqlite::Error) -> String {
+    match e {
+        rusqlite::Error::SqliteFailure(_, Some(detail))
+            if detail.to_lowercase().contains("unique") =>
+        {
+            "duplicate item data — check SKU, barcode, and name".into()
+        }
+        rusqlite::Error::SqliteFailure(_, _) => "database constraint violation".into(),
+        _ => "database error while importing row".into(),
+    }
 }
 
 // ── Purchases (inward) import ──────────────────────────────────────────────
@@ -480,6 +504,9 @@ pub fn cmd_import_inward_csv(
     let (headers, rows) = parse_csv(&csv_text);
     if headers.is_empty() {
         return Err(AppError::Validation("CSV has no headers".into()));
+    }
+    if rows.is_empty() {
+        return Err(AppError::Validation("CSV has headers but no data rows".into()));
     }
     let hmap = header_map(&headers);
 
@@ -712,7 +739,6 @@ struct ExistingItemRow {
     id: i64,
     name: String,
     sku_code: String,
-    barcode: Option<String>,
 }
 
 struct ItemLookupRow {
