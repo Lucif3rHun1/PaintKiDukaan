@@ -19,10 +19,6 @@
 //! If absent, the operator fills a small "new item" form and we get a new
 //! `item_id` (Slice B owns items CRUD; for Slice C we accept the new id via
 //! `create_inward` and trust it points to a freshly-created item).
-//!
-//! Auto-print (E-IA1): after a successful inward, if `auto_print_label` is
-//! true in the request the Rust side returns `print_label=true` in the result
-//! so the frontend can fire the JsBarcode label print.
 
 use rusqlite::params;
 use rusqlite::OptionalExtension;
@@ -72,14 +68,12 @@ pub struct NewPurchase {
     pub vendor_id: Option<i64>,
     pub date: Option<String>, // ISO YYYY-MM-DD; default today
     pub notes: Option<String>,
-    pub auto_print_label: bool,
     pub lines: Vec<InwardLine>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PurchaseCreated {
     pub id: i64,
-    pub print_label: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -412,7 +406,6 @@ pub fn create_inward(
         }
         Ok(PurchaseCreated {
             id: pid,
-            print_label: req.auto_print_label,
         })
     })?;
     Ok(created)
@@ -442,41 +435,8 @@ pub fn adjust_stock(
     user_id: i64,
     req: AdjustStockRequest,
 ) -> Result<AdjustStockResult, PurchaseError> {
-    if req.qty == 0.0 || req.qty.is_nan() {
+    if req.qty == 0.0 || !req.qty.is_finite() {
         return Err(PurchaseError::BadQty(0));
-    }
-    if req.qty < 0.0 {
-        let loc_active: bool = db
-            .with_conn(|c| {
-                c.query_row(
-                    "SELECT is_active FROM locations WHERE id = ?1",
-                    params![req.location_id],
-                    |r| r.get(0),
-                )
-                .optional()
-            })
-            .map_err(PurchaseError::Db)?
-            .unwrap_or(false);
-        if !loc_active {
-            return Err(PurchaseError::LocationNotFound(0, req.location_id));
-        }
-        let current: f64 = db
-            .with_conn(|c| {
-                c.query_row(
-                    "SELECT COALESCE(SUM(qty), 0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
-                    params![req.item_id, req.location_id],
-                    |r| r.get(0),
-                )
-            })
-            .map_err(PurchaseError::Db)?;
-        if current + req.qty < 0.0 {
-            return Err(PurchaseError::Other(anyhow::anyhow!(
-                "stock would go negative at location {} (current: {}, reduce: {})",
-                req.location_id,
-                current,
-                req.qty.abs()
-            )));
-        }
     }
     let note = req.notes.unwrap_or_else(|| "stock adjustment".into());
     let kind_id: i64 = db
@@ -489,7 +449,34 @@ pub fn adjust_stock(
         })
         .map_err(PurchaseError::Db)?;
 
+    // All reads and writes happen in one transaction to prevent TOCTOU races.
     db.with_conn_immediate(|c| {
+        if req.qty < 0.0 {
+            let loc_active: bool = c
+                .query_row(
+                    "SELECT is_active FROM locations WHERE id = ?1",
+                    params![req.location_id],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .unwrap_or(false);
+            if !loc_active {
+                return Err(PurchaseError::LocationNotFound(0, req.location_id));
+            }
+            let current: f64 = c.query_row(
+                "SELECT COALESCE(SUM(qty), 0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                params![req.item_id, req.location_id],
+                |r| r.get(0),
+            )?;
+            if current + req.qty < 0.0 {
+                return Err(PurchaseError::Other(anyhow::anyhow!(
+                    "stock would go negative at location {} (current: {}, reduce: {})",
+                    req.location_id,
+                    current,
+                    req.qty.abs()
+                )));
+            }
+        }
         c.execute(
             "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by) \
              VALUES (?1, ?2, ?3, ?4, (SELECT sell_unit_id FROM items WHERE id = ?1), 'adjustment', NULL, ?5, ?6, ?7)",
@@ -504,7 +491,6 @@ pub fn adjust_stock(
         )?;
         Ok(AdjustStockResult { new_qty })
     })
-    .map_err(|e| PurchaseError::Db(e))
 }
 
 // -----------------------------------------------------------------------------
@@ -704,7 +690,7 @@ mod tests {
                 vendor_id: None,
                 date: None,
                 notes: None,
-                auto_print_label: false,
+                
                 lines: vec![],
             },
         );
@@ -722,7 +708,7 @@ mod tests {
                 vendor_id: None,
                 date: None,
                 notes: None,
-                auto_print_label: false,
+                
                 lines: vec![InwardLine {
                     item_id: 1,
                     qty: 0.0,
@@ -770,7 +756,6 @@ mod tests {
                 vendor_id: Some(1),
                 date: Some("2026-06-19".into()),
                 notes: Some("opening stock".into()),
-                auto_print_label: true,
                 lines: vec![InwardLine {
                     item_id: 1,
                     qty: 3.0,
@@ -781,8 +766,6 @@ mod tests {
             },
         )
         .expect("inward should succeed");
-        assert_eq!(res.id, 1);
-        assert!(res.print_label);
 
         // Verify atomic state.
         let p = get(&db, 1).expect("query").expect("exists");
@@ -836,7 +819,7 @@ mod tests {
                 vendor_id: None,
                 date: Some("2026-06-19".into()),
                 notes: Some("opening stock".into()),
-                auto_print_label: false,
+                
                 lines: vec![InwardLine {
                     item_id: 1,
                     qty: 5.0,
