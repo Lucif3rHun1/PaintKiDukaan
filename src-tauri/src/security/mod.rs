@@ -219,9 +219,30 @@ fn run_security_init_inner(
         Err(e) => log::warn!("security: clock guard failed: {e}"),
     }
 
-    // AMSI check
-    if amsi_check::is_amsi_bypassed() {
-        log::warn!("security: AMSI appears to be bypassed");
+    // AMSI check — log full verdict so false positives are diagnosable.
+    match amsi_check::init_amsi("PaintKiDukaan") {
+        Ok(ctx) if ctx.initialized => {
+            let verdict = amsi_check::self_scan_eicar(&ctx);
+            log::debug!(
+                "security: AMSI scan raw_result={} detected={} — {}",
+                verdict.raw_result, verdict.detected, verdict.explanation,
+            );
+            if !verdict.detected {
+                log::warn!(
+                    "security: AMSI bypassed (raw_result={}) — {}",
+                    verdict.raw_result, verdict.explanation,
+                );
+            }
+        }
+        Ok(_) => {
+            log::warn!(
+                "security: AMSI could not initialize (AmsiInitialize returned !initialized) \
+                 — AV may be absent, disabled, or blocking AMSI"
+            );
+        }
+        Err(e) => {
+            log::warn!("security: AMSI init error — {e}");
+        }
     }
 
     // Registry watch (non-blocking, spawns thread)

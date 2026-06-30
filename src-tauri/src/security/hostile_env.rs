@@ -73,32 +73,149 @@ const NTDLL_WEIGHT: u8 = 15;
 /// - registry changes: +20 per change, capped at +40
 pub fn check_all() -> HostileEnvReport {
     let debug = anti_debug::detect();
-    let vm = anti_vm::detect();
+    let vm    = anti_vm::detect();
     let sniff = anti_sniff::detect();
     let ntdll = ntdll_integrity::check_ntdll_integrity();
-    let mut score = compute_score(&debug, &vm, &sniff, &ntdll);
 
-    // AMSI bypass detection (Windows only — is_amsi_bypassed() returns true on
-    // non-Windows because AMSI is unavailable, which would always add 30 pts).
+    // ── per-module signal dump ──────────────────────────────────────────────
+    log_vm_signals(&vm);
+    log_debug_signals(&debug);
+    log_sniff_signals(&sniff);
+    log_ntdll_signals(&ntdll);
+
+    // ── score components ────────────────────────────────────────────────────
+    let debug_raw  = compute_debug_score(&debug);
+    let vm_raw     = compute_vm_score(&vm);
+    let sniff_raw  = compute_sniff_score(&sniff);
+    let ntdll_raw  = compute_ntdll_score(&ntdll);
+
+    let debug_pts  = (debug_raw  as u16 * DEBUG_WEIGHT  as u16) / 100;
+    let vm_pts     = (vm_raw     as u16 * VM_WEIGHT     as u16) / 100;
+    let sniff_pts  = (sniff_raw  as u16 * SNIFF_WEIGHT  as u16) / 100;
+    let ntdll_pts  = (ntdll_raw  as u16 * NTDLL_WEIGHT  as u16) / 100;
+    let base_score = (debug_pts + vm_pts + sniff_pts + ntdll_pts).min(100) as u8;
+
+    log::debug!(
+        "hostile_env: raw  debug={raw_d}×{w_d}/100={pts_d}  vm={raw_v}×{w_v}/100={pts_v}  \
+         sniff={raw_s}×{w_s}/100={pts_s}  ntdll={raw_n}×{w_n}/100={pts_n}  base={base}",
+        raw_d = debug_raw,  w_d = DEBUG_WEIGHT,  pts_d = debug_pts,
+        raw_v = vm_raw,     w_v = VM_WEIGHT,     pts_v = vm_pts,
+        raw_s = sniff_raw,  w_s = SNIFF_WEIGHT,  pts_s = sniff_pts,
+        raw_n = ntdll_raw,  w_n = NTDLL_WEIGHT,  pts_n = ntdll_pts,
+        base  = base_score,
+    );
+
+    let mut score = base_score;
+
+    // ── AMSI bypass (Windows only — skip on non-Windows to avoid always +30) ─
     #[cfg(target_os = "windows")]
-    {
-        if super::amsi_check::is_amsi_bypassed() {
-            score = score.saturating_add(30);
-        }
-    }
+    let amsi_bump = amsi_check_with_log(&mut score);
+    #[cfg(not(target_os = "windows"))]
+    let amsi_bump: u8 = 0;
 
-    // Registry changes detected by the background watch thread.
+    // ── registry changes ────────────────────────────────────────────────────
     let reg_changes = REGISTRY_CHANGES.load(Ordering::Relaxed);
-    score = score.saturating_add(reg_changes.saturating_mul(20).min(40));
+    let reg_bump    = reg_changes.saturating_mul(20).min(40);
+    if reg_bump > 0 {
+        log::debug!(
+            "hostile_env: registry changes={} → +{} pts",
+            reg_changes, reg_bump
+        );
+    }
+    score = score.saturating_add(reg_bump).min(100);
 
-    score = score.min(100);
+    log::info!(
+        "hostile_env: score={total}  (debug={pts_d} vm={pts_v} sniff={pts_s} \
+         ntdll={pts_n} amsi=+{amsi} reg=+{reg})",
+        total = score,
+        pts_d = debug_pts, pts_v = vm_pts, pts_s = sniff_pts, pts_n = ntdll_pts,
+        amsi  = amsi_bump,
+        reg   = reg_bump,
+    );
 
-    HostileEnvReport {
-        debug,
-        vm,
-        sniff,
-        ntdll,
-        score,
+    HostileEnvReport { debug, vm, sniff, ntdll, score }
+}
+
+// ─── Detailed signal loggers ───────────────────────────────────────────────
+
+fn log_vm_signals(vm: &anti_vm::VmReport) {
+    log::debug!(
+        "hostile_env/vm: hypervisor_cpu={} vm_registry={} vm_mac_oui={} \
+         sandbox_dll={} disk_anomaly={}  evidence={:?}",
+        vm.hypervisor_cpu, vm.vm_registry, vm.vm_mac_oui,
+        vm.sandbox_dll, vm.disk_anomaly, vm.evidence,
+    );
+}
+
+fn log_debug_signals(debug: &anti_debug::DebugReport) {
+    log::debug!(
+        "hostile_env/debug: present={} remote={} hw_bp={} timing_anomaly={} ptrace={}  evidence={:?}",
+        debug.debugger_present, debug.remote_debugger, debug.hardware_breakpoints,
+        debug.timing_anomaly, debug.ptrace_attached, debug.evidence,
+    );
+    let cr = &debug.comprehensive;
+    log::debug!(
+        "hostile_env/debug/comprehensive: debug_port={} obj_handle={} flags={} \
+         parent_dbg={} instr_cb={} kernel_dbg={} hv_brand={:?} hv_feat_flag={} \
+         kuser_hv={} self_patch={} ntdll_hooked={}  evidence={:?}",
+        cr.debug_port, cr.debug_object_handle, cr.debug_flags,
+        cr.parent_debugger, cr.instrumentation_callback, cr.kernel_debugger,
+        cr.hypervisor_brand, cr.hypervisor_feature_flag,
+        cr.kuser_hypervisor, cr.self_patch_detected, cr.ntdll_hooked,
+        cr.evidence,
+    );
+}
+
+fn log_sniff_signals(sniff: &anti_sniff::SniffReport) {
+    log::debug!(
+        "hostile_env/sniff: pcap_driver={} analyzer_proc={} proxy_env={} loopback={}  evidence={:?}",
+        sniff.pcap_driver, sniff.analyzer_process, sniff.proxy_env,
+        sniff.loopback_listener, sniff.evidence,
+    );
+}
+
+fn log_ntdll_signals(ntdll: &ntdll_integrity::NtdllReport) {
+    log::debug!(
+        "hostile_env/ntdll: hash_match={} hook_count={} hooked={:?} error={:?}",
+        ntdll.text_hash_match, ntdll.hook_count,
+        ntdll.hooked_functions, ntdll.error,
+    );
+}
+
+/// Run the AMSI check with detailed logging, add score bump, and return the
+/// bump value (0 or 30) so callers can include it in the score summary.
+#[cfg(target_os = "windows")]
+fn amsi_check_with_log(score: &mut u8) -> u8 {
+    match super::amsi_check::init_amsi("PaintKiDukaan") {
+        Ok(ctx) if ctx.initialized => {
+            let verdict = super::amsi_check::self_scan_eicar(&ctx);
+            log::debug!(
+                "hostile_env/amsi: initialized=true  raw_result={}  detected={}  explanation='{}'",
+                verdict.raw_result, verdict.detected, verdict.explanation,
+            );
+            if verdict.detected {
+                log::debug!("hostile_env/amsi: EICAR detected — pipeline intact (+0 pts)");
+                0
+            } else {
+                log::debug!("hostile_env/amsi: EICAR not detected — bypass confirmed (+30 pts)");
+                *score = score.saturating_add(30);
+                30
+            }
+        }
+        Ok(_ctx) => {
+            // AmsiInitialize returned S_OK but handle was null or init flag is false.
+            log::debug!(
+                "hostile_env/amsi: AmsiInitialize returned non-null but context not initialized \
+                 (AV may be blocking AMSI load) → treating as bypassed (+30 pts)"
+            );
+            *score = score.saturating_add(30);
+            30
+        }
+        Err(e) => {
+            log::debug!("hostile_env/amsi: init failed — {e} → treating as bypassed (+30 pts)");
+            *score = score.saturating_add(30);
+            30
+        }
     }
 }
 
