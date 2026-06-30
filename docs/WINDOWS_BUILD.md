@@ -45,6 +45,28 @@ PaintKiDukaan is developed on macOS but ships primarily to Windows. This documen
   ```
 - For automated CI signing, use AzureSignTool or `signtool` with the cert from a Key Vault.
 
+## GitHub Actions release secrets
+
+The release workflow (`.github/workflows/release.yml`) produces signed installers for all platforms. Required GitHub secrets/variables:
+
+| Secret | Purpose |
+|--------|---------|
+| `TAURI_SIGNING_PRIVATE_KEY` | Tauri updater private key (PEM format) — signs `.exe` so the auto-updater can verify integrity |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for the above key (can be empty if key has no password) |
+| `SIGNPATH_API_TOKEN` | SignPath API token for Authenticode signing (optional — if absent, Windows builds are unsigned) |
+
+| Variable | Purpose |
+|----------|---------|
+| `SIGNPATH_ORGANIZATION_ID` | Your SignPath org ID — gates whether Windows signing runs |
+
+**How signing works:**
+1. Tauri build produces unsigned `.exe` + `.sig` files
+2. SignPath (if configured) Authenticode-signs the `.exe` — this invalidates the `.sig`
+3. A regen job re-signs the `.exe` with the Tauri updater key to produce fresh `.sig` files
+4. `latest.json` is built with all 4 platform artifacts and uploaded to the GitHub release
+
+**Without SignPath**: Windows builds ship unsigned (SmartScreen warning). All other platforms (macOS notarization, Linux) are unaffected.
+
 ## Cross-platform notes
 
 - Rust source uses `#[cfg(target_os = "windows")]` for Windows-only code (printing, prevent-sleep, tray LockWorkStation). Macros like `core-graphics` and `core-foundation` are macOS-only.
