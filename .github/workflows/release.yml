@@ -103,6 +103,9 @@ jobs:
             target/${{ matrix.target }}/release/bundle/*/*.sig
 
   # ── Windows code-signing via SignPath (free for OSS) ─────────────────────
+  # If SignPath is not configured (SIGNPATH_ORGANIZATION_ID is empty), the
+  # installer ships unsigned → SmartScreen warning on first launch. For local
+  # dev/CI alternatives, see scripts/windows-sign.ps1 (self-signed cert).
   sign-windows:
     name: sign Windows installer (SignPath)
     runs-on: ubuntu-latest
