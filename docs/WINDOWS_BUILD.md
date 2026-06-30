@@ -10,6 +10,8 @@ PaintKiDukaan is developed on macOS but ships primarily to Windows. This documen
 - WebView2 runtime (auto-installed by Tauri in `downloadBootstrapper` mode; pre-install manually on locked-down enterprise machines).
 - PowerShell 5.1+ (built into Windows 10+).
 
+No OpenSSL installation is required. The project uses `bundled-sqlcipher-vendored-openssl` which compiles OpenSSL from source automatically. The **first build on a new machine takes 5–10 minutes** while OpenSSL compiles; every subsequent build uses the Cargo cache and is fast.
+
 ## Common build commands
 
 - `pnpm tauri:build:win` — produces MSI + NSIS installers in `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/`.
@@ -18,7 +20,7 @@ PaintKiDukaan is developed on macOS but ships primarily to Windows. This documen
 
 ## Troubleshooting
 
-- **"Missing environment variable OPENSSL_DIR"** — sqlcipher requires OpenSSL for its crypto backend. The `openssl-sys = { features = ["vendored"] }` dependency in `Cargo.toml` compiles OpenSSL from source during build, so no system install is needed. If you still see this error: `cargo clean` then rebuild. On Windows Smart App Control machines, ensure build scripts aren't blocked (see below).
+- **"Missing environment variable OPENSSL_DIR"** — This panic comes from `libsqlite3-sys` when the `bundled-sqlcipher-vendored-openssl` feature is missing. Check that `Cargo.toml` has `rusqlite = { features = ["sqlcipher", "bundled-sqlcipher-vendored-openssl", "backup"] }`. If correct, run `cargo clean` then rebuild — first build compiles OpenSSL from source (~5–10 min) and caches it.
 - **"hidapi build fails"** — Make sure `Cargo.toml` pins `hidapi = { version = "2.6", features = ["windows-native"] }`. The `windows-native` feature uses Win32 HID APIs (no libusb dependency).
 - **"rdev hook doesn't fire" / scanner not working** — `rdev` uses `SetWindowsHookExW`. Check that no antivirus is blocking the hook (CrowdStrike, SentinelOne are common culprits). Add `target/` and the release `.exe` to AV exclusions.
 - **"WebView2 missing" on launch** — Switch `tauri.conf.json` `bundle.windows.webviewInstallMode.type` from `downloadBootstrapper` to `fixedRuntime` and ship the WebView2 runtime alongside the installer.
