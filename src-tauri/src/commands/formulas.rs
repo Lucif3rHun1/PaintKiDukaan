@@ -790,6 +790,7 @@ mod tests {
             CreateSaleReturnPayload {
                 sale_id,
                 date: None,
+                customer_id: None,
                 reason: None,
                 payment_modes: vec![PaymentSplit {
                     mode: "cash".into(),
@@ -798,6 +799,7 @@ mod tests {
                 owner_pin: "".into(),
                 lines: vec![CreateSaleReturnLine {
                     sale_item_id,
+                    item_id: None,
                     qty: 1.0,
                     refund_paise: 250,
                     shade_note: None,

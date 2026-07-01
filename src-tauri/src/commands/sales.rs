@@ -1763,6 +1763,7 @@ mod tests {
     fn ret_line(sale_item_id: i64, qty: f64, refund_paise: i64) -> CreateSaleReturnLine {
         CreateSaleReturnLine {
             sale_item_id,
+            item_id: None,
             qty,
             refund_paise,
             shade_note: None,
@@ -1775,6 +1776,7 @@ mod tests {
         let payload = CreateSaleReturnPayload {
             sale_id: 1,
             date: None,
+            customer_id: None,
             reason: None,
             payment_modes: vec![PaymentSplit {
                 mode: "cash".into(),
@@ -1793,6 +1795,7 @@ mod tests {
         let payload = CreateSaleReturnPayload {
             sale_id: 1,
             date: None,
+            customer_id: None,
             reason: None,
             payment_modes: vec![],
             owner_pin: String::new(),
@@ -1808,6 +1811,7 @@ mod tests {
         let payload = CreateSaleReturnPayload {
             sale_id: 1,
             date: None,
+            customer_id: None,
             reason: None,
             payment_modes: vec![],
             owner_pin: String::new(),
@@ -1823,6 +1827,7 @@ mod tests {
         let payload = CreateSaleReturnPayload {
             sale_id: 999, // not present
             date: None,
+            customer_id: None,
             reason: None,
             payment_modes: vec![PaymentSplit {
                 mode: "cash".into(),
@@ -1865,6 +1870,7 @@ mod tests {
         let payload = CreateSaleReturnPayload {
             sale_id: 1,
             date: None,
+            customer_id: None,
             reason: None,
             payment_modes: vec![],
             owner_pin: String::new(),
@@ -1911,6 +1917,7 @@ mod tests {
         let payload = CreateSaleReturnPayload {
             sale_id: 1,
             date: None,
+            customer_id: None,
             reason: None,
             payment_modes: vec![PaymentSplit {
                 mode: "cash".into(),
@@ -1927,6 +1934,102 @@ mod tests {
             }
             other => panic!("expected ModesSumMismatch, got {other:?}"),
         }
+    }
+
+    fn seed_standalone_returns_env(db: &Db) {
+        db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) \
+                 VALUES ('test', 'owner', X'00', X'00', 6, 0, 0)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO items (sku_code, name, unit_code, unit_label, retail_price_paise, cost_paise, created_at, updated_at) \
+                 VALUES ('SK001', 'Test Item', 'L', 'Liter', 100, 50, 0, 0)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO locations (name, is_active, created_at, updated_at) \
+                 VALUES ('Main Shop', 1, 0, 0)",
+                [],
+            )
+            .unwrap();
+        });
+    }
+
+    #[test]
+    fn sale_return_rejects_sale_item_id_not_in_sale() {
+        let db = Db::open_in_memory().unwrap();
+        seed_standalone_returns_env(&db);
+        // Final sale with one item at sale_items.id=1
+        db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO sales (no, status, date, subtotal, bill_discount, total, paid_amount, user_id) \
+                 VALUES ('INV-X', 'final', '2025-01-01', 100, 0, 100, 100, 1)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO sale_items (sale_id, item_id, qty, price, unit_type, line_discount, line_order) \
+                 VALUES (1, 1, 10, 10, 'pcs', 0, 0)",
+                [],
+            )
+            .unwrap();
+        });
+        // Line references sale_item_id=999 which is not in this sale
+        let payload = CreateSaleReturnPayload {
+            sale_id: 1,
+            date: None,
+            customer_id: None,
+            reason: None,
+            payment_modes: vec![PaymentSplit {
+                mode: "cash".into(),
+                amount: 100,
+            }],
+            owner_pin: String::new(),
+            lines: vec![ret_line(999, 1.0, 100)],
+        };
+        let err = create_sale_return(&db, 1, payload).unwrap_err();
+        assert!(matches!(err, ReturnError::SaleItemMismatch(line_idx, 999, expected) if expected == 1 && line_idx == 0));
+    }
+
+    #[test]
+    fn sale_return_caps_qty_across_multiple_returns() {
+        let db = Db::open_in_memory().unwrap();
+        seed_standalone_returns_env(&db);
+        // Final sale, sold 10, fully paid
+        db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO sales (no, status, date, subtotal, bill_discount, total, paid_amount, user_id) \
+                 VALUES ('INV-Y', 'final', '2025-01-01', 100, 0, 100, 100, 1)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO sale_items (sale_id, item_id, qty, price, unit_type, line_discount, line_order) \
+                 VALUES (1, 1, 10, 10, 'pcs', 0, 0)",
+                [],
+            )
+            .unwrap();
+        });
+        let make = |qty: f64| CreateSaleReturnPayload {
+            sale_id: 1,
+            date: None,
+            customer_id: None,
+            reason: None,
+            payment_modes: vec![PaymentSplit {
+                mode: "cash".into(),
+                amount: (qty * 10.0) as i64,
+            }],
+            owner_pin: String::new(),
+            lines: vec![ret_line(1, qty, 10)],
+        };
+        create_sale_return(&db, 1, make(7.0)).unwrap();
+        // Next 5 would push cumulative to 12 > sold 10 — rejected
+        let err = create_sale_return(&db, 1, make(5.0)).unwrap_err();
+        assert!(matches!(err, ReturnError::QtyExceedsSold { requested, already, sold, .. } if requested == 5.0 && already == 7.0 && sold == 10.0));
     }
 }
 
