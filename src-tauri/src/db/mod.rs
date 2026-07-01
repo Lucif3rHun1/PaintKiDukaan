@@ -1,6 +1,7 @@
 //! Database layer — SQLCipher connection management with zeroize-on-drop DEK.
 
 pub mod keywrap;
+pub mod list;
 pub mod migrations;
 
 /// Canonical final schema for a fresh database — absorbs every table, index,
@@ -946,6 +947,36 @@ impl Db {
                 )?;
             }
         }
+
+        // M-INLINE-025: Indexes for unified list display system (PR-1).
+        // All filters/sorts/searches on the 12 list endpoints must use indexes.
+        {
+            conn.execute_batch(
+                "\
+                CREATE INDEX IF NOT EXISTS idx_items_category ON items(category) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_items_retail_price ON items(retail_price_paise) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_items_cost_price ON items(cost_paise) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_items_created_at ON items(created_at DESC) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date DESC) WHERE status != 'cancelled';\
+                CREATE INDEX IF NOT EXISTS idx_sales_total ON sales(total DESC) WHERE status = 'final';\
+                CREATE INDEX IF NOT EXISTS idx_sale_returns_date ON sale_returns(date DESC) WHERE date IS NOT NULL;\
+                CREATE INDEX IF NOT EXISTS idx_sale_returns_refund ON sale_returns(refund_total_paise DESC);\
+                CREATE INDEX IF NOT EXISTS idx_purchases_bill_date ON purchases(bill_date DESC) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_purchases_bill_number ON purchases(bill_number) WHERE is_active = 1 AND bill_number IS NOT NULL;\
+                CREATE INDEX IF NOT EXISTS idx_purchases_total ON purchases(total_paise DESC) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_customers_type ON customers(customer_type_id) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_customers_flagged ON customers(is_flagged, name) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_customers_balance ON customers(opening_balance_paise DESC) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_customers_created ON customers(created_at DESC) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_vendors_balance ON vendors(opening_balance_paise DESC) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_vendors_created ON vendors(created_at DESC) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_brands_prefix ON brands(prefix) WHERE is_active = 1 AND prefix IS NOT NULL;\
+                CREATE INDEX IF NOT EXISTS idx_brands_created ON brands(created_at DESC) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_formulas_name ON formulas(name) WHERE is_active = 1;\
+                CREATE INDEX IF NOT EXISTS idx_day_close_day ON day_close(day DESC);",
+            )?;
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA busy_timeout = 5000;\

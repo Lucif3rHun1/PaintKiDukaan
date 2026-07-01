@@ -1,6 +1,7 @@
 //! Vendors CRUD + payments + outstanding balance.
 
 use crate::commands::auth::AppState;
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
 use crate::session::{current_user, require_role, Role};
@@ -464,4 +465,114 @@ pub fn list_vendor_payments(
 ) -> AppResult<Vec<serde_json::Value>> {
     ipc_auth::authorize_err("list_vendor_payments", state.inner())?;
     Ok(Vec::new())
+}
+
+// ---- Unified List Display System (PR-1, Wave 2) ----
+
+const VENDORS_SORT_WHITELIST: &[&str] = &["name", "phone", "opening_balance_paise", "created_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_vendors_paged(
+    state: State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<Vendor>> {
+    let _ = current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field = sanitize_sort(query.sort_field.as_deref(), VENDORS_SORT_WHITELIST, "name");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        let include_inactive = query
+            .filters
+            .get("include_inactive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !include_inactive {
+            wheres.push("is_active = 1".to_string());
+        }
+        if let Some(q) = query.search.as_ref().filter(|s| !s.is_empty()) {
+            let like = format!("%{}%", q);
+            wheres.push("(name LIKE ? OR phone LIKE ?)".to_string());
+            params.push(Box::new(like.clone()));
+            params.push(Box::new(like));
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = format!(
+            " ORDER BY {} COLLATE NOCASE {} LIMIT ? OFFSET ?",
+            sort_field, sort_dir
+        );
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select =
+            "SELECT id, name, phone, opening_balance_paise, notes, is_active, created_at, updated_at FROM vendors";
+        let count_select = "SELECT COUNT(*) FROM vendors";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            |r| {
+                Ok(Vendor {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    phone: r.get(2)?,
+                    opening_balance: r.get::<_, i64>(3)?,
+                    notes: r.get(4)?,
+                    is_active: r.get::<_, i64>(5)? != 0,
+                    created_at: r.get::<_, i64>(6)?.to_string(),
+                    updated_at: r.get::<_, i64>(7)?.to_string(),
+                })
+            },
+        )?;
+        Ok(ListPage { rows, total })
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct VendorMetrics {
+    pub total: i64,
+    pub active: i64,
+    pub inactive: i64,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_vendor_metrics(state: State<'_, AppState>) -> AppResult<VendorMetrics> {
+    let _ = current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    db.with_raw(|c| {
+        let total: i64 = c.query_row("SELECT COUNT(*) FROM vendors", [], |r| r.get(0))?;
+        let active: i64 = c.query_row(
+            "SELECT COUNT(*) FROM vendors WHERE is_active = 1",
+            [],
+            |r| r.get(0),
+        )?;
+        let inactive: i64 = c.query_row(
+            "SELECT COUNT(*) FROM vendors WHERE is_active = 0",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(VendorMetrics {
+            total,
+            active,
+            inactive,
+        })
+    })
 }

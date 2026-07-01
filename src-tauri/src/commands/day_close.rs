@@ -24,6 +24,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::auth::AppState;
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
@@ -524,6 +525,79 @@ pub fn cmd_list_day_close(
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     list(db, limit.unwrap_or(60)).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+const DAY_CLOSE_SORT_WHITELIST: &[&str] =
+    &["day", "created_at", "closing_cash_paise", "variance_paise"];
+
+fn row_to_day_close(r: &rusqlite::Row<'_>) -> rusqlite::Result<DayClose> {
+    Ok(DayClose {
+        id: r.get(0)?,
+        day: r.get(1)?,
+        location_id: r.get(2)?,
+        user_id: r.get(3)?,
+        opening_cash_paise: r.get(4)?,
+        cash_sales_paise: r.get(5)?,
+        card_sales_paise: r.get(6)?,
+        upi_sales_paise: r.get(7)?,
+        expenses_paise: r.get(8)?,
+        closing_cash_paise: r.get(9)?,
+        actual_cash_paise: r.get(10)?,
+        variance_paise: r.get(11)?,
+        note: r.get(12)?,
+        created_at: r.get::<_, i64>(13)?.to_string(),
+        updated_at: r.get::<_, i64>(14)?.to_string(),
+        cash_in_paise: r.get(15)?,
+        cash_out_paise: r.get(16)?,
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_day_close_paged(
+    state: tauri::State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<DayClose>> {
+    ipc_auth::authorize_err("cmd_list_day_close_paged", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field =
+        sanitize_sort(query.sort_field.as_deref(), DAY_CLOSE_SORT_WHITELIST, "day");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let where_refs: Vec<&str> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        let order_by = format!(
+            " ORDER BY {} COLLATE NOCASE {} LIMIT ? OFFSET ?",
+            sort_field, sort_dir
+        );
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select = "SELECT id, day, location_id, user_id, opening_cash_paise, \
+                           cash_sales_paise, card_sales_paise, upi_sales_paise, expenses_paise, \
+                           closing_cash_paise, actual_cash_paise, variance_paise, note, \
+                           created_at, updated_at, cash_in_paise, cash_out_paise \
+                           FROM day_close";
+        let count_select = "SELECT COUNT(*) FROM day_close";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            row_to_day_close,
+        )?;
+        Ok(ListPage { rows, total })
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]

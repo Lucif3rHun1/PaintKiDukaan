@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Save, Search, Trash2, UserMinus, UserPlus } from "lucide-react";
+import { ArrowLeft, Save, Search, Trash2 } from "lucide-react";
 
-import { Alert, Badge, Button, Card, InlineDialog, KbdHint, Money, MoneyInput, PageHeader, QtyInput } from "../../components/ui";
+import { Alert, Button, Card, KbdHint, Money, MoneyInput, PageHeader, QtyInput } from "../../components/ui";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
-import { CustomerForm } from "../../domain/customers/CustomerForm";
-import { listCustomerTypes } from "../../domain/customerTypes/api";
 
-import { createSalesReturn, getCustomer } from "../../domain/ipc";
+import { createSalesReturn } from "../../domain/ipc";
 import { getSale } from "../../pos/api";
-import type { Customer, CustomerType, CreateSaleReturnPayload } from "../../domain/types";
+import type { CreateSaleReturnPayload } from "../../domain/types";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { toTitleCase } from "../../lib/format/titleCase";
@@ -21,7 +19,6 @@ import { formatHitName } from "../../domain/items/display";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { deleteDraft } from "../api";
 import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
-import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
 import { InvoiceSearchInput } from "./InvoiceSearchInput";
 import { SplitPayment } from "./SplitPayment";
@@ -35,10 +32,6 @@ interface Props {
 
 export default function ReturnPage({ user, onBack }: Props) {
   const queryClient = useQueryClient();
-  const [customerId, setCustomerId] = useState<number | null>(null);
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [addCustomerOpen, setAddCustomerOpen] = useState(false);
-  const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
 
   const [lines, setLines] = useState<ReturnCartLine[]>([]);
 
@@ -63,11 +56,10 @@ export default function ReturnPage({ user, onBack }: Props) {
   const [showExitModal, setShowExitModal] = useState(false);
 
   const draftData = useMemo(() => ({
-    customerId,
     lines,
     paymentSplits,
     reason,
-  }), [customerId, lines, paymentSplits, reason]);
+  }), [lines, paymentSplits, reason]);
 
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
   const { draft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("return", draftData);
@@ -86,12 +78,6 @@ export default function ReturnPage({ user, onBack }: Props) {
         localStorage.removeItem(RETURN_DRAFT_KEY);
         const modalDraft: ReturnDraft = JSON.parse(raw);
         draftRestored.current = true;
-        if (modalDraft.customer_id != null) {
-          setCustomerId(modalDraft.customer_id);
-          getCustomer(modalDraft.customer_id)
-            .then((c) => { if (c) setCustomer(c); })
-            .catch(() => {});
-        }
         if (modalDraft.lines) setLines(modalDraft.lines);
         if (modalDraft.payment_modes) setPaymentSplits(modalDraft.payment_modes);
         if (modalDraft.reason) setReason(modalDraft.reason);
@@ -105,12 +91,6 @@ export default function ReturnPage({ user, onBack }: Props) {
     window.history.replaceState(null, "", window.location.pathname + "#" + inHash.split("?")[0]);
     try {
       const data = JSON.parse(draft.data_json);
-      if (data.customerId != null) {
-        setCustomerId(data.customerId);
-        getCustomer(data.customerId)
-          .then((c) => { if (c) setCustomer(c); })
-          .catch(() => {});
-      }
       if (data.lines) setLines(data.lines);
       if (data.paymentSplits) setPaymentSplits(data.paymentSplits);
       if (data.reason != null) setReason(data.reason);
@@ -129,16 +109,6 @@ export default function ReturnPage({ user, onBack }: Props) {
       }));
     };
   }, [draftStatus, draft]);
-
-  useEffect(() => {
-    Promise.allSettled([
-      listCustomerTypes().then((d) => setCustomerTypes(d ?? [])),
-    ]).then(([typesResult]) => {
-      if (typesResult.status === "rejected") {
-        console.error("[ReturnPage] failed to load customer types", typesResult.reason);
-      }
-    });
-  }, []);
 
   useEffect(() => {
     // Entry-point: ?preLink=<sale-id> in the hash pre-links one invoice.
@@ -250,8 +220,6 @@ export default function ReturnPage({ user, onBack }: Props) {
   }
 
   function clearAll() {
-    setCustomerId(null);
-    setCustomer(null);
     setLines([]);
     setPaymentSplits([]);
     setReason("");
@@ -400,47 +368,6 @@ export default function ReturnPage({ user, onBack }: Props) {
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="space-y-4">
-            <Card as="section" className="space-y-3 p-4">
-              <h2 className="text-lg font-semibold text-foreground">Customer</h2>
-              {customer ? (
-                <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium text-foreground">{customer.name}</div>
-                    {customer.phone ? <div className="truncate text-xs text-muted-foreground">{customer.phone}</div> : null}
-                    {!customer.is_active ? <Badge variant="danger" size="sm">Inactive</Badge> : null}
-                    {customer.is_flagged ? <Badge variant="warning" size="sm">Flagged</Badge> : null}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      icon={UserMinus}
-                      onClick={() => {
-                        setCustomerId(null);
-                        setCustomer(null);
-                      }}
-                    >
-                      Clear
-                    </Button>
-                    <Button type="button" variant="secondary" size="sm" icon={UserPlus} onClick={() => setAddCustomerOpen(true)}>
-                      New
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <CustomerAutocomplete
-                  selectedId={customerId}
-                  onChange={(id, c) => {
-                    setCustomerId(id);
-                    setCustomer(c);
-                  }}
-                  onCreate={() => setAddCustomerOpen(true)}
-                  display={{ showBalance: true, showType: true, allowWalkIn: false }}
-                />
-              )}
-            </Card>
-
             <Card as="section" className="space-y-3 p-4">
               <h2 className="text-lg font-semibold text-foreground">Linked invoices</h2>
               <p className="text-xs text-muted-foreground">
@@ -655,25 +582,6 @@ export default function ReturnPage({ user, onBack }: Props) {
           </Button>
         </div>
       </div>
-
-      <InlineDialog
-        open={addCustomerOpen}
-        onClose={() => setAddCustomerOpen(false)}
-        title="New customer"
-        description="Capture return customers without leaving the page."
-        size="md"
-      >
-        <CustomerForm
-          mode="create"
-          types={customerTypes}
-          onSaved={(c) => {
-            setCustomerId(c.id);
-            setCustomer(c);
-            setAddCustomerOpen(false);
-          }}
-          onCancel={() => setAddCustomerOpen(false)}
-        />
-      </InlineDialog>
 
       <UnsavedChangesModal
         open={showExitModal}

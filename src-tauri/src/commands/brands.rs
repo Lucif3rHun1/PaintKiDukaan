@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::auth::AppState;
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
 
@@ -254,6 +255,61 @@ pub fn generate_brand_barcode(
         (brand_id as u64).min(99_999),
         (seq as u64).min(9999)
     ))
+}
+
+const BRANDS_SORT_WHITELIST: &[&str] = &["name", "prefix", "created_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_brands_paged(
+    state: State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<Brand>> {
+    let _ = crate::session::current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field = sanitize_sort(query.sort_field.as_deref(), BRANDS_SORT_WHITELIST, "name");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(q) = query.search.as_ref().filter(|s| !s.is_empty()) {
+            let like = format!("%{}%", q);
+            wheres.push("(b.name LIKE ? OR b.prefix LIKE ?)".to_string());
+            params.push(Box::new(like.clone()));
+            params.push(Box::new(like));
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = format!(
+            " ORDER BY b.{} COLLATE NOCASE {} LIMIT ? OFFSET ?",
+            sort_field, sort_dir
+        );
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select =
+            "SELECT b.id, b.name, b.prefix, COALESCE(s.next_seq, 1) \
+             FROM brands b LEFT JOIN brand_sequences s ON s.brand_id = b.id";
+        let count_select = "SELECT COUNT(*) FROM brands b";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            row_to_brand,
+        )?;
+        Ok(ListPage { rows, total })
+    })
 }
 
 #[cfg(test)]

@@ -6,11 +6,13 @@
 //! - `customer_outstanding` = opening + Σ(sales.total - paid) - Σ(payments).
 
 use crate::commands::auth::AppState;
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
+use rusqlite::params_from_iter;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -976,4 +978,135 @@ pub fn record_customer_payment(
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     crate::commands::customer_ledger::record_customer_payment_impl(db, &user, args)
+}
+
+// ---- Unified List Display System (PR-1, Wave 2) ----
+
+const CUSTOMERS_SORT_WHITELIST: &[&str] = &["name", "phone", "opening_balance_paise", "created_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_customers_paged(
+    state: State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<Customer>> {
+    let _ = current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field = sanitize_sort(query.sort_field.as_deref(), CUSTOMERS_SORT_WHITELIST, "name");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        let include_inactive = query
+            .filters
+            .get("include_inactive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !include_inactive {
+            wheres.push("c.is_active = 1".to_string());
+        }
+        if let Some(q) = query.search.as_ref().filter(|s| !s.is_empty()) {
+            let like = format!("%{}%", q);
+            wheres.push("(c.name LIKE ? OR c.phone LIKE ?)".to_string());
+            params.push(Box::new(like.clone()));
+            params.push(Box::new(like));
+        }
+        if let Some(ctid) = query.filters.get("customer_type_id").and_then(|v| v.as_i64()) {
+            wheres.push("c.customer_type_id = ?".to_string());
+            params.push(Box::new(ctid));
+        }
+        if let Some(flagged) = query.filters.get("is_flagged").and_then(|v| v.as_bool()) {
+            if flagged {
+                wheres.push("c.is_flagged = 1".to_string());
+            }
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = format!(
+            " ORDER BY c.{} COLLATE NOCASE {} LIMIT ? OFFSET ?",
+            sort_field, sort_dir
+        );
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select = "SELECT c.id, c.name, c.phone, c.customer_type_id, t.name, \
+                           c.is_flagged, c.opening_balance_paise, c.notes, c.is_active, \
+                           c.created_at, c.updated_at \
+                           FROM customers c LEFT JOIN customer_types t ON t.id = c.customer_type_id";
+        let count_select = "SELECT COUNT(*) FROM customers c";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            |r| {
+                Ok(Customer {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    phone: r.get(2)?,
+                    customer_type_id: r.get(3)?,
+                    type_name: r.get(4)?,
+                    is_flagged: r.get::<_, i64>(5)? != 0,
+                    opening_balance_paise: r.get(6)?,
+                    notes: r.get(7)?,
+                    is_active: r.get::<_, i64>(8)? != 0,
+                    created_at: r.get(9)?,
+                    updated_at: r.get(10)?,
+                })
+            },
+        )?;
+        Ok(ListPage { rows, total })
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct CustomerMetrics {
+    pub total: i64,
+    pub active: i64,
+    pub inactive: i64,
+    pub flagged: i64,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_customer_metrics(state: State<'_, AppState>) -> AppResult<CustomerMetrics> {
+    let _ = current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    db.with_raw(|c| {
+        let total: i64 = c.query_row("SELECT COUNT(*) FROM customers", [], |r| r.get(0))?;
+        let active: i64 = c.query_row(
+            "SELECT COUNT(*) FROM customers WHERE is_active = 1",
+            [],
+            |r| r.get(0),
+        )?;
+        let inactive: i64 = c.query_row(
+            "SELECT COUNT(*) FROM customers WHERE is_active = 0",
+            [],
+            |r| r.get(0),
+        )?;
+        let flagged: i64 = c.query_row(
+            "SELECT COUNT(*) FROM customers WHERE is_flagged = 1",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(CustomerMetrics {
+            total,
+            active,
+            inactive,
+            flagged,
+        })
+    })
 }

@@ -13,6 +13,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::auth::AppState;
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
@@ -460,6 +461,217 @@ pub fn cmd_list_formula_sales(
         to_date.as_deref(),
         limit.unwrap_or(200),
     )
+}
+
+const FORMULAS_SORT_WHITELIST: &[&str] =
+    &["id_code", "name", "is_active", "sales_count", "last_sold_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_formulas_paged(
+    state: tauri::State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<Formula>> {
+    ipc_auth::authorize_err("cmd_list_formulas_paged", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field =
+        sanitize_sort(query.sort_field.as_deref(), FORMULAS_SORT_WHITELIST, "id_code");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(active) = query.filters.get("active").and_then(|v| v.as_bool()) {
+            wheres.push("f.is_active = ?".to_string());
+            params.push(Box::new(active as i64));
+        }
+        if let Some(q) = query.search.as_ref().filter(|s| !s.is_empty()) {
+            wheres.push("(f.id_code LIKE ? || '%' OR f.name LIKE '%' || ? || '%')".to_string());
+            params.push(Box::new(q.clone()));
+            params.push(Box::new(q.clone()));
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = if sort_field == "id_code" && sort_dir == "ASC" {
+            " ORDER BY f.is_active DESC, f.id_code ASC LIMIT ? OFFSET ?".to_string()
+        } else {
+            format!(
+                " ORDER BY f.{} {} LIMIT ? OFFSET ?",
+                sort_field, sort_dir
+            )
+        };
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select =
+            "SELECT f.id, f.id_code, f.name, f.with_base, f.retail_price_paise, f.is_active, \
+                    f.created_at, f.created_by, \
+                    (SELECT COUNT(*) FROM sale_items si JOIN sales s ON s.id = si.sale_id \
+                      WHERE si.formula_id = f.id AND s.status = 'final') AS sales_count, \
+                    (SELECT MAX(s.created_at) FROM sale_items si JOIN sales s ON s.id = si.sale_id \
+                      WHERE si.formula_id = f.id AND s.status = 'final') AS last_sold_at, \
+                    f.base_item_id, COALESCE(b.name || ' · ' || bi.name, bi.name) AS base_item_name \
+             FROM formulas f \
+             LEFT JOIN items bi ON bi.id = f.base_item_id \
+             LEFT JOIN brands b ON b.id = bi.brand_id";
+        let count_select = "SELECT COUNT(*) FROM formulas f";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            row_to_formula,
+        )?;
+        Ok(ListPage { rows, total })
+    })
+}
+
+const FORMULA_SALES_SORT_WHITELIST: &[&str] =
+    &["sale_no", "sale_date", "qty", "price", "line_total", "sold_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+#[allow(clippy::too_many_arguments)]
+pub fn cmd_list_formula_sales_paged(
+    state: tauri::State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<FormulaSaleRow>> {
+    ipc_auth::authorize_err("cmd_list_formula_sales_paged", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let formula_id = query
+        .filters
+        .get("formula_id")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| AppError::Validation("formula_id is required".into()))?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field = sanitize_sort(
+        query.sort_field.as_deref(),
+        FORMULA_SALES_SORT_WHITELIST,
+        "sold_at",
+    );
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    let sort_col = match sort_field.as_str() {
+        "sale_no" => "s.no",
+        "sale_date" => "s.date",
+        "qty" => "si.qty",
+        "price" => "si.price",
+        "line_total" => "(si.qty * si.price - si.line_discount)",
+        "sold_at" | _ => "s.created_at",
+    };
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = vec!["si.formula_id = ?".to_string(), "s.status = 'final'".to_string()];
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(formula_id)];
+
+        if let Some(q) = query.search.as_ref().filter(|s| !s.is_empty()) {
+            wheres.push("(s.no LIKE '%' || ? || '%' OR c.name LIKE '%' || ? || '%')".to_string());
+            params.push(Box::new(q.clone()));
+            params.push(Box::new(q.clone()));
+        }
+        if let Some(d) = query.filters.get("from_date").and_then(|v| v.as_str()) {
+            wheres.push("s.date >= ?".to_string());
+            params.push(Box::new(d.to_string()));
+        }
+        if let Some(d) = query.filters.get("to_date").and_then(|v| v.as_str()) {
+            wheres.push("s.date <= ?".to_string());
+            params.push(Box::new(d.to_string()));
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = format!(" ORDER BY {} {} LIMIT ? OFFSET ?", sort_col, sort_dir);
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select =
+            "SELECT s.id, s.no, s.date, s.status, s.customer_id, c.name, \
+                    si.qty, si.price, (si.qty * si.price - si.line_discount) AS line_total, \
+                    si.line_discount, si.shade_note, s.created_at \
+             FROM sale_items si \
+             JOIN sales s ON s.id = si.sale_id \
+             LEFT JOIN customers c ON c.id = s.customer_id";
+        let count_select =
+            "SELECT COUNT(*) FROM sale_items si \
+             JOIN sales s ON s.id = si.sale_id \
+             LEFT JOIN customers c ON c.id = s.customer_id";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            |r| {
+                Ok(FormulaSaleRow {
+                    sale_id: r.get(0)?,
+                    sale_no: r.get(1)?,
+                    sale_date: r.get(2)?,
+                    sale_kind: r.get(3)?,
+                    customer_id: r.get(4)?,
+                    customer_name: r.get(5)?,
+                    qty: r.get(6)?,
+                    price: r.get(7)?,
+                    line_total: r.get(8)?,
+                    line_discount: r.get(9)?,
+                    shade_note: r.get(10)?,
+                    sold_at: r.get(11)?,
+                })
+            },
+        )?;
+        Ok(ListPage { rows, total })
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct FormulaMetrics {
+    pub total: i64,
+    pub active: i64,
+    pub inactive: i64,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_formula_metrics(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<FormulaMetrics> {
+    ipc_auth::authorize_err("cmd_formula_metrics", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    db.with_raw(|c| {
+        let total: i64 =
+            c.query_row("SELECT COUNT(*) FROM formulas", [], |r| r.get(0))?;
+        let active: i64 = c.query_row(
+            "SELECT COUNT(*) FROM formulas WHERE is_active = 1",
+            [],
+            |r| r.get(0),
+        )?;
+        let inactive: i64 = c.query_row(
+            "SELECT COUNT(*) FROM formulas WHERE is_active = 0",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(FormulaMetrics {
+            total,
+            active,
+            inactive,
+        })
+    })
 }
 
 // ---------------------------------------------------------------------------

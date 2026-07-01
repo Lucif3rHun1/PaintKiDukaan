@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::auth::AppState;
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
 use crate::session::{current_user, require_role, Role};
@@ -113,5 +114,71 @@ pub fn deactivate_category(state: State<'_, AppState>, id: i64) -> AppResult<()>
             params![id],
         )?;
         Ok(())
+    })
+}
+
+const CATEGORIES_SORT_WHITELIST: &[&str] = &["name", "created_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_categories_paged(
+    state: State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<Category>> {
+    ipc_auth::authorize("cmd_list_categories_paged", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let _ = current_user()?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field = sanitize_sort(query.sort_field.as_deref(), CATEGORIES_SORT_WHITELIST, "name");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        let include_inactive = query
+            .filters
+            .get("include_inactive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !include_inactive {
+            wheres.push("is_active = 1".to_string());
+        }
+        if let Some(q) = query.search.as_ref().filter(|s| !s.is_empty()) {
+            wheres.push("name LIKE ?".to_string());
+            params.push(Box::new(format!("%{}%", q)));
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = format!(
+            " ORDER BY {} COLLATE NOCASE {} LIMIT ? OFFSET ?",
+            sort_field, sort_dir
+        );
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select = "SELECT id, name, is_active FROM categories";
+        let count_select = "SELECT COUNT(*) FROM categories";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            |r| {
+                Ok(Category {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    is_active: r.get::<_, i64>(2)? != 0,
+                })
+            },
+        )?;
+        Ok(ListPage { rows, total })
     })
 }

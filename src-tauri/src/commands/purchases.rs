@@ -25,6 +25,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::auth::AppState;
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
@@ -586,6 +587,145 @@ pub fn cmd_list_purchases(
         limit.unwrap_or(100),
     )
     .map_err(|e| AppError::Internal(e.to_string()))
+}
+
+const PURCHASES_SORT_WHITELIST: &[&str] =
+    &["bill_date", "purchase_number", "bill_number", "total_paise", "created_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_purchases_paged(
+    state: tauri::State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<Purchase>> {
+    crate::security::ipc_auth::authorize_err("cmd_list_purchases_paged", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field =
+        sanitize_sort(query.sort_field.as_deref(), PURCHASES_SORT_WHITELIST, "bill_date");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(vid) = query.filters.get("vendor_id").and_then(|v| v.as_i64()) {
+            wheres.push("p.vendor_id = ?".to_string());
+            params.push(Box::new(vid));
+        }
+        if let Some(d) = query.filters.get("from_date").and_then(|v| v.as_str()) {
+            wheres.push("p.bill_date >= ?".to_string());
+            params.push(Box::new(date_to_ms(d)));
+        }
+        if let Some(d) = query.filters.get("to_date").and_then(|v| v.as_str()) {
+            wheres.push("p.bill_date <= ?".to_string());
+            params.push(Box::new(date_to_ms(d)));
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = format!(
+            " ORDER BY p.{} {} LIMIT ? OFFSET ?",
+            sort_field, sort_dir
+        );
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select =
+            "SELECT p.id, p.vendor_id, v.name, p.bill_date, p.total_paise, p.created_by, p.notes, p.created_at \
+             FROM purchases p LEFT JOIN vendors v ON v.id = p.vendor_id";
+        let count_select =
+            "SELECT COUNT(*) FROM purchases p LEFT JOIN vendors v ON v.id = p.vendor_id";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            |r| {
+                let id: i64 = r.get(0)?;
+                let vendor_id: Option<i64> = r.get(1)?;
+                let vendor_name: Option<String> = r.get(2)?;
+                let bill_date_ms: Option<i64> = r.get(3)?;
+                let total: i64 = r.get(4)?;
+                let user_id: i64 = r.get(5)?;
+                let notes: Option<String> = r.get(6)?;
+                let created_at_ms: i64 = r.get(7)?;
+                let date = bill_date_ms
+                    .map(ms_to_date)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| ms_to_date(created_at_ms));
+                Ok(Purchase {
+                    id,
+                    vendor_id,
+                    vendor_name,
+                    date,
+                    total,
+                    user_id,
+                    notes,
+                    items: Vec::new(),
+                })
+            },
+        )?;
+        Ok(ListPage { rows, total })
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct PurchasePeriodSummary {
+    pub count: i64,
+    pub total_paise: i64,
+    pub avg_paise: i64,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_purchase_period_summary(
+    state: tauri::State<'_, AppState>,
+    from_date: Option<String>,
+    to_date: Option<String>,
+) -> AppResult<PurchasePeriodSummary> {
+    crate::security::ipc_auth::authorize_err("cmd_purchase_period_summary", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(d) = from_date.as_deref() {
+            wheres.push("bill_date >= ?".to_string());
+            params.push(Box::new(date_to_ms(d)));
+        }
+        if let Some(d) = to_date.as_deref() {
+            wheres.push("bill_date <= ?".to_string());
+            params.push(Box::new(date_to_ms(d)));
+        }
+        let where_suffix = if wheres.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", wheres.join(" AND "))
+        };
+        let sql = format!(
+            "SELECT COUNT(*), COALESCE(SUM(total_paise), 0), COALESCE(AVG(total_paise), 0) FROM purchases{}",
+            where_suffix
+        );
+        let arg_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+        let (count, total, avg): (i64, i64, i64) =
+            c.query_row(&sql, arg_refs.as_slice(), |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?;
+        Ok(PurchasePeriodSummary {
+            count,
+            total_paise: total,
+            avg_paise: avg,
+        })
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]

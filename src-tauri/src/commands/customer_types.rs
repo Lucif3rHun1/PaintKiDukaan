@@ -2,6 +2,7 @@
 //! Only owners can mutate; anyone authenticated can read.
 
 use crate::commands::auth::AppState;
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
@@ -169,6 +170,78 @@ pub fn deactivate_customer_type(state: State<'_, AppState>, id: i64) -> AppResul
             return Err(AppError::NotFound(format!("customer_type {id}")));
         }
         Ok(())
+    })
+}
+
+const CUSTOMER_TYPES_SORT_WHITELIST: &[&str] = &["name", "created_at", "updated_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_customer_types_paged(
+    state: State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<CustomerType>> {
+    let _ = current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field = sanitize_sort(
+        query.sort_field.as_deref(),
+        CUSTOMER_TYPES_SORT_WHITELIST,
+        "name",
+    );
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        let include_inactive = query
+            .filters
+            .get("include_inactive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !include_inactive {
+            wheres.push("is_active = 1".to_string());
+        }
+        if let Some(q) = query.search.as_ref().filter(|s| !s.is_empty()) {
+            wheres.push("name LIKE ?".to_string());
+            params.push(Box::new(format!("%{}%", q)));
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = format!(
+            " ORDER BY {} COLLATE NOCASE {} LIMIT ? OFFSET ?",
+            sort_field, sort_dir
+        );
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select =
+            "SELECT id, name, is_active, created_at, updated_at FROM customer_types";
+        let count_select = "SELECT COUNT(*) FROM customer_types";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            |r| {
+                Ok(CustomerType {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    is_active: r.get::<_, i64>(2)? != 0,
+                    created_at: r.get::<_, i64>(3)?.to_string(),
+                    updated_at: r.get::<_, i64>(4)?.to_string(),
+                })
+            },
+        )?;
+        Ok(ListPage { rows, total })
     })
 }
 
