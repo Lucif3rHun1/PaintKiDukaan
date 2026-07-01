@@ -5,8 +5,12 @@ export interface ParsedSpreadsheet {
   rows: string[][];
 }
 
+// ponytail: 10 MB cap to prevent OOM from malicious files
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 /** Parse a CSV/XLSX/XLS file into headers and rows. */
 export async function parseSpreadsheet(file: File): Promise<ParsedSpreadsheet> {
+  if (file.size > MAX_FILE_SIZE) throw new Error("File too large (max 10 MB)");
   const ext = file.name.split(".").pop()?.toLowerCase();
 
   if (ext === "csv" || ext === "txt") {

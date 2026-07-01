@@ -538,10 +538,12 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
             )?;
             if let Some(item_id) = l.item_id {
                 let requested = l.qty;
-                // H3: check stock at the specific deduction location, not globally.
+                // ponytail: check total stock across all locations. Purchases may stock
+                // at a different location than default_location; location-specific check
+                // causes false "not enough stock" when items exist elsewhere.
                 let available: f64 = c.query_row(
-                    "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
-                    params![item_id, default_location],
+                    "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
+                    params![item_id],
                     |r| r.get(0),
                 ).unwrap_or(0.0);
                 if available < requested {
@@ -576,7 +578,7 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                     if let Some(base_id) = base_item_id {
                         let requested = l.qty;
                         let available: f64 = c.query_row(
-                            "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                            "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
                             params![base_id, default_location],
                             |r| r.get(0),
                         ).unwrap_or(0.0);
@@ -741,7 +743,7 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                 if let Some(item_id) = item_id {
                     // H3: check stock at the specific deduction location, not globally.
                     let available: f64 = c.query_row(
-                        "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                        "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
                         params![item_id, default_location],
                         |r| r.get(0),
                     ).unwrap_or(0.0);
@@ -769,7 +771,7 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                         ).optional()?;
                         if let Some(base_id) = base_item_id {
                             let available: f64 = c.query_row(
-                                "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
+                                "SELECT COALESCE(SUM(qty), 0.0) FROM stock_balances WHERE item_id = ?1",
                                 params![base_id, default_location],
                                 |r| r.get(0),
                             ).unwrap_or(0.0);

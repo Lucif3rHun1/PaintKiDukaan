@@ -927,7 +927,7 @@ INSERT OR IGNORE INTO brand_sequences (brand_id, prefix, next_seq, padding, upda
 CREATE TABLE IF NOT EXISTS drafts (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
-  form_type  TEXT    NOT NULL CHECK(form_type IN ('sale','purchase','return')),
+  form_type  TEXT    NOT NULL CHECK(form_type IN ('sale','sale-final','sale-fbill','sale-quotation','purchase','return')),
   data_json  TEXT    NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,

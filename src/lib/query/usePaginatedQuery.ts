@@ -41,7 +41,7 @@ export interface UsePaginatedQueryResult<TItem> {
   pageSize: number;
   totalItems: number;
   totalPages: number;
-  refetch: () => void;
+  refetch: () => Promise<import("@tanstack/react-query").QueryObserverResult>;
 }
 
 function normalizeRows<TItem>(result: QueryRows<TItem>): PaginatedRows<TItem> | null {
@@ -124,6 +124,6 @@ export function usePaginatedQuery<TItem>({
     pageSize,
     totalItems,
     totalPages,
-    refetch: () => void query.refetch(),
+    refetch: query.refetch,
   };
 }

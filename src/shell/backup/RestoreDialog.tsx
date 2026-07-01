@@ -73,7 +73,8 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
     try {
       await restore(path, passphrase);
       onDone();
-      close();
+      reset();
+      onClose();
     } catch (e) {
       setError(extractError(e));
     } finally {

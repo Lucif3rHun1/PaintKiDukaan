@@ -899,6 +899,36 @@ impl Db {
             }
         }
 
+        // M-INLINE-023: Relax drafts CHECK constraint to accept sale-final/fbill/quotation.
+        // SalesPage uses useAutosave(`sale-${kind}`, ...) sending form_type values like
+        // "sale-final", "sale-fbill", "sale-quotation" which the old CHECK rejected.
+        {
+            let current_check: String = conn
+                .query_row(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='drafts'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or_default();
+            if current_check.contains("'sale','purchase','return')") {
+                conn.execute_batch(
+                    "CREATE TABLE drafts_new (
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+                        form_type  TEXT    NOT NULL CHECK(form_type IN ('sale','sale-final','sale-fbill','sale-quotation','purchase','return')),
+                        data_json  TEXT    NOT NULL DEFAULT '{}',
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        UNIQUE(user_id, form_type)
+                    );
+                    INSERT INTO drafts_new SELECT * FROM drafts;
+                    DROP TABLE drafts;
+                    ALTER TABLE drafts_new RENAME TO drafts;
+                    CREATE INDEX IF NOT EXISTS idx_drafts_user ON drafts(user_id);",
+                )?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA busy_timeout = 5000;\

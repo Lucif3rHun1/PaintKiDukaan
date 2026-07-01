@@ -190,16 +190,37 @@ jobs:
           set -euo pipefail
           tag="${{ github.ref_name }}"
           echo "=== Uploading to release: $tag ==="
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag does not exist, creating..."
-            gh release create "$tag" --title "$tag" --notes "Release $tag" --target master
-            echo "Release created."
-          else
-            echo "Release $tag already exists, uploading assets."
-          fi
           ls -la release-files/
-          gh release upload "$tag" latest.json release-files/* --clobber
+          echo "--- Auth check ---"
+          gh auth status 2>&1 || echo "gh auth status failed (non-fatal)"
+          echo "--- Create release if missing ---"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag does not exist, creating via gh..."
+            gh release create "$tag" --title "$tag" --notes "Release $tag" --target master 2>&1 || echo "gh release create failed; falling back to API"
+            echo "After gh create, exit=$?"
+          else
+            echo "Release $tag already exists."
+          fi
+          echo "--- Verify release exists (API fallback) ---"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            echo "gh release view still fails; trying GitHub API directly"
+            payload=$(printf '{"tag_name":"%s","name":"%s","body":"Release %s","target_commitish":"%s","draft":false,"prerelease":false}' "$tag" "$tag" "$tag" "$GITHUB_SHA")
+            api_status=$(curl -sS -o /tmp/rel.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/vnd.github+json" \
+              -d "$payload" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases")
+            echo "API response status: $api_status"
+            cat /tmp/rel.json | head -c 500
+            echo ""
+          fi
+          echo "--- Upload assets ---"
+          gh release upload "$tag" latest.json release-files/* --clobber 2>&1 || echo "gh release upload failed"
           echo "=== Upload complete ==="
+          echo "--- Final verification ---"
+          gh release view "$tag" 2>&1 | head -20 || echo "gh release view failed"
 
       - name: Verify updater pubkey matches published signatures
         continue-on-error: true

@@ -166,12 +166,12 @@ fn write_sql_setting(db: &Db, col: &str, value: &Value) -> rusqlite::Result<()> 
         // silently affect 0 rows.
         conn.execute(
             "INSERT OR IGNORE INTO settings (id, created_at, updated_at) VALUES (1, ?1, ?1)",
-            rusqlite::params![crate::commands::auth::now_unix() as i64],
+            rusqlite::params![now_unix_ms()],
         )?;
         let sql = format!("UPDATE settings SET {col} = ?1, updated_at = ?2 WHERE id = 1");
         conn.execute(
             &sql,
-            rusqlite::params![sql_val, crate::commands::auth::now_unix() as i64],
+            rusqlite::params![sql_val, now_unix_ms()],
         )?;
         Ok(())
     })?;

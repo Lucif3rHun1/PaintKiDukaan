@@ -98,14 +98,6 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "restore_from_recovery",
         min_role: Role::Public,
     },
-    CommandAcl {
-        name: "retry_update",
-        min_role: Role::Public,
-    },
-    CommandAcl {
-        name: "quit_app",
-        min_role: Role::Public,
-    },
     // ── Owner-only (23) ────────────────────────────────────────────────
     // Auth & user management
     CommandAcl {
@@ -962,8 +954,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            182,
-            "ACL has {} entries, expected 182",
+            180,
+            "ACL has {} entries, expected 180",
             COMMAND_ACL.len()
         );
     }

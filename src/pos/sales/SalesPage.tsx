@@ -164,9 +164,10 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
   // Load sale data when in edit mode
   useEffect(() => {
     if (!editSaleId) return;
+    let cancelled = false;
     setEditMode(true);
     getSale(editSaleId).then((sale) => {
-      if (!sale) return;
+      if (cancelled || !sale) return;
       setKind(sale.status as Kind);
       setLines(
         sale.items.map((item) => ({
@@ -186,6 +187,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
       setSplits(sale.payment_modes ?? []);
       if (sale.customer_id) {
         getCustomer(sale.customer_id).then((c) => {
+          if (cancelled) return;
           if (c) {
             setCustomer(c);
             setWalkIn(false);
@@ -193,9 +195,11 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         }).catch(() => {});
       }
     }).catch((e: unknown) => {
+      if (cancelled) return;
       toast.error(extractError(e));
       onExit();
     });
+    return () => { cancelled = true; };
   }, [editSaleId]);
 
   const draftData = useMemo(() => ({
@@ -657,7 +661,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
     setShowExitModal(false);
     setPendingExit(null);
     void deleteDraft(`sale-${kind}`);
-    setValidityDays(0);
+    setValidityDays(7);
     exit();
   }
 

@@ -53,6 +53,7 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
 
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
+    if (busy) return;
     setError(null);
     if (!validate()) return;
     setBusy(true);

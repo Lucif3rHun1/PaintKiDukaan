@@ -136,7 +136,7 @@ export function SalesListPage({ onCreate }: Props) {
   const filteredTotalItems = filteredAllData.length;
   const filteredTotalPages = Math.max(1, Math.ceil(filteredTotalItems / PAGE_SIZE));
 
-  useEffect(() => { setPage(1); }, [payFilter, setPage]);
+  useEffect(() => { setPage(1); }, [payFilter, search, setPage]);
 
   const columns = useMemo<ColumnDef<Sale>[]>(
     () => [
@@ -396,7 +396,7 @@ export function SalesListPage({ onCreate }: Props) {
           const data = JSON.parse(draft.data_json) as Record<string, unknown>;
           const lines = data.lines as { item_id?: number }[] | undefined;
           itemCount = lines?.length ?? 0;
-          if (data.customerId) label = `Walk-in`;
+          if (!data.customerId) label = `Walk-in`;
         } catch { /* corrupt draft — still show it */ }
         const time = new Date(draft.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         return (

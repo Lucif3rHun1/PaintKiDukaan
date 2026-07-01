@@ -193,6 +193,7 @@ pub fn preview_next_barcode(
     brand_id: Option<i64>,
     item_name: String,
 ) -> AppResult<String> {
+    let _user = crate::session::current_user()?;
     let guard = state
         .db
         .lock()

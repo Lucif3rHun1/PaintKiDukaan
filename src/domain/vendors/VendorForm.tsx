@@ -30,6 +30,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     setError(null);
     if (!name.trim()) {
       setError("Name is required");
@@ -52,7 +53,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
         onSaved(v);
       } else if (initial) {
         const patch: VendorUpdate = {
-          name,
+          name: name.trim(),
           phone: phone || null,
           opening_balance: Math.round(Number(openingBalance || "0") * 100),
           notes: notes || null,

@@ -311,7 +311,7 @@ export function ItemList({ role }: Props) {
       console.warn("printLabel failed", e);
       toast.error("Failed to generate label");
     }
-  }, []);
+  }, [brands]);
 
   const handleBulkArchive = useCallback(async () => {
     const selected = allItems.filter((item) => selectedIds.has(item.id));
@@ -487,7 +487,7 @@ export function ItemList({ role }: Props) {
     } finally {
       setAdjustBusy(false);
     }
-  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, adjustBusy, refetch]);
+  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, adjustBusy, refetch, brands]);
 
   if (mode === "create") {
     return (

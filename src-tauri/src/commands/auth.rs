@@ -903,6 +903,11 @@ fn clear_lockout(db_path: &Path, state: &AppState) -> Result<(), AppError> {
 /// recovery passphrase (Zeroizing clears the bytes on reassignment).
 #[tauri::command(rename_all = "snake_case")]
 pub fn lock(state: State<AppState>) -> Result<(), AppError> {
+    // Ponytail: require active session to lock — prevents unauthenticated DoS
+    {
+        let guard = state.session.lock().map_err(|_| AppError::Internal("session mutex poisoned".into()))?;
+        guard.as_ref().ok_or(AppError::Forbidden("no active session".into()))?;
+    }
     if let Some(ref p) = *state.db_path.lock().unwrap() {
         let _ = set_deception_flag(p, false);
     }
@@ -1213,6 +1218,9 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
         if attempts >= max_failed_attempts(&state) {
             handle_lockout(&state, attempts)?;
         }
+        if attempts == DECEPTION_THRESHOLD {
+            set_deception_flag(&db_path, true)?;
+        }
         return Err(AppError::WrongPin);
     }
 
@@ -1252,9 +1260,43 @@ pub fn verify_owner_pin(state: &AppState, pin: &str) -> Result<(), AppError> {
         return Err(AppError::WrongPin);
     }
 
+    // Lockout check: mirror the same policy as unlock() — CWE custom #9.
+    // Without this, backdated-return flows allow unlimited brute-force.
+    if let Some(locked_until_unix) = current_lockout_until(&db_path)? {
+        let now = now_unix();
+        if now < locked_until_unix {
+            return Err(AppError::LockedOut {
+                until: locked_until_unix,
+            });
+        }
+        clear_lockout(&db_path, state)?;
+    }
+
     let row = read_keywrap_from_keystore(&db_path)?;
-    keywrap::unwrap_with_pin(&row, pin)?;
-    Ok(())
+    match keywrap::unwrap_with_pin(&row, pin) {
+        Ok(_) => {
+            // Success: reset failed attempts. (DEK from unwrap_with_pin not needed here)
+            *state.failed_attempts.lock().unwrap() = 0;
+            clear_lockout(&db_path, state)?;
+            Ok(())
+        }
+        Err(e) => {
+            // Record failed attempt and enforce lockout / deception.
+            let attempts = {
+                let mut failed = state.failed_attempts.lock().unwrap();
+                *failed += 1;
+                *failed
+            };
+            record_failed_attempt(&db_path, attempts)?;
+            if attempts >= max_failed_attempts(state) {
+                handle_lockout(state, attempts)?;
+            }
+            if attempts == DECEPTION_THRESHOLD {
+                set_deception_flag(&db_path, true)?;
+            }
+            Err(e)
+        }
+    }
 }
 
 /// Free function for cross-slice middleware (slice plan §1 contract):

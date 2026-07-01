@@ -35,7 +35,7 @@ pub fn provision_decoy_db_impl(
             .map_err(|e| AppError::Crypto(format!("decoy DB open: {e}")))?;
 
         decoy_db.with_conn(|conn: &rusqlite::Connection| {
-            let now = crate::commands::auth::now_unix() as i64;
+            let now = (crate::commands::auth::now_unix() as i64) * 1000;
             conn.execute(
                 "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) \
                  VALUES (?1, 'owner', ?2, ?3, 6, ?4, ?4)",

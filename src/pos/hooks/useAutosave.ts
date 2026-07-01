@@ -23,6 +23,7 @@ export function useAutosave(formType: string, data: unknown): UseAutosaveReturn 
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<SaveStatus>("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlight = useRef<Promise<unknown> | null>(null);
   const isInitialMount = useRef(true);
 
   // Load existing draft on mount
@@ -65,14 +66,16 @@ export function useAutosave(formType: string, data: unknown): UseAutosaveReturn 
     timer.current = setTimeout(() => {
       setStatus("saving");
       const json = JSON.stringify(data);
-      saveDraft(formType, json)
+      const p = saveDraft(formType, json)
         .then((saved) => {
           setDraft(saved);
           setStatus("saved");
         })
         .catch(() => {
           setStatus("error");
-        });
+        })
+        .finally(() => { inFlight.current = null; });
+      inFlight.current = p;
     }, 2000);
 
     return () => {
@@ -83,6 +86,7 @@ export function useAutosave(formType: string, data: unknown): UseAutosaveReturn 
   // Reset draft: cancel pending save, delete from DB and clear local state
   const resetDraft = useCallback(async () => {
     if (timer.current) clearTimeout(timer.current);
+    if (inFlight.current) await inFlight.current.catch(() => {});
     try {
       await deleteDraft(formType);
     } catch {

@@ -47,6 +47,7 @@ export function CustomerForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     setError(null);
     if (!PHONE_RE.test(phone)) {
       setError("Phone must be 10 digits, starting with 6-9");
@@ -66,7 +67,7 @@ export function CustomerForm({
         onSaved(c);
       } else if (initial) {
         const c = await updateCustomer(initial.id, {
-          name,
+          name: name.trim(),
           phone,
           customer_type_id: typeId ? Number(typeId) : null,
           opening_balance_paise: paise,

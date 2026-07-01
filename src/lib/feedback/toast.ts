@@ -27,9 +27,14 @@ function getSnapshot() {
   return toasts;
 }
 
+// ponytail: cap at 8 to prevent unbounded growth on error loops
+const MAX_TOASTS = 8;
+
 function addToast(variant: ToastVariant, message: string) {
-  const id = Math.random().toString(36).slice(2);
-  toasts = [...toasts, { id, variant, message }];
+  const id = crypto.randomUUID();
+  const next = [...toasts, { id, variant, message }];
+  if (next.length > MAX_TOASTS) next.splice(0, next.length - MAX_TOASTS);
+  toasts = next;
   emit();
   setTimeout(() => {
     toasts = toasts.filter((t) => t.id !== id);
@@ -50,7 +55,7 @@ export const toast = {
       error: string | ((error: unknown) => string);
     },
   ): Promise<T> => {
-    const loadingId = Math.random().toString(36).slice(2);
+    const loadingId = crypto.randomUUID();
     toasts = [...toasts, { id: loadingId, variant: "info", message: msgs.loading }];
     emit();
     return p

@@ -15,8 +15,9 @@ interface RoleGuardProps {
 
 export function RoleGuard({ minRole, children, fallback = null }: RoleGuardProps) {
   const currentRole = useSecurity((s) => s.session.user?.role);
-  const currentLevel = currentRole ? (ROLE_HIERARCHY[currentRole] ?? 0) : -1;
-  const requiredLevel = ROLE_HIERARCHY[minRole] ?? 0;
+  // ponytail: unknown roles fall back to -1 (deny), not 0 (stocker access)
+  const currentLevel = currentRole ? (ROLE_HIERARCHY[currentRole] ?? -1) : -1;
+  const requiredLevel = ROLE_HIERARCHY[minRole] ?? -1;
 
   if (currentLevel >= requiredLevel) return <>{children}</>;
   return <>{fallback}</>;
