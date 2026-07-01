@@ -21,7 +21,6 @@ import {
   type CreateSaleReturnPayload,
   type Customer,
   type SaleReturn,
-  type GetSaleByInvoiceNumberRequest,
   type Formula,
   type FormulaFilter,
   type NewFormula,
@@ -127,12 +126,6 @@ export async function createSalesReturn(
   payload: CreateSaleReturnPayload,
 ): Promise<number> {
   return invoke<number>("cmd_create_sale_return", { payload });
-}
-
-export async function getSaleByInvoiceNumber(
-  no: string,
-): Promise<Sale | null> {
-  return invoke<Sale | null>("get_sale_by_invoice_number", { no });
 }
 
 export async function getSaleReturn(id: number): Promise<SaleReturn | null> {

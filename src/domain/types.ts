@@ -553,10 +553,6 @@ export interface SaleReturnLine {
   shade_note: string | null;
 }
 
-export interface GetSaleByInvoiceNumberRequest {
-  no: string;
-}
-
 export interface Formula {
   id: number;
   id_code: string;

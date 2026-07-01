@@ -866,7 +866,13 @@ pub fn get_by_no(db: &Db, no: &str) -> anyhow::Result<Option<Sale>> {
     })
 }
 
-pub fn list(db: &Db, status: Option<&str>, limit: i64) -> anyhow::Result<Vec<Sale>> {
+pub fn list(
+    db: &Db,
+    status: Option<&str>,
+    from_date: Option<&str>,
+    to_date: Option<&str>,
+    limit: i64,
+) -> anyhow::Result<Vec<Sale>> {
     db.with_conn(|c| {
         let mut sql = String::from(
             "SELECT id,no,customer_id,date,status,subtotal,bill_discount,
@@ -874,14 +880,33 @@ pub fn list(db: &Db, status: Option<&str>, limit: i64) -> anyhow::Result<Vec<Sal
                     converted_from_id,user_id,created_at
              FROM sales",
         );
-        let mut bound = Vec::new();
+        let mut bound: Vec<rusqlite::types::Value> = Vec::new();
+        let mut conds: Vec<String> = Vec::new();
         if let Some(s) = status {
-            sql.push_str(" WHERE status = ?1");
-            bound.push(s.to_string());
+            bound.push(s.to_string().into());
+            conds.push(format!("status = ?{}", bound.len()));
+        }
+        if let Some(d) = from_date {
+            bound.push(date_to_ms(d).into());
+            conds.push(format!("date >= ?{}", bound.len()));
+        }
+        if let Some(d) = to_date {
+            // to_date is inclusive end-of-day; use start of next day as upper bound.
+            let upper = NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                .ok()
+                .and_then(|nd| nd.succ_opt())
+                .map(|nd| nd.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis())
+                .unwrap_or_else(now_epoch_ms);
+            bound.push(upper.into());
+            conds.push(format!("date < ?{}", bound.len()));
+        }
+        if !conds.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&conds.join(" AND "));
         }
         sql.push_str(" ORDER BY date DESC, id DESC LIMIT ?");
-        sql.push_str(&format!("{}", bound.len() + 1));
-        bound.push(limit.to_string());
+        bound.push(limit.into());
+        sql.push_str(&format!("{}", bound.len()));
         let mut stmt = c.prepare(&sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(&bound), row_to_sale_header)?;
         let mut out = Vec::new();
@@ -1037,6 +1062,8 @@ pub fn cmd_get_sale_by_invoice_number(
 pub fn cmd_list_sales(
     state: tauri::State<'_, AppState>,
     status: Option<String>,
+    from_date: Option<String>,
+    to_date: Option<String>,
     limit: Option<i64>,
 ) -> AppResult<Vec<Sale>> {
     ipc_auth::authorize_err("cmd_list_sales", state.inner())?;
@@ -1045,7 +1072,14 @@ pub fn cmd_list_sales(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    list(db, status.as_deref(), limit.unwrap_or(100)).map_err(|e| AppError::Internal(e.to_string()))
+    list(
+        db,
+        status.as_deref(),
+        from_date.as_deref(),
+        to_date.as_deref(),
+        limit.unwrap_or(100),
+    )
+    .map_err(|e| AppError::Internal(e.to_string()))
 }
 
 // -----------------------------------------------------------------------------
