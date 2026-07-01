@@ -149,8 +149,8 @@ pub fn create_brand(state: State<'_, AppState>, name: String, prefix: String) ->
         )?;
         let id = tx.last_insert_rowid() as i64;
         tx.execute(
-            "INSERT INTO brand_sequences (brand_id, next_seq) VALUES (?1, 1)",
-            params![id],
+            "INSERT INTO brand_sequences (brand_id, prefix, next_seq, padding, updated_at) VALUES (?1, ?2, 1, 4, unixepoch('now'))",
+            params![id, prefix],
         )?;
         fetch_brand(tx, id)
     })
