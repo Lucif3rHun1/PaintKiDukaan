@@ -518,6 +518,7 @@ export interface CreateCustomerInlinePayload {
 
 export interface CreateSaleReturnPayload {
   sale_id: number;
+  customer_id?: number | null;
   date?: string;                // YYYY-MM-DD
   reason?: string;
   payment_modes: Array<{ mode: string; amount: number }>;

@@ -30,6 +30,9 @@ tauri-plugin-process = "2"
 # tauri-plugin-oauth — removed (unused, CWE-1104)
 # tauri-plugin-keyring-store — removed (unused, CWE-1104)
 
+# HTTP client for custom updater (SHA-256 verified downloads)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
 # Database (SQLCipher)
 # Windows requires OPENSSL_DIR pointing at a static OpenSSL build (set automatically by
 # vcpkg or any system OpenSSL install — no project-level setup needed if it's already

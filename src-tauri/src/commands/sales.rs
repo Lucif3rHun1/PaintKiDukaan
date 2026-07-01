@@ -1075,6 +1075,7 @@ fn now_epoch_ms() -> i64 {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateSaleReturnPayload {
     pub sale_id: i64,
+    pub customer_id: Option<i64>,
     pub date: Option<String>,
     pub reason: Option<String>,
     pub payment_modes: Vec<PaymentSplit>,
