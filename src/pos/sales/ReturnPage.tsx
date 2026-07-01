@@ -304,6 +304,7 @@ export default function ReturnPage({ user, onBack }: Props) {
       resetDirty();
       void queryClient.invalidateQueries({ queryKey: ["items"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["returns-list"] });
       void queryClient.invalidateQueries({ queryKey: ["sales-list"] });
       setStatus(`Return #${saved} saved`);
     } catch (e) {

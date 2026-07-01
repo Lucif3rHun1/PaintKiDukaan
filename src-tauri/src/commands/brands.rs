@@ -144,12 +144,12 @@ pub fn create_brand(state: State<'_, AppState>, name: String, prefix: String) ->
             )));
         }
         tx.execute(
-            "INSERT INTO brands (name, prefix, created_at, updated_at) VALUES (?1, ?2, unixepoch('now'), unixepoch('now'))",
+            "INSERT INTO brands (name, prefix, created_at, updated_at) VALUES (?1, ?2, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
             params![name, prefix],
         )?;
         let id = tx.last_insert_rowid() as i64;
         tx.execute(
-            "INSERT INTO brand_sequences (brand_id, prefix, next_seq, padding, updated_at) VALUES (?1, ?2, 1, 4, unixepoch('now'))",
+            "INSERT INTO brand_sequences (brand_id, prefix, next_seq, padding, updated_at) VALUES (?1, ?2, 1, 4, (unixepoch('now') * 1000))",
             params![id, prefix],
         )?;
         fetch_brand(tx, id)

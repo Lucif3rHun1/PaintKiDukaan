@@ -108,7 +108,7 @@ pub fn create_sub_location(
                 )));
             }
             tx.execute(
-                "UPDATE sub_locations SET is_active = 1, position = ?1, updated_at = unixepoch('now') WHERE id = ?2",
+                "UPDATE sub_locations SET is_active = 1, position = ?1, updated_at = (unixepoch('now') * 1000) WHERE id = ?2",
                 params![pos, id],
             )?;
             return Ok(SubLocation {
@@ -126,7 +126,7 @@ pub fn create_sub_location(
         }
 
         tx.execute(
-            "INSERT INTO sub_locations (location_id, name, position, created_at, updated_at) VALUES (?1, ?2, ?3, unixepoch('now'), unixepoch('now'))",
+            "INSERT INTO sub_locations (location_id, name, position, created_at, updated_at) VALUES (?1, ?2, ?3, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
             params![location_id, name, pos],
         )?;
         let id = tx.last_insert_rowid();
@@ -186,7 +186,7 @@ pub fn update_sub_location(
             }
         }
         let n = tx.execute(
-            "UPDATE sub_locations SET name = COALESCE(?1, name), position = ?2, updated_at = unixepoch('now') WHERE id = ?3",
+            "UPDATE sub_locations SET name = COALESCE(?1, name), position = ?2, updated_at = (unixepoch('now') * 1000) WHERE id = ?3",
             params![new_name, new_pos, id],
         )?;
         if n == 0 {
@@ -226,7 +226,7 @@ pub fn deactivate_sub_location(state: State<'_, AppState>, id: i64) -> AppResult
             )));
         }
         let n = tx.execute(
-            "UPDATE sub_locations SET is_active = 0, updated_at = unixepoch('now') WHERE id = ?1",
+            "UPDATE sub_locations SET is_active = 0, updated_at = (unixepoch('now') * 1000) WHERE id = ?1",
             params![id],
         )?;
         if n == 0 {

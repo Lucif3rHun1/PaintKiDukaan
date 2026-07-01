@@ -509,6 +509,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       void resetDraft();
       resetDirty();
       setRecent(await listPurchases());
+      void queryClient.invalidateQueries({ queryKey: ["inward-list"] });
       void queryClient.invalidateQueries({ queryKey: ["items"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       return res;

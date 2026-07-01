@@ -70,7 +70,7 @@ pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppR
     }
     db.with_tx(|tx| {
         tx.execute(
-            "INSERT INTO locations (name, zone, is_active, created_at, updated_at) VALUES (?1, ?2, 1, unixepoch('now'), unixepoch('now'))",
+            "INSERT INTO locations (name, zone, is_active, created_at, updated_at) VALUES (?1, ?2, 1, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
             params![name, payload.zone],
         )?;
         let id = tx.last_insert_rowid();

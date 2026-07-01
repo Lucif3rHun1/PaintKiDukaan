@@ -42,8 +42,10 @@ interface AlertBellProps {
 }
 
 export function AlertBell({ currentRole }: AlertBellProps) {
+  // ponytail: early return AFTER all hooks to satisfy React hooks rules.
+  // Hooks below must execute unconditionally — role check done in render return.
   const currentLevel = currentRole ? ROLE_HIERARCHY[currentRole] ?? 0 : 0;
-  if (currentLevel < ROLE_HIERARCHY.cashier) return null;
+  const hide = currentLevel < ROLE_HIERARCHY.cashier;
 
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -95,6 +97,8 @@ export function AlertBell({ currentRole }: AlertBellProps) {
     await markAllAlertsRead();
     await refresh();
   };
+
+  if (hide) return null;
 
   return (
     <div className="relative" ref={panelRef}>

@@ -76,6 +76,7 @@ impl SecureDesktopGuard {
         {
             unsafe {
                 if win::SetThreadDesktop(self.old_desktop) == 0 {
+                    let _ = win::CloseDesktop(self.new_desktop);
                     return Err(AppError::Internal(
                         "SetThreadDesktop (restore) failed".into(),
                     ));

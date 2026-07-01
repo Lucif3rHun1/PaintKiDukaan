@@ -344,6 +344,18 @@ pub fn set_item_packaging(
     let db_guard = lock_db(&state)?;
     let db = db_guard.as_ref().ok_or(AppError::NotUnlocked)?;
     db.with_conn(|conn| {
+        let unit_active: bool = conn
+            .query_row(
+                "SELECT is_active FROM purchase_units WHERE id = ?1",
+                rusqlite::params![purchase_unit_id],
+                |r| r.get(0),
+            )
+            .map_err(|_| AppError::NotFound("purchase unit not found".into()))?;
+        if !unit_active {
+            return Err(AppError::Validation(
+                "purchase unit is deactivated".into(),
+            ));
+        }
         conn.execute(
             "INSERT INTO item_purchase_packaging (item_id, purchase_unit_id, qty_per_purchase_unit, updated_at) \
              VALUES (?1, ?2, ?3, datetime('now')) \

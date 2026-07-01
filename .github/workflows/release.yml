@@ -184,14 +184,22 @@ jobs:
 
       - name: Upload release assets
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           tag="${{ github.ref_name }}"
+          echo "=== Uploading to release: $tag ==="
           if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --title "$tag" --notes "Release $tag"
+            echo "Release $tag does not exist, creating..."
+            gh release create "$tag" --title "$tag" --notes "Release $tag" --target master
+            echo "Release created."
+          else
+            echo "Release $tag already exists, uploading assets."
           fi
+          ls -la release-files/
           gh release upload "$tag" latest.json release-files/* --clobber
+          echo "=== Upload complete ==="
 
       - name: Verify updater pubkey matches published signatures
         continue-on-error: true

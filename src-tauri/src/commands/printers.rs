@@ -166,7 +166,7 @@ pub fn cmd_create_printer(state: State<'_, AppState>, input: NewPrinter) -> AppR
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     db.with_tx(|tx| {
         tx.execute(
-            "INSERT INTO printers (name, use_case, connection_type, address, driver_name, port_name, is_default, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, unixepoch('now'), unixepoch('now'))",
+            "INSERT INTO printers (name, use_case, connection_type, address, driver_name, port_name, is_default, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
             params![
                 input.name.trim(),
                 input.use_case.to_lowercase(),
@@ -181,14 +181,14 @@ pub fn cmd_create_printer(state: State<'_, AppState>, input: NewPrinter) -> AppR
         match input.use_case.as_str() {
             "label" => {
                 tx.execute(
-                    "INSERT INTO printer_mappings (printer_id, label_width_mm, label_height_mm, created_at, updated_at) VALUES (?1, ?2, ?3, unixepoch('now'), unixepoch('now'))",
+                    "INSERT INTO printer_mappings (printer_id, label_width_mm, label_height_mm, created_at, updated_at) VALUES (?1, ?2, ?3, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
                     params![id, input.label_width_mm, input.label_height_mm],
                 )?;
             }
             "receipt" => {
                 let ps = input.paper_size.as_deref().unwrap_or(DEFAULT_RECEIPT_PAPER);
                 tx.execute(
-                    "INSERT INTO printer_mappings (printer_id, paper_size, created_at, updated_at) VALUES (?1, ?2, unixepoch('now'), unixepoch('now'))",
+                    "INSERT INTO printer_mappings (printer_id, paper_size, created_at, updated_at) VALUES (?1, ?2, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
                     params![id, ps],
                 )?;
             }
@@ -226,7 +226,7 @@ pub fn cmd_update_printer(
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     db.with_tx(|tx| {
         let changed = tx.execute(
-            "UPDATE printers SET name = ?1, use_case = ?2, connection_type = ?3, address = ?4, driver_name = ?5, port_name = ?6, is_default = ?7, updated_at = unixepoch('now') WHERE id = ?8",
+            "UPDATE printers SET name = ?1, use_case = ?2, connection_type = ?3, address = ?4, driver_name = ?5, port_name = ?6, is_default = ?7, updated_at = (unixepoch('now') * 1000) WHERE id = ?8",
             params![
                 input.name.trim(),
                 input.use_case.to_lowercase(),
@@ -248,14 +248,14 @@ pub fn cmd_update_printer(
         match input.use_case.as_str() {
             "label" => {
                 tx.execute(
-                    "INSERT INTO printer_mappings (printer_id, label_width_mm, label_height_mm, created_at, updated_at) VALUES (?1, ?2, ?3, unixepoch('now'), unixepoch('now'))",
+                    "INSERT INTO printer_mappings (printer_id, label_width_mm, label_height_mm, created_at, updated_at) VALUES (?1, ?2, ?3, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
                     params![id, input.label_width_mm, input.label_height_mm],
                 )?;
             }
             "receipt" => {
                 let ps = input.paper_size.as_deref().unwrap_or(DEFAULT_RECEIPT_PAPER);
                 tx.execute(
-                    "INSERT INTO printer_mappings (printer_id, paper_size, created_at, updated_at) VALUES (?1, ?2, unixepoch('now'), unixepoch('now'))",
+                    "INSERT INTO printer_mappings (printer_id, paper_size, created_at, updated_at) VALUES (?1, ?2, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
                     params![id, ps],
                 )?;
             }
@@ -320,7 +320,7 @@ pub fn cmd_set_default_printer(state: State<'_, AppState>, id: i64) -> AppResult
             params![use_case, id],
         )?;
         tx.execute(
-            "UPDATE printers SET is_default = 1, updated_at = unixepoch('now') WHERE id = ?1",
+            "UPDATE printers SET is_default = 1, updated_at = (unixepoch('now') * 1000) WHERE id = ?1",
             params![id],
         )?;
         Ok(())

@@ -114,7 +114,7 @@ pub fn create_unit(
     let db = db_guard.as_ref().ok_or(AppError::NotUnlocked)?;
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO units (code, label, dimension, created_at, updated_at) VALUES (?1, ?2, ?3, unixepoch('now'), unixepoch('now'))",
+            "INSERT INTO units (code, label, dimension, created_at, updated_at) VALUES (?1, ?2, ?3, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
             rusqlite::params![code, label, dimension],
         )?;
         let id = conn.last_insert_rowid();
@@ -150,7 +150,7 @@ pub fn create_unit_conversion(
     let db = db_guard.as_ref().ok_or(AppError::NotUnlocked)?;
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at) VALUES (?1, ?2, ?3, unixepoch('now'), unixepoch('now'))",
+            "INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at) VALUES (?1, ?2, ?3, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
             rusqlite::params![from_unit_id, to_unit_id, factor],
         )?;
         let id = conn.last_insert_rowid();

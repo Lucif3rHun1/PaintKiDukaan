@@ -68,7 +68,7 @@ type Mode = "list" | "create" | "edit" | "view";
 type ItemSortField = "name" | "sku" | "stock" | "retail";
 type SortDirection = "asc" | "desc";
 
-const ITEM_PAGE_SIZE = 25;
+const ITEM_PAGE_SIZE = 100;
 
 export function ItemList({ role }: Props) {
   const queryClient = useQueryClient();
@@ -184,8 +184,8 @@ export function ItemList({ role }: Props) {
         ? (subLocationNameById.get(item.sub_location_id) ?? "")
         : "";
     const pos = item.position?.trim() || "";
-    if (sub && pos) return `${where} / ${sub} / ${pos}`;
-    if (sub) return `${where} / ${sub}`;
+    if (sub && pos) return `${where} › ${sub} › ${pos}`;
+    if (sub) return `${where} › ${sub}`;
     return where;
   }
 
@@ -688,7 +688,7 @@ export function ItemList({ role }: Props) {
 
       {/* ── Status ───────────────────────────────────────────── */}
       {error ? <Alert title="Inventory failed to load">{error.message}</Alert> : null}
-      {loading || isFetching ? <Skeleton variant="card" className="h-40" /> : null}
+      {loading ? <Skeleton variant="card" className="h-40" /> : null}
 
       {!loading && allItems.length === 0 && (
         <EmptyState
@@ -732,9 +732,9 @@ export function ItemList({ role }: Props) {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="text-left text-xs text-muted-foreground">
+                  <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <tr className="border-b border-border">
-                      <th className="px-3 py-2 font-medium">
+                      <th className="w-10 px-3 py-2 font-medium">
                         <input
                           type="checkbox"
                           checked={allPageSelected}
@@ -752,12 +752,12 @@ export function ItemList({ role }: Props) {
                       ) : null}
                       <th className="px-3 py-2 text-right font-medium">Retail</th>
                       <th className="px-3 py-2 text-right font-medium">Min qty</th>
-                      <th className="px-3 py-2 font-medium">Stock</th>
-                      <th className="px-3 py-2 text-right font-medium">Actions</th>
+                      <th className="px-3 py-2 text-right font-medium">Stock</th>
+                      <th className="w-12 px-3 py-2 text-right font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((item) => {
+                    {rows.map((item, rowIdx) => {
                       const stockAnomaly = item.current_qty < 0;
                       const isOut = item.current_qty === 0;
                       const lowStock = !isOut && !stockAnomaly && item.current_qty <= (item.min_stock);
@@ -766,16 +766,17 @@ export function ItemList({ role }: Props) {
                           key={item.id}
                           onClick={() => openEdit(item)}
                           className={[
-                            "cursor-pointer border-b border-border hover:bg-muted",
+                            "cursor-pointer border-b border-border transition-colors hover:bg-muted/70",
+                            rowIdx % 2 === 1 ? "bg-muted/20" : "",
                             stockAnomaly
-                              ? "border-l-2 border-l-destructive/80 bg-destructive/10"
+                              ? "border-l-2 border-l-destructive bg-destructive/15"
                               : isOut
-                                ? "border-l-2 border-l-destructive/60 bg-destructive/5"
+                                ? "border-l-2 border-l-destructive/70 bg-destructive/10"
                                 : "",
                             lowStock
-                              ? "border-l-2 border-l-warning/60 bg-warning/5"
+                              ? "border-l-2 border-l-warning bg-warning/10"
                               : "",
-                            !item.is_active ? "opacity-50" : "",
+                            !item.is_active ? "opacity-60" : "",
                           ].join(" ")}
                         >
                           <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
@@ -784,11 +785,13 @@ export function ItemList({ role }: Props) {
                               checked={selectedIds.has(item.id)}
                               onChange={() => toggleSelected(item.id)}
                               aria-label={`Select ${formatItemName(item, brands)}`}
-                              className="h-3.5 w-3.5"
+                              className="h-3.5 w-3.5 accent-accent"
                             />
                           </td>
-                          <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                            {item.sku_code}
+                          <td className="px-3 py-2">
+                            <span className="inline-block max-w-[10rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80" title={item.sku_code}>
+                              {item.sku_code}
+                            </span>
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap items-center gap-1.5">
@@ -803,21 +806,21 @@ export function ItemList({ role }: Props) {
                           <td className="px-3 py-2">
                             <Badge variant="muted">{item.sell_unit}</Badge>
                           </td>
-                          <td className="px-3 py-2 text-muted-foreground">
+                          <td className="px-3 py-2 text-xs leading-snug text-foreground/80">
                             {formatLocation(item)}
                           </td>
                           {role === "owner" ? (
-                            <td className="px-3 py-2 text-right text-foreground">
+                            <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
                               <Money paise={item.cost_paise} />
                             </td>
                           ) : null}
-                          <td className="px-3 py-2 text-right text-foreground">
+                          <td className="px-3 py-2 text-right font-medium text-foreground tabular-nums">
                             <Money paise={item.retail_price_paise} />
                           </td>
-                          <td className="px-3 py-2 text-right text-muted-foreground">
+                          <td className="px-3 py-2 text-right text-xs text-muted-foreground tabular-nums">
                             {item.min_stock}
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 text-right tabular-nums">
                             <StockDisplay
                               currentQty={item.current_qty}
                               minQty={item.min_stock}

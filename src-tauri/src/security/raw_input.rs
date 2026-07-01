@@ -16,7 +16,7 @@ use crate::error::AppError;
 /// Receive raw input in the foreground only.
 pub const RIDEV_INPUTSINK: u32 = 0x0000_0100;
 /// Prevent legacy `WM_KEYDOWN`/`WM_KEYUP` messages from being generated.
-pub const RIDEV_NOLEGACY: u32 = 0x0000_0300;
+pub const RIDEV_NOLEGACY: u32 = 0x0000_0030;
 /// Enable application command keys (VK_BROWSER_* etc.).
 pub const RIDEV_APPKEYS: u32 = 0x0000_0400;
 /// Input type: keyboard.

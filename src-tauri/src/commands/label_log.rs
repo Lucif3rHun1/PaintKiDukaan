@@ -92,7 +92,7 @@ pub fn record_label_print(
             "INSERT INTO label_print_log
                 (item_id, barcode, qty, format, line1, line2, user_id, created_at,
                  tspl_config, printer, label_size, labels_per_row)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, unixepoch('now'), ?8, ?9, ?10, ?11)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, (unixepoch('now') * 1000), ?8, ?9, ?10, ?11)",
             params![
                 item_id,
                 barcode.trim(),

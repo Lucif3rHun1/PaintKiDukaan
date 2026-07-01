@@ -562,7 +562,7 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                         -requested,
                         id,
                         user_id,
-                        now()
+                        now_epoch_ms()
                     ],
                 )?;
             } else if l.kind == "formula" {
@@ -592,7 +592,7 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                             "INSERT INTO stock_movements
                                 (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
                              VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT sell_unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
-                            params![base_id, default_location, -requested, id, user_id, now()],
+                            params![base_id, default_location, -requested, id, user_id, now_epoch_ms()],
                         )?;
                     }
                 }
@@ -757,7 +757,7 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                         "INSERT INTO stock_movements
                         (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
                      VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT sell_unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
-                        params![item_id, default_location, -qty, new_id, user_id, now()],
+                        params![item_id, default_location, -qty, new_id, user_id, now_epoch_ms()],
                     )?;
                 } else if kind == "formula" {
                     if let Some(fid) = formula_id {
@@ -785,7 +785,7 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                                 "INSERT INTO stock_movements
                                 (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
                              VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT sell_unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
-                                params![base_id, default_location, -qty, new_id, user_id, now()],
+                                params![base_id, default_location, -qty, new_id, user_id, now_epoch_ms()],
                             )?;
                         }
                     }
@@ -1054,12 +1054,8 @@ fn today() -> String {
     Local::now().format("%Y-%m-%d").to_string()
 }
 
-fn now() -> String {
-    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
-
 /// Convert a "YYYY-MM-DD" string to epoch milliseconds (UTC start of day).
-/// Falls back to now() on parse failure.
+/// Falls back to now_epoch_ms() on parse failure.
 fn date_to_ms(date: &str) -> i64 {
     NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis())
@@ -1286,7 +1282,7 @@ pub fn create_sale_return(
             )
             .unwrap_or(default_location);
 
-        let created_at = now();
+        let created_at = now_epoch_ms();
         let reason = payload.reason.clone();
 
         let return_id: i64 = c.query_row(

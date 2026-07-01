@@ -171,11 +171,12 @@ fn windows_register_usb_watch(hwnd: usize) -> Result<usize, AppError> {
 
     // Correct GUID for GUID_DEVINTERFACE_VOLUME:
     // {53F5630D-B6BF-11D0-94F2-00A0C91EFB8B}
+    // Stored as [Data1, Data2|Data3<<16, Data4[0..4], Data4[4..8]] in little-endian u32s.
     filter.dbcc_classguid = [
-        0x53F5630D,              // Data1
-        (0xB6BF << 16) | 0x11D0, // Data3 << 16 | Data2
-        (0x94F2 << 16) | 0x00A0, // Data4[0..3]
-        (0xC91E << 16) | 0xFB8B, // Data4[4..7]
+        0x53F5630D, // Data1
+        0x11D0B6BF, // Data2 | Data3<<16  (B6BF=Data2 low, 11D0=Data3)
+        0xA000F294, // Data4 bytes 0-3: 94 F2 00 A0 → u32 LE
+        0x8BFB1EC9, // Data4 bytes 4-7: C9 1E FB 8B → u32 LE
     ];
 
     let handle = unsafe {

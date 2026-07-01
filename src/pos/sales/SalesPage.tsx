@@ -130,8 +130,8 @@ function formatQty(qty: number, unitType: string): string {
 }
 
 export default function SalesPage({ user, onExit, editSaleId }: Props) {
-  const { isOwner } = useSecurity();
-  const canOwner = isOwner();
+  // ponytail: selector avoids re-render on unrelated session/phase changes
+  const canOwner = useSecurity((s) => s.session.user?.role === "owner");
   const queryClient = useQueryClient();
 
   const [kind, setKind] = useState<Kind>("final");

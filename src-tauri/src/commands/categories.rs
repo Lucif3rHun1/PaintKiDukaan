@@ -68,7 +68,7 @@ pub fn create_category(state: State<'_, AppState>, name: String) -> AppResult<Ca
             )));
         }
         tx.execute(
-            "INSERT INTO categories (name, is_active, created_at, updated_at) VALUES (?1, 1, unixepoch('now'), unixepoch('now'))",
+            "INSERT INTO categories (name, is_active, created_at, updated_at) VALUES (?1, 1, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
             params![name],
         )?;
         let id = tx.last_insert_rowid() as i64;
@@ -109,7 +109,7 @@ pub fn deactivate_category(state: State<'_, AppState>, id: i64) -> AppResult<()>
             )));
         }
         tx.execute(
-            "UPDATE categories SET is_active = 0, updated_at = unixepoch('now') WHERE id = ?1",
+            "UPDATE categories SET is_active = 0, updated_at = (unixepoch('now') * 1000) WHERE id = ?1",
             params![id],
         )?;
         Ok(())
