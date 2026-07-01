@@ -2,16 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 // ── Module-level dirty state for cross-component nav guards ──
 let _anyDirty = false;
-let _onDirtyCheck: (() => boolean) | null = null;
-
-export function registerDirtyChecker(checker: () => boolean) {
-  _onDirtyCheck = checker;
-}
-
-export function unregisterDirtyChecker() {
-  _onDirtyCheck = null;
-  _anyDirty = false;
-}
 
 export function isAnyFormDirty(): boolean {
   return _anyDirty;
@@ -50,7 +40,12 @@ export function useDirtyForm(): UseDirtyFormReturn {
       }
     };
     window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+      // Reset module-level singleton on unmount to prevent stale dirty state leaking to next form
+      isDirty.current = false;
+      _anyDirty = false;
+    };
   }, []);
 
   return { isDirty: dirty, markDirty, resetDirty };

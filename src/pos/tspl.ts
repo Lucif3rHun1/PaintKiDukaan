@@ -158,7 +158,8 @@ function fit(text: string, maxDots: number, charW: number): string {
 }
 
 function esc(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\0/g, "");
+  // Strip all control chars (CR/LF would inject TSPL commands into barcode data)
+  return s.replace(/[\x00-\x1f]/g, "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 // ── TSPL byte builder ────────────────────────────────────────────────────────

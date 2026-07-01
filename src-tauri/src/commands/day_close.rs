@@ -356,8 +356,8 @@ pub fn trigger_day_close(db: &Db, user_id: i64, req: NewDayClose) -> Result<i64,
     let id = db.with_conn_immediate(|c| -> Result<i64, DayCloseError> {
         let existing: Option<i64> = c
             .query_row(
-                "SELECT id FROM day_close WHERE user_id = ?1 AND day = ?2",
-                params![user_id, day],
+                "SELECT id FROM day_close WHERE day = ?1 AND location_id = ?2",
+                params![day, location_id],
                 |r| r.get(0),
             )
             .optional()?;
@@ -414,7 +414,7 @@ fn default_location(db: &Db) -> Result<i64, DayCloseError> {
 // Tauri command surface.
 // -----------------------------------------------------------------------------
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_cash_sales_for(
     state: tauri::State<'_, AppState>,
     user_id: i64,
@@ -429,7 +429,7 @@ pub fn cmd_cash_sales_for(
     cash_sales_for(db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_last_opening_for(
     state: tauri::State<'_, AppState>,
     user_id: i64,
@@ -444,7 +444,7 @@ pub fn cmd_last_opening_for(
     last_opening_for(db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_backup_gate_check(
     state: tauri::State<'_, AppState>,
     now_epoch_ms: Option<i64>,
@@ -459,7 +459,7 @@ pub fn cmd_backup_gate_check(
     backup_gate_check(db, now).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_trigger_day_close(
     state: tauri::State<'_, AppState>,
     req: NewDayClose,
@@ -478,7 +478,7 @@ pub fn cmd_trigger_day_close(
     trigger_day_close(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_lock_state(
     state: tauri::State<'_, AppState>,
     user_id: i64,
@@ -493,7 +493,7 @@ pub fn cmd_lock_state(
     lock_state(db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_list_day_close(
     state: tauri::State<'_, AppState>,
     limit: Option<i64>,
@@ -507,7 +507,7 @@ pub fn cmd_list_day_close(
     list(db, limit.unwrap_or(60)).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_get_day_close(
     state: tauri::State<'_, AppState>,
     id: i64,
@@ -521,7 +521,7 @@ pub fn cmd_get_day_close(
     get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_admin_reopen_day(state: tauri::State<'_, AppState>, id: i64) -> AppResult<bool> {
     ipc_auth::authorize_err("cmd_admin_reopen_day", state.inner())?;
     let guard = state

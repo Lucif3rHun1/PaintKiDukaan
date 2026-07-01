@@ -139,7 +139,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
 
       if (boot.kind === "unlocked") {
         const role = isRole(boot.role) ? boot.role : "owner";
-        security.setSession({ user: { id: 0, name: boot.user, role }, locked: false, pinRole: "real" });
+        security.setSession({ user: { id: boot.user_id, name: boot.user, role }, locked: false, pinRole: "real" });
         security.setPhase("unlocked");
         onCancel();
         return;

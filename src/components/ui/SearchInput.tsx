@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useEffect,
+  useRef,
   useState,
   type ComponentType,
   type InputHTMLAttributes,
@@ -46,10 +47,13 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
     }, [value]);
 
     // Optional internal debounce.
+    // ponytail: stash onChange in ref to prevent debounce reset on parent re-render
+    const onChangeRef = useRef(onChange);
+    onChangeRef.current = onChange;
     useEffect(() => {
       if (debounceMs === undefined) return;
       const timer = window.setTimeout(() => {
-        onChange(internalValue);
+        onChangeRef.current(internalValue);
       }, debounceMs);
       return () => window.clearTimeout(timer);
     }, [internalValue, debounceMs, onChange]);

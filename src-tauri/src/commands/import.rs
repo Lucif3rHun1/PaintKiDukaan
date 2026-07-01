@@ -230,7 +230,11 @@ pub fn cmd_import_items_csv(
     })?;
 
     // Default location
-    let default_location_id = locations.values().next().copied().unwrap_or(1);
+    let default_location_id = locations
+        .values()
+        .next()
+        .copied()
+        .ok_or_else(|| AppError::Validation("no active locations — create at least one location before importing purchases".into()))?;
 
     let existing_items: Vec<ExistingItemRow> = db.with_raw(|c| {
         let mut stmt = c.prepare(
@@ -280,7 +284,8 @@ pub fn cmd_import_items_csv(
                     Some(v) => v,
                     None => {
                         result.errors.push(ImportRowError { row: row_num, message: format!("unparseable retail_price: \"{s}\"") });
-                        0
+                        result.skipped += 1;
+                        continue;
                     }
                 },
                 None => 0,
@@ -290,7 +295,8 @@ pub fn cmd_import_items_csv(
                     Some(v) => v,
                     None => {
                         result.errors.push(ImportRowError { row: row_num, message: format!("unparseable cost_price: \"{s}\"") });
-                        0
+                        result.skipped += 1;
+                        continue;
                     }
                 },
                 None => 0,
@@ -506,6 +512,7 @@ pub fn cmd_import_items_csv(
                         ],
                     ) {
                         log::warn!("stock replacement failed for item {item_id}: {e}");
+                        result.errors.push(ImportRowError { row: i + 2, message: format!("stock adjustment failed for item {item_id}: {e}") });
                     }
                 }
             }
@@ -516,16 +523,16 @@ pub fn cmd_import_items_csv(
     Ok(result)
 }
 
-/// Generate next SKU from the sequences table within a transaction.
+
 fn auto_sku(tx: &rusqlite::Connection) -> AppResult<String> {
-    tx.execute(
-        "UPDATE sequences SET value = value + 1 WHERE name = 'sku'",
-        [],
-    )?;
     let n: i64 = tx
-        .query_row("SELECT value FROM sequences WHERE name = 'sku'", [], |r| {
-            r.get(0)
-        })?;
+        .query_row(
+            "INSERT INTO sequences(name, value) VALUES ('sku', 1) 
+             ON CONFLICT(name) DO UPDATE SET value = value + 1 
+             RETURNING value",
+            [],
+            |r| r.get(0),
+        )?;
     Ok(format!("SKU-{n:06}"))
 }
 
@@ -738,9 +745,17 @@ pub fn cmd_import_inward_csv(
 
             // Create purchase
             let now_ms = chrono::Utc::now().timestamp_millis();
+            // ponytail: atomic counter via daily_counters with empty date = global (non-daily) sequence
             let purchase_number = {
                 let next_id: i64 = tx
-                    .query_row("SELECT COALESCE(MAX(id), 0) + 1 FROM purchases", [], |r| r.get(0))
+                    .query_row(
+                        "INSERT INTO daily_counters(prefix, date, last_serial)
+                         VALUES ('PINV', '', 1)
+                         ON CONFLICT(prefix, date) DO UPDATE SET last_serial = last_serial + 1
+                         RETURNING last_serial",
+                        [],
+                        |r| r.get(0),
+                    )
                     .unwrap_or(1);
                 format!("PINV-{next_id:04}")
             };

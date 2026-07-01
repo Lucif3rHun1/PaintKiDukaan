@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Printer } from "lucide-react";
-import { Alert, Button, Field, MoneyInput, Section, Select } from "../../components/ui";
+import { Alert, Button, Field, Money, MoneyInput, Section, Select } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
@@ -366,9 +366,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                       {formatItemName(item, brands)}
                     </span>
                   </div>
-                  <span className="shrink-0 text-xs font-medium text-foreground">
-                    ₹{(item.retail_price_paise / 100).toFixed(2)}
-                  </span>
+                  <Money paise={item.retail_price_paise} className="shrink-0 text-xs font-medium" />
                 </button>
               ))}
             </div>

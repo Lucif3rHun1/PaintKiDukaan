@@ -244,11 +244,12 @@ export default function ReportsPage({ user }: Props) {
 
   useEffect(() => {
     if (activeSection === "sales" && user.role === "owner") {
-      comparisonMetrics(todayLocalYyyymmdd())
+      const dateToUse = to || todayLocalYyyymmdd();
+      comparisonMetrics(dateToUse)
         .then(setComparison)
         .catch(() => setComparison(null));
     }
-  }, [user.role, from, to, activeSection]);
+  }, [user.role, activeSection]);
 
   // Day-close snapshots overlay live sales data when present for that date.
   const frozenByDay = useMemo(() => {
@@ -273,7 +274,6 @@ export default function ReportsPage({ user }: Props) {
       ].filter((m) => m.amount !== 0);
       return {
         ...r,
-        grand_total: close.cash_sales_paise + close.card_sales_paise + close.upi_sales_paise,
         by_mode: byMode,
       };
     });

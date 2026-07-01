@@ -104,8 +104,10 @@ pub fn run() {
                 )
                 .build(),
         )
-        .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {
-            // Focus existing window on second launch.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_focus();
+            }
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,

@@ -28,7 +28,7 @@ export type Bootstrap =
   | { kind: "loading" }
   | { kind: "first_launch" }
   | { kind: "locked" }
-  | { kind: "unlocked"; user: string; role: Role }
+  | { kind: "unlocked"; user: string; user_id: number; role: Role }
   | { kind: "keystore_error"; reason: string }
   | { kind: "error"; message: string };
 

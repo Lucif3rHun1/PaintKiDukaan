@@ -6,6 +6,7 @@ const compactFormatter = new Intl.NumberFormat("en-IN", {
 });
 
 export function formatRupeesFromPaise(paise: number): string {
+  if (!Number.isFinite(paise)) return "₹0.00";
   const rupees = paise / 100;
   return `₹${rupees.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

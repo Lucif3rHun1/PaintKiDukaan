@@ -42,7 +42,6 @@ function valuesByDate<T>(rows: readonly T[], dates: readonly string[], dateOf: (
 }
 
 interface BusinessTabProps {
-  todaySalesPaise: number;
   dayCloseOverdue: boolean;
 }
 

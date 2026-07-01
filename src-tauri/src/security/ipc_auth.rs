@@ -61,7 +61,7 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (167 total).
+/// Complete ACL table for every command registered in `invoke_handler` (180 total).
 ///
 /// Classification:
 /// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.

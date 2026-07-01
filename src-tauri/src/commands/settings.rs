@@ -48,7 +48,7 @@ pub struct Device {
     pub is_active: bool,
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_setting(state: State<'_, AppState>, key: String) -> Result<String, String> {
     ipc_auth::authorize_err("get_setting", state.inner())?;
     let settings = state.settings.lock().map_err(|e| e.to_string())?;
@@ -58,7 +58,7 @@ pub fn get_setting(state: State<'_, AppState>, key: String) -> Result<String, St
     }
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
     ipc_auth::authorize_err("set_setting", state.inner())?;
     let parsed: Value = serde_json::from_str(&value).unwrap_or(Value::String(value));
@@ -179,13 +179,13 @@ fn write_sql_setting(db: &Db, col: &str, value: &Value) -> rusqlite::Result<()> 
     Ok(())
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_devices(_state: State<'_, AppState>) -> Result<Vec<Device>, String> {
     ipc_auth::authorize_err("list_devices", _state.inner())?;
     Ok(devices_store().read().clone())
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn enroll_device(
     _state: State<'_, AppState>,
     name: String,
@@ -210,7 +210,7 @@ pub fn enroll_device(
     Ok(device)
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn revoke_device(_state: State<'_, AppState>, device_id: String) -> Result<(), String> {
     ipc_auth::authorize_err("revoke_device", _state.inner())?;
     let mut devices = devices_store().write();

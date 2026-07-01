@@ -97,7 +97,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
       )}
 
       <dl className="mb-4 grid grid-cols-3 gap-3 text-sm">
-        <Row label="Opening" value={<Money paise={(vendorData.opening_balance ?? 0) * 100} />} />
+        <Row label="Opening" value={<Money paise={vendorData.opening_balance ?? 0} />} />
         <Row label="Total purchases" value={outstanding ? <Money paise={outstanding.total_purchases} /> : "…"} />
         <Row label="Total payments" value={outstanding ? <Money paise={outstanding.total_payments} /> : "…"} />
       </dl>

@@ -118,7 +118,7 @@ export function VendorList({
       {
         header: "Opening",
         align: "right",
-        cell: (v) => <Money paise={(v.opening_balance ?? 0) * 100} muted />,
+        cell: (v) => <Money paise={v.opening_balance ?? 0} muted />,
       },
       {
         header: "Outstanding",

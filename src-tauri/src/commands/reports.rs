@@ -355,12 +355,13 @@ pub enum ReportsError {
 // Tauri command surface.
 // -----------------------------------------------------------------------------
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_daily_sales(
     state: tauri::State<'_, AppState>,
     from_date: String,
     to_date: String,
 ) -> AppResult<DailySalesReport> {
+    ipc_auth::authorize_err("cmd_daily_sales", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -369,8 +370,9 @@ pub fn cmd_daily_sales(
     daily_sales(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_stock_report(state: tauri::State<'_, AppState>) -> AppResult<StockReport> {
+    ipc_auth::authorize_err("cmd_stock_report", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -379,8 +381,9 @@ pub fn cmd_stock_report(state: tauri::State<'_, AppState>) -> AppResult<StockRep
     stock_report(db).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_outstanding_report(state: tauri::State<'_, AppState>) -> AppResult<OutstandingReport> {
+    ipc_auth::authorize_err("cmd_outstanding_report", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -441,7 +444,7 @@ pub fn purchase_summary(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_purchase_summary(
     state: tauri::State<'_, AppState>,
     from_date: String,
@@ -478,7 +481,7 @@ pub fn expense_summary(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_expense_summary(
     state: tauri::State<'_, AppState>,
     from_date: String,
@@ -534,7 +537,7 @@ pub fn top_items_sold(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_top_items_sold(
     state: tauri::State<'_, AppState>,
     from_date: String,
@@ -587,7 +590,7 @@ pub fn top_customers(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_top_customers(
     state: tauri::State<'_, AppState>,
     from_date: String,
@@ -636,7 +639,7 @@ pub fn top_items_purchased(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_top_items_purchased(
     state: tauri::State<'_, AppState>,
     from_date: String,
@@ -690,7 +693,7 @@ pub fn top_vendors(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_top_vendors(
     state: tauri::State<'_, AppState>,
     from_date: String,
@@ -750,7 +753,7 @@ pub fn stock_health_summary(db: &Db) -> Result<StockHealthSummary, ReportsError>
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_stock_health_summary(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<StockHealthSummary> {
@@ -783,8 +786,8 @@ pub fn dead_stock(db: &Db, days_idle: i64) -> Result<Vec<DeadStockRow>, ReportsE
              FROM items i
              LEFT JOIN brands b ON b.id = i.brand_id
              LEFT JOIN stock_balances sb ON sb.item_id = i.id
-             LEFT JOIN stock_movements sm
-                    ON sm.item_id = i.id AND sm.type = 'sale' AND sm.created_at >= ?1
+LEFT JOIN stock_movements sm
+                   ON sm.item_id = i.id AND sm.ref_kind = 'sale' AND sm.created_at >= ?1
              WHERE i.is_active = 1
              GROUP BY i.id
              HAVING current_qty > 0 AND last_sale_ms IS NULL
@@ -803,7 +806,7 @@ pub fn dead_stock(db: &Db, days_idle: i64) -> Result<Vec<DeadStockRow>, ReportsE
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_dead_stock(
     state: tauri::State<'_, AppState>,
     days_idle: i64,
@@ -840,7 +843,7 @@ pub fn inventory_aging(db: &Db) -> Result<InventoryAgingReport, ReportsError> {
              FROM (
                 SELECT i.id, MAX(sm.created_at) AS last_sale_ms
                 FROM items i
-                LEFT JOIN stock_movements sm ON sm.item_id = i.id AND sm.type = 'sale'
+                LEFT JOIN stock_movements sm ON sm.item_id = i.id AND sm.ref_kind = 'sale'
                 WHERE i.is_active = 1
                 GROUP BY i.id
              )",
@@ -858,7 +861,7 @@ pub fn inventory_aging(db: &Db) -> Result<InventoryAgingReport, ReportsError> {
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_inventory_aging(state: tauri::State<'_, AppState>) -> AppResult<InventoryAgingReport> {
     ipc_auth::authorize_err("cmd_inventory_aging", state.inner())?;
     let guard = state
@@ -906,7 +909,7 @@ pub fn payment_summary(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_payment_summary(
     state: tauri::State<'_, AppState>,
     from_date: String,
@@ -976,8 +979,8 @@ pub fn comparison_metrics(db: &Db, ref_date: &str) -> Result<ComparisonMetricsRe
         }
     }
 
-    let avg_cur = if cur_bills > 0 { cur_total / cur_bills } else { 0 };
-    let avg_prev = if prev_bills > 0 { prev_total / prev_bills } else { 0 };
+    let avg_cur = if cur_bills > 0 { (cur_total as f64 / cur_bills as f64) as i64 } else { 0 };
+    let avg_prev = if prev_bills > 0 { (prev_total as f64 / prev_bills as f64) as i64 } else { 0 };
 
     Ok(ComparisonMetricsReport {
         sales: delta(cur_total, prev_total),
@@ -986,7 +989,7 @@ pub fn comparison_metrics(db: &Db, ref_date: &str) -> Result<ComparisonMetricsRe
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_comparison_metrics(
     state: tauri::State<'_, AppState>,
     ref_date: String,

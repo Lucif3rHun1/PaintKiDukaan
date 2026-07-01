@@ -252,6 +252,7 @@ pub fn respond(report: &HostileEnvReport, action: HostileResponse) -> ResponseAc
 
 /// Compute weighted risk score from detection reports.
 /// Returns 0-100.
+#[cfg(test)]
 fn compute_score(
     debug: &DebugReport,
     vm: &VmReport,

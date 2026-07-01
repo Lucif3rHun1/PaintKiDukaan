@@ -37,6 +37,8 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
       setBaseItemId(initial.base_item_id ?? null);
       setBaseItemName(initial.base_item_name ?? "");
       setPrice(initial.retail_price_paise);
+      setError(null);
+      setFieldErrors({});
     }
   }, [mode, initial]);
 

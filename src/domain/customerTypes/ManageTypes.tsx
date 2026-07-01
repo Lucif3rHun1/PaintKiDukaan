@@ -54,6 +54,7 @@ export function ManageTypes() {
 
   async function saveEdit(id: number) {
     setError(null);
+    if (!editName.trim()) return;
     try {
       await renameCustomerType(id, editName.trim());
       setEditing(null);

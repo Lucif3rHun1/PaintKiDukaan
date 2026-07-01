@@ -33,6 +33,7 @@ export function BackupPanel() {
     setError(null);
     try {
       await backupNow(passphrase);
+      setPassphrase("");
       refresh();
     } catch (e) {
       setError(extractError(e));

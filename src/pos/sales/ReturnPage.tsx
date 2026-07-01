@@ -19,7 +19,7 @@ import type { FormulaSearchHit } from "../../domain/types";
 import { formatHitName } from "../../domain/items/display";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { deleteDraft } from "../api";
-import { PageBadgeCtx, useAutosave, useDirtyForm, registerDirtyChecker, unregisterDirtyChecker } from "../hooks";
+import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
@@ -65,11 +65,6 @@ export default function ReturnPage({ user, onBack }: Props) {
   useEffect(() => {
     if (!draftLoading && draftData.lines.length > 0) markDirty();
   }, [draftData, draftLoading, markDirty]);
-
-  useEffect(() => {
-    registerDirtyChecker(() => isDirty);
-    return () => unregisterDirtyChecker();
-  }, [isDirty]);
 
   useEffect(() => {
     if (draftRestored.current) return;

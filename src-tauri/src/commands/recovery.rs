@@ -63,6 +63,9 @@ pub(crate) fn first_launch_setup_at_path(
     gstin: Option<String>,
 ) -> Result<Session, AppError> {
     log::info!("[SETUP] first_launch_setup_at_path called");
+    if passphrase.is_empty() {
+        return Err(AppError::Validation("recovery passphrase must not be empty".into()));
+    }
     log::info!(
         "[SETUP] pin len={}, passphrase len={}, shop={}",
         pin.len(),

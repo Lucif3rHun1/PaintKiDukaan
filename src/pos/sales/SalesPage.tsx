@@ -323,6 +323,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
     [],
   );
 
+  // ponytail: uses functional setLines to avoid stale closure on rapid picks
   const handleItemPick = useCallback(
     (hit: ItemSearchHit | FormulaSearchHit) => {
       if ("kind" in hit && hit.kind === "formula") {
@@ -345,30 +346,35 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         return;
       }
       const item = hit as ItemSearchHit;
-      const existing = lines.findIndex(
-        (l) => l.kind === "item" && l.item_id === item.id,
-      );
-      if (existing !== -1) {
-        updateLine(existing, { qty: lines[existing].qty + 1 });
-        return;
-      }
-      const newLine: CartLine = {
-        kind: "item",
-        item_id: item.id,
-        formula_id: null,
-        item_name: formatHitName(item),
-        display_name: formatHitName(item),
-        in_stock_at_add: item.current_qty > 0,
-        current_qty_at_add: item.current_qty,
-        qty: 1,
-        price: item.retail_price_paise,
-        unit_type: item.sell_unit || "pcs",
-        line_discount: 0,
-        shade_note: null,
-      };
-      setLines((prev) => [...prev, newLine]);
+      setLines((prev) => {
+        const existing = prev.findIndex(
+          (l) => l.kind === "item" && l.item_id === item.id,
+        );
+        if (existing !== -1) {
+          return prev.map((l, i) =>
+            i === existing ? { ...l, qty: l.qty + 1 } : l,
+          );
+        }
+        return [
+          ...prev,
+          {
+            kind: "item" as const,
+            item_id: item.id,
+            formula_id: null,
+            item_name: formatHitName(item),
+            display_name: formatHitName(item),
+            in_stock_at_add: item.current_qty > 0,
+            current_qty_at_add: item.current_qty,
+            qty: 1,
+            price: item.retail_price_paise,
+            unit_type: item.sell_unit || "pcs",
+            line_discount: 0,
+            shade_note: null,
+          },
+        ];
+      });
     },
-    [lines, updateLine],
+    [],
   );
 
   // ---- Draft reset (Esc / post-save) ----
@@ -462,7 +468,6 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
     if (!canSave || busy) return;
     setBusy(true);
     setError(null);
-    shouldPrintAfterSaveRef.current = false;
     const finalSplits =
       kind === "quotation" ? [] : splits.filter((s) => s.amount > 0);
     const finalPaid =

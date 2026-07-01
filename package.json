@@ -26,6 +26,7 @@
     "tauri:build:linux-arm": "pnpm run check:tauri-cli-native && tauri build --target aarch64-unknown-linux-gnu",
     "check:tauri-cli-native": "node scripts/check-tauri-cli-native.cjs",
     "check:release-version": "node scripts/check-release-version.cjs",
+    "typecheck": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },

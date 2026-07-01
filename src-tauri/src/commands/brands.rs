@@ -41,7 +41,7 @@ fn fetch_brand(conn: &rusqlite::Connection, id: i64) -> AppResult<Brand> {
     .map_err(AppError::from)
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_brands(state: State<'_, AppState>) -> AppResult<Vec<Brand>> {
     let guard = state
         .db
@@ -64,7 +64,7 @@ pub fn list_brands(state: State<'_, AppState>) -> AppResult<Vec<Brand>> {
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_brand(state: State<'_, AppState>, id: i64) -> AppResult<Brand> {
     let guard = state
         .db
@@ -75,7 +75,7 @@ pub fn get_brand(state: State<'_, AppState>, id: i64) -> AppResult<Brand> {
     db.with_raw(|conn| fetch_brand(conn, id))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn update_brand_code_prefix(
     state: State<'_, AppState>,
     id: i64,
@@ -113,7 +113,7 @@ pub fn update_brand_code_prefix(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_brand(state: State<'_, AppState>, name: String, prefix: String) -> AppResult<Brand> {
     ipc_auth::authorize_err("create_brand", state.inner())?;
     let name = name.trim().to_string();
@@ -156,7 +156,7 @@ pub fn create_brand(state: State<'_, AppState>, name: String, prefix: String) ->
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn deactivate_brand(state: State<'_, AppState>, id: i64) -> AppResult<()> {
     ipc_auth::authorize_err("deactivate_brand", state.inner())?;
     let guard = state
@@ -175,19 +175,19 @@ pub fn deactivate_brand(state: State<'_, AppState>, id: i64) -> AppResult<()> {
                 "brand is referenced by {in_use} item(s); archive the items first"
             )));
         }
-        let changed = tx.execute(
-            "DELETE FROM brand_sequences WHERE brand_id = ?1",
-            params![id],
+        // Soft delete — preserve brand_sequences (barcode counters) for audit trail
+        let now = chrono::Utc::now().timestamp_millis();
+        tx.execute(
+            "UPDATE brands SET is_active = 0, updated_at = ?1 WHERE id = ?2",
+            params![now, id],
         )?;
-        let _ = changed;
-        tx.execute("DELETE FROM brands WHERE id = ?1", params![id])?;
         Ok(())
     })
 }
 
 /// Read-only preview of what the next barcode WOULD be without bumping the sequence.
 /// Used by the item form to show the user the code before they save.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn preview_next_barcode(
     state: State<'_, AppState>,
     brand_id: Option<i64>,

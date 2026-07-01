@@ -3,6 +3,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import {
   AlertCircle,
+  Eye,
+  EyeOff,
   Loader2,
   Shield,
 } from "lucide-react";
@@ -347,6 +349,14 @@ function ChangeDecoyPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
             type={showPins ? "text" : "password"}
             {...register("currentRealPin")}
           />
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setShowPins((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            {showPins ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
         </div>
         {errors.currentRealPin && <p className="text-xs text-destructive">{errors.currentRealPin.message}</p>}
         <div className="relative">
@@ -418,15 +428,25 @@ function ChangeDuressPinForm({ onDone, onCancel }: { onDone: () => void; onCance
         </p>
       )}
       <div className="space-y-2">
-        <input
-          className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          placeholder="Current real PIN"
-          autoComplete="off"
-          inputMode="numeric"
-          maxLength={6}
-          type={showPins ? "text" : "password"}
-          {...register("currentRealPin")}
-        />
+        <div className="relative">
+          <input
+            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            placeholder="Current real PIN"
+            autoComplete="off"
+            inputMode="numeric"
+            maxLength={6}
+            type={showPins ? "text" : "password"}
+            {...register("currentRealPin")}
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setShowPins((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            {showPins ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
         {errors.currentRealPin && <p className="text-xs text-destructive">{errors.currentRealPin.message}</p>}
         <input
           className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"

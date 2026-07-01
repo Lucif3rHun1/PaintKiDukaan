@@ -50,14 +50,20 @@ export const toast = {
       error: string | ((error: unknown) => string);
     },
   ): Promise<T> => {
-    addToast("info", msgs.loading);
+    const loadingId = Math.random().toString(36).slice(2);
+    toasts = [...toasts, { id: loadingId, variant: "info", message: msgs.loading }];
+    emit();
     return p
       .then((v) => {
+        toasts = toasts.filter((t) => t.id !== loadingId);
+        emit();
         const msg = typeof msgs.success === "function" ? msgs.success(v) : msgs.success;
         addToast("success", msg);
         return v;
       })
       .catch((e) => {
+        toasts = toasts.filter((t) => t.id !== loadingId);
+        emit();
         const msg = typeof msgs.error === "function" ? msgs.error(e) : msgs.error;
         addToast("error", msg);
         throw e;

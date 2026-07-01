@@ -48,7 +48,13 @@ export function SalesListPage({ onCreate }: Props) {
   const [to, setTo] = useState(() => todayLocalYyyymmdd());
   const [payFilter, setPayFilter] = useState<PaymentFilter>("all");
   const [draft, setDraft] = useState<Draft | null>(null);
-  useEffect(() => { void getDraft("sale").then(setDraft); }, []);
+  // ponytail: SalesPage saves drafts under `sale-${kind}` (final/fbill/quotation).
+  // getDraft is per-form_type, so check all three and take the first match.
+  useEffect(() => {
+    for (const key of ["sale-final", "sale-fbill", "sale-quotation"]) {
+      void getDraft(key).then((d) => { if (d) setDraft(d); });
+    }
+  }, []);
 
   const {
     data: rows,

@@ -56,7 +56,7 @@ fn argon2_with(params: &KdfParams) -> Result<Argon2<'_>, KdfError> {
 }
 
 /// Derive a 32-byte KEK from an owner PIN (4 or 6 digits) and salt.
-/// Uses PIN params (256 MiB / t=2 / p=1).
+/// Uses PIN params (64 MiB / t=3 / p=1).
 /// Accepts salt lengths from 16 to 64 bytes (Argon2id minimum is 8, we enforce 16+).
 pub fn derive_pin_kek(
     pin: &str,

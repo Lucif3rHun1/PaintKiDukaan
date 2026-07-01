@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use chrono::Utc;
 use tauri::{Manager, State};
 use tempfile::NamedTempFile;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::backup::{
     atomic_swap, decrypt_and_verify, encrypt_snapshot, list_backup_targets, snapshot, BackupError,
@@ -122,15 +122,15 @@ pub fn list_targets(state: State<'_, AppState>) -> Result<Vec<BackupTarget>, Str
 pub fn backup_now<R: tauri::Runtime>(
     state: State<'_, AppState>,
     app: tauri::AppHandle<R>,
+    passphrase: Option<String>,
 ) -> Result<BackupMetadata, String> {
     if let Err(e) = ipc_auth::authorize_err("backup_now", state.inner()) {
         return Err(e.to_string());
     }
-    let mut passphrase = state
-        .recovery_passphrase
-        .lock()
-        .unwrap()
-        .clone()
+    let mut passphrase = passphrase
+        .filter(|p| !p.is_empty())
+        .map(Zeroizing::new)
+        .or_else(|| state.recovery_passphrase.lock().unwrap().clone())
         .ok_or_else(|| "backup failed: no recovery passphrase on file. Re-run onboarding or use Settings → System to reset.".to_string())?;
 
     let targets = list_backup_targets().map_err(err_str)?;
@@ -215,17 +215,10 @@ pub fn restore<R: tauri::Runtime>(
     drop(temp_plaintext);
     passphrase.zeroize();
 
-    let now_ms = Utc::now().timestamp_millis();
-    *state.last_backup_unix_ms.lock().unwrap() = Some(now_ms);
-
-    if let Some(ref db) = *state.db.lock().unwrap() {
-        let _ = db.with_conn(|c| {
-            c.execute(
-                "UPDATE settings SET last_backup_unix_ms = ?1 WHERE id = 1",
-                [now_ms],
-            )
-        });
-    }
+    // ponytail: intentionally do NOT update last_backup_unix_ms here —
+    // this is a restore, not a backup. Touching the timestamp would make
+    // the "backup overdue" banner go green and unblock day-close gates
+    // even though no new backup was created.
 
     Ok(())
 }

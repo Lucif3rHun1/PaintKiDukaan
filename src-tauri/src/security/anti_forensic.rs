@@ -356,7 +356,10 @@ pub fn install<R: tauri::Runtime>(
     clear_user_assist().ok();
     clear_recent_and_jumplists().ok();
     clear_macos_recent_items().ok();
-    clear_ebwebview_cache().ok();
+    // ponytail: clear_ebwebview_cache() removed — secure-deleting EBWebView
+    // files while WebView2 is running corrupts rendering (blank screen).
+    // WebView2 needs its profile data to render. This should only be called
+    // during explicit cleanup/uninstall, not at startup.
 
     Ok(())
 }

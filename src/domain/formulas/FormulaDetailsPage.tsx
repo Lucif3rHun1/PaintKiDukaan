@@ -180,9 +180,13 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
               {
                 label: "Copy shade ID",
                 icon: Copy,
-                onClick: () => {
-                  void navigator.clipboard.writeText(formula.id_code);
-                  toast.success(`Copied ${formula.id_code}`);
+                onClick: async () => {
+                  try {
+                    await navigator.clipboard.writeText(formula.id_code);
+                    toast.success(`Copied ${formula.id_code}`);
+                  } catch {
+                    toast.error("Failed to copy — clipboard not available");
+                  }
                 },
               },
               ...(formula.is_active

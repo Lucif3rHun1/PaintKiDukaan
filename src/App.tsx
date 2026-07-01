@@ -96,6 +96,7 @@ const LOCKED_SESSION = { user: null, locked: true, pinRole: "real" as const };
 
 const BootstrapUnlockedSchema = z.object({
   kind: z.literal("unlocked"),
+  user_id: z.number(),
   user: z.string().min(1).max(64),
   role: z.enum(["owner", "cashier", "stocker"]),
   pin_role: z.enum(["real", "decoy", "duress"]).optional(),
@@ -272,7 +273,7 @@ export default function App() {
             return;
           }
           const v = parsed.data;
-          setSession({ user: { id: 0, name: v.user, role: v.role }, locked: false, pinRole: v.pin_role ?? "real" });
+          setSession({ user: { id: v.user_id, name: v.user, role: v.role }, locked: false, pinRole: v.pin_role ?? "real" });
           setPhase("unlocked");
         }
       })
@@ -287,13 +288,26 @@ export default function App() {
   }, [setPhase, setSession]);
 
   /* ── Hash routing ──────────────────────────────────────── */
+  const prevHash = useRef(window.location.hash);
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.location.hash === "#/items/barcodes") {
       window.location.replace("#/barcodes");
       return;
     }
+    let suppressing = false;
     const onHash = () => {
+      if (suppressing) { suppressing = false; return; }
+      if (isAnyFormDirty()) {
+        // Compute target tab from the NEW hash before restoring the old one
+        const targetTab = readTab();
+        suppressing = true;
+        window.location.hash = prevHash.current;
+        setPendingNav({ tab: targetTab });
+        setShowNavGuard(true);
+        return;
+      }
+      prevHash.current = window.location.hash;
       setTab(readTab());
       setSalesRoute(readSalesSubRoute());
       setInwardRoute(readInwardSubRoute());
@@ -612,7 +626,7 @@ export default function App() {
         );
       })() : null}
       {tab === "sales-report" && (
-        <RoleGuard minRole="stocker">
+        <RoleGuard minRole="owner">
           <ErrorBoundary context="Reports">
             <Suspense fallback={<RouteFallback />}>
               <div className="animate-in fade-in motion-reduce:animate-none duration-200">
@@ -646,7 +660,7 @@ export default function App() {
       )}
       {tab === "items" && (
         <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
-          <h2 className="text-lg font-semibold text-slate-900">Inventory</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Inventory</h2>
           <ErrorBoundary context="Inventory">
             <Suspense fallback={<RouteFallback />}>
               <ItemList role={role} />
@@ -656,7 +670,7 @@ export default function App() {
       )}
       {tab === "formulas" && formulasRoute === "list" ? (
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold text-slate-900">Shade formulas</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Shade formulas</h2>
           <ErrorBoundary context="Formulas">
             <Suspense fallback={<RouteFallback />}>
               <FormulasPage role={role} />
@@ -681,7 +695,7 @@ export default function App() {
       })() : null}
       {tab === "barcodes" && (
         <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
-          <h2 className="text-lg font-semibold text-slate-900">Barcode Labels</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Barcode Labels</h2>
           <ErrorBoundary context="Barcode Labels">
             <Suspense fallback={<RouteFallback />}>
               <BulkLabelsPage />

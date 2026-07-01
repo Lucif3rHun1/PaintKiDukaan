@@ -100,7 +100,7 @@ impl Default for AppState {
 pub enum Bootstrap {
     FirstLaunch,
     Locked,
-    Unlocked { user: String, role: String },
+    Unlocked { user_id: i64, user: String, role: String },
     /// Keystore file exists but could not be decrypted (DPAPI/keychain mismatch).
     /// The DB is intact — do NOT auto-wipe. Let the user confirm an explicit wipe
     /// or restore from recovery. Serialises as { kind: "keystore_error", reason: "..." }.
@@ -184,6 +184,8 @@ impl KeystoreConn {
 
 impl std::ops::Deref for KeystoreConn {
     type Target = Connection;
+    // Deref trait requires &Connection; can't return Result.
+    // This panic is unreachable: callers only deref while KeystoreConn is alive.
     fn deref(&self) -> &Connection {
         self.conn
             .as_ref()
@@ -300,8 +302,9 @@ pub fn default_lockout_row() -> keywrap::LockoutRow {
 
 /// Encrypt the keystore blob with the DEK (CWE-312, CWE-732).
 /// Returns `nonce(12) || ciphertext || tag(16)`.
-pub fn encrypt_keystore_blob(dek: &[u8; 32], plaintext: &[u8]) -> Vec<u8> {
-    wrap::encrypt_blob(dek, plaintext).expect("keystore encryption should not fail")
+pub fn encrypt_keystore_blob(dek: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, AppError> {
+    wrap::encrypt_blob(dek, plaintext)
+        .map_err(|e| AppError::Crypto(format!("keystore encryption failed: {e}")))
 }
 
 /// Decrypt the keystore blob with the DEK.
@@ -373,6 +376,7 @@ pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap
     match session.as_ref() {
         None => Ok(Bootstrap::Locked),
         Some(s) => Ok(Bootstrap::Unlocked {
+            user_id: s.id,
             user: s.name.clone(),
             role: s.role.clone(),
         }),
@@ -382,7 +386,11 @@ pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap
 /// Explicit user-confirmed wipe called from the `keystore_error` recovery screen.
 /// Requires the user to actively choose this path — never triggered automatically.
 #[tauri::command(rename_all = "snake_case")]
-pub fn wipe_and_reset(app: AppHandle) -> Result<(), AppError> {
+pub fn wipe_and_reset(app: AppHandle, state: State<AppState>) -> Result<(), AppError> {
+    let session = state.session.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+    if session.is_some() {
+        return Err(AppError::Forbidden("wipe_and_reset denied: active session".into()));
+    }
     let app_dir = app
         .path()
         .app_data_dir()
@@ -419,6 +427,10 @@ fn max_failed_attempts(state: &AppState) -> u32 {
 /// have fired (spec §9.8: 15 → 30 → 60 → 240 → 1440).
 const LOCKOUT_BACKOFF_MINUTES: &[u64] = &[15, 30, 60, 240, 1440];
 
+/// Session idle timeout in seconds (30 minutes). If `last_activity` is
+/// older than this, the session is treated as expired and the DB is locked.
+const SESSION_TIMEOUT_SECS: u64 = 1800;
+
 /// Validate that `pin` is a 6-digit ASCII string (spec decision 0.4).
 pub fn validate_owner_pin(pin: &str) -> Result<(), AppError> {
     if pin.len() != 6 || !pin.chars().all(|c| c.is_ascii_digit()) {
@@ -427,8 +439,26 @@ pub fn validate_owner_pin(pin: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Check whether the session has exceeded `SESSION_TIMEOUT_SECS` idle time.
+/// Returns `true` if the session should be auto-locked.
+fn is_session_expired(state: &AppState) -> bool {
+    let last = state.last_activity.load(std::sync::atomic::Ordering::Relaxed);
+    let now = now_unix();
+    // last == 0 means activity was never recorded (before first unlock).
+    last > 0 && now.saturating_sub(last) > SESSION_TIMEOUT_SECS
+}
+
 /// Build the spec-shaped Session from AppState.
+/// Auto-locks if the session has been idle longer than `SESSION_TIMEOUT_SECS`.
 fn build_session(state: &AppState) -> Session {
+    // Auto-lock on idle timeout: treat as if user called lock().
+    if is_session_expired(state) && state.session.lock().unwrap().is_some() {
+        log::info!("[AUTH] session idle timeout (>{SESSION_TIMEOUT_SECS}s), auto-locking");
+        *state.db.lock().unwrap() = None;
+        *state.session.lock().unwrap() = None;
+        *state.recovery_passphrase.lock().unwrap() = None;
+        sync_session_to_static(state);
+    }
     let db_locked = state.db.lock().unwrap().is_none();
     let user = state.session.lock().unwrap().clone();
     Session {
@@ -861,8 +891,11 @@ fn current_lockout_until(db_path: &Path) -> Result<Option<u64>, AppError> {
 }
 
 /// Clear the sidecar lockout row and reset in-memory failed attempts.
+/// Also clears the deception flag — a successful owner unlock after
+/// exceeding the threshold means the owner is legitimately present.
 fn clear_lockout(db_path: &Path, state: &AppState) -> Result<(), AppError> {
     *state.failed_attempts.lock().unwrap() = 0;
+    set_deception_flag(db_path, false)?;
     clear_lockout_keystore(db_path)
 }
 
@@ -870,6 +903,9 @@ fn clear_lockout(db_path: &Path, state: &AppState) -> Result<(), AppError> {
 /// recovery passphrase (Zeroizing clears the bytes on reassignment).
 #[tauri::command(rename_all = "snake_case")]
 pub fn lock(state: State<AppState>) -> Result<(), AppError> {
+    if let Some(ref p) = *state.db_path.lock().unwrap() {
+        let _ = set_deception_flag(p, false);
+    }
     *state.db.lock().unwrap() = None;
     *state.session.lock().unwrap() = None;
     *state.recovery_passphrase.lock().unwrap() = None;
@@ -1109,6 +1145,12 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
         .unwrap()
         .clone()
         .ok_or(AppError::NoDb)?;
+
+    // If deception mode is tripped, reject cashier/stocker login (same as owner).
+    if read_deception_flag(&db_path)? {
+        return Err(AppError::WrongPin);
+    }
+
     if let Some(locked_until_unix) = current_lockout_until(&db_path)? {
         let now = now_unix();
         if now < locked_until_unix {
@@ -1123,24 +1165,34 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
 
     // Look up user by name.
-    let user = db
-        .with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, name, role, pin_salt, pin_verifier \
-                 FROM users WHERE name = ?1 AND is_active = 1 LIMIT 1",
-            )?;
-            stmt.query_row(rusqlite::params![name], |r| {
-                let id: i64 = r.get(0)?;
-                let name: String = r.get(1)?;
-                let role: String = r.get(2)?;
-                let salt: Vec<u8> = r.get(3)?;
-                let verifier: Vec<u8> = r.get(4)?;
-                Ok((id, name, role, salt, verifier))
-            })
+    let user = db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, role, pin_salt, pin_verifier \
+             FROM users WHERE name = ?1 AND is_active = 1 LIMIT 1",
+        )?;
+        stmt.query_row(rusqlite::params![name], |r| {
+            let id: i64 = r.get(0)?;
+            let name: String = r.get(1)?;
+            let role: String = r.get(2)?;
+            let salt: Vec<u8> = r.get(3)?;
+            let verifier: Vec<u8> = r.get(4)?;
+            Ok((id, name, role, salt, verifier))
         })
-        .map_err(|_| AppError::WrongPin)?;
+    });
 
-    let (id, name, role, salt, verifier) = user;
+    let (id, name, role, salt, verifier) = match user {
+        Ok(u) => u,
+        Err(_) => {
+            // CWE-208: equalize timing — run dummy KDF so username-not-found
+            // takes the same time as a real login (~500ms Argon2id).
+            let dummy_salt = kdf::random_salt();
+            let params = kdf::KdfParams::PIN;
+            let mut dummy_kek =
+                kdf::derive_pin_kek(&pin, &dummy_salt, &params).map_err(|e| AppError::Crypto(e.to_string()))?;
+            kdf::zeroize_key(&mut dummy_kek);
+            return Err(AppError::WrongPin);
+        }
+    };
 
     // Derive KEK from input PIN and compare against stored verifier.
     let params = kdf::KdfParams::PIN;

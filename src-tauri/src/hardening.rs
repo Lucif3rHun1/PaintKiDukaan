@@ -76,7 +76,7 @@ pub struct OpsHealth {
 }
 
 /// Read the aggregated master health snapshot.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, String> {
     ipc_auth::authorize_err("master_health", state.inner())?;
     let last_backup_unix_ms = *state.last_backup_unix_ms.lock().unwrap();
@@ -116,10 +116,30 @@ pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, 
             sleep_prevented,
             auto_lock_policy: "ok".to_string(),
         },
-        data: DataHealth {
-            db_integrity: "ok".to_string(),
-            rows_count: RowsCount::default(),
-            backup_age_hours,
+        data: {
+            let (db_integrity, rows_count) = match state.db.lock().unwrap().as_ref() {
+                Some(db) => db.with_conn(|conn| {
+                    let integrity: String = conn
+                        .query_row("PRAGMA quick_check", [], |r| r.get(0))
+                        .unwrap_or_else(|_| "error".into());
+                    let sales: i64 = conn
+                        .query_row("SELECT COUNT(*) FROM sales", [], |r| r.get(0))
+                        .unwrap_or(0);
+                    let items: i64 = conn
+                        .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
+                        .unwrap_or(0);
+                    let customers: i64 = conn
+                        .query_row("SELECT COUNT(*) FROM customers", [], |r| r.get(0))
+                        .unwrap_or(0);
+                    Ok((integrity, RowsCount { sales, items, customers }))
+                }).unwrap_or_else(|_: rusqlite::Error| ("error".into(), RowsCount::default())),
+                None => ("no database".into(), RowsCount::default()),
+            };
+            DataHealth {
+                db_integrity,
+                rows_count,
+                backup_age_hours,
+            }
         },
         network: NetworkHealth {
             mdns_active: false,
@@ -135,7 +155,7 @@ pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, 
 }
 
 /// Enable auto-launch on boot via tauri-plugin-autostart.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn autostart_enable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
     ipc_auth::authorize_err("autostart_enable", app.state::<AppState>().inner())?;
     let manager = app.autolaunch();
@@ -144,7 +164,7 @@ pub fn autostart_enable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<b
 }
 
 /// Disable auto-launch on boot.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn autostart_disable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
     ipc_auth::authorize_err("autostart_disable", app.state::<AppState>().inner())?;
     let manager = app.autolaunch();
@@ -153,7 +173,7 @@ pub fn autostart_disable<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<
 }
 
 /// Return whether auto-launch is currently enabled.
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn autostart_is_enabled<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
     ipc_auth::authorize_err("autostart_is_enabled", app.state::<AppState>().inner())?;
     app.autolaunch().is_enabled().map_err(|e| e.to_string())
@@ -161,7 +181,7 @@ pub fn autostart_is_enabled<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Resu
 
 /// Read the BitLocker status of the C: drive. Returns "on", "off",
 /// "suspended", or "unknown".
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn bitlocker_status(state: tauri::State<'_, AppState>) -> Result<String, String> {
     ipc_auth::authorize("bitlocker_status", state.inner()).map_err(|e| e.to_string())?;
     bitlocker_status_inner().map_err(|e| e.to_string())

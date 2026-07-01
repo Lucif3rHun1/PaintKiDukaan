@@ -74,11 +74,11 @@ pub fn mint_next_with_conn(c: &rusqlite::Connection, kind: Kind) -> anyhow::Resu
     match kind {
         Kind::Sku => {
             let next: i64 = c.query_row(
-                "INSERT INTO sequences(name,last_value)
+                "INSERT INTO sequences(name,value)
                      VALUES (?1, 1)
                      ON CONFLICT(name) DO UPDATE
-                       SET last_value = last_value + 1
-                     RETURNING last_value",
+                       SET value = value + 1
+                     RETURNING value",
                 rusqlite::params![kind.as_seq_name()],
                 |r| r.get(0),
             )?;

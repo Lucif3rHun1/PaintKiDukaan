@@ -90,13 +90,6 @@ export function Dashboard() {
         .join(" • ")
     : null;
 
-  const todayRow = useMemo(
-    () => (weeklySales.data?.rows ?? []).find((r) => r.date === today),
-    [weeklySales.data, today],
-  );
-
-  const todaySalesPaise = todayRow?.grand_total ?? 0;
-
   const topAlerts = useMemo(
     () =>
       (alerts.data ?? [])
@@ -176,7 +169,6 @@ export function Dashboard() {
 
       {dashTab === "business" ? (
         <BusinessTab
-          todaySalesPaise={todaySalesPaise}
           dayCloseOverdue={Boolean(dayClose.data?.overdue)}
         />
       ) : (

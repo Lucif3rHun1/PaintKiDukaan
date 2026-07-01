@@ -23,7 +23,7 @@ pub struct NewLocation {
     pub zone: Option<String>,
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_locations(
     state: State<'_, AppState>,
     include_inactive: Option<bool>,
@@ -55,7 +55,7 @@ pub fn list_locations(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppResult<Location> {
     let guard = state
         .db
@@ -88,7 +88,7 @@ pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppR
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn rename_location(
     state: State<'_, AppState>,
     id: i64,
@@ -132,7 +132,7 @@ pub fn rename_location(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn deactivate_location(state: State<'_, AppState>, id: i64) -> AppResult<()> {
     let guard = state
         .db

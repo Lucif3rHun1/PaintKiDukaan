@@ -8,7 +8,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::commands::auth::AppState;
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
+#[cfg(target_os = "windows")]
+use crate::error::AppError;
 use crate::security::ipc_auth;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -141,7 +143,9 @@ fn mask_printer_name(name: &str) -> String {
     if name.contains('\\') || name.contains('/') {
         let parts: Vec<&str> = name.split(|c| c == '\\' || c == '/').collect();
         if parts.len() >= 2 {
-            return format!("{}\\***", parts[0]);
+            // UNC paths like \\SERVER\Printer split to ["", "", "SERVER", "Printer"]
+            // Always mask both server and printer name for network paths
+            return "***\\***".to_string();
         }
     }
     name.to_string()

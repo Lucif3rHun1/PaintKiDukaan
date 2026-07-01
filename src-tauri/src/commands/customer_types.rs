@@ -30,7 +30,7 @@ fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_customer_types(
     state: State<'_, AppState>,
     include_inactive: Option<bool>,
@@ -62,7 +62,7 @@ pub fn list_customer_types(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn add_customer_type(
     state: State<'_, AppState>,
     payload: NewCustomerType,
@@ -99,7 +99,7 @@ pub fn add_customer_type(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn rename_customer_type(
     state: State<'_, AppState>,
     id: i64,
@@ -140,7 +140,7 @@ pub fn rename_customer_type(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn deactivate_customer_type(state: State<'_, AppState>, id: i64) -> AppResult<()> {
     let guard = state
         .db

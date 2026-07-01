@@ -57,7 +57,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
         : null;
 
     // ponytail: dev-mode a11y warning, no runtime cost
-    if (process.env.NODE_ENV !== "production" && icon && !children && !props["aria-label"]) {
+    if (import.meta.env.DEV && icon && !children && !props["aria-label"]) {
       console.warn("Button: icon-only button missing aria-label");
     }
 

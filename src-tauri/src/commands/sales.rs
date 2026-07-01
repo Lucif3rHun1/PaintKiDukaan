@@ -14,7 +14,7 @@
 //!     the operator tapped Proceed by including `acknowledge_flag` in the
 //!     request (an audit field). Backend rejects if flagged+final without ack.
 
-use chrono::Local;
+use chrono::{Local, NaiveDate};
 use rusqlite::params;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
@@ -961,7 +961,7 @@ fn row_to_sale_header(r: &rusqlite::Row<'_>) -> rusqlite::Result<Sale> {
 // Tauri command surface.
 // -----------------------------------------------------------------------------
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_create_sale(state: tauri::State<'_, AppState>, sale: NewSale) -> AppResult<i64> {
     ipc_auth::authorize_err("cmd_create_sale", state.inner())?;
     let guard = state
@@ -986,7 +986,7 @@ pub fn cmd_create_sale(state: tauri::State<'_, AppState>, sale: NewSale) -> AppR
     }
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_convert_quotation(
     state: tauri::State<'_, AppState>,
     req: ConvertQuotation,
@@ -1006,7 +1006,7 @@ pub fn cmd_convert_quotation(
     convert_quotation(db, user_id, req).map_err(AppError::from)
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_get_sale(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Sale>> {
     ipc_auth::authorize_err("cmd_get_sale", state.inner())?;
     let guard = state
@@ -1017,7 +1017,7 @@ pub fn cmd_get_sale(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Opt
     get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_get_sale_by_invoice_number(
     state: tauri::State<'_, AppState>,
     no: String,
@@ -1031,7 +1031,7 @@ pub fn cmd_get_sale_by_invoice_number(
     get_by_no(db, &no).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_list_sales(
     state: tauri::State<'_, AppState>,
     status: Option<String>,
@@ -1056,6 +1056,18 @@ fn today() -> String {
 
 fn now() -> String {
     Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+/// Convert a "YYYY-MM-DD" string to epoch milliseconds (UTC start of day).
+/// Falls back to now() on parse failure.
+fn date_to_ms(date: &str) -> i64 {
+    NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis())
+        .unwrap_or_else(|_| now_epoch_ms())
+}
+
+fn now_epoch_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
 }
 
 // -----------------------------------------------------------------------------
@@ -1491,11 +1503,11 @@ pub fn list_returns(
         }
         if let Some(d) = from_date {
             sql.push_str(&format!(" AND sr.created_at >= ?{}", bound.len() + 1));
-            bound.push(Box::new(d.to_string()));
+            bound.push(Box::new(date_to_ms(d)));
         }
         if let Some(d) = to_date {
             sql.push_str(&format!(" AND sr.created_at <= ?{}", bound.len() + 1));
-            bound.push(Box::new(d.to_string()));
+            bound.push(Box::new(date_to_ms(d)));
         }
         sql.push_str(&format!(" ORDER BY sr.id DESC LIMIT ?{}", bound.len() + 1));
         bound.push(Box::new(limit));
@@ -1525,7 +1537,7 @@ pub fn list_returns(
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_create_sale_return(
     state: tauri::State<'_, AppState>,
     payload: CreateSaleReturnPayload,
@@ -1550,7 +1562,7 @@ pub fn cmd_create_sale_return(
     create_sale_return(db, user_id, payload).map_err(AppError::from)
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_get_sale_return(
     state: tauri::State<'_, AppState>,
     id: i64,
@@ -1564,7 +1576,7 @@ pub fn cmd_get_sale_return(
     get_return(db, id)
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_list_sale_returns(
     state: tauri::State<'_, AppState>,
     customer_id: Option<i64>,
@@ -2076,7 +2088,7 @@ pub fn cmd_convert_to_fbill(
     convert_to_fbill(db, user_id, source_id).map_err(AppError::from)
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_list_sale_payments(
     state: tauri::State<'_, AppState>,
     _sale_id: i64,
@@ -2085,7 +2097,7 @@ pub fn cmd_list_sale_payments(
     Ok(Vec::new())
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_record_sale_payment(
     state: tauri::State<'_, AppState>,
     _sale_id: i64,
@@ -2097,7 +2109,7 @@ pub fn cmd_record_sale_payment(
     Err(AppError::Internal("not implemented".into()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_void_sale(
     state: tauri::State<'_, AppState>,
     _sale_id: i64,

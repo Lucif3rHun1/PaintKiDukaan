@@ -22,7 +22,7 @@ import { CustomerTypesSettings, LocationsSettings, CatalogSettingsCombined } fro
 import { HardwareSettings } from "./settings/HardwareSettings";
 import { SettingsCategory } from "./settings/SettingsCategory";
 import { ShopInfoSettings, CurrencySettings } from "./settings/ShopSettings";
-import { BackupSettings, MasterHealthSettings, SecuritySettings, ThemeSettings } from "./settings/SystemSettings";
+import { BackupSettings, MasterHealthSettings, OwnerSecuritySettings, SecuritySettings, ThemeSettings } from "./settings/SystemSettings";
 import { UsersSettings, DevicesSettings } from "./settings/TeamSettings";
 
 type SettingsItemId =
@@ -36,6 +36,7 @@ type SettingsItemId =
   | "users"
   | "backup"
   | "security"
+  | "owner-security"
   | "theme"
   | "master-health";
 
@@ -73,6 +74,7 @@ const SETTINGS_ITEMS: SettingsItem[] = [
   { id: "devices", category: "team", title: "Enrolled devices", description: "Devices allowed to unlock the app and their permissions.", icon: HardDrive, Component: DevicesSettings },
   { id: "backup", category: "system", title: "Backup", description: "Create protected backups and manage restore points.", icon: DatabaseBackup, Component: BackupSettings },
   { id: "security", category: "system", title: "Security", description: "Idle auto-lock and lockout policy for this device.", icon: ShieldCheck, Component: SecuritySettings },
+  { id: "owner-security", category: "system", title: "Owner PIN & recovery", description: "Change owner PIN and manage recovery password.", icon: ShieldCheck, Component: OwnerSecuritySettings },
   { id: "theme", category: "system", title: "Appearance", description: "Theme mode — system, light, or dark.", icon: Monitor, Component: ThemeSettings },
   { id: "master-health", category: "system", title: "Master health", description: "Run diagnostics across data, network, and operations.", icon: ClipboardList, Component: MasterHealthSettings },
 ];

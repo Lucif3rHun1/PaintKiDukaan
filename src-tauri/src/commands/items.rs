@@ -158,13 +158,14 @@ fn mint_next_sku(
     item_name: &str,
     brand_prefix: Option<&str>,
 ) -> AppResult<String> {
-    tx.execute(
-        "UPDATE sequences SET value = value + 1 WHERE name = 'sku'",
+    // Atomic: INSERT ON CONFLICT RETURNING avoids TOCTOU under concurrent creates
+    let n: i64 = tx.query_row(
+        "INSERT INTO sequences(name, value) VALUES ('sku', 1) 
+         ON CONFLICT(name) DO UPDATE SET value = value + 1 
+         RETURNING value",
         [],
+        |r| r.get(0),
     )?;
-    let n: i64 = tx.query_row("SELECT value FROM sequences WHERE name = 'sku'", [], |r| {
-        r.get(0)
-    })?;
     let name_abbr = make_name_abbreviation(item_name);
     match brand_prefix {
         Some(prefix) => Ok(format!("{}-{}-{:03}", prefix.to_uppercase(), name_abbr, n)),
@@ -283,7 +284,7 @@ pub fn to_title_case(input: &str) -> String {
     words.join(" ")
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<Item> {
     let guard = state
         .db
@@ -413,7 +414,7 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> AppResult<Item> {
     let guard = state
         .db
@@ -510,7 +511,7 @@ pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> Ap
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<Vec<Item>> {
     let guard = state
         .db
@@ -544,7 +545,7 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
         );
     }
     sql.push_str(" ORDER BY i.name COLLATE NOCASE");
-    let limit = filter.limit.unwrap_or(500);
+    let limit = filter.limit.unwrap_or(500).clamp(1, 500);
     sql.push_str(&format!(" LIMIT {}", limit));
     db.with_raw(|c| {
         let mut stmt = c.prepare(&sql)?;
@@ -555,7 +556,7 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
     let guard = state
         .db
@@ -574,7 +575,7 @@ pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option<ItemLookup>> {
     let guard = state
         .db
@@ -635,7 +636,7 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
     })
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn box_unit_conversion(
     state: State<'_, AppState>,
     item_id: i64,

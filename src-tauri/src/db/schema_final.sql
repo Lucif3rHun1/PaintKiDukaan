@@ -231,7 +231,7 @@ CREATE TABLE customers (
 CREATE INDEX idx_customers_is_active_name ON customers(is_active, name);
 
 -- serves: "lookup by phone at billing time"
-CREATE INDEX idx_customers_phone ON customers(phone) WHERE phone IS NOT NULL AND is_active = 1;
+CREATE UNIQUE INDEX idx_customers_phone ON customers(phone) WHERE phone IS NOT NULL AND is_active = 1;
 
 -- C3. Vendors
 CREATE TABLE vendors (
@@ -506,7 +506,7 @@ CREATE TABLE vendor_payments (
   vendor_id    INTEGER NOT NULL REFERENCES vendors(id) ON DELETE NO ACTION,
   purchase_id  INTEGER REFERENCES purchases(id) ON DELETE NO ACTION,
   mode         TEXT    NOT NULL,
-  amount_paise INTEGER NOT NULL CHECK(amount_paise <> 0),
+  amount_paise INTEGER NOT NULL CHECK(amount_paise > 0),
   reference    TEXT,
   note         TEXT,
   created_at   INTEGER NOT NULL,
@@ -598,7 +598,7 @@ CREATE TABLE sale_payments (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   sale_id      INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
   mode         TEXT    NOT NULL,
-  amount_paise INTEGER NOT NULL CHECK(amount_paise <> 0),
+  amount_paise INTEGER NOT NULL CHECK(amount_paise > 0),
   reference    TEXT,
   created_at   INTEGER NOT NULL,
   created_by   INTEGER REFERENCES users(id) ON DELETE NO ACTION
@@ -616,7 +616,7 @@ CREATE TABLE customer_payments (
   customer_id  INTEGER NOT NULL REFERENCES customers(id) ON DELETE NO ACTION,
   sale_id      INTEGER REFERENCES sales(id) ON DELETE NO ACTION,
   mode         TEXT    NOT NULL,
-  amount_paise INTEGER NOT NULL CHECK(amount_paise <> 0),
+  amount_paise INTEGER NOT NULL CHECK(amount_paise > 0),
   reference    TEXT,
   note         TEXT,
   created_at   INTEGER NOT NULL,

@@ -336,7 +336,7 @@ pub fn set_item_packaging(
     qty: f64,
 ) -> AppResult<()> {
     ipc_auth::authorize_err("set_item_packaging", state.inner())?;
-    if qty <= 0.0 {
+    if !qty.is_finite() || qty <= 0.0 {
         return Err(AppError::Validation(
             "qty_per_purchase_unit must be > 0".into(),
         ));

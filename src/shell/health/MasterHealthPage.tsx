@@ -48,7 +48,7 @@ export function MasterHealthPage() {
 
       <Section title="System">
         <Row k="Drive protection (C:)" v={data.system.bitlocker_c_drive} />
-        <Row k="Disk free (GB)" v={data.system.disk_free_gb.toFixed(1)} />
+        <Row k="Disk free (GB)" v={data.system.disk_free_gb?.toFixed(1) ?? "—"} />
         <Row
           k="Sleep prevented"
           v={data.system.sleep_prevented ? "yes" : "no"}

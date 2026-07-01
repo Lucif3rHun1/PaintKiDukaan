@@ -82,9 +82,9 @@ export function DataTable<T>({
           )}
         >
           <tr className={stickyHeader ? "border-b border-border" : undefined}>
-            {columns.map((col) => (
+            {columns.map((col, i) => (
               <th
-                key={col.id ?? (typeof col.header === "string" ? col.header : "col")}
+                key={col.id ?? (typeof col.header === "string" ? col.header : undefined) ?? `col-${i}`}
                 scope="col"
                 style={col.width ? { width: col.width, minWidth: col.width } : undefined}
                 className={cn(
@@ -155,9 +155,9 @@ export function DataTable<T>({
                     }
                   } : undefined}
                 >
-                {columns.map((col) => (
+                {columns.map((col, i) => (
                   <td
-                    key={col.id ?? (typeof col.header === "string" ? col.header : "cell")}
+                    key={col.id ?? (typeof col.header === "string" ? col.header : undefined) ?? `cell-${i}`}
                     style={col.width ? { width: col.width, minWidth: col.width } : undefined}
                     className={cn("px-3 py-2", alignClass(col.align), col.className)}
                   >

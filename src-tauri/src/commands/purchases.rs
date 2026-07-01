@@ -377,8 +377,13 @@ pub fn create_inward(
             }
         }
         let total = purchase_total(&req.lines, &upb_per_line);
+        // ponytail: atomic counter via daily_counters with empty date = global (non-daily) sequence
         let next_id: i64 = c.query_row(
-            "SELECT COALESCE(MAX(id), 0) + 1 FROM purchases",
+            "INSERT INTO daily_counters(prefix, date, last_serial)
+                 VALUES ('PINV', '', 1)
+                 ON CONFLICT(prefix, date) DO UPDATE
+                   SET last_serial = last_serial + 1
+                 RETURNING last_serial",
             [],
             |r| r.get(0),
         )?;
@@ -531,7 +536,7 @@ pub(crate) fn ms_to_date(ms: i64) -> String {
 // Tauri command surface.
 // -----------------------------------------------------------------------------
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_create_inward(
     state: tauri::State<'_, AppState>,
     req: NewPurchase,
@@ -550,7 +555,7 @@ pub fn cmd_create_inward(
     create_inward(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_last_cost(state: tauri::State<'_, AppState>, item_id: i64) -> AppResult<Option<i64>> {
     crate::security::ipc_auth::authorize_err("cmd_last_cost", state.inner())?;
     let guard = state
@@ -561,7 +566,7 @@ pub fn cmd_last_cost(state: tauri::State<'_, AppState>, item_id: i64) -> AppResu
     last_cost_for_item(db, item_id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_list_purchases(
     state: tauri::State<'_, AppState>,
     from_date: Option<String>,
@@ -583,7 +588,7 @@ pub fn cmd_list_purchases(
     .map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_get_purchase(state: tauri::State<'_, AppState>, id: i64) -> AppResult<Option<Purchase>> {
     crate::security::ipc_auth::authorize_err("cmd_get_purchase", state.inner())?;
     let guard = state
@@ -594,7 +599,7 @@ pub fn cmd_get_purchase(state: tauri::State<'_, AppState>, id: i64) -> AppResult
     get(db, id).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_movements_for_item(
     state: tauri::State<'_, AppState>,
     item_id: i64,
@@ -840,13 +845,13 @@ mod tests {
     }
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_last_retail(state: tauri::State<'_, AppState>, _item_id: i64) -> AppResult<Option<i64>> {
     ipc_auth::authorize_err("cmd_last_retail", state.inner())?;
     Ok(None)
 }
 
-#[tauri::command(rename_all = "snake_case", rename_all = "snake_case")]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cmd_list_purchases_by_vendor(
     state: tauri::State<'_, AppState>,
     _vendor_id: i64,

@@ -3,6 +3,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { customerOutstanding } from "./api";
+import { extractError } from "../../lib/extractError";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { toTitleCase } from "../../lib/format/titleCase";
 import type { Customer } from "../types";
@@ -21,7 +22,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
     queryKey: ["customer-outstanding", customer.id],
     queryFn: () => customerOutstanding(customer.id),
   });
-  const error = outstandingErr instanceof Error ? outstandingErr.message : null;
+  const error = outstandingErr ? extractError(outstandingErr) : null;
 
   return (
     <div>

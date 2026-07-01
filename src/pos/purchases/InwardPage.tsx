@@ -28,7 +28,7 @@ import { listVendors } from "../../domain/vendors/api";
 import { outstandingReport } from "../api";
 import type { FormulaSearchHit, Item, Location, Vendor, PurchaseUnit, ItemPurchasePackaging } from "../../domain/types";
 import { createInward, deleteDraft, lastCost, lastRetail, listPurchases } from "../api";
-import { PageBadgeCtx, useAutosave, useDirtyForm, registerDirtyChecker, unregisterDirtyChecker } from "../hooks";
+import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay } from "../../lib/date";
 import { ItemSearchInput } from "../sales/ItemSearchInput";
@@ -196,11 +196,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   useEffect(() => {
     if (!draftLoading && draftData.draftLines.length > 0) markDirty();
   }, [draftData, draftLoading, markDirty]);
-
-  useEffect(() => {
-    registerDirtyChecker(() => isDirty);
-    return () => unregisterDirtyChecker();
-  }, [isDirty]);
 
   const draftRestored = useRef(false);
   useEffect(() => {
@@ -390,17 +385,18 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       purchase_unit_id: purchaseUnitId,
       qty_per_purchase_unit: newQtyPerPkg,
     }));
-    // Save as item default (override always overwrites)
-    if (entry.item_id > 0) {
-      const foundItem = items.find((i) => i.id === entry.item_id);
+    // Capture item_id before async to avoid stale closure
+    const itemId = entry.item_id;
+    if (itemId > 0) {
+      const foundItem = items.find((i) => i.id === itemId);
       const itemNameVal = foundItem ? formatItemName(foundItem, brands) : "item";
-      void setItemPackaging(entry.item_id, purchaseUnitId, newQtyPerPkg)
+      void setItemPackaging(itemId, purchaseUnitId, newQtyPerPkg)
         .then(() => {
           toast.success(`Updated default packaging for ${itemNameVal}`);
-          return getItemPackaging(entry.item_id);
+          return getItemPackaging(itemId);
         })
         .then((pkgs) => {
-          setItemPackagingMap((prev) => new Map(prev).set(entry.item_id, pkgs));
+          setItemPackagingMap((prev) => new Map(prev).set(itemId, pkgs));
         })
         .catch((e: unknown) => {
           console.error("[InwardPage] setItemPackaging failed", e);

@@ -189,7 +189,7 @@ pub fn create_customer_credit_invoice_impl(
         lines,
     };
 
-    sales::create_final_bill(db, user.id, sale).map_err(|e| AppError::Internal(e.to_string()))
+    sales::create_final_bill(db, user.id, sale).map_err(AppError::from)
 }
 
 pub fn record_customer_payment_impl(
@@ -248,8 +248,10 @@ pub fn record_customer_payment_impl(
 
 fn date_to_ms(date: &str) -> i64 {
     NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis())
-        .unwrap_or_else(|_| {
+        .ok()
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|t| t.and_utc().timestamp_millis())
+        .unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as i64)

@@ -109,6 +109,7 @@ export default function DayClosePage({ user }: Props) {
   const [status, setStatus] = useState<string | null>(null);
   const [denom, setDenom] = useState<Record<number, number>>({});
   const [useDenom, setUseDenom] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     backupGateCheck().then((d) => setGate(d ?? null)).catch((e: unknown) => {
@@ -151,6 +152,8 @@ export default function DayClosePage({ user }: Props) {
   const variance = countedPaise - expected;
 
   async function submit(decision: "fresh" | "skip" | "back_up") {
+    if (submitting) return;
+    setSubmitting(true);
     try {
       const id = await triggerDayClose({
         date,
@@ -167,6 +170,8 @@ export default function DayClosePage({ user }: Props) {
       void queryClient.invalidateQueries({ queryKey: ["dayClose"] });
     } catch (e) {
       setStatus(`Close failed: ${extractError(e)}`);
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -305,7 +310,7 @@ export default function DayClosePage({ user }: Props) {
                         min="0"
                         step="1"
                         value={denom[d] || ""}
-                        onChange={(e) => setDenom({ ...denom, [d]: Number(e.target.value) || 0 })}
+                        onChange={(e) => setDenom({ ...denom, [d]: Math.max(0, Number(e.target.value) || 0) })}
                         className="input w-full text-center text-xs"
                       />
                     </label>
@@ -354,6 +359,7 @@ export default function DayClosePage({ user }: Props) {
                 <Button
                   variant="primary"
                   onClick={() => submit("back_up")}
+                  loading={submitting}
                   data-testid="backup-and-close"
                 >
                   Back up &amp; close
@@ -361,6 +367,7 @@ export default function DayClosePage({ user }: Props) {
                 <Button
                   variant="secondary"
                   onClick={() => submit("skip")}
+                  loading={submitting}
                   data-testid="skip-once"
                 >
                   Skip once
@@ -368,6 +375,7 @@ export default function DayClosePage({ user }: Props) {
                 <Button
                   variant="ghost"
                   onClick={() => submit("fresh")}
+                  loading={submitting}
                 >
                   Mark fresh &amp; close
                 </Button>
@@ -376,6 +384,7 @@ export default function DayClosePage({ user }: Props) {
               <Button
                 variant="primary"
                 onClick={() => submit("fresh")}
+                loading={submitting}
                 className="w-full"
                 data-testid="close-day"
               >
