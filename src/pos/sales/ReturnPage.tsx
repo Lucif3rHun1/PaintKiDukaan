@@ -547,7 +547,12 @@ export default function ReturnPage({ user, onBack }: Props) {
                 <h2 className="text-lg font-semibold text-foreground">Refund tenders</h2>
                 <p className="text-xs text-muted-foreground">Splits represent money returned to the customer.</p>
               </div>
-              <SplitPayment total={subtotal} splits={paymentSplits} onChange={setPaymentSplits} />
+              <SplitPayment
+  total={subtotal}
+  splits={paymentSplits}
+  onChange={setPaymentSplits}
+  balanceTenderAvailable={linkedInvoices.some((s) => s.customer_id != null)}
+/>
               {subtotal > 0 && (
                 <div className="space-y-2 border-t border-border pt-3 text-sm">
                   <div className="flex items-center justify-between gap-4 font-medium">

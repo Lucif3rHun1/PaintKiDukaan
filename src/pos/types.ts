@@ -1,7 +1,7 @@
 // POS shared types — mirror src-tauri/src/commands/{sales,purchases,day_close,reports,sequences}.rs
 // Keep these in sync; small drift here will break the IPC bridge.
 
-export type PaymentMode = "cash" | "upi" | "card" | "bank" | "cheque";
+export type PaymentMode = "cash" | "upi" | "card" | "bank" | "cheque" | "balance";
 
 export interface PaymentSplit {
   mode: PaymentMode;

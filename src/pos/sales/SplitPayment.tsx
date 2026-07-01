@@ -8,6 +8,13 @@ interface Props {
   total: number;
   splits: PaymentSplit[];
   onChange: (splits: PaymentSplit[]) => void;
+  /**
+   * When true, a "Balance" tender button appears. Settles against the
+   * customer's outstanding ledger via customer_payments instead of paying
+   * out cash. Only meaningful when the linked sale has a customer
+   * (walk-in sales have no balance to settle against).
+   */
+  balanceTenderAvailable?: boolean;
 }
 
 type QuickPaymentMode = Extract<PaymentMode, "cash" | "upi" | "bank">;
@@ -27,9 +34,10 @@ const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
   card: "Card",
   bank: "Bank",
   cheque: "Cheque",
+  balance: "Balance",
 };
 
-export function SplitPayment({ total, splits, onChange }: Props) {
+export function SplitPayment({ total, splits, onChange, balanceTenderAvailable }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pendingFocusIndex = useRef<number | null>(null);
   const initializedDefaultSplit = useRef(false);
@@ -68,7 +76,7 @@ export function SplitPayment({ total, splits, onChange }: Props) {
     input?.select();
   }
 
-  function addOrFocusSplit(mode: QuickPaymentMode) {
+  function addOrFocusSplit(mode: QuickPaymentMode | "balance") {
     setPref("sale:lastPaymentMode", mode);
     const existingIndex = splits.findIndex((split) => split.mode === mode);
     if (existingIndex >= 0) {
@@ -137,6 +145,20 @@ export function SplitPayment({ total, splits, onChange }: Props) {
             {mode.label}
           </Button>
         ))}
+        {balanceTenderAvailable && (
+          <Button
+            key="balance"
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-pressed={splits.some((split) => split.mode === "balance")}
+            className="rounded-full border border-info/40 bg-info/10 px-3 text-info"
+            onClick={() => addOrFocusSplit("balance")}
+            title="Settles against the customer's outstanding ledger instead of paying out cash"
+          >
+            Balance
+          </Button>
+        )}
       </div>
 
       {splits.map((split, index) => (
