@@ -125,7 +125,7 @@ jobs:
         with:
           path: release-artifacts
 
-      - name: Generate latest.json
+      - name: Generate latest.json (SHA-256 verified)
         shell: bash
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
@@ -150,23 +150,31 @@ jobs:
             printf '%s' "$f"
           }
 
-          read_sig() { tr -d '\n' < "$1"; }
-
-          declare -A asset sig
+          declare -A asset
           asset[macos-aarch64]="$(pick macos-aarch64 '*.app.tar.gz')"
-          sig[macos-aarch64]="$(pick macos-aarch64 '*.app.tar.gz.sig')"
           asset[macos-x86_64]="$(pick macos-x86_64 '*.app.tar.gz')"
-          sig[macos-x86_64]="$(pick macos-x86_64 '*.app.tar.gz.sig')"
           asset[windows-x86_64]="$(pick windows-x86_64 '*.exe')"
-          sig[windows-x86_64]="$(pick windows-x86_64 '*.exe.sig')"
           asset[windows-aarch64]="$(pick windows-aarch64 '*.exe')"
-          sig[windows-aarch64]="$(pick windows-aarch64 '*.exe.sig')"
 
           mkdir -p release-files
           for key in "${!asset[@]}"; do
             cp "${asset[$key]}" "release-files/$(basename "${asset[$key]}")"
-            cp "${sig[$key]}"   "release-files/$(basename "${asset[$key]}").sig"
           done
+
+          sha256() { sha256sum "$1" | awk '{print $1}'; }
+
+          macos_aarch64_name="$(basename "${asset[macos-aarch64]}")"
+          macos_aarch64_sha="$(sha256 "${asset[macos-aarch64]}")"
+          macos_aarch64_size="$(stat -c%s "${asset[macos-aarch64]}" 2>/dev/null || stat -f%z "${asset[macos-aarch64]}")"
+          macos_x86_64_name="$(basename "${asset[macos-x86_64]}")"
+          macos_x86_64_sha="$(sha256 "${asset[macos-x86_64]}")"
+          macos_x86_64_size="$(stat -c%s "${asset[macos-x86_64]}" 2>/dev/null || stat -f%z "${asset[macos-x86_64]}")"
+          windows_x86_64_name="$(basename "${asset[windows-x86_64]}")"
+          windows_x86_64_sha="$(sha256 "${asset[windows-x86_64]}")"
+          windows_x86_64_size="$(stat -c%s "${asset[windows-x86_64]}" 2>/dev/null || stat -f%z "${asset[windows-x86_64]}")"
+          windows_aarch64_name="$(basename "${asset[windows-aarch64]}")"
+          windows_aarch64_sha="$(sha256 "${asset[windows-aarch64]}")"
+          windows_aarch64_size="$(stat -c%s "${asset[windows-aarch64]}" 2>/dev/null || stat -f%z "${asset[windows-aarch64]}")"
 
           cat > latest.json <<EOF
           {
@@ -174,10 +182,10 @@ jobs:
             "notes": "${notes}",
             "pub_date": "${pub_date}",
             "platforms": {
-              "darwin-aarch64":  { "signature": "$(read_sig "${sig[macos-aarch64]}")",  "url": "${release_url}/$(basename "${asset[macos-aarch64]}")" },
-              "darwin-x86_64":   { "signature": "$(read_sig "${sig[macos-x86_64]}")",   "url": "${release_url}/$(basename "${asset[macos-x86_64]}")" },
-              "windows-x86_64":  { "signature": "$(read_sig "${sig[windows-x86_64]}")",  "url": "${release_url}/$(basename "${asset[windows-x86_64]}")" },
-              "windows-aarch64": { "signature": "$(read_sig "${sig[windows-aarch64]}")", "url": "${release_url}/$(basename "${asset[windows-aarch64]}")" }
+              "darwin-aarch64":  { "url": "${release_url}/${macos_aarch64_name}",   "sha256": "${macos_aarch64_sha}",   "size": ${macos_aarch64_size} },
+              "darwin-x86_64":   { "url": "${release_url}/${macos_x86_64_name}",    "sha256": "${macos_x86_64_sha}",    "size": ${macos_x86_64_size} },
+              "windows-x86_64":  { "url": "${release_url}/${windows_x86_64_name}",  "sha256": "${windows_x86_64_sha}",  "size": ${windows_x86_64_size} },
+              "windows-aarch64": { "url": "${release_url}/${windows_aarch64_name}", "sha256": "${windows_aarch64_sha}", "size": ${windows_aarch64_size} }
             }
           }
           EOF
@@ -221,7 +229,3 @@ jobs:
           echo "=== Upload complete ==="
           echo "--- Final verification ---"
           gh release view "$tag" 2>&1 | head -20 || echo "gh release view failed"
-
-      - name: Verify updater pubkey matches published signatures
-        continue-on-error: true
-        run: python3 scripts/verify_updater_pubkey.py

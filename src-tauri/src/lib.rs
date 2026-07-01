@@ -1,5 +1,4 @@
 use tauri::Manager;
-use tauri_plugin_updater::UpdaterExt;
 
 pub mod commands;
 pub mod crypto;
@@ -113,7 +112,6 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(commands::auth::AppState::default())
         .setup(move |app| {
@@ -221,13 +219,6 @@ pub fn run() {
                 if let Some(main) = app.get_webview_window("main") {
                     let _ = main.show();
                 }
-            }
-
-            if !cfg!(debug_assertions) {
-                let app_handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    run_auto_update(app_handle).await;
-                });
             }
 
             log::info!("Setup complete");
@@ -442,6 +433,11 @@ pub fn run() {
             // Scanner (Slice D)
             scan::set_scan_target,
             scan::scan_target,
+            // Custom SHA-256 updater (replaces tauri-plugin-updater runtime)
+            commands::updater::cmd_check_update,
+            commands::updater::cmd_download_update,
+            commands::updater::cmd_install_update,
+            commands::updater::cmd_current_target,
         ])
         .build(tauri::generate_context!())
         .expect("error while building PaintKiDukaan");
@@ -462,20 +458,6 @@ pub fn run() {
             let _ = label;
         }
     });
-}
-
-async fn run_auto_update(app: tauri::AppHandle) {
-    if let Ok(updater) = app.updater() {
-        if let Ok(Some(update)) = updater.check().await {
-            if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
-                log::info!("Update installed — restarting");
-                app.restart();
-            }
-        }
-    }
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.show();
-    }
 }
 
 #[cfg(test)]

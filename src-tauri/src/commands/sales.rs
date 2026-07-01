@@ -1283,11 +1283,18 @@ pub fn create_sale_return(
             }
         }
 
-        let default_location: i64 = c.query_row(
-            "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
-            [],
-            |r| r.get(0),
-        )?;
+        let default_location: i64 = c
+            .query_row(
+                "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| {
+                ReturnError::Other(anyhow::anyhow!(
+                    "No active location. Create one under Settings → Locations first."
+                ))
+            })?;
         let sale_location: i64 = if is_standalone {
             default_location
         } else {
@@ -1302,6 +1309,12 @@ pub fn create_sale_return(
 
         let created_at = now_epoch_ms();
         let reason = payload.reason.clone();
+
+        // Ponytail: standalone returns (sale_id=0) reference no existing sale,
+        // so FK on sale_returns.sale_id would fail. Disable FK for these INSERTs.
+        if is_standalone {
+            c.execute_batch("PRAGMA foreign_keys = OFF")?;
+        }
 
         let return_id: i64 = c.query_row(
             "INSERT INTO sale_returns
@@ -1358,6 +1371,11 @@ pub fn create_sale_return(
             }
         }
 
+        // Re-enable FK after standalone INSERTs complete.
+        if is_standalone {
+            c.execute_batch("PRAGMA foreign_keys = ON")?;
+        }
+
         for m in &payload.payment_modes {
             c.execute(
                 "INSERT INTO sale_return_payments
@@ -1374,15 +1392,20 @@ pub fn create_sale_return(
             )?;
         }
 
-        // Refund reduces the customer's paid amount on the original sale so
-        // the outstanding ledger stays correct. Floors at 0 — a return can
-        // never make paid_amount negative.
-        c.execute(
-            "UPDATE sales
-             SET paid_amount = MAX(0, paid_amount - ?1)
-             WHERE id = ?2",
-            params![refund_total, payload.sale_id],
-        )?;
+        if is_standalone {
+            // Standalone return: no original sale to update paid_amount.
+            // TODO: adjust customer opening_balance_paise if refund > paid.
+        } else {
+            // Refund reduces the customer's paid amount on the original sale so
+            // the outstanding ledger stays correct. Floors at 0 — a return can
+            // never make paid_amount negative.
+            c.execute(
+                "UPDATE sales
+                 SET paid_amount = MAX(0, paid_amount - ?1)
+                 WHERE id = ?2",
+                params![refund_total, payload.sale_id],
+            )?;
+        }
 
         Ok(return_id)
     })?;

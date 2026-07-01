@@ -24,14 +24,13 @@ tauri = { version = "2", features = ["tray-icon", "test"] }
 tauri-plugin-log = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 # tauri-plugin-global-shortcut — removed (unused, CWE-1104)
 # tauri-plugin-oauth — removed (unused, CWE-1104)
 # tauri-plugin-keyring-store — removed (unused, CWE-1104)
 
 # HTTP client for custom updater (SHA-256 verified downloads)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 # Database (SQLCipher)
 # Windows requires OPENSSL_DIR pointing at a static OpenSSL build (set automatically by

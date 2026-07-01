@@ -37,3 +37,6 @@ pub mod settings;
 
 // Slice E — cross-cutting alerts feed
 pub mod alerts;
+
+// Slice F — custom SHA-256 updater (replaces tauri-plugin-updater runtime)
+pub mod updater;
