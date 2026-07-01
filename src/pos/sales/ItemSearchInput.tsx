@@ -40,12 +40,28 @@ interface Props {
   acceptFormula?: boolean;
   display?: SearchDisplayConfig;
   /**
-   * Optional scope that restricts which items appear in the search dropdown.
-   * Today only `kind: "linked_invoices"` is supported: results are filtered
-   * to those item ids present in the provided allowed set. Forward-compatible
-   * shape for future scopes (vendor returns, exchanges, etc.).
+   * Optional scope that restricts which items appear in the search dropdown
+   * and supplies per-item bought/refundable/retail info sourced from linked
+   * invoices. When set, rows whose refundable is ≤ 0 are disabled and
+   * labelled "fully refunded" (parent-bound to sales with no remaining headroom).
+   * Forward-compatible shape for future scopes (vendor returns, exchanges).
    */
-  scope?: { kind: "linked_invoices"; allowedItemIds: Set<number> };
+  scope?: {
+    kind: "linked_invoices";
+    /**
+     * Per-item context indexed by item id; merged across all linked sales
+     * so the first sale that mentioned the item wins. Items not present
+     * in the map are assumed to have `refundable = Infinity` (unscoped).
+     */
+    itemsByItemId: ReadonlyMap<number, ScopeItem>;
+  };
+}
+
+interface ScopeItem {
+  bought: number;
+  refundable: number;
+  retail_price_paise: number;
+  display_name: string;
 }
 
 type SearchHit = ItemSearchHit | FormulaSearchHit;
@@ -113,6 +129,11 @@ export function ItemSearchInput({
   display,
   scope,
 }: Props) {
+  const allowRow = (itemId: number): boolean => {
+    const info = scope?.itemsByItemId.get(itemId);
+    if (!info) return true;
+    return info.refundable > 0;
+  };
   const priceField = display?.priceField ?? "retail";
   const showSku = display?.showSku ?? true;
   const showStock = display?.showStock ?? true;
@@ -198,7 +219,7 @@ export function ItemSearchInput({
             if (r.status === "fulfilled") combined.push(...(r.value as SearchHit[]));
           }
           if (scope?.kind === "linked_invoices") {
-            const allowed = scope.allowedItemIds;
+            const allowed = scope.itemsByItemId;
             combined = combined.filter(
               (h) => isFormula(h) || allowed.has(h.id),
             );
@@ -554,23 +575,32 @@ export function ItemSearchInput({
               const styles = STATUS_STYLES[status];
               const StatusIcon = styles.icon;
               const isOut = status === "out";
+              const scopeInfo = scope?.kind === "linked_invoices" ? scope.itemsByItemId.get(hit.id) : undefined;
+              const fullyRefunded = scopeInfo != null && scopeInfo.refundable <= 0;
+              const isRowDisabled = (!allowOutOfStock && isOut) || fullyRefunded;
               return (
                 <button
                   key={`i-${hit.id}`}
                   type="button"
                   role="option"
                   aria-selected={isActive}
-                  aria-disabled={!allowOutOfStock && isOut}
-                  disabled={!allowOutOfStock && isOut}
-                  title={isOut && !allowOutOfStock ? "Out of stock — cannot be added to the bill" : undefined}
+                  aria-disabled={isRowDisabled}
+                  disabled={isRowDisabled}
+                  title={
+                    fullyRefunded
+                      ? "Fully refunded — no headroom left in the linked sale"
+                      : isOut && !allowOutOfStock
+                        ? "Out of stock — cannot be added to the bill"
+                        : undefined
+                  }
                   onClick={() => {
-                    if (!allowOutOfStock && isOut) return;
+                    if (isRowDisabled) return;
                     handlePick(hit);
                   }}
                   className={cn(
                     "flex w-full items-start gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0",
-                    isActive && !(isOut && !allowOutOfStock) ? "bg-muted" : "hover:bg-muted",
-                    isOut && !allowOutOfStock && "cursor-not-allowed opacity-60",
+                    isActive && !isRowDisabled ? "bg-muted" : "hover:bg-muted",
+                    isRowDisabled && "cursor-not-allowed opacity-60",
                   )}
                 >
                   <StatusIcon
@@ -587,16 +617,23 @@ export function ItemSearchInput({
                       >
                         {display?.showBrand ? formatHitName(hit) : toTitleCase(hit.name)}
                       </span>
-                      {showStock && (
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                            styles.pill,
-                          )}
-                        >
-                          {stockLabel(hit, status)}
-                        </span>
-                      )}
+                      <div className="flex shrink-0 items-center gap-1">
+                        {fullyRefunded && (
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Fully refunded
+                          </span>
+                        )}
+                        {showStock && (
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                              styles.pill,
+                            )}
+                          >
+                            {stockLabel(hit, status)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                       {showSku && <span className="font-mono">{hit.sku_code}</span>}
@@ -604,6 +641,19 @@ export function ItemSearchInput({
                         {formatRupeesFromPaise(priceField === "cost" ? hit.cost_paise : hit.retail_price_paise)}
                       </span>
                     </div>
+                    {scopeInfo && (
+                      <div className="mt-0.5 grid grid-cols-3 gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <span>
+                          Bought <span className="font-semibold tabular-nums text-foreground">{scopeInfo.bought}</span>
+                        </span>
+                        <span>
+                          Refundable <span className={cn("font-semibold tabular-nums", fullyRefunded ? "text-muted-foreground line-through" : "text-foreground")}>{scopeInfo.refundable}</span>
+                        </span>
+                        <span className="text-right">
+                          Retail <span className="font-semibold tabular-nums text-foreground">{formatRupeesFromPaise(scopeInfo.retail_price_paise)}</span>
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </button>
               );

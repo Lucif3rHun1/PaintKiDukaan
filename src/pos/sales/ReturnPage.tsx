@@ -36,14 +36,32 @@ export default function ReturnPage({ user, onBack }: Props) {
   const [lines, setLines] = useState<ReturnCartLine[]>([]);
 
   const [linkedInvoices, setLinkedInvoices] = useState<Sale[]>([]);
-  const allowedItemIds = useMemo(() => {
-    const ids = new Set<number>();
+  /**
+   * Index per item_id across all linked sales — first sale that mentions the
+   * item wins. Used by ItemSearchInput to render bought/refundable/retail
+   * columns and to disable fully-refunded rows.
+   */
+  const scopeItemsByItemId = useMemo(() => {
+    const map = new Map<number, {
+      bought: number;
+      refundable: number;
+      retail_price_paise: number;
+      display_name: string;
+    }>();
     for (const sale of linkedInvoices) {
       for (const item of sale.items) {
-        if (item.item_id != null) ids.add(item.item_id);
+        if (item.item_id == null) continue;
+        if (map.has(item.item_id)) continue;
+        const returned = item.returned_qty ?? 0;
+        map.set(item.item_id, {
+          bought: item.qty,
+          refundable: Math.max(0, item.qty - returned),
+          retail_price_paise: item.price,
+          display_name: item.display_name,
+        });
       }
     }
-    return ids;
+    return map;
   }, [linkedInvoices]);
 
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplit[]>([]);
@@ -164,7 +182,7 @@ export default function ReturnPage({ user, onBack }: Props) {
       return;
     }
     const item = hit as ItemSearchHit;
-    const source = allowedItemIds.has(item.id) ? findSourceSaleItem(item.id) : null;
+    const source = scopeItemsByItemId.has(item.id) ? findSourceSaleItem(item.id) : null;
     setLines((prev) => {
       const existing = prev.find((line) => line.item_id === item.id);
       if (existing) {
@@ -373,7 +391,7 @@ export default function ReturnPage({ user, onBack }: Props) {
               <p className="text-xs text-muted-foreground">
                 {linkedInvoices.length === 0
                   ? "Link one or more invoices to scope the item search to what was actually sold. Leave empty to refund any item."
-                  : `${linkedInvoices.length} ${linkedInvoices.length === 1 ? "invoice" : "invoices"} linked — item search is scoped to ${allowedItemIds.size} ${allowedItemIds.size === 1 ? "item" : "items"} from these sales.`}
+                  : `${linkedInvoices.length} ${linkedInvoices.length === 1 ? "invoice" : "invoices"} linked — item search is scoped to ${scopeItemsByItemId.size} ${scopeItemsByItemId.size === 1 ? "item" : "items"} from these sales.`}
               </p>
               <InvoiceSearchInput
                 linked={linkedInvoices}
@@ -407,7 +425,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                 acceptFormula={false}
                 scope={
                   linkedInvoices.length > 0
-                    ? { kind: "linked_invoices", allowedItemIds }
+                    ? { kind: "linked_invoices", itemsByItemId: scopeItemsByItemId }
                     : undefined
                 }
               />

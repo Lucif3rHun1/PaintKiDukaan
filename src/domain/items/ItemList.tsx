@@ -9,6 +9,8 @@
  *   F6 — new item (canEdit only)
  *   Esc — clear search
  * While ItemForm is mounted (mode !== "list"), its own form shortcuts take over.
+ *
+ * Renders via <DataList> server source (cmd_list_items_paged).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -36,19 +38,16 @@ import {
   EmptyState,
   MetricCard,
   Money,
-  PaginationControls,
-  SearchInput,
   Select,
-  Skeleton,
 } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { toast } from "../../lib/feedback/toast";
-import { useClientListQuery, invalidateList, invalidateListMetrics } from "../../lib/query";
-import { adjustStock, getSetting, listBrands, listItems, listItemsPaged, listStockHealthSummary, normalizeItemNames, updateItem } from "./api";
+import { invalidateList, invalidateListMetrics } from "../../lib/query";
+import { adjustStock, getSetting, listBrands, listItemsPaged, listStockHealthSummary, normalizeItemNames, updateItem } from "./api";
 import { formatItemName, brandDisplayName } from "./display";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Brand, Item, ListPage, ListQuery, SubLocation } from "../types";
+import type { Brand, Item, SubLocation } from "../types";
 import { ItemForm } from "./ItemForm";
 import { CsvImportDialog } from "./CsvImportDialog";
 import { printLabel } from "../../pos/print";
@@ -94,44 +93,6 @@ export function ItemList({ role }: Props) {
 
   const canEdit = role === "owner" || role === "stocker";
 
-  const sorted = useCallback((a: Item, b: Item) => {
-    const direction = sortDirection === "asc" ? 1 : -1;
-    if (sortField === "sku") return a.sku_code.localeCompare(b.sku_code) * direction;
-    if (sortField === "stock") return (a.current_qty - b.current_qty) * direction;
-    if (sortField === "retail") return (a.retail_price_paise - b.retail_price_paise) * direction;
-    return a.name.localeCompare(b.name) * direction;
-  }, [sortDirection, sortField]);
-
-  const {
-    data: items,
-    allData: allItems,
-    isLoading: loading,
-    isFetching,
-    error,
-    page,
-    setPage,
-    search,
-    setSearch,
-    totalItems,
-    totalPages,
-    pageSize,
-    refetch,
-  } = useClientListQuery<Item>({
-    queryKey: ["items", lowStockOnly, activeFilter, sortField, sortDirection],
-    pageSize: ITEM_PAGE_SIZE,
-    queryFn: ({ search: debouncedSearch }) =>
-      listItems({
-        query: debouncedSearch || undefined,
-        low_stock_only: lowStockOnly,
-        include_inactive: activeFilter === "all",
-        archived_only: activeFilter === "archived",
-        limit: 500,
-      }),
-    clientSort: sorted,
-  });
-
-  // ── PR-3: DataList server source ──
-
   const stockHealth = useQuery({
     queryKey: ["list-metrics", "stock_health_summary"],
     queryFn: listStockHealthSummary,
@@ -143,19 +104,6 @@ export function ItemList({ role }: Props) {
     if (f === "retail") return "retail_price_paise";
     return "name";
   }
-
-  const listArgs: ListQuery = useMemo(() => ({
-    search: search || undefined,
-    sort_field: sortFieldToServer(sortField),
-    sort_dir: sortDirection,
-    limit: ITEM_PAGE_SIZE,
-    offset: ((page ?? 1) - 1) * ITEM_PAGE_SIZE,
-    filters: {
-      low_stock_only: lowStockOnly,
-      include_inactive: activeFilter === "all",
-      archived_only: activeFilter === "archived",
-    },
-  }), [search, sortField, sortDirection, page, lowStockOnly, activeFilter]);
 
   const serverSource = useMemo(() => ({
     endpoint: "cmd_list_items_paged",
@@ -169,14 +117,9 @@ export function ItemList({ role }: Props) {
     clientFn: listItemsPaged,
   }), [lowStockOnly, activeFilter, sortField, sortDirection]);
 
-  const serverList = useQuery({
-    queryKey: ["list", "cmd_list_items_paged", listArgs],
-    queryFn: () => listItemsPaged(listArgs),
-    placeholderData: (prev) => prev,
-  });
-  const serverTotal = serverList.data?.total ?? 0;
-  const serverLoading = serverList.isLoading;
-  const serverError = serverList.error as Error | null;
+  // Export needs all items. Fetch the full unfiltered list when the user clicks Export.
+  const [exportRows, setExportRows] = useState<Item[]>([]);
+  const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
     listLocations(false)
@@ -246,7 +189,7 @@ export function ItemList({ role }: Props) {
     scope: "page",
     description: "Refresh list",
     onMatch: () => {
-      if (mode === "list") void refetch();
+      if (mode === "list") void stockHealth.refetch();
     },
   });
   useShortcut({
@@ -263,52 +206,11 @@ export function ItemList({ role }: Props) {
     preventDefault: true,
     description: "Clear search",
     onMatch: () => {
-      if (mode === "list" && search) setSearch("");
+      if (mode === "list") {
+        // Search is managed internally by DataList; nothing to clear here.
+      }
     },
   });
-
-  const metrics = useMemo(() => {
-    let lowStock = 0;
-    let outOfStock = 0;
-    let stockAnomaly = 0;
-    let totalRetail = 0;
-    for (const item of allItems) {
-      if (item.current_qty < 0) stockAnomaly++;
-      else if (item.current_qty === 0) outOfStock++;
-                      else if (item.current_qty <= (item.min_stock)) lowStock++;
-      totalRetail += Math.max(item.current_qty ?? 0, 0) * item.retail_price_paise;
-    }
-    return {
-      total: allItems.length,
-      lowStock,
-      outOfStock,
-      stockAnomaly,
-      totalRetail,
-    };
-  }, [allItems]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, Map<string, Item[]>>();
-    for (const item of items) {
-      const b = brandDisplayName(item, brands);
-      const c = item.category?.trim() || "No category";
-      if (!map.has(b)) map.set(b, new Map());
-      if (!map.get(b)!.has(c)) map.get(b)!.set(c, []);
-      map.get(b)!.get(c)!.push(item);
-    }
-    return map;
-  }, [items, brands]);
-
-  useEffect(() => {
-    setSelectedIds((current) => {
-      const visibleIds = new Set(items.map((item) => item.id));
-      const next = new Set([...current].filter((id) => visibleIds.has(id)));
-      return next.size === current.size ? current : next;
-    });
-  }, [items]);
-
-  const pageIds = useMemo(() => items.map((item) => item.id), [items]);
-  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
 
   const openCreate = useCallback(() => {
     setEditing(null);
@@ -324,8 +226,10 @@ export function ItemList({ role }: Props) {
     toast.success(`Saved ${saved.name}`);
     setMode("list");
     setEditing(null);
-    refetch();
-  }, [refetch]);
+    void stockHealth.refetch();
+    void invalidateList(queryClient, "cmd_list_items_paged");
+    void invalidateListMetrics(queryClient, "stock_health_summary");
+  }, [queryClient, stockHealth]);
 
   const handleArchive = useCallback(async (item: Item) => {
     try {
@@ -339,10 +243,11 @@ export function ItemList({ role }: Props) {
       queryClient.invalidateQueries({ queryKey: ["items"] });
       void invalidateList(queryClient, "cmd_list_items_paged");
       void invalidateListMetrics(queryClient, "stock_health_summary");
+      void stockHealth.refetch();
     } catch (e) {
       toast.error(extractError(e));
     }
-  }, [queryClient]);
+  }, [queryClient, stockHealth]);
 
   const handlePrint = useCallback(async (item: Item) => {
     if (!item.barcode) {
@@ -365,19 +270,31 @@ export function ItemList({ role }: Props) {
   }, [brands]);
 
   const handleBulkArchive = useCallback(async () => {
-    const selected = allItems.filter((item) => selectedIds.has(item.id));
-    if (selected.length === 0) return;
+    if (selectedIds.size === 0) return;
     try {
-      await Promise.all(selected.map((item) => updateItem(item.id, { is_active: false })));
-      toast.success(`Archived ${selected.length} item${selected.length === 1 ? "" : "s"}`);
+      const items = exportRows.filter((item) => selectedIds.has(item.id));
+      if (items.length === 0) {
+        // No cached export — fetch full list once.
+        const { listItems } = await import("./api");
+        const all = await listItems({ limit: 5000 });
+        await Promise.all(
+          (all ?? [])
+            .filter((it) => selectedIds.has(it.id))
+            .map((it) => updateItem(it.id, { is_active: false }))
+        );
+      } else {
+        await Promise.all(items.map((item) => updateItem(item.id, { is_active: false })));
+      }
+      toast.success(`Archived ${selectedIds.size} item${selectedIds.size === 1 ? "" : "s"}`);
       setSelectedIds(new Set());
       queryClient.invalidateQueries({ queryKey: ["items"] });
       void invalidateList(queryClient, "cmd_list_items_paged");
       void invalidateListMetrics(queryClient, "stock_health_summary");
+      void stockHealth.refetch();
     } catch (e) {
       toast.error(extractError(e));
     }
-  }, [allItems, selectedIds, queryClient]);
+  }, [exportRows, selectedIds, queryClient, stockHealth]);
 
   const toggleSelected = useCallback((id: number) => {
     setSelectedIds((current) => {
@@ -388,28 +305,19 @@ export function ItemList({ role }: Props) {
     });
   }, []);
 
-  const togglePageSelected = useCallback(() => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (allPageSelected) pageIds.forEach((id) => next.delete(id));
-      else pageIds.forEach((id) => next.add(id));
-      return next;
-    });
-  }, [allPageSelected, pageIds]);
-
   // ── Hierarchical select: select all / per-brand / per-category ──
-  const allFilteredSelected = allItems.length > 0 && allItems.every((item) => selectedIds.has(item.id));
+  const allFilteredSelected = exportRows.length > 0 && exportRows.every((item) => selectedIds.has(item.id));
 
   const toggleSelectAll = useCallback(() => {
     setSelectedIds((current) => {
       if (allFilteredSelected) return new Set<number>();
-      return new Set(allItems.map((item) => item.id));
+      return new Set(exportRows.map((item) => item.id));
     });
-  }, [allFilteredSelected, allItems]);
+  }, [allFilteredSelected, exportRows]);
 
   const brandItemIds = useCallback((brand: string) => {
-    return allItems.filter((item) => brandDisplayName(item, brands) === brand).map((item) => item.id);
-  }, [allItems, brands]);
+    return exportRows.filter((item) => brandDisplayName(item, brands) === brand).map((item) => item.id);
+  }, [exportRows, brands]);
 
   const isBrandSelected = useCallback((brand: string) => {
     const ids = brandItemIds(brand);
@@ -427,14 +335,14 @@ export function ItemList({ role }: Props) {
   }, [brandItemIds, isBrandSelected]);
 
   const isCategorySelected = useCallback((brand: string, category: string) => {
-    const ids = allItems
+    const ids = exportRows
       .filter((item) => brandDisplayName(item, brands) === brand && (item.category?.trim() || "No category") === category)
       .map((item) => item.id);
     return ids.length > 0 && ids.every((id) => selectedIds.has(id));
-  }, [allItems, brands, selectedIds]);
+  }, [exportRows, brands, selectedIds]);
 
   const toggleCategory = useCallback((brand: string, category: string) => {
-    const ids = allItems
+    const ids = exportRows
       .filter((item) => brandDisplayName(item, brands) === brand && (item.category?.trim() || "No category") === category)
       .map((item) => item.id);
     setSelectedIds((current) => {
@@ -443,7 +351,7 @@ export function ItemList({ role }: Props) {
       else ids.forEach((id) => next.add(id));
       return next;
     });
-  }, [allItems, brands, isCategorySelected]);
+  }, [exportRows, brands, isCategorySelected]);
 
   const exportHeaders = [
     "SKU", "Barcode", "Name", "Brand", "Brand Prefix", "Category",
@@ -453,31 +361,30 @@ export function ItemList({ role }: Props) {
     "Stock", "Active",
   ];
 
-  const exportRows = useMemo(() => {
-    return allItems.map((item) => {
-      const fullName = brandNameById.get(item.brand_id ?? -1) ?? item.brand ?? "";
-      const prefix = brandPrefixById.get(item.brand_id ?? -1) ?? "";
-      return [
-        item.sku_code,
-        item.barcode ?? "",
-        item.name,
-        fullName,
-        prefix,
-        item.category ?? "",
-        item.sell_unit ?? "",
-        item.units_per_pack ?? 1,
-        (item.retail_price_paise / 100).toFixed(2),
-        (item.cost_paise / 100).toFixed(2),
-        item.promo_price_paise != null ? (item.promo_price_paise / 100).toFixed(2) : "",
-        item.min_stock,
-        item.primary_location_id != null ? (locationNameById.get(item.primary_location_id) ?? "") : "",
-        item.sub_location_id != null ? (subLocationNameById.get(item.sub_location_id) ?? "") : "",
-        item.position ?? "",
-        item.current_qty,
-        item.is_active ? "Yes" : "No",
-      ];
-    });
-  }, [allItems, brandNameById, brandPrefixById, locationNameById, subLocationNameById]);
+  const buildExportRows = useCallback(async (): Promise<Item[]> => {
+    const { listItems } = await import("./api");
+    const all = await listItems({ limit: 5000 });
+    return all ?? [];
+  }, []);
+
+  const handleExport = useCallback(async () => {
+    setExportBusy(true);
+    try {
+      const rows = await buildExportRows();
+      setExportRows(rows);
+    } catch (e) {
+      toast.error(extractError(e));
+    } finally {
+      setExportBusy(false);
+    }
+  }, [buildExportRows]);
+
+  // Refresh export cache when brands/locations/sub-locations change (used in row rendering).
+  useEffect(() => {
+    if (exportRows.length === 0) {
+      void handleExport();
+    }
+  }, [brands, locations, subLocations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const itemColumns: ColumnDef<Item>[] = useMemo(() => {
     const cols: ColumnDef<Item>[] = [
@@ -622,7 +529,7 @@ export function ItemList({ role }: Props) {
       setStockAdjustItem(null);
       setStockAdjustQty("");
       setStockAdjustDir("add");
-      refetch();
+      void stockHealth.refetch();
       void invalidateList(queryClient, "cmd_list_items_paged");
       void invalidateListMetrics(queryClient, "stock_health_summary");
     } catch (e) {
@@ -630,7 +537,7 @@ export function ItemList({ role }: Props) {
     } finally {
       setAdjustBusy(false);
     }
-  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, adjustBusy, refetch, brands, queryClient]);
+  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, adjustBusy, brands, queryClient, stockHealth]);
 
   if (mode === "create") {
     return (
@@ -655,67 +562,96 @@ export function ItemList({ role }: Props) {
     );
   }
 
+  const exportDataReady = exportRows.length > 0;
+  const computedExportRows = useMemo(() => {
+    if (!exportDataReady) return [];
+    return exportRows.map((item) => {
+      const fullName = brandNameById.get(item.brand_id ?? -1) ?? item.brand ?? "";
+      const prefix = brandPrefixById.get(item.brand_id ?? -1) ?? "";
+      return [
+        item.sku_code,
+        item.barcode ?? "",
+        item.name,
+        fullName,
+        prefix,
+        item.category ?? "",
+        item.sell_unit ?? "",
+        item.units_per_pack ?? 1,
+        (item.retail_price_paise / 100).toFixed(2),
+        (item.cost_paise / 100).toFixed(2),
+        item.promo_price_paise != null ? (item.promo_price_paise / 100).toFixed(2) : "",
+        item.min_stock,
+        item.primary_location_id != null ? (locationNameById.get(item.primary_location_id) ?? "") : "",
+        item.sub_location_id != null ? (subLocationNameById.get(item.sub_location_id) ?? "") : "",
+        item.position ?? "",
+        item.current_qty,
+        item.is_active ? "Yes" : "No",
+      ];
+    });
+  }, [exportDataReady, exportRows, brandNameById, brandPrefixById, locationNameById, subLocationNameById]);
+
   return (
     <div className="space-y-3">
-      {/* ── Metrics cards (always rendered; source depends on flag) ── */}
+      {/* ── Metrics cards (server source) ── */}
       <div
         className={`grid grid-cols-2 gap-3 ${
-          (flagOn ? (stockHealth.data?.negative_count ?? 0) : metrics.stockAnomaly) > 0
+          (stockHealth.data?.negative_count ?? 0) > 0
             ? "sm:grid-cols-5"
             : "sm:grid-cols-4"
         }`}
       >
         <MetricCard label="Total Items" icon={PackagePlus} tone="info">
           <span className="text-lg font-semibold tabular-nums">
-            {flagOn ? (stockHealth.data?.total_active_items ?? "—") : metrics.total}
+            {stockHealth.data?.total_active_items ?? "—"}
           </span>
         </MetricCard>
         <MetricCard label="Out of Stock" icon={TrendingDown} tone="destructive">
           <span className="text-lg font-semibold tabular-nums">
-            {flagOn ? (stockHealth.data?.zero_count ?? "—") : metrics.outOfStock}
+            {stockHealth.data?.zero_count ?? "—"}
           </span>
         </MetricCard>
         <MetricCard label="Low Stock" icon={TriangleAlert} tone="warning">
           <span className="text-lg font-semibold tabular-nums">
-            {flagOn ? (stockHealth.data?.low_count ?? "—") : metrics.lowStock}
+            {stockHealth.data?.low_count ?? "—"}
           </span>
         </MetricCard>
-        {(flagOn ? (stockHealth.data?.negative_count ?? 0) : metrics.stockAnomaly) > 0 ? (
+        {(stockHealth.data?.negative_count ?? 0) > 0 ? (
           <MetricCard label="Stock Anomaly" icon={TriangleAlert} tone="destructive">
             <span className="text-lg font-semibold tabular-nums">
-              {flagOn ? (stockHealth.data?.negative_count ?? "—") : metrics.stockAnomaly}
+              {stockHealth.data?.negative_count ?? "—"}
             </span>
           </MetricCard>
         ) : null}
         <MetricCard label="Total Value" icon={IndianRupee} tone="primary">
           <span className="text-lg font-semibold tabular-nums">
-            {flagOn
-              ? formatRupeesFromPaise(stockHealth.data?.retail_value_paise ?? 0)
-              : formatRupeesFromPaise(metrics.totalRetail)}
+            {formatRupeesFromPaise(stockHealth.data?.retail_value_paise ?? 0)}
           </span>
         </MetricCard>
       </div>
 
-      {/* ── Filter bar (always rendered) ── */}
+      {/* ── Filter bar ── */}
       <div className="flex flex-wrap items-center gap-2">
-        <SearchInput value={search} onChange={(v) => setSearch(v)} placeholder="Search by name, SKU, brand, category, barcode…" ariaLabel="Search inventory" data-shortcut="search" />
         <label className="flex h-9 items-center gap-1.5 text-xs text-muted-foreground">
           <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} className="h-3.5 w-3.5" />
           Low stock
         </label>
-        <Select value={activeFilter} onChange={(e) => { setActiveFilter(e.target.value as "active" | "archived" | "all"); setPage(1); }} className="w-auto" size="sm" aria-label="Filter by status" options={[{ value: "active", label: "Active" }, { value: "archived", label: "Archived" }, { value: "all", label: "All" }]} />
-        <Select value={`${sortField}:${sortDirection}`} onChange={(e) => { const [field, direction] = e.target.value.split(":"); setSortField(field as ItemSortField); setSortDirection(direction as SortDirection); setPage(1); }} className="w-auto" size="sm" aria-label="Sort inventory" options={[{ value: "name:asc", label: "Name A-Z" }, { value: "name:desc", label: "Name Z-A" }, { value: "sku:asc", label: "SKU A-Z" }, { value: "stock:asc", label: "Lowest stock" }, { value: "stock:desc", label: "Highest stock" }, { value: "retail:desc", label: "Highest retail" }, { value: "retail:asc", label: "Lowest retail" }]} />
+        <Select value={activeFilter} onChange={(e) => { setActiveFilter(e.target.value as "active" | "archived" | "all"); }} className="w-auto" size="sm" aria-label="Filter by status" options={[{ value: "active", label: "Active" }, { value: "archived", label: "Archived" }, { value: "all", label: "All" }]} />
+        <Select value={`${sortField}:${sortDirection}`} onChange={(e) => { const [field, direction] = e.target.value.split(":"); setSortField(field as ItemSortField); setSortDirection(direction as SortDirection); }} className="w-auto" size="sm" aria-label="Sort inventory" options={[{ value: "name:asc", label: "Name A-Z" }, { value: "name:desc", label: "Name Z-A" }, { value: "sku:asc", label: "SKU A-Z" }, { value: "stock:asc", label: "Lowest stock" }, { value: "stock:desc", label: "Highest stock" }, { value: "retail:desc", label: "Highest retail" }, { value: "retail:asc", label: "Lowest retail" }]} />
         <div className="h-5 w-px bg-border" />
         {canEdit ? (
           <>
             <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} shortcut="F6" className="!text-xs">Add Item</Button>
             <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">Import</Button>
-            <DownloadMenu headers={exportHeaders} rows={exportRows} filename="items-export" title="Items Export" />
+            {exportDataReady ? (
+              <DownloadMenu headers={exportHeaders} rows={computedExportRows} filename="items-export" title="Items Export" />
+            ) : (
+              <Button type="button" size="sm" variant="secondary" loading={exportBusy} onClick={() => void handleExport()} className="!text-xs">Prepare export</Button>
+            )}
             {role === "owner" ? (
               <Button type="button" size="sm" variant="secondary" icon={Sparkles} loading={normalizeBusy} onClick={async () => {
                 if (!confirm("Normalise all item names to title-case?")) return;
                 setNormalizeBusy(true);
-                try { const res = await normalizeItemNames(); toast.success(`Normalised ${res.updated} item name${res.updated === 1 ? "" : "s"}`); void refetch(); }
+                try { const res = await normalizeItemNames(); toast.success(`Normalised ${res.updated} item name${res.updated === 1 ? "" : "s"}`); void stockHealth.refetch(); }
                 catch (e) { toast.error(extractError(e)); }
                 finally { setNormalizeBusy(false); }
               }} className="!text-xs">Normalise Names</Button>
@@ -723,148 +659,60 @@ export function ItemList({ role }: Props) {
           </>
         ) : null}
         <Button type="button" size="sm" variant="secondary" icon={ArrowDownToLine} onClick={() => (window.location.hash = "#/inward")} className="!text-xs">Inward</Button>
-        {allFilteredSelected ? (
-          <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Deselect all ({allItems.length})</Button>
-        ) : (
-          <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Select all ({allItems.length})</Button>
-        )}
+        {exportDataReady ? (
+          allFilteredSelected ? (
+            <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Deselect all ({exportRows.length})</Button>
+          ) : (
+            <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Select all ({exportRows.length})</Button>
+          )
+        ) : null}
         {selectedIds.size > 0 && canEdit ? (
           <Button type="button" size="sm" variant="danger" icon={Archive} onClick={() => void handleBulkArchive()} className="!text-xs">Archive {selectedIds.size}</Button>
         ) : null}
       </div>
 
-      {/* ── Status (always rendered) ── */}
-      {(flagOn ? serverError : error) ? (
-        <Alert title="Inventory failed to load">{(flagOn ? serverError : error)?.message ?? "Unknown error"}</Alert>
+      {/* ── Status ── */}
+      {stockHealth.error ? (
+        <Alert title="Inventory failed to load">{stockHealth.error.message ?? "Unknown error"}</Alert>
       ) : null}
-      {(flagOn ? serverLoading : loading) ? <Skeleton variant="card" className="h-40" /> : null}
+      {stockHealth.isLoading ? <div className="h-40 rounded-lg border border-border bg-card" /> : null}
 
       {/* ── Empty state ── */}
-      {!(flagOn ? serverLoading : loading) && (flagOn ? serverTotal : allItems.length) === 0 ? (
+      {!stockHealth.isLoading && stockHealth.data?.total_active_items === 0 && !lowStockOnly && activeFilter === "active" ? (
         <EmptyState icon={PackagePlus} title="No items match this view" description="Try clearing filters or add the first SKU before selling or receiving stock." primary={canEdit ? <Button type="button" onClick={openCreate}>Add Item</Button> : undefined} />
       ) : null}
 
-      {/* ── Pagination (only when there's data) ── */}
-      {!(flagOn ? serverLoading : loading) && (flagOn ? serverTotal : allItems.length) > 0 ? (
-        <PaginationControls page={page ?? 1} totalPages={flagOn ? Math.max(1, Math.ceil(serverTotal / ITEM_PAGE_SIZE)) : totalPages} totalItems={flagOn ? serverTotal : totalItems} pageSize={flagOn ? ITEM_PAGE_SIZE : pageSize} onPageChange={setPage} className="rounded-lg border border-border bg-muted px-3 py-2" />
-      ) : null}
+      {/* ── List body ── */}
+      <DataList
+        key={`${sortField}-${sortDirection}-${lowStockOnly}-${activeFilter}`}
+        source={serverSource}
+        columns={itemColumns}
+        keyExtractor={(i) => String(i.id)}
+        height={560}
+        groupBy={[
+          { key: (i: Item) => brandDisplayName(i, brands), label: (k: string) => k, level: 1 as const },
+          { key: (i: Item) => i.category?.trim() || "No category", label: (k: string) => k, level: 2 as const },
+        ]}
+        selection={{
+          selected: selectedIds as Set<string | number>,
+          onChange: (next) => {
+            const ids = new Set<number>();
+            for (const k of next) ids.add(Number(k));
+            setSelectedIds(ids);
+          },
+          keyOf: (i: Item) => i.id,
+        }}
+        onRowClick={(i) => openEdit(i)}
+        emptyState={({ hasActiveFilter }) =>
+          hasActiveFilter ? (
+            <EmptyState icon={PackagePlus} title="No matches" description="Try clearing filters." />
+          ) : (
+            <EmptyState icon={PackagePlus} title="No items configured" description="Add the first SKU before selling or receiving stock." primary={canEdit ? <Button onClick={openCreate}>Add Item</Button> : undefined} />
+          )
+        }
+      />
 
-      {/* ── List body (branched) ── */}
-      {flagOn ? (
-        <DataList
-          source={serverSource}
-          columns={itemColumns}
-          keyExtractor={(i) => String(i.id)}
-          height={560}
-          groupBy={[
-            { key: (i: Item) => brandDisplayName(i, brands), label: (k: string) => k, level: 1 as const },
-            { key: (i: Item) => i.category?.trim() || "No category", label: (k: string) => k, level: 2 as const },
-          ]}
-          selection={{
-            selected: selectedIds as Set<string | number>,
-            onChange: (next) => {
-              const ids = new Set<number>();
-              for (const k of next) ids.add(Number(k));
-              setSelectedIds(ids);
-            },
-            keyOf: (i: Item) => i.id,
-          }}
-          onRowClick={(i) => openEdit(i)}
-          emptyState={({ total, hasActiveFilter }) =>
-            total === 0 && !hasActiveFilter ? (
-              <EmptyState icon={PackagePlus} title="No items configured" description="Add the first SKU before selling or receiving stock." primary={canEdit ? <Button onClick={openCreate}>Add Item</Button> : undefined} />
-            ) : (
-              <EmptyState icon={PackagePlus} title="No matches" description="Try clearing filters." />
-            )
-          }
-        />
-      ) : (
-        /* LEGACY grouped tables */
-        !loading && allItems.length > 0 ? (
-          <>
-            {[...grouped.entries()].map(([itemBrand, categories]) => (
-              <section key={itemBrand} className="space-y-1.5">
-                <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{itemBrand}</h3>
-                {[...categories.entries()].map(([itemCategory, rows], catIdx) => (
-                  <div key={itemCategory} className="animate-in fade-in motion-reduce:animate-none slide-in-from-bottom-2 overflow-hidden rounded-lg border border-border bg-card duration-200" style={{ animationDelay: `${catIdx * 40}ms` }}>
-                    <div className="border-b border-border bg-muted px-3 py-1.5 text-[11px] font-medium text-muted-foreground">{itemCategory}</div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                          <tr className="border-b border-border">
-                            <th className="w-10 px-3 py-2 font-medium">
-                              <input type="checkbox" checked={allPageSelected} onChange={togglePageSelected} aria-label="Select all items on this page" className="h-3.5 w-3.5" />
-                            </th>
-                            <th className="px-3 py-2 font-medium">SKU</th>
-                            <th className="px-3 py-2 font-medium">Name</th>
-                            <th className="px-3 py-2 font-medium">Unit</th>
-                            <th className="px-3 py-2 font-medium">Location</th>
-                            {role === "owner" ? <th className="px-3 py-2 text-right font-medium">Cost</th> : null}
-                            <th className="px-3 py-2 text-right font-medium">Retail</th>
-                            <th className="px-3 py-2 text-right font-medium">Min qty</th>
-                            <th className="px-3 py-2 text-right font-medium">Stock</th>
-                            <th className="w-12 px-3 py-2 text-right font-medium">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows.map((item, rowIdx) => {
-                            const stockAnomaly = item.current_qty < 0;
-                            const isOut = item.current_qty === 0;
-                            const lowStock = !isOut && !stockAnomaly && item.current_qty <= (item.min_stock);
-                            return (
-                              <tr key={item.id} onClick={() => openEdit(item)} className={[
-                                "cursor-pointer border-b border-border transition-colors hover:bg-muted/70",
-                                rowIdx % 2 === 1 ? "bg-muted/20" : "",
-                                stockAnomaly ? "border-l-2 border-l-destructive bg-destructive/15" : isOut ? "border-l-2 border-l-destructive/70 bg-destructive/10" : "",
-                                lowStock ? "border-l-2 border-l-warning bg-warning/10" : "",
-                                !item.is_active ? "opacity-60" : "",
-                              ].join(" ")}>
-                                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                                  <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelected(item.id)} aria-label={`Select ${formatItemName(item, brands)}`} className="h-3.5 w-3.5 accent-accent" />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <span className="inline-block max-w-[10rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80" title={item.sku_code}>{item.sku_code}</span>
-                                </td>
-                                <td className="px-3 py-2">
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="font-medium text-foreground">{formatItemName(item, brands, { style: "prefix" })}</span>
-                                    {!item.is_active ? <Badge variant="muted">Archived</Badge> : null}
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2"><Badge variant="muted">{item.sell_unit}</Badge></td>
-                                <td className="px-3 py-2 text-xs leading-snug text-foreground/80">{formatLocation(item)}</td>
-                                {role === "owner" ? <td className="px-3 py-2 text-right text-muted-foreground tabular-nums"><Money paise={item.cost_paise} /></td> : null}
-                                <td className="px-3 py-2 text-right font-medium text-foreground tabular-nums"><Money paise={item.retail_price_paise} /></td>
-                                <td className="px-3 py-2 text-right text-xs text-muted-foreground tabular-nums">{item.min_stock}</td>
-                                <td className="px-3 py-2 text-right tabular-nums"><StockDisplay currentQty={item.current_qty} minQty={item.min_stock} /></td>
-                                <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                                  <ActionMenu
-                                    label={`Actions for ${formatItemName(item, brands)}`}
-                                    items={[
-                                      ...(canEdit ? [{ label: "Edit", icon: Edit3, onSelect: () => openEdit(item) }] : []),
-                                      ...(role === "owner" ? [{ label: "Adjust Stock", icon: PackagePlus, onSelect: () => { setStockAdjustItem(item); setStockAdjustQty(""); } }] : []),
-                                      { label: "Print Barcode", icon: Barcode, onSelect: () => void handlePrint(item), disabled: !item.barcode },
-                                      { label: "Add Inward", icon: ArrowDownToLine, onSelect: () => (window.location.hash = "#/inward") },
-                                      { label: "Record Outward", icon: ArrowUpFromLine, onSelect: () => (window.location.hash = "#/sales") },
-                                      ...(canEdit ? [{ label: item.is_active ? "Archive" : "Restore", icon: Archive, danger: item.is_active, onSelect: () => void handleArchive(item) }] : []),
-                                    ]}
-                                  />
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))}
-              </section>
-            ))}
-          </>
-        ) : null
-      )}
-
-      <CsvImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={() => { toast.success("Items imported successfully"); refetch(); }} />
+      <CsvImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={() => { toast.success("Items imported successfully"); void stockHealth.refetch(); void invalidateList(queryClient, "cmd_list_items_paged"); }} />
 
       {stockAdjustItem ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
