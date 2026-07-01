@@ -557,7 +557,7 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                 c.execute(
                     "INSERT INTO stock_movements
                         (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT sell_unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
+                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'sale',?4,?5,?6)",
                     params![
                         item_id,
                         default_location,
@@ -593,7 +593,7 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                         c.execute(
                             "INSERT INTO stock_movements
                                 (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                             VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT sell_unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
+                             VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'sale',?4,?5,?6)",
                             params![base_id, default_location, -requested, id, user_id, now_epoch_ms()],
                         )?;
                     }
@@ -758,7 +758,7 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                     c.execute(
                         "INSERT INTO stock_movements
                         (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT sell_unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
+                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'sale',?4,?5,?6)",
                         params![item_id, default_location, -qty, new_id, user_id, now_epoch_ms()],
                     )?;
                 } else if kind == "formula" {
@@ -786,7 +786,7 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                             c.execute(
                                 "INSERT INTO stock_movements
                                 (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                             VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),(SELECT sell_unit_id FROM items WHERE id=?1),'sale',?4,?5,?6)",
+                             VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'sale',?4,?5,?6)",
                                 params![base_id, default_location, -qty, new_id, user_id, now_epoch_ms()],
                             )?;
                         }
@@ -1358,7 +1358,7 @@ pub fn create_sale_return(
                 c.execute(
                     "INSERT INTO stock_movements
                         (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='return'),(SELECT sell_unit_id FROM items WHERE id=?1),'return',?4,?5,?6)",
+                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='return'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'return',?4,?5,?6)",
                     params![
                         item_id,
                         sale_location,

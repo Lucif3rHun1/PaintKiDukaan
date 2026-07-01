@@ -44,12 +44,12 @@ type Step = "path" | "shop" | "pin" | "passphrase" | "inventory" | "pde"
 type FreshStep = Exclude<Step, "path">
 
 const STEPS = [
-  { key: "path", label: "Path", shortLabel: "Path", icon: Store, description: "Choose how you want to start PaintKiDukaan" },
+  { key: "path", label: "Get Started", shortLabel: "Start", icon: Store, description: "Choose how you want to start PaintKiDukaan" },
   { label: "Shop", shortLabel: "Shop", icon: ShoppingBag, description: "Basic information about your shop" },
-  { label: "PIN", shortLabel: "PIN", icon: Lock, description: "Set a 6-digit PIN to lock and unlock the app" },
+  { label: "Security", shortLabel: "PIN", icon: Lock, description: "Set a 6-digit PIN to lock and unlock the app" },
   { label: "Recovery", shortLabel: "Recov...", icon: FileKey, description: "A secret phrase to recover your data if you forget your PIN" },
   { label: "Inventory", shortLabel: "Inven...", icon: Package, description: "Your inventory setup" },
-  { label: "Security", shortLabel: "Secur...", icon: Shield, description: "Emergency protection" },
+  { label: "Emergency", shortLabel: "Emerg...", icon: Shield, description: "Emergency protection" },
 ] as const;
 const FRESH_STEP_INDEX: Record<FreshStep, number> = {
   shop: 0,
@@ -209,7 +209,7 @@ export function FirstLaunch() {
         }),
       );
       setSessionData(session);
-      setStep("inventory");
+      setStep("pde");
     } catch (error) {
       setBackendError(error instanceof Error ? error.message : String(error));
     }
@@ -557,16 +557,7 @@ export function FirstLaunch() {
               >
                 Back
               </button>
-              {step !== "passphrase" ? (
-                <button
-                  className={`${buttonClass} flex-1`}
-                  type="button"
-                  onClick={goNext}
-                  disabled={!canContinue}
-                >
-                  Continue
-                </button>
-              ) : (
+              {step === "inventory" ? (
                 <button
                   className={`${buttonClass} flex-1`}
                   type="submit"
@@ -575,7 +566,16 @@ export function FirstLaunch() {
                   {isSubmitting ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                   ) : null}
-                  Complete setup
+                  Continue
+                </button>
+              ) : (
+                <button
+                  className={`${buttonClass} flex-1`}
+                  type="button"
+                  onClick={goNext}
+                  disabled={!canContinue}
+                >
+                  Continue
                 </button>
               )}
             </div>

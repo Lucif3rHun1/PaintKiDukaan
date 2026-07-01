@@ -96,23 +96,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build Tauri app
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --target ${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           if-no-files-found: error
-          path: |
-            ${{ matrix.asset_glob }}
-            target/${{ matrix.target }}/release/bundle/*/*.sig
+          path: ${{ matrix.asset_glob }}
 
-  # Ponytail: tauri-plugin-updater verifies the .sig via the pubkey in tauri.conf.json.
-  # No external signing service, no re-sign job — the .sig produced by `tauri build` is
-  # the one the updater verifies. Windows SmartScreen will warn on first install; that's
-  # a UX trade-off, not a security one. See docs/WINDOWS_BUILD.md.
+  # Ponytail: app uses a custom SHA-256 verified updater (commands::updater).
+  # No minisign keypair ceremony. Release artifacts are the bundle outputs only.
   latest-json:
     name: publish latest.json
     runs-on: ubuntu-latest

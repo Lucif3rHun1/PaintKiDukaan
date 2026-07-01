@@ -159,11 +159,45 @@ pub async fn cmd_install_update(path: PathBuf, _app: tauri::AppHandle) -> Result
     }
     #[cfg(target_os = "macos")]
     {
-        // .app.tar.gz or .dmg — open with the system handler.
-        std::process::Command::new("open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| format!("open: {}", e))?;
+        // The CI bundles a .app.tar.gz. Extract it to /Applications/ then open
+        // the .app so Launch Services registers it.
+        if path.extension().and_then(|s| s.to_str()) == Some("gz")
+            && path.to_str().map(|s| s.ends_with(".app.tar.gz")).unwrap_or(false)
+        {
+            let app_dir = std::path::PathBuf::from("/Applications");
+            let status = std::process::Command::new("tar")
+                .args(["-xzf"])
+                .arg(&path)
+                .arg("-C")
+                .arg(&app_dir)
+                .status()
+                .map_err(|e| format!("tar extract: {}", e))?;
+            if !status.success() {
+                return Err(format!("tar extract failed: {:?}", status.code()));
+            }
+            // Find the .app inside /Applications matching the bundle name.
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.strip_suffix(".app"))
+                .unwrap_or("PaintKiDukaan");
+            let app_path = app_dir.join(format!("{}.app", stem));
+            if !app_path.exists() {
+                return Err(format!(
+                    "extracted app not found at {}",
+                    app_path.display()
+                ));
+            }
+            std::process::Command::new("open")
+                .arg(&app_path)
+                .spawn()
+                .map_err(|e| format!("open: {}", e))?;
+        } else {
+            std::process::Command::new("open")
+                .arg(&path)
+                .spawn()
+                .map_err(|e| format!("open: {}", e))?;
+        }
         Ok(())
     }
     #[cfg(target_os = "linux")]

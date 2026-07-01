@@ -400,12 +400,12 @@ pub fn create_inward(
             let line_total = (base * l.unit_price_paise as f64).round() as i64;
             c.execute(
                 "INSERT INTO purchase_items (purchase_id, item_id, qty, sale_unit_id, unit_price_paise, line_discount_paise, line_total_paise, created_at)
-                 VALUES (?1, ?2, ?3, (SELECT sell_unit_id FROM items WHERE id = ?2), ?4, 0, ?5, ?6)",
+                 VALUES (?1, ?2, ?3, COALESCE((SELECT sell_unit_id FROM items WHERE id = ?2), (SELECT id FROM sale_units WHERE code = 'pcs')), ?4, 0, ?5, ?6)",
                 params![pid, l.item_id, base, l.unit_price_paise, line_total, now_ms()],
             )?;
             c.execute(
                 "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
-                 VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='purchase'), (SELECT sell_unit_id FROM items WHERE id = ?1), 'purchase', ?4, ?5, ?6, ?7)",
+                 VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='purchase'), COALESCE((SELECT sell_unit_id FROM items WHERE id = ?1), (SELECT id FROM sale_units WHERE code = 'pcs')), 'purchase', ?4, ?5, ?6, ?7)",
                 params![l.item_id, l.location_id, base, pid, req.notes, now_ms(), user_id],
             )?;
         }
@@ -484,7 +484,7 @@ pub fn adjust_stock(
         }
         c.execute(
             "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by) \
-             VALUES (?1, ?2, ?3, ?4, (SELECT sell_unit_id FROM items WHERE id = ?1), 'adjustment', NULL, ?5, ?6, ?7)",
+             VALUES (?1, ?2, ?3, ?4, COALESCE((SELECT sell_unit_id FROM items WHERE id = ?1), (SELECT id FROM sale_units WHERE code = 'pcs')), 'adjustment', NULL, ?5, ?6, ?7)",
             params![req.item_id, req.location_id, req.qty, kind_id, note, now_ms(), user_id],
         )?;
         let new_qty: f64 = c.query_row(

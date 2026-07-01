@@ -10,6 +10,7 @@ import {
   Card,
   DataTable,
   Money,
+  MoneyStatic,
   Skeleton,
   DatePicker,
   Field,
@@ -81,13 +82,11 @@ export default function DayClosePage({ user }: Props) {
   const [view, setView] = useState<"list" | "form" | "summary">("list");
   const { markDirty, resetDirty } = useDirtyForm();
 
-  // ── List state ──
   const [recent, setRecent] = useState<DayClose[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [gate, setGate] = useState<BackupGate | null>(null);
 
-  // ── Form state ──
   const [date, setDate] = useState(() => todayLocalYyyymmdd());
   const [openingRupees, setOpeningRupees] = useState("0");
   const [cashInRupees, setCashInRupees] = useState("0");
@@ -100,8 +99,8 @@ export default function DayClosePage({ user }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [lastClose, setLastClose] = useState<CloseResult | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
-  // ── Dirty tracking — mark dirty when any editable field changes ──
   const dirty = useMemo(() => {
     if (view !== "form") return false;
     return (
@@ -119,10 +118,8 @@ export default function DayClosePage({ user }: Props) {
     else resetDirty();
   }, [dirty, markDirty, resetDirty]);
 
-  // Clean up dirty state on unmount
   useEffect(() => () => resetDirty(), [resetDirty]);
 
-  // ── Load list data ──
   useEffect(() => {
     let cancelled = false;
     Promise.allSettled([
@@ -135,9 +132,8 @@ export default function DayClosePage({ user }: Props) {
       if (failures.length > 0) setListError("Failed to load data.");
     });
     return () => { cancelled = true; };
-  }, [user.id, view === "list"]); // refetch when returning to list
+  }, [user.id, view === "list"]);
 
-  // ── Load form data when entering form view ──
   useEffect(() => {
     if (view !== "form") return;
     let cancelled = false;
@@ -156,7 +152,6 @@ export default function DayClosePage({ user }: Props) {
     return () => { cancelled = true; };
   }, [view, user.id, date, queryClient]);
 
-  // ── Computed values ──
   const denomTotal = useMemo(
     () => DENOMINATIONS.reduce((sum, d) => sum + d * (denom[d] || 0), 0),
     [denom],
@@ -183,7 +178,6 @@ export default function DayClosePage({ user }: Props) {
     (summary?.card_sales_paise ?? 0) +
     (summary?.upi_sales_paise ?? 0);
 
-  // ── Submit ──
   async function submit(decision: "fresh" | "skip" | "back_up") {
     if (submitting) return;
     setSubmitting(true);
@@ -233,6 +227,7 @@ export default function DayClosePage({ user }: Props) {
     setDenom({});
     setUseDenom(false);
     setSummary(null);
+    setConfirming(false);
   }
 
   function openForm() {
@@ -241,7 +236,6 @@ export default function DayClosePage({ user }: Props) {
     setView("form");
   }
 
-  // ── Summary view ──
   if (view === "summary" && lastClose) {
     const lc = lastClose;
     return (
@@ -252,7 +246,7 @@ export default function DayClosePage({ user }: Props) {
 
         <Card>
           <h2 className="mb-3 text-sm font-semibold">
-            Day Close Summary — {formatDateForDisplay(lc.date)}
+            {formatDateForDisplay(lc.date)}
           </h2>
           <div className="space-y-2 text-sm">
             <SummaryRow label="Opening cash" value={<Money paise={lc.opening} />} />
@@ -263,11 +257,11 @@ export default function DayClosePage({ user }: Props) {
             <SummaryRow label="Cash out" value={<Money paise={lc.cashOut} />} />
             <hr className="my-2 border-border" />
             <SummaryRow
-              label="Expected closing"
+              label="Expected"
               value={<Money paise={lc.expected} className="font-semibold" />}
             />
             <SummaryRow
-              label="Actual counted"
+              label="Counted"
               value={<Money paise={lc.counted} className="font-semibold" />}
             />
             <SummaryRow
@@ -276,7 +270,7 @@ export default function DayClosePage({ user }: Props) {
                 <Money
                   paise={lc.variance}
                   className={
-                    lc.variance === 0 || Math.abs(lc.variance) <= VARIANCE_TOLERANCE_PAISE
+                    withinTolerance
                       ? "font-semibold text-success"
                       : "font-semibold text-destructive"
                   }
@@ -285,7 +279,7 @@ export default function DayClosePage({ user }: Props) {
             />
             {lc.notes && (
               <div className="mt-2 rounded bg-muted p-2 text-xs text-muted-foreground">
-                <span className="font-medium">Notes:</span> {lc.notes}
+                {lc.notes}
               </div>
             )}
           </div>
@@ -298,28 +292,26 @@ export default function DayClosePage({ user }: Props) {
     );
   }
 
-  // ── Form view ──
   if (view === "form") {
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         <button
           type="button"
           onClick={() => { setView("list"); setFormError(null); resetDirty(); }}
           className="text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          ← Back to closes
+          ← Back
         </button>
 
         {gate?.needs_prompt && (
           <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-2 text-sm text-amber-800 dark:text-amber-200">
-            Backup is overdue. You can still close, but a backup is recommended.
+            Backup overdue — close anyway or back up first.
           </div>
         )}
 
-        {/* ── Section 1: Setup ── */}
+        {/* Card 1: date, opening, sales */}
         <Card>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">Setup</h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Date">
               <DatePicker value={date} onChange={setDate} />
             </Field>
@@ -335,68 +327,24 @@ export default function DayClosePage({ user }: Props) {
               />
             </Field>
           </div>
-        </Card>
 
-        {/* ── Section 2: Today's Sales (auto-filled, read-only) ── */}
-        <Card>
-          <h3 className="mb-1 text-sm font-semibold text-foreground">Today's Sales</h3>
-          <p className="mb-3 text-[10px] text-muted-foreground">Auto-filled from today's transactions</p>
-          <div className="grid grid-cols-3 gap-3">
-            <ReadonlyMetric
-              label="Cash"
-              value={(summary?.cash_sales_paise ?? 0) / 100}
-              loading={summary === null}
-            />
-            <ReadonlyMetric
-              label="Card"
-              value={(summary?.card_sales_paise ?? 0) / 100}
-              loading={summary === null}
-            />
-            <ReadonlyMetric
-              label="UPI"
-              value={(summary?.upi_sales_paise ?? 0) / 100}
-              loading={summary === null}
-            />
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <ReadonlyMetric label="Cash" value={summary?.cash_sales_paise ?? 0} loading={summary === null} />
+            <ReadonlyMetric label="Card" value={summary?.card_sales_paise ?? 0} loading={summary === null} />
+            <ReadonlyMetric label="UPI" value={summary?.upi_sales_paise ?? 0} loading={summary === null} />
           </div>
-          <div className="mt-3 flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm">
-            <span className="text-muted-foreground">Total sales</span>
-            <Money paise={totalSales} className="font-semibold" />
+          <div className="mt-2 flex items-center justify-between rounded-lg bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
+            <span>Total sales</span>
+            <MoneyStatic paise={totalSales} className="font-semibold text-foreground" />
           </div>
         </Card>
 
-        {/* ── Section 3: Adjustments ── */}
-        <Card>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">Adjustments</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Cash in" hint="Money received outside sales">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={cashInRupees}
-                onChange={(e) => setCashInRupees(e.target.value)}
-                className="input w-full"
-              />
-            </Field>
-            <Field label="Cash out" hint="Money spent from drawer">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={cashOutRupees}
-                onChange={(e) => setCashOutRupees(e.target.value)}
-                className="input w-full"
-              />
-            </Field>
-          </div>
-        </Card>
-
-        {/* ── Section 4: Count ── */}
+        {/* Card 2: count drawer + adjustments */}
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-foreground">Count Drawer</h3>
-              <p className="text-[10px] text-muted-foreground">How much cash is physically in the drawer?</p>
+              <p className="text-[10px] text-muted-foreground">How much cash is in the drawer?</p>
             </div>
             <button
               type="button"
@@ -409,7 +357,7 @@ export default function DayClosePage({ user }: Props) {
 
           {useDenom ? (
             <>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                 {DENOMINATIONS.map((d) => (
                   <label key={d} className="space-y-0.5 text-center">
                     <span className="text-[10px] text-muted-foreground">₹{d}</span>
@@ -426,9 +374,9 @@ export default function DayClosePage({ user }: Props) {
                   </label>
                 ))}
               </div>
-              <div className="mt-2 flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm">
+              <div className="mt-2 flex items-center justify-between rounded-lg bg-muted/50 px-3 py-1.5 text-xs">
                 <span className="text-muted-foreground">Denomination total</span>
-                <Money paise={denomTotal * 100} className="font-semibold" />
+                <MoneyStatic paise={denomTotal * 100} className="font-semibold text-foreground" />
               </div>
             </>
           ) : (
@@ -444,99 +392,119 @@ export default function DayClosePage({ user }: Props) {
               />
             </Field>
           )}
-        </Card>
 
-        {/* ── Section 5: Result ── */}
-        <Card>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">Reconciliation</h3>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Opening</span>
-              <Money paise={openingPaise} />
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">+ Cash sales</span>
-              <Money paise={summary?.cash_sales_paise ?? 0} />
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">+ Cash in</span>
-              <Money paise={cashInPaise} />
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">− Cash out</span>
-              <Money paise={cashOutPaise} />
-            </div>
-            <hr className="border-border" />
-            <div className="flex items-center justify-between text-sm font-medium">
-              <span>Expected in drawer</span>
-              <Money paise={expected} />
-            </div>
-            <div className="flex items-center justify-between text-sm font-medium">
-              <span>Actual counted</span>
-              <Money paise={countedPaise} />
-            </div>
-            <div className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold"
-              style={{
-                backgroundColor: withinTolerance ? "hsl(var(--success) / 0.1)" : "hsl(var(--destructive) / 0.1)",
-              }}
-            >
-              <span>Variance</span>
-              <Money
-                paise={variance}
-                className={withinTolerance ? "text-success" : "text-destructive"}
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <Field label="Cash in" hint="Received outside sales">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={cashInRupees}
+                onChange={(e) => setCashInRupees(e.target.value)}
+                className="input w-full"
               />
-            </div>
+            </Field>
+            <Field label="Cash out" hint="Spent from drawer">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={cashOutRupees}
+                onChange={(e) => setCashOutRupees(e.target.value)}
+                className="input w-full"
+              />
+            </Field>
           </div>
         </Card>
 
-        {/* ── Notes ── */}
+        {/* Card 3: reconciliation + notes + submit */}
         <Card>
-          <Field label="Notes" hint="Optional — any remarks about today's close">
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="input w-full"
-              placeholder="e.g. Short staff, register moved to back office"
-            />
-          </Field>
-        </Card>
-
-        {formError && (
-          <div className="rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive">
-            {formError}
-          </div>
-        )}
-
-        {/* ── Submit ── */}
-        {gate?.needs_prompt ? (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="primary" onClick={() => submit("back_up")} loading={submitting}>
-              Back up &amp; close
-            </Button>
-            <Button variant="secondary" onClick={() => submit("skip")} loading={submitting}>
-              Skip once
-            </Button>
-            <Button variant="ghost" onClick={() => submit("fresh")} loading={submitting}>
-              Mark fresh &amp; close
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="primary"
-            onClick={() => submit("fresh")}
-            loading={submitting}
-            className="w-full"
-            data-testid="close-day"
+          <div
+            className="mb-3 flex items-center justify-between rounded-lg px-4 py-3"
+            style={{
+              backgroundColor: withinTolerance
+                ? "hsl(var(--success) / 0.1)"
+                : "hsl(var(--destructive) / 0.1)",
+            }}
           >
-            Close day
-          </Button>
-        )}
+            <span className="text-sm font-medium">Variance</span>
+            <Money
+              paise={variance}
+              className={`text-lg font-bold ${withinTolerance ? "text-success" : "text-destructive"}`}
+            />
+          </div>
+
+          <div className="space-y-1.5 text-sm">
+            <FormulaRow label="Opening" value={openingPaise} />
+            <FormulaRow label="+ Cash sales" value={summary?.cash_sales_paise ?? 0} accent />
+            <FormulaRow label="+ Cash in" value={cashInPaise} />
+            <FormulaRow label="− Cash out" value={-cashOutPaise} />
+            <hr className="border-border" />
+            <FormulaRow label="Expected" value={expected} bold />
+            <FormulaRow label="Counted" value={countedPaise} bold />
+          </div>
+
+          <div className="mt-3">
+            <Field label="Notes" hint="Optional">
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="input w-full"
+                placeholder="Any remarks about today's close"
+              />
+            </Field>
+          </div>
+
+          {formError && (
+            <div className="mt-3 rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive">
+              {formError}
+            </div>
+          )}
+
+          {confirming ? (
+            <div className="mt-4 space-y-2">
+              <p className="text-sm text-muted-foreground">Confirm close for {formatDateForDisplay(date)}?</p>
+              <div className="flex flex-wrap gap-2">
+                {gate?.needs_prompt ? (
+                  <>
+                    <Button variant="primary" onClick={() => submit("back_up")} loading={submitting}>
+                      Back up &amp; close
+                    </Button>
+                    <Button variant="secondary" onClick={() => submit("skip")} loading={submitting}>
+                      Skip backup &amp; close
+                    </Button>
+                    <Button variant="ghost" onClick={() => setConfirming(false)}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="primary" onClick={() => submit("fresh")} loading={submitting} data-testid="close-day">
+                      Confirm close
+                    </Button>
+                    <Button variant="ghost" onClick={() => setConfirming(false)}>
+                      Cancel
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={() => setConfirming(true)}
+              className="mt-4 w-full"
+              data-testid="close-day"
+            >
+              Close day
+            </Button>
+          )}
+        </Card>
       </div>
     );
   }
 
-  // ── List view (default) ──
   return (
     <div className="space-y-4">
       {listError && (
@@ -547,7 +515,7 @@ export default function DayClosePage({ user }: Props) {
 
       {gate?.needs_prompt && (
         <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-2 text-sm text-amber-800 dark:text-amber-200">
-          Backup is overdue. You can still close, but a backup is recommended.
+          Backup overdue — recommend backing up before closing.
         </div>
       )}
 
@@ -580,8 +548,6 @@ export default function DayClosePage({ user }: Props) {
   );
 }
 
-// ── Helper components ──
-
 function ReadonlyMetric({
   label,
   value,
@@ -597,10 +563,27 @@ function ReadonlyMetric({
       {loading ? (
         <Skeleton className="mt-1 h-5 w-16" />
       ) : (
-        <div className="text-sm font-medium tabular-nums">
-          ₹{value.toFixed(2)}
-        </div>
+        <MoneyStatic paise={value} className="text-sm font-medium" />
       )}
+    </div>
+  );
+}
+
+function FormulaRow({
+  label,
+  value,
+  bold,
+  accent,
+}: {
+  label: string;
+  value: number;
+  bold?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <div className={`flex items-center justify-between ${bold ? "font-medium" : ""}`}>
+      <span className={accent ? "text-foreground" : "text-muted-foreground"}>{label}</span>
+      <Money paise={value} />
     </div>
   );
 }

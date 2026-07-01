@@ -480,7 +480,7 @@ pub fn cmd_import_items_csv(
                 if delta.abs() > f64::EPSILON {
                     if let Err(e) = tx.execute(
                         "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
-                         VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='adjustment'), (SELECT sell_unit_id FROM items WHERE id = ?1), 'adjustment', NULL, ?4, ?5, ?6)",
+                         VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='adjustment'), COALESCE((SELECT sell_unit_id FROM items WHERE id = ?1), (SELECT id FROM sale_units WHERE code = 'pcs')), 'adjustment', NULL, ?4, ?5, ?6)",
                         params![
                             item_id,
                             primary_location_id,
