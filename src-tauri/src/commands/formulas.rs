@@ -92,6 +92,16 @@ fn validate_id_code(s: &str) -> AppResult<()> {
     Ok(())
 }
 
+fn validate_name(s: &str) -> AppResult<()> {
+    if s.trim().is_empty() {
+        return Err(AppError::Validation("name is required".into()));
+    }
+    if s.len() > 120 {
+        return Err(AppError::Validation("name must be 120 chars or fewer".into()));
+    }
+    Ok(())
+}
+
 fn validate_price(p: i64) -> AppResult<()> {
     if p < 0 {
         return Err(AppError::Validation(
@@ -258,6 +268,7 @@ pub fn list_sales(
 pub fn create(db: &Db, user_id: i64, new: NewFormula) -> AppResult<i64> {
     validate_id_code(&new.id_code)?;
     validate_price(new.retail_price_paise)?;
+    if let Some(ref n) = new.name { validate_name(n)?; }
     let id_code = new.id_code.trim().to_string();
     let name = new.name.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let with_base = new.with_base as i64;
@@ -295,6 +306,7 @@ pub fn create(db: &Db, user_id: i64, new: NewFormula) -> AppResult<i64> {
 
 pub fn update(db: &Db, _user_id: i64, upd: UpdateFormula) -> AppResult<()> {
     validate_price(upd.retail_price_paise)?;
+    if let Some(ref n) = upd.name { validate_name(n)?; }
     let name = upd.name.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let with_base = upd.with_base as i64;
     let base_item_id: Option<i64> = if upd.with_base {

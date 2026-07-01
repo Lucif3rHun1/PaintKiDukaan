@@ -32,12 +32,10 @@ tauri-plugin-process = "2"
 # tauri-plugin-keyring-store — removed (unused, CWE-1104)
 
 # Database (SQLCipher)
-# bundled-sqlcipher-vendored-openssl compiles both SQLCipher and OpenSSL from source —
-# no OPENSSL_DIR or system OpenSSL needed on any platform. First build on a new machine
-# is slow (~5-10 min while OpenSSL compiles); subsequent builds use the Cargo cache and
-# are fast. libsqlite3-sys 0.38.x build.rs hard-panics on Windows with bundled-sqlcipher
-# alone unless this feature is active (it gates DEP_OPENSSL_INCLUDE vs OPENSSL_DIR).
-rusqlite = { version = "0.40", features = ["sqlcipher", "bundled-sqlcipher-vendored-openssl", "backup"] }
+# Windows requires OPENSSL_DIR pointing at a static OpenSSL build (set automatically by
+# vcpkg or any system OpenSSL install — no project-level setup needed if it's already
+# present). CI installs OpenSSL via vcpkg in release.yml.
+rusqlite = { version = "0.40", features = ["sqlcipher", "bundled-sqlcipher", "backup"] }
 rusqlite_migration = "2.6"
 
 # Crypto

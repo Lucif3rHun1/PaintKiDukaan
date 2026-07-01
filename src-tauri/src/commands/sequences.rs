@@ -45,7 +45,7 @@ impl Kind {
             Kind::SaleInv => "INV",
             Kind::SaleQtn => "QTN",
             Kind::SaleRet => "RET",
-            Kind::SaleFbk => "INV",
+            Kind::SaleFbk => "FBL",
             Kind::Sku => "SKU",
         }
     }

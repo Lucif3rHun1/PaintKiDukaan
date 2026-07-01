@@ -18,10 +18,12 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            openssl_triplet: x64-windows-static
             asset_glob: target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             artifact_name: windows-x86_64
           - os: windows-latest
             target: aarch64-pc-windows-msvc
+            openssl_triplet: arm64-windows-static
             asset_glob: target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
             artifact_name: windows-aarch64
           - os: macos-latest
@@ -71,6 +73,25 @@ jobs:
               Write-Host "Added ARM64 MSVC tools to PATH: $arm64Path"
             }
           }
+
+      - name: Cache vcpkg binary packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ matrix.openssl_triplet }}-${{ hashFiles('.github/workflows/release.yml') }}
+          restore-keys: |
+            vcpkg-${{ matrix.openssl_triplet }}-
+
+      - name: Install OpenSSL via vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\vcpkg-binary-cache" | Out-Null
+          $env:VCPKG_BINARY_SOURCES = "clear;files,$env:RUNNER_TEMP\vcpkg-binary-cache,readwrite"
+          vcpkg install openssl:${{ matrix.openssl_triplet }}
+          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\${{ matrix.openssl_triplet }}" >> $env:GITHUB_ENV
+          echo "OPENSSL_STATIC=1" >> $env:GITHUB_ENV
 
       - run: pnpm install --frozen-lockfile
 

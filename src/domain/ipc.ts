@@ -36,7 +36,7 @@ export async function invoke<T>(
 ): Promise<T> {
   const cid = generateCorrelationId();
   try {
-    return await tauriInvoke<T>(cmd, args);
+    return await tauriInvoke<T>(cmd, { ...(args ?? {}), _cid: cid });
   } catch (e) {
     if (isAppError(e)) {
       // Forward structured errors to backend log with correlation ID.

@@ -150,7 +150,7 @@ pub fn create_unit_conversion(
     let db = db_guard.as_ref().ok_or(AppError::NotUnlocked)?;
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor) VALUES (?1, ?2, ?3)",
+            "INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at) VALUES (?1, ?2, ?3, unixepoch('now'), unixepoch('now'))",
             rusqlite::params![from_unit_id, to_unit_id, factor],
         )?;
         let id = conn.last_insert_rowid();
@@ -172,8 +172,6 @@ pub fn update_unit(
     dimension: Option<String>,
 ) -> AppResult<Unit> {
     ipc_auth::authorize_err("update_unit", state.inner())?;
-    let user = current_user()?;
-    require_role(&user, &[Role::Owner])?;
     if let Some(ref d) = dimension {
         let d = d.trim();
         if !matches!(d, "volume" | "mass" | "area" | "count") {
@@ -218,8 +216,6 @@ pub fn update_unit(
 #[tauri::command(rename_all = "snake_case")]
 pub fn deactivate_unit(state: tauri::State<'_, AppState>, id: i64) -> AppResult<()> {
     ipc_auth::authorize_err("deactivate_unit", state.inner())?;
-    let user = current_user()?;
-    require_role(&user, &[Role::Owner])?;
     let db_guard = lock_db(&state)?;
     let db = db_guard.as_ref().ok_or(AppError::NotUnlocked)?;
     db.with_conn(|conn| {

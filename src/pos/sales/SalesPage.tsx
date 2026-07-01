@@ -657,6 +657,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
     setShowExitModal(false);
     setPendingExit(null);
     void deleteDraft(`sale-${kind}`);
+    setValidityDays(0);
     exit();
   }
 

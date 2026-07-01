@@ -42,7 +42,7 @@ export async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>
     // emitting the unhelpful '[object Object]' string.
     const detail = e instanceof Error
       ? `${e.message}\n${e.stack ?? ""}`
-      : JSON.stringify(e, Object.getOwnPropertyNames(e));
+      : JSON.stringify(e, e != null ? Object.getOwnPropertyNames(e) : []);
     const msg = `[IPC:ERR] cmd=${cmd} cid=${cid} ${detail}`;
     internals.invoke("log_frontend", {
       level: "error",

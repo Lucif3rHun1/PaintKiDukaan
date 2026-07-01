@@ -10,7 +10,16 @@ PaintKiDukaan is developed on macOS but ships primarily to Windows. This documen
 - WebView2 runtime (auto-installed by Tauri in `downloadBootstrapper` mode; pre-install manually on locked-down enterprise machines).
 - PowerShell 5.1+ (built into Windows 10+).
 
-No OpenSSL installation is required. The project uses `bundled-sqlcipher-vendored-openssl` which compiles OpenSSL from source automatically. The **first build on a new machine takes 5–10 minutes** while OpenSSL compiles; every subsequent build uses the Cargo cache and is fast.
+Windows requires `OPENSSL_DIR` pointing at a static OpenSSL build. If you already have vcpkg or any system OpenSSL installed (common if you've worked on other Rust/C projects), it is likely already set and builds will just work. CI installs OpenSSL via vcpkg automatically in `release.yml`.
+
+If you hit the `OPENSSL_DIR` panic on a fresh machine, install OpenSSL once via vcpkg:
+
+```powershell
+vcpkg install openssl:x64-windows-static
+# then set permanently:
+[System.Environment]::SetEnvironmentVariable("OPENSSL_DIR", "C:\vcpkg\installed\x64-windows-static", "User")
+[System.Environment]::SetEnvironmentVariable("OPENSSL_STATIC", "1", "User")
+```
 
 ## Common build commands
 

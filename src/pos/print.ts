@@ -322,12 +322,12 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   doc.setFontSize(10);
   doc.setTextColor(...PRIMARY);
   const footerText = spec.footer || "Thank You For Your Business !";
-  doc.text(footerText, pageW / 2, 285, { align: "center" });
+  doc.text(footerText, pageW / 2, pageH - 10, { align: "center" });
   if (spec.terms) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
     doc.setTextColor(...MUTED);
-    doc.text(spec.terms, pageW / 2, 290, { align: "center" });
+    doc.text(spec.terms, pageW / 2, pageH - 5, { align: "center" });
   }
 
   return doc;

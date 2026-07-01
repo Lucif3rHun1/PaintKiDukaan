@@ -108,7 +108,7 @@ pub fn create_sub_location(
                 )));
             }
             tx.execute(
-                "UPDATE sub_locations SET is_active = 1, position = ?1 WHERE id = ?2",
+                "UPDATE sub_locations SET is_active = 1, position = ?1, updated_at = unixepoch('now') WHERE id = ?2",
                 params![pos, id],
             )?;
             return Ok(SubLocation {
@@ -186,7 +186,7 @@ pub fn update_sub_location(
             }
         }
         let n = tx.execute(
-            "UPDATE sub_locations SET name = COALESCE(?1, name), position = ?2 WHERE id = ?3",
+            "UPDATE sub_locations SET name = COALESCE(?1, name), position = ?2, updated_at = unixepoch('now') WHERE id = ?3",
             params![new_name, new_pos, id],
         )?;
         if n == 0 {
@@ -214,8 +214,19 @@ pub fn deactivate_sub_location(state: State<'_, AppState>, id: i64) -> AppResult
     let user = current_user()?;
     require_role(&user, &[Role::Owner])?;
     db.with_tx(|tx| {
+        // Check for items referencing this sub-location before deactivating.
+        let ref_count: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM items WHERE sub_location_id = ?1",
+            params![id],
+            |r| r.get(0),
+        )?;
+        if ref_count > 0 {
+            return Err(AppError::Validation(format!(
+                "cannot deactivate: {ref_count} item(s) reference this sub-location"
+            )));
+        }
         let n = tx.execute(
-            "UPDATE sub_locations SET is_active = 0 WHERE id = ?1",
+            "UPDATE sub_locations SET is_active = 0, updated_at = unixepoch('now') WHERE id = ?1",
             params![id],
         )?;
         if n == 0 {

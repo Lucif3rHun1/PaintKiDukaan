@@ -47,7 +47,7 @@ export function buildReceiptData(sale: Sale, settings: ReceiptPrintSettings) {
   const subtotal = sale.subtotal ?? sale.total + (sale.bill_discount ?? 0);
   const discount = sale.bill_discount ?? 0;
   const paid = sale.paid_amount ?? 0;
-  const due = Math.max(0, sale.total - paid);
+  const due = sale.total - paid;
   return {
     shop_name: settings.shopName,
     shop_address: settings.shopAddress,

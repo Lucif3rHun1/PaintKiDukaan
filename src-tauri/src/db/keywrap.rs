@@ -182,7 +182,9 @@ pub struct LockoutRow {
 
 fn row_from_stmt(r: &rusqlite::Row) -> Result<KeywrapRow, rusqlite::Error> {
     let role_str: String = r.get(1)?;
-    let role = PinRole::from_str(&role_str).unwrap_or(PinRole::Real);
+    let role = PinRole::from_str(&role_str).ok_or_else(|| {
+        rusqlite::Error::InvalidParameterName(format!("unknown pin role: {role_str}"))
+    })?;
     Ok(KeywrapRow {
         id: r.get(0)?,
         role,

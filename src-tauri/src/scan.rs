@@ -131,25 +131,33 @@ fn run_hook<R: tauri::Runtime>(buffer: Arc<Mutex<WedgeBuffer>>, app: tauri::AppH
                     buf.started = Some(now);
                 }
                 buf.last_keypress = Some(now);
-                buf.chars.push(c);
+                // Ponytail: 1024-char cap prevents memory DoS from stuck/slow scanners.
+                if buf.chars.len() < 1024 {
+                    buf.chars.push(c);
+                }
+            }
 
-                // Terminator check (Enter or Tab) — evaluate and emit.
-                if matches!(key, Key::Return | Key::Tab) {
-                    let len = buf.chars.len();
-                    if len >= min_length {
-                        let total = now.duration_since(buf.started.unwrap()).as_millis() as u64;
-                        if len as u64 * avg_ms_per_char >= total.max(150) {
-                            let barcode = std::mem::take(&mut buf.chars);
-                            let _ = app.emit(
-                                "barcode:scan",
-                                &ScanEvent {
-                                    barcode,
-                                    ts: now_unix_ms(),
-                                },
-                            );
-                            buf.started = None;
-                            buf.last_keypress = None;
-                        }
+            // Terminator check (Enter or Tab) — must be OUTSIDE the
+            // key_to_char guard because key_to_char returns None for
+            // Return/Tab, making the terminator unreachable inside it.
+            if matches!(key, Key::Return | Key::Tab) {
+                let mut buf = buffer.lock();
+                let now = Instant::now();
+                let len = buf.chars.len();
+                if len >= min_length {
+                    let Some(started) = buf.started else { return };
+                    let total = now.duration_since(started).as_millis() as u64;
+                    if len as u64 * avg_ms_per_char >= total.max(150) {
+                        let barcode = std::mem::take(&mut buf.chars);
+                        let _ = app.emit(
+                            "barcode:scan",
+                            &ScanEvent {
+                                barcode,
+                                ts: now_unix_ms(),
+                            },
+                        );
+                        buf.started = None;
+                        buf.last_keypress = None;
                     }
                 }
             }

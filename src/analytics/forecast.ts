@@ -202,9 +202,13 @@ function toForecastPoints(series: readonly DataPoint[], values: readonly number[
 }
 
 function addDays(date: string, days: number): string {
-  const parsed = new Date(`${date}T00:00:00`);
-  parsed.setDate(parsed.getDate() + days);
-  return parsed.toISOString().slice(0, 10);
+  // Parse as local date to avoid UTC timezone shift (e.g. IST midnight → prev day UTC)
+  const [y, m, d] = date.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 function confidenceFrom(stats: SeriesStats, mae: number): Confidence {

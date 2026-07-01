@@ -24,6 +24,10 @@ pub struct SaveDraftPayload {
 #[tauri::command(rename_all = "snake_case")]
 pub fn cmd_save_draft(state: State<'_, AppState>, payload: SaveDraftPayload) -> AppResult<Draft> {
     ipc_auth::authorize_err("cmd_save_draft", state.inner())?;
+    // ponytail: 1 MiB cap on draft JSON to prevent memory DoS.
+    if payload.data_json.len() > 1_048_576 {
+        return Err(AppError::Validation("draft data exceeds 1 MiB limit".into()));
+    }
     let guard = state
         .db
         .lock()

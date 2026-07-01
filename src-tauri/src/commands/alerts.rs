@@ -418,15 +418,16 @@ fn refresh_low_stock_alerts(conn: &rusqlite::Connection) -> Result<(), AppError>
 }
 
 fn refresh_day_close_alerts(conn: &rusqlite::Connection) -> Result<(), AppError> {
-    let today_ms = chrono::Local::now()
+    // Ponytail: We check YESTERDAY's day_close, not today's. During a calendar
+    // day the shift is still open — overdue means yesterday was never closed.
+    let yesterday_ms = (chrono::Local::now() - chrono::Duration::days(1))
         .date_naive()
         .and_hms_opt(0, 0, 0)
         .map(|dt| dt.and_utc().timestamp_millis())
         .unwrap_or(0);
-    let end_of_day = today_ms + 24 * 60 * 60 * 1000 - 1;
-    if now_ms() <= end_of_day {
-        return Ok(());
-    }
+    let yesterday_display = chrono::NaiveDateTime::from_timestamp_millis(yesterday_ms)
+        .map(|dt| dt.format("%d/%m/%Y").to_string())
+        .unwrap_or_default();
 
     let mut stmt = conn.prepare(
         "SELECT id, name FROM users WHERE is_active = 1 AND role IN ('owner', 'cashier')",
@@ -440,16 +441,19 @@ fn refresh_day_close_alerts(conn: &rusqlite::Connection) -> Result<(), AppError>
         let (user_id, name) = user?;
         let closed: bool = conn
             .query_row(
-                "SELECT 1 FROM day_close WHERE user_id = ?1 AND day = ?2 LIMIT 1",
-                params![user_id, today_ms],
+                "SELECT 1 FROM day_close WHERE day = ?1 LIMIT 1",
+                params![yesterday_ms],
                 |_row| Ok(true),
             )
             .optional()?
             .unwrap_or(false);
-        if !closed {
+        let entity_id = format!("{}/{}", user_id, yesterday_ms);
+        if closed {
+            // Ponytail: Resolve alert when yesterday's day_close exists.
+            resolve_alerts_by_entity(conn, AlertKind::DayCloseOverdue, &entity_id)?;
+        } else {
             let title = "Day close overdue".to_string();
-            let message = format!("{} has not closed today's shift", name);
-            let entity_id = format!("{}/{}", user_id, today_ms);
+            let message = format!("{} has not closed {}'s shift", name, yesterday_display);
             upsert_alert(
                 conn,
                 AlertKind::DayCloseOverdue,
@@ -506,7 +510,7 @@ pub fn cmd_refresh_alerts(state: State<'_, AppState>) -> Result<(), AppError> {
                 settings
                     .get("alerts_retention_days")
                     .and_then(|v| v.as_u64().map(|n| n as u32))
-                    .unwrap_or(7)
+                    .unwrap_or(30)
                     .max(1)
             };
             cleanup_resolved_alerts(conn, retention_days)?;

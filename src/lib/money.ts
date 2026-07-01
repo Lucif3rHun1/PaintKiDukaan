@@ -17,5 +17,6 @@ export function parseRupeesToPaise(rupees: string): number {
 }
 
 export function formatRupeesCompact(paise: number): string {
+  if (!Number.isFinite(paise)) return "₹0";
   return compactFormatter.format(paise / 100);
 }

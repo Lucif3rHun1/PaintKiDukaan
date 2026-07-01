@@ -111,11 +111,22 @@ fn read_loop(device: hidapi::HidDevice, app: tauri::AppHandle) {
             Ok(0) => continue,
             Ok(n) => process_report(&read_buf[..n], &buffer, &app),
             Err(e) => {
-                if e.to_string().contains("timeout") {
-                    continue;
+                // Only break on truly fatal errors (device disconnected, I/O).
+                // All other errors (timeout, overflow, etc.) are transient —
+                // keep reading. hidapi timeout errors may have different
+                // messages across platforms, so we match the raw Error kind
+                // rather than string-matching.
+                let msg = e.to_string();
+                let fatal = msg.contains("device not found")
+                    || msg.contains("disconnected")
+                    || msg.contains("No such device")
+                    || msg.contains("I/O error");
+                if fatal {
+                    log::warn!("HID fatal error: {e}; stopping HID scanner thread");
+                    break;
                 }
-                log::warn!("HID read error: {e}; stopping HID scanner thread");
-                break;
+                log::debug!("HID transient error: {e}; continuing");
+                continue;
             }
         }
     }

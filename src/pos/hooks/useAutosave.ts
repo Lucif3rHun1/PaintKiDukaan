@@ -80,8 +80,9 @@ export function useAutosave(formType: string, data: unknown): UseAutosaveReturn 
     };
   }, [formType, data]);
 
-  // Reset draft: delete from DB and clear local state
+  // Reset draft: cancel pending save, delete from DB and clear local state
   const resetDraft = useCallback(async () => {
+    if (timer.current) clearTimeout(timer.current);
     try {
       await deleteDraft(formType);
     } catch {

@@ -253,7 +253,7 @@ export function BulkLabelsPage() {
           const cfg = JSON.parse(raw) as Partial<SectionPrintConfig>;
           if (cfg.printer) setPrinter(cfg.printer);
           if (cfg.sizeChoice) setSizeChoice(cfg.sizeChoice);
-          if (cfg.labelsPerRow != null) setLabelsPerRow(Math.max(1, Math.min(500, cfg.labelsPerRow)));
+          if (cfg.labelsPerRow != null) setLabelsPerRow(Math.max(1, Math.min(4, cfg.labelsPerRow)));
           if (cfg.tsplConfig) setTsplConfig(normalizeTsplConfig(cfg.tsplConfig));
         } catch { /* ignore corrupt */ }
       } else {
@@ -506,7 +506,7 @@ export function BulkLabelsPage() {
     }
     if (record.printer) setPrinter(record.printer as PrinterType);
     if (record.labelSize) setSizeChoice(record.labelSize);
-    if (record.labelsPerRow != null) setLabelsPerRow(Math.max(1, Math.min(500, record.labelsPerRow)));
+    if (record.labelsPerRow != null) setLabelsPerRow(Math.max(1, Math.min(4, record.labelsPerRow)));
     setActionMsg(`Loaded config from "${record.itemName}" print — review and Print when ready.`);
   }
 

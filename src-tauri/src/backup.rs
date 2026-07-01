@@ -330,19 +330,28 @@ pub fn decrypt_and_verify(
     // body if it fits in a single chunk). The manifest lives at the start of
     // that first plaintext chunk, so we must decrypt the full chunk before we
     // can know how much DB/wrapper data follows.
-    let chunk0_plaintext_size = (header.chunk_size as usize).min(body_ciphertext.len() - 16);
+    let ciphertext_len = body_ciphertext.len();
+    if ciphertext_len < 16 {
+        key.zeroize();
+        return Err(BackupError::InvalidEnvelope("ciphertext too short for AES-GCM tag"));
+    }
+    let chunk0_plaintext_size = (header.chunk_size as usize).min(ciphertext_len - 16);
     let chunk0_ciphertext_size = chunk0_plaintext_size + 16;
     if body_ciphertext.len() < chunk0_ciphertext_size {
+        key.zeroize();
         return Err(BackupError::InvalidEnvelope("chunk 0 truncated"));
     }
 
-    let chunk0_plaintext = chunked::decrypt_chunk(
+    let chunk0_plaintext = match chunked::decrypt_chunk(
         &key,
         &header.nonce_prefix,
         0,
         &body_ciphertext[..chunk0_ciphertext_size],
         &header_bytes,
-    )?;
+    ) {
+        Ok(p) => p,
+        Err(e) => { key.zeroize(); return Err(e.into()); }
+    };
 
     let manifest: BackupManifest =
         serde_json::from_slice(&chunk0_plaintext[..header.manifest_len as usize])?;
@@ -352,7 +361,7 @@ pub fn decrypt_and_verify(
         + manifest.key_wrappers_len as usize;
 
     let remaining_ciphertext = &body_ciphertext[chunk0_ciphertext_size..];
-    let remaining_plaintext = chunked::decrypt_chunks(
+    let remaining_plaintext = match chunked::decrypt_chunks(
         &key,
         &header.nonce_prefix,
         remaining_ciphertext,
@@ -360,7 +369,10 @@ pub fn decrypt_and_verify(
         total_plaintext_len.saturating_sub(chunk0_plaintext_size),
         &header_bytes,
         1,
-    )?;
+    ) {
+        Ok(p) => p,
+        Err(e) => { key.zeroize(); return Err(e.into()); }
+    };
 
     let mut full_plaintext = Vec::with_capacity(total_plaintext_len);
     full_plaintext
@@ -368,6 +380,7 @@ pub fn decrypt_and_verify(
     full_plaintext.extend_from_slice(&remaining_plaintext);
 
     if full_plaintext.len() != total_plaintext_len {
+        key.zeroize();
         return Err(BackupError::InvalidEnvelope("plaintext length mismatch"));
     }
 
