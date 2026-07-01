@@ -8,6 +8,7 @@ import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
 
 import { createSalesReturn, getCustomer } from "../../domain/ipc";
+import { getSale } from "../../pos/api";
 import type { Customer, CustomerType, CreateSaleReturnPayload } from "../../domain/types";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
@@ -138,6 +139,31 @@ export default function ReturnPage({ user, onBack }: Props) {
       }
     });
   }, []);
+
+  useEffect(() => {
+    // Entry-point: ?preLink=<sale-id> in the hash pre-links one invoice.
+    // Only fires once on mount; strips the query so subsequent re-renders ignore it.
+    const hash = window.location.hash;
+    const query = hash.split("?")[1];
+    if (!query) return;
+    const params = new URLSearchParams(query);
+    const preLink = params.get("preLink");
+    const cleanedHash = hash.split("?")[0];
+    if (cleanedHash !== hash) window.history.replaceState(null, "", cleanedHash);
+    if (!preLink) return;
+    const id = Number(preLink);
+    if (!Number.isFinite(id) || id <= 0) return;
+    getSale(id)
+      .then((sale) => {
+        if (sale) {
+          setLinkedInvoices((prev) => (prev.some((s) => s.id === sale.id) ? prev : [...prev, sale]));
+          markDirty();
+        }
+      })
+      .catch(() => {
+        // Silently fall back to empty linked list — user can add invoices manually.
+      });
+  }, [markDirty]);
 
   const subtotal = useMemo(
     () => lines.reduce((sum, line) => sum + Math.max(0, line.qty * line.price), 0),

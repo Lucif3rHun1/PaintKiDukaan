@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, Plus, Printer, Receipt, Share2, FilePenLine } from "lucide-react";
+import { Download, Eye, Plus, Printer, Receipt, RotateCcw, Share2, FilePenLine } from "lucide-react";
 import { PeriodDropdown } from "../../components/ui";
 
 import {
@@ -256,6 +256,13 @@ export function SalesListPage({ onCreate }: Props) {
                         } catch (e) {
                           toast.error(`Convert failed: ${extractError(e)}`);
                         }
+                      },
+                    },
+                    {
+                      label: "Return items",
+                      icon: RotateCcw,
+                      onSelect: () => {
+                        window.location.hash = `#/sales/return?preLink=${s.id}`;
                       },
                     },
                   ]
