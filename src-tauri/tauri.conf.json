@@ -30,7 +30,7 @@
   },
   "plugins": {
     "updater": {
-      "active": true,
+      "active": false,
       "endpoints": ["https://github.com/Lucif3rHun1/PaintKiDukaan/releases/latest/download/latest.json"],
       "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1REExOTFCMjFDNjhGOApSV1Q0YUJ5eWthRmRBaTJQVTdVNjRtSkNPck5yM0Jqb05SYm1ESmdFenpQN1NqZWZ3Y3MxZG8zVgo=",
@@ -42,7 +42,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg", "app"],
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/icon.ico",
       "icons/32x32.png",

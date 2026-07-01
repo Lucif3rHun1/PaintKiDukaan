@@ -75,7 +75,9 @@ const InwardDetailPage = lazy(() =>
 const ReportsPage = lazy(() =>
   import("./pos/salesReport/ReportsPage").then((m) => ({ default: m.default })),
 );
-const DayClosePage = lazy(() => import("./pos/dayClose/DayClosePage"));
+const DayClosePage = lazy(() =>
+  import("./pos/dayClose/DayClosePage").then((m) => ({ default: m.default })),
+);
 const Dashboard = lazy(() =>
   import("./shell/routes/Dashboard").then((m) => ({ default: m.Dashboard })),
 );
@@ -206,7 +208,6 @@ export default function App() {
   const [salesRoute, setSalesRoute] = useState<"list" | "new" | "return" | "return-list" | "return-detail" | "sale-detail" | "edit">(readSalesSubRoute);
   const [inwardRoute, setInwardRoute] = useState<"list" | "new" | "detail">(readInwardSubRoute);
   const [formulasRoute, setFormulasRoute] = useState<"list" | "detail">(readFormulasSubRoute);
-
   /* ── Vendor modal state ───────────────────────────────── */
   const [vendorCreateOpen, setVendorCreateOpen] = useState(false);
   const [vendorEditTarget, setVendorEditTarget] = useState<Vendor | null>(null);

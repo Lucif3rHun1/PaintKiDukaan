@@ -1085,6 +1085,7 @@ pub struct CreateSaleReturnPayload {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateSaleReturnLine {
     pub sale_item_id: i64,
+    pub item_id: Option<i64>,
     pub qty: f64,
     pub refund_paise: i64,
     pub shade_note: Option<String>,
@@ -1187,56 +1188,67 @@ pub fn create_sale_return(
     let logical_date = payload.date.unwrap_or_else(today);
 
     let new_id = db.with_conn_immediate(|c| -> Result<i64, ReturnError> {
-        let row = c
-            .query_row(
-                "SELECT status FROM sales WHERE id = ?1",
-                params![payload.sale_id],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()?;
-        let status = match row {
-            Some(s) => s,
-            None => return Err(ReturnError::SaleNotFound(payload.sale_id)),
-        };
-        if status != "final" {
-            return Err(ReturnError::NotAFinalSale(payload.sale_id, status));
+        let is_standalone = payload.sale_id <= 0;
+
+        // Linked return: validate the sale exists and is final.
+        if !is_standalone {
+            let row = c
+                .query_row(
+                    "SELECT status FROM sales WHERE id = ?1",
+                    params![payload.sale_id],
+                    |r| r.get::<_, String>(0),
+                )
+                .optional()?;
+            let status = match row {
+                Some(s) => s,
+                None => return Err(ReturnError::SaleNotFound(payload.sale_id)),
+            };
+            if status != "final" {
+                return Err(ReturnError::NotAFinalSale(payload.sale_id, status));
+            }
         }
 
         // Per-line validation: each sale_item_id must belong to the original
         // sale AND requested qty must not exceed (sold - already_returned).
-        for (i, l) in payload.lines.iter().enumerate() {
-            let (sale_id_of_item, sold_qty): (i64, f64) = c
-                .query_row(
-                    "SELECT sale_id, qty FROM sale_items WHERE id = ?1",
+        // Skipped for standalone returns (sale_item_id == 0).
+        if !is_standalone {
+            for (i, l) in payload.lines.iter().enumerate() {
+                if l.sale_item_id <= 0 {
+                    continue;
+                }
+                let (sale_id_of_item, sold_qty): (i64, f64) = c
+                    .query_row(
+                        "SELECT sale_id, qty FROM sale_items WHERE id = ?1",
+                        params![l.sale_item_id],
+                        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)),
+                    )
+                    .optional()?
+                    .ok_or(ReturnError::SaleItemMismatch(
+                        i,
+                        l.sale_item_id,
+                        payload.sale_id,
+                    ))?;
+                if sale_id_of_item != payload.sale_id {
+                    return Err(ReturnError::SaleItemMismatch(
+                        i,
+                        l.sale_item_id,
+                        payload.sale_id,
+                    ));
+                }
+                let already: f64 = c.query_row(
+                    "SELECT COALESCE(SUM(qty), 0.0) FROM sale_return_lines
+                         WHERE sale_item_id = ?1",
                     params![l.sale_item_id],
-                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)),
-                )
-                .optional()?
-                .ok_or(ReturnError::SaleItemMismatch(
-                    i,
-                    l.sale_item_id,
-                    payload.sale_id,
-                ))?;
-            if sale_id_of_item != payload.sale_id {
-                return Err(ReturnError::SaleItemMismatch(
-                    i,
-                    l.sale_item_id,
-                    payload.sale_id,
-                ));
-            }
-            let already: f64 = c.query_row(
-                "SELECT COALESCE(SUM(qty), 0.0) FROM sale_return_lines
-                     WHERE sale_item_id = ?1",
-                params![l.sale_item_id],
-                |r| r.get(0),
-            )?;
-            if l.qty + already > sold_qty {
-                return Err(ReturnError::QtyExceedsSold {
-                    line: i,
-                    requested: l.qty,
-                    already,
-                    sold: sold_qty,
-                });
+                    |r| r.get(0),
+                )?;
+                if l.qty + already > sold_qty {
+                    return Err(ReturnError::QtyExceedsSold {
+                        line: i,
+                        requested: l.qty,
+                        already,
+                        sold: sold_qty,
+                    });
+                }
             }
         }
 
@@ -1256,33 +1268,36 @@ pub fn create_sale_return(
             });
         }
 
-        // H9: reject if refund exceeds what was actually paid.
-        let paid_amount: i64 = c.query_row(
-            "SELECT paid_amount FROM sales WHERE id = ?1",
-            params![payload.sale_id],
-            |r| r.get(0),
-        )?;
-        if refund_total > paid_amount {
-            return Err(ReturnError::OverRefund {
-                refund: refund_total,
-                paid: paid_amount,
-            });
+        if !is_standalone {
+            let paid_amount: i64 = c.query_row(
+                "SELECT paid_amount FROM sales WHERE id = ?1",
+                params![payload.sale_id],
+                |r| r.get(0),
+            )?;
+            if refund_total > paid_amount {
+                return Err(ReturnError::OverRefund {
+                    refund: refund_total,
+                    paid: paid_amount,
+                });
+            }
         }
 
-        // H10: restore stock to the same location the sale deducted from.
         let default_location: i64 = c.query_row(
             "SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1",
             [],
             |r| r.get(0),
         )?;
-        let sale_location: i64 = c
-            .query_row(
+        let sale_location: i64 = if is_standalone {
+            default_location
+        } else {
+            c.query_row(
                 "SELECT location_id FROM stock_movements \
                  WHERE ref_kind = 'sale' AND ref_id = ?1 LIMIT 1",
                 params![payload.sale_id],
                 |r| r.get(0),
             )
-            .unwrap_or(default_location);
+            .unwrap_or(default_location)
+        };
 
         let created_at = now_epoch_ms();
         let reason = payload.reason.clone();
@@ -1320,9 +1335,12 @@ pub fn create_sale_return(
                     user_id,
                 ],
             )?;
-            // Positive stock movement (return restores stock).
-            // H8: skip formula lines (item_id is NULL — formulas have no stock).
-            if let Some(item_id) = sale_item_id_to_item_id(c, l.sale_item_id)? {
+            let resolved_item_id = if l.sale_item_id > 0 {
+                sale_item_id_to_item_id(c, l.sale_item_id)?
+            } else {
+                l.item_id
+            };
+            if let Some(item_id) = resolved_item_id {
                 c.execute(
                     "INSERT INTO stock_movements
                         (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)

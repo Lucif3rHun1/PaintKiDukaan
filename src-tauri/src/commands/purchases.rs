@@ -747,7 +747,7 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO vendors (name, credit_limit_paise, is_active, created_at, updated_at) VALUES ('Vendor',0,1,0,0)",
+                "INSERT INTO vendors (name, opening_balance_paise, is_active, created_at, updated_at) VALUES ('Vendor',0,1,0,0)",
                 [],
             )?;
             Ok(())

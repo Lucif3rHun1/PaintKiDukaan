@@ -26,7 +26,7 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
 
   return (
     <div>
-      <div className="mb-4 flex items-start justify-between">
+      <div className="mb-4 flex items-start justify-between pr-12">
         <div>
           <h2 className="text-xl font-semibold">{toTitleCase(customer.name)}</h2>
           <p className="font-mono text-sm text-muted-foreground">{customer.phone}</p>

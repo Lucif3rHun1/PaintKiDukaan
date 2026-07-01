@@ -774,7 +774,7 @@ pub fn cmd_import_inward_csv(
                             // Create vendor on the fly
                             let now = chrono::Utc::now().timestamp_millis();
                             match tx.execute(
-                                "INSERT INTO vendors (name, credit_limit_paise, is_active, created_at, updated_at) VALUES (?1, 0, 1, ?2, ?2)",
+                                "INSERT INTO vendors (name, opening_balance_paise, is_active, created_at, updated_at) VALUES (?1, 0, 1, ?2, ?2)",
                                 params![vn, now],
                             ) {
                                 Ok(_) => tx.last_insert_rowid(),

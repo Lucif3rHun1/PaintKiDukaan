@@ -929,6 +929,23 @@ impl Db {
             }
         }
 
+        // M-INLINE-024: Rename vendors.credit_limit_paise -> opening_balance_paise.
+        // Column stores vendor opening balance, not credit limit.
+        {
+            let has_old: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('vendors') WHERE name = 'credit_limit_paise'",
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if has_old {
+                conn.execute_batch(
+                    "ALTER TABLE vendors RENAME COLUMN credit_limit_paise TO opening_balance_paise;",
+                )?;
+            }
+        }
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA busy_timeout = 5000;\

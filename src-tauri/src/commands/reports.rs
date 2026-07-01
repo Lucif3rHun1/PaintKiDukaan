@@ -291,7 +291,7 @@ pub fn outstanding_report(db: &Db) -> Result<OutstandingReport, ReportsError> {
                 "SELECT id, name, outstanding
                  FROM (
                      SELECT v.id, v.name,
-                            COALESCE(v.credit_limit_paise, 0)
+                            COALESCE(v.opening_balance_paise, 0)
                             + COALESCE((SELECT SUM(p.total_paise) FROM purchases p
                                         WHERE p.vendor_id = v.id), 0)
                             - COALESCE((SELECT SUM(vp.amount_paise) FROM vendor_payments vp
@@ -1163,7 +1163,7 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO vendors (name, credit_limit_paise, is_active, created_at, updated_at) VALUES ('Acme Paints', 0, 1, 0, 0)",
+                "INSERT INTO vendors (name, opening_balance_paise, is_active, created_at, updated_at) VALUES ('Acme Paints', 0, 1, 0, 0)",
                 [],
             )?;
             c.execute(

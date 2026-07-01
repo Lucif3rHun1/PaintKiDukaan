@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Save, Search, Trash2, UserMinus, UserPlus } from "lucide-react";
 
-import { Alert, Badge, Button, Card, InlineDialog, KbdHint, Money, MoneyInput, PageHeader, QtyInput, Select } from "../../components/ui";
+import { Alert, Badge, Button, Card, InlineDialog, KbdHint, Money, MoneyInput, PageHeader, QtyInput } from "../../components/ui";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { CustomerForm } from "../../domain/customers/CustomerForm";
 import { listCustomerTypes } from "../../domain/customerTypes/api";
-import { listLocations } from "../../domain/locations/api";
+
 import { createSalesReturn, getCustomer } from "../../domain/ipc";
-import type { Customer, CustomerType, Location, CreateSaleReturnPayload } from "../../domain/types";
+import type { Customer, CustomerType, CreateSaleReturnPayload } from "../../domain/types";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { toTitleCase } from "../../lib/format/titleCase";
@@ -39,8 +39,7 @@ export default function ReturnPage({ user, onBack }: Props) {
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
 
   const [lines, setLines] = useState<ReturnCartLine[]>([]);
-  const [locationId, setLocationId] = useState(0);
-  const [locations, setLocations] = useState<Location[]>([]);
+
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplit[]>([]);
   const [reason, setReason] = useState("");
   const [ownerPin, setOwnerPin] = useState("");
@@ -53,10 +52,9 @@ export default function ReturnPage({ user, onBack }: Props) {
   const draftData = useMemo(() => ({
     customerId,
     lines,
-    locationId,
     paymentSplits,
     reason,
-  }), [customerId, lines, locationId, paymentSplits, reason]);
+  }), [customerId, lines, paymentSplits, reason]);
 
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
   const { draft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("return", draftData);
@@ -82,7 +80,6 @@ export default function ReturnPage({ user, onBack }: Props) {
             .catch(() => {});
         }
         if (modalDraft.lines) setLines(modalDraft.lines);
-        if (modalDraft.location_id) setLocationId(modalDraft.location_id);
         if (modalDraft.payment_modes) setPaymentSplits(modalDraft.payment_modes);
         if (modalDraft.reason) setReason(modalDraft.reason);
         return;
@@ -102,7 +99,6 @@ export default function ReturnPage({ user, onBack }: Props) {
           .catch(() => {});
       }
       if (data.lines) setLines(data.lines);
-      if (data.locationId != null) setLocationId(data.locationId);
       if (data.paymentSplits) setPaymentSplits(data.paymentSplits);
       if (data.reason != null) setReason(data.reason);
     } catch {
@@ -124,18 +120,9 @@ export default function ReturnPage({ user, onBack }: Props) {
   useEffect(() => {
     Promise.allSettled([
       listCustomerTypes().then((d) => setCustomerTypes(d ?? [])),
-      listLocations(false).then((rows) => {
-        const active = rows.filter((location) => location.is_active);
-        setLocations(active);
-        setLocationId((current) => current || active[0]?.id || 0);
-      }),
-    ]).then(([typesResult, locationsResult]) => {
+    ]).then(([typesResult]) => {
       if (typesResult.status === "rejected") {
         console.error("[ReturnPage] failed to load customer types", typesResult.reason);
-      }
-      if (locationsResult.status === "rejected") {
-        console.error("[ReturnPage] failed to load locations", locationsResult.reason);
-        setLocations([]);
       }
     });
   }, []);
@@ -148,11 +135,9 @@ export default function ReturnPage({ user, onBack }: Props) {
     () => paymentSplits.reduce((sum, split) => sum + split.amount, 0),
     [paymentSplits],
   );
-  const outstandingReduction = subtotal - refundAmount;
 
   const canSave =
     lines.some((line) => line.qty > 0) &&
-    locationId > 0 &&
     (user.role === "owner" || ownerPin.trim().length > 0) &&
     refundAmount === subtotal;
 
@@ -266,10 +251,7 @@ export default function ReturnPage({ user, onBack }: Props) {
         setFormError(`Return qty for ${line.item_name} exceeds sold qty (${line.original_qty}).`);
         return;
       }
-      if (line.sale_item_id === 0) {
-        setFormError(`Item ${line.item_name} is not linked to an original sale line. Remove it or start the return from a sale.`);
-        return;
-      }
+
     }
     if (subtotal > 0 && refundAmount !== subtotal) {
       setFormError(`Refund total must equal the return subtotal (${formatRupeesFromPaise(subtotal)}).`);
@@ -420,6 +402,8 @@ export default function ReturnPage({ user, onBack }: Props) {
                 </span>
               </div>
 
+              <ItemSearchInput onPick={addLineFromItem} acceptFormula={false} />
+
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="border-b border-border text-left text-xs uppercase text-muted-foreground">
@@ -498,27 +482,12 @@ export default function ReturnPage({ user, onBack }: Props) {
                 </table>
               </div>
 
-              {/* Manual item search removed: returns must be linked to an original sale line. */}
             </Card>
           </div>
 
           <div className="space-y-4">
             <Card as="section" className="space-y-4 p-4">
               <h2 className="text-lg font-semibold text-foreground">Return summary</h2>
-
-              <label className="block space-y-1 text-sm">
-                <span className="font-medium text-foreground">Return location</span>
-                <Select
-                  value={locationId ? String(locationId) : ""}
-                  onChange={(event) => setLocationId(Number(event.target.value))}
-                  placeholder="Select location"
-                  size="md"
-                  options={locations.map((location) => ({
-                    value: String(location.id),
-                    label: `${location.name}${location.zone ? ` · ${location.zone}` : ""}`,
-                  }))}
-                />
-              </label>
 
               <label className="block space-y-1 text-sm">
                 <span className="font-medium text-foreground">
@@ -553,28 +522,21 @@ export default function ReturnPage({ user, onBack }: Props) {
                 <p className="text-xs text-muted-foreground">Splits represent money returned to the customer.</p>
               </div>
               <SplitPayment total={subtotal} splits={paymentSplits} onChange={setPaymentSplits} />
-              <div className="space-y-2 border-t border-border pt-3 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <Money paise={subtotal} className="text-foreground" />
+              {subtotal > 0 && (
+                <div className="space-y-2 border-t border-border pt-3 text-sm">
+                  <div className="flex items-center justify-between gap-4 font-medium">
+                    <span className="text-foreground">Return total</span>
+                    <Money paise={subtotal} className="text-foreground" />
+                  </div>
+                  <div className="flex items-center justify-between gap-4 text-xs">
+                    <span className="text-muted-foreground">Refund matched</span>
+                    {refundAmount === subtotal
+                      ? <span className="text-success">✓ Full refund</span>
+                      : <span className="text-muted-foreground">{formatRupeesFromPaise(refundAmount)} of {formatRupeesFromPaise(subtotal)}</span>
+                    }
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-4 font-medium">
-                  <span className="text-foreground">Total</span>
-                  <Money paise={subtotal} className="text-foreground" />
-                </div>
-                <div className="flex items-center justify-between gap-4 text-xs">
-                  <span className="text-muted-foreground">Refund</span>
-                  <Money paise={refundAmount} className={refundAmount <= subtotal ? "text-success" : "text-destructive"} />
-                </div>
-                <div className="flex items-center justify-between gap-4 text-xs">
-                  <span className="text-muted-foreground">Fully refunded</span>
-                  <Money paise={Math.max(0, outstandingReduction) === 0 && subtotal > 0 ? subtotal : 0} className="text-success" />
-                </div>
-                <div className="flex items-center justify-between gap-4 text-xs">
-                  <span className="text-muted-foreground">Outstanding reduction</span>
-                  <Money paise={Math.abs(outstandingReduction)} negative={outstandingReduction < 0} className={outstandingReduction < 0 ? "text-destructive" : "text-muted-foreground"} />
-                </div>
-              </div>
+              )}
             </Card>
 
             {formError ? (

@@ -524,6 +524,7 @@ export interface CreateSaleReturnPayload {
   owner_pin: string;
   lines: Array<{
     sale_item_id: number;
+    item_id?: number;
     qty: number;
     refund_paise: number;
     shade_note?: string;

@@ -45,7 +45,7 @@ pub struct MitigationReport {
     pub applied: Vec<MitigationPolicy>,
     /// Policies that failed, with the OS error message.
     pub skipped: Vec<(MitigationPolicy, String)>,
-    /// `true` when all critical (P0) policies — Dep, Aslr, DynamicCode — succeeded.
+    /// `true` when all critical (P0) policies — Dep, Aslr, ControlFlowGuard — succeeded.
     pub all_critical_applied: bool,
 }
 

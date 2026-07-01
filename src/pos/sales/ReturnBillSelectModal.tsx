@@ -11,7 +11,6 @@ export interface ReturnDraft {
   customer_id: number | null;
   customer_name: string | null;
   customer_phone: string | null;
-  location_id: number;
   sale_id: number; // H2: link return to original sale
   lines: ReturnCartLine[];
   payment_modes: PaymentSplit[];
@@ -85,7 +84,6 @@ export function ReturnBillSelectModal({ sale, onClose }: Props) {
       customer_id: sale.customer_id,
       customer_name: sale.customer_name,
       customer_phone: null,
-      location_id: 0,
       sale_id: sale.id,
       lines,
       payment_modes: paymentModes,

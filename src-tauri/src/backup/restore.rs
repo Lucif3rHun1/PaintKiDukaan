@@ -6,6 +6,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::backup::{atomic_swap, decrypt_and_verify, BackupError, BackupResult};
 
+/// Generate a simple random hex string for temp filenames.
+fn uuid_simple() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    let s = RandomState::new();
+    let h1 = s.build_hasher().finish();
+    let h2 = std::time::Instant::now().elapsed().as_nanos();
+    format!("{:016x}{:016x}", h1, h2 as u64)
+}
+
 /// Result of a successful restore: where the previous live DB was moved to
 /// and the timestamp of the swap.
 #[derive(Clone, Debug, serde::Serialize)]
@@ -44,7 +54,7 @@ pub fn restore_envelope(
         .ok_or_else(|| BackupError::Other("live db has no file name".into()))?
         .to_string_lossy()
         .into_owned();
-    let temp_path = parent.join(format!("{}.restore.tmp", file_name));
+    let temp_path = parent.join(format!("{}.{}.restore.tmp", file_name, uuid_simple()));
 
     decrypt_and_verify(envelope, recovery_passphrase, &temp_path)?;
 

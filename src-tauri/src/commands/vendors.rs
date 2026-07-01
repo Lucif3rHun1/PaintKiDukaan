@@ -91,7 +91,7 @@ pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResul
     let now = chrono::Utc::now().timestamp_millis();
     db.with_tx(|tx| {
         tx.execute(
-            "INSERT INTO vendors (name, phone, credit_limit_paise, notes, is_active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5)",
+            "INSERT INTO vendors (name, phone, opening_balance_paise, notes, is_active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5)",
             params![
                 payload.name,
                 payload.phone,
@@ -133,7 +133,7 @@ pub fn list_vendors(
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let _ = current_user()?;
     db.with_raw(|c| {
-        let mut sql = String::from("SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at, notes FROM vendors WHERE 1=1");
+        let mut sql = String::from("SELECT id, name, phone, opening_balance_paise, is_active, created_at, updated_at, notes FROM vendors WHERE 1=1");
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if !include_inactive { sql.push_str(" AND is_active = 1"); }
         if let Some(q) = &query {
@@ -169,7 +169,7 @@ pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
     let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
-            "SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at, notes FROM vendors WHERE id = ?1",
+            "SELECT id, name, phone, opening_balance_paise, is_active, created_at, updated_at, notes FROM vendors WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], |r| {
             Ok(Vendor {
@@ -218,7 +218,7 @@ pub fn update_vendor(
         if let Some(v) = &patch.name { add!("name =", v.clone()) }
         if let Some(v) = &patch.phone { add!("phone =", v.clone()) }
         if let Some(v) = &patch.notes { add!("notes =", v.clone()) }
-        if let Some(v) = patch.opening_balance { add!("credit_limit_paise =", v) }
+        if let Some(v) = patch.opening_balance { add!("opening_balance_paise =", v) }
         if let Some(v) = patch.is_active { add!("is_active =", if v { 1_i64 } else { 0_i64 }) }
         if sets.is_empty() {
             return Err(AppError::Validation("no fields to update".into()));
@@ -233,7 +233,7 @@ pub fn update_vendor(
             return Err(AppError::NotFound(format!("vendor {id}")));
         }
         let mut stmt = tx.prepare(
-            "SELECT id, name, phone, credit_limit_paise, is_active, created_at, updated_at, notes FROM vendors WHERE id = ?1",
+            "SELECT id, name, phone, opening_balance_paise, is_active, created_at, updated_at, notes FROM vendors WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], |r| {
             Ok(Vendor {
@@ -312,7 +312,7 @@ pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<Vend
     let _ = current_user()?;
     db.with_raw(|c| {
         let opening_balance: i64 = c.query_row(
-            "SELECT COALESCE(credit_limit_paise, 0) FROM vendors WHERE id = ?1",
+            "SELECT COALESCE(opening_balance_paise, 0) FROM vendors WHERE id = ?1",
             params![id],
             |r| r.get(0),
         )?;
@@ -339,7 +339,7 @@ pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<Vend
 
 fn compute_outstanding_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<VendorOutstanding> {
     let opening_balance: i64 = tx.query_row(
-        "SELECT COALESCE(credit_limit_paise, 0) FROM vendors WHERE id = ?1",
+        "SELECT COALESCE(opening_balance_paise, 0) FROM vendors WHERE id = ?1",
         params![id],
         |r| r.get(0),
     )?;
@@ -399,7 +399,7 @@ mod tests {
         });
         let id = db.with_raw(|c| {
             c.execute(
-                "INSERT INTO vendors (name, credit_limit_paise, is_active, created_at, updated_at) VALUES ('Acme Paints', 0, 1, 0, 0)",
+                "INSERT INTO vendors (name, opening_balance_paise, is_active, created_at, updated_at) VALUES ('Acme Paints', 0, 1, 0, 0)",
                 [],
             ).unwrap();
             c.last_insert_rowid()
@@ -434,7 +434,7 @@ mod tests {
             c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 1, 0, 0)", []).unwrap();
         });
         let id = db.with_raw(|c| {
-            c.execute("INSERT INTO vendors (name, credit_limit_paise, is_active, created_at, updated_at) VALUES ('V', 0, 1, 0, 0)", []).unwrap();
+            c.execute("INSERT INTO vendors (name, opening_balance_paise, is_active, created_at, updated_at) VALUES ('V', 0, 1, 0, 0)", []).unwrap();
             c.last_insert_rowid()
         });
         let out = db.with_tx(|tx| {

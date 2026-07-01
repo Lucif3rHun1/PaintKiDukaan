@@ -241,7 +241,7 @@ CREATE TABLE vendors (
   email                TEXT,
   address              TEXT,
   contact_person       TEXT,
-  credit_limit_paise   INTEGER NOT NULL DEFAULT 0 CHECK(credit_limit_paise >= 0),
+  opening_balance_paise INTEGER NOT NULL DEFAULT 0 CHECK(opening_balance_paise >= 0),
   is_active            INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at           INTEGER NOT NULL,
   updated_at           INTEGER NOT NULL,

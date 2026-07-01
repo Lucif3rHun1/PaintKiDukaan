@@ -26,13 +26,12 @@ pub fn snapshot_via_backup_api(
         )));
     }
 
-    // TODO(slice-A): when Slice A's `Db` lands, accept a typed handle and
-    // route through `Db::with_conn` so the DEK in RAM is used as the SQLCipher
-    // key. For M1 we open the file directly.
+    // Open source with SQLCipher key if DEK is provided.
     let src_conn = rusqlite::Connection::open(src)?;
-    if let Some(_dek) = dek {
-        // Placeholder for the SQLCipher PRAGMA key path. Slice A wires the
-        // real call once the typed Db is available.
+    if let Some(dek) = dek {
+        // SQLCipher PRAGMA key: hex-encode the DEK for the raw connection.
+        let hex_key = dek.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        src_conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", hex_key))?;
     }
 
     let mut dst_conn = rusqlite::Connection::open(dest)?;
