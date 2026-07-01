@@ -887,16 +887,15 @@ pub fn list(
             conds.push(format!("status = ?{}", bound.len()));
         }
         if let Some(d) = from_date {
-            bound.push(date_to_ms(d).into());
+            bound.push(d.to_string().into());
             conds.push(format!("date >= ?{}", bound.len()));
         }
         if let Some(d) = to_date {
-            // to_date is inclusive end-of-day; use start of next day as upper bound.
             let upper = NaiveDate::parse_from_str(d, "%Y-%m-%d")
                 .ok()
                 .and_then(|nd| nd.succ_opt())
-                .map(|nd| nd.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis())
-                .unwrap_or_else(now_epoch_ms);
+                .map(|nd| nd.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| d.to_string());
             bound.push(upper.into());
             conds.push(format!("date < ?{}", bound.len()));
         }

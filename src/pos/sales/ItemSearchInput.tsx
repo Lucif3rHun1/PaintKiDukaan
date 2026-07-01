@@ -39,6 +39,13 @@ interface Props {
   onCreateFormula?: () => void;
   acceptFormula?: boolean;
   display?: SearchDisplayConfig;
+  /**
+   * Optional scope that restricts which items appear in the search dropdown.
+   * Today only `kind: "linked_invoices"` is supported: results are filtered
+   * to those item ids present in the provided allowed set. Forward-compatible
+   * shape for future scopes (vendor returns, exchanges, etc.).
+   */
+  scope?: { kind: "linked_invoices"; allowedItemIds: Set<number> };
 }
 
 type SearchHit = ItemSearchHit | FormulaSearchHit;
@@ -104,6 +111,7 @@ export function ItemSearchInput({
   onCreateFormula,
   acceptFormula = true,
   display,
+  scope,
 }: Props) {
   const priceField = display?.priceField ?? "retail";
   const showSku = display?.showSku ?? true;
@@ -185,9 +193,15 @@ export function ItemSearchInput({
       Promise.allSettled(promises.map(([p]) => p))
         .then((settled) => {
           if (searchSeqRef.current !== seq) return;
-          const combined: SearchHit[] = [];
+          let combined: SearchHit[] = [];
           for (const r of settled) {
             if (r.status === "fulfilled") combined.push(...(r.value as SearchHit[]));
+          }
+          if (scope?.kind === "linked_invoices") {
+            const allowed = scope.allowedItemIds;
+            combined = combined.filter(
+              (h) => isFormula(h) || allowed.has(h.id),
+            );
           }
           combined.sort((a, b) => {
             const aKind = isFormula(a) ? 1 : 0;

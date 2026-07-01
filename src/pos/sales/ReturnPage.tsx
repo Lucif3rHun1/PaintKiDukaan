@@ -14,7 +14,7 @@ import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
-import type { ItemSearchHit, PaymentSplit, ReturnCartLine } from "../types";
+import type { ItemSearchHit, PaymentSplit, ReturnCartLine, Sale } from "../types";
 import type { FormulaSearchHit } from "../../domain/types";
 import { formatHitName } from "../../domain/items/display";
 import { formatRupeesFromPaise } from "../../lib/money";
@@ -22,6 +22,7 @@ import { deleteDraft } from "../api";
 import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
 import { ItemSearchInput } from "./ItemSearchInput";
+import { InvoiceSearchInput } from "./InvoiceSearchInput";
 import { SplitPayment } from "./SplitPayment";
 import { extractError } from "../../lib/extractError";
 import { RETURN_DRAFT_KEY, type ReturnDraft } from "./ReturnBillSelectModal";
@@ -39,6 +40,17 @@ export default function ReturnPage({ user, onBack }: Props) {
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
 
   const [lines, setLines] = useState<ReturnCartLine[]>([]);
+
+  const [linkedInvoices, setLinkedInvoices] = useState<Sale[]>([]);
+  const allowedItemIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const sale of linkedInvoices) {
+      for (const item of sale.items) {
+        if (item.item_id != null) ids.add(item.item_id);
+      }
+    }
+    return ids;
+  }, [linkedInvoices]);
 
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplit[]>([]);
   const [reason, setReason] = useState("");
@@ -141,6 +153,14 @@ export default function ReturnPage({ user, onBack }: Props) {
     (user.role === "owner" || ownerPin.trim().length > 0) &&
     refundAmount === subtotal;
 
+  function findSourceSaleItem(itemId: number): { sale_item_id: number; sale_id: number; sold_qty: number } | null {
+    for (const sale of linkedInvoices) {
+      const match = sale.items.find((it) => it.item_id === itemId);
+      if (match) return { sale_item_id: match.id, sale_id: sale.id, sold_qty: match.qty };
+    }
+    return null;
+  }
+
   function addLineFromItem(hit: ItemSearchHit | FormulaSearchHit) {
     if ("kind" in hit && hit.kind === "formula") {
       // Formulas are not returnable (ADR-013). Hit shouldn't appear because
@@ -148,6 +168,7 @@ export default function ReturnPage({ user, onBack }: Props) {
       return;
     }
     const item = hit as ItemSearchHit;
+    const source = allowedItemIds.has(item.id) ? findSourceSaleItem(item.id) : null;
     setLines((prev) => {
       const existing = prev.find((line) => line.item_id === item.id);
       if (existing) {
@@ -158,15 +179,15 @@ export default function ReturnPage({ user, onBack }: Props) {
       return [
         ...prev,
         {
-          sale_item_id: 0,
+          sale_item_id: source?.sale_item_id ?? 0,
           item_id: item.id,
           item_name: formatHitName(item),
           qty: 1,
           price: item.retail_price_paise,
           unit_code: item.unit_code,
-          sale_id: null,
+          sale_id: source?.sale_id ?? null,
           reason: null,
-          original_qty: undefined,
+          original_qty: source?.sold_qty,
         },
       ];
     });
@@ -394,6 +415,32 @@ export default function ReturnPage({ user, onBack }: Props) {
               )}
             </Card>
 
+            <Card as="section" className="space-y-3 p-4">
+              <h2 className="text-lg font-semibold text-foreground">Linked invoices</h2>
+              <p className="text-xs text-muted-foreground">
+                {linkedInvoices.length === 0
+                  ? "Link one or more invoices to scope the item search to what was actually sold. Leave empty to refund any item."
+                  : `${linkedInvoices.length} ${linkedInvoices.length === 1 ? "invoice" : "invoices"} linked — item search is scoped to ${allowedItemIds.size} ${allowedItemIds.size === 1 ? "item" : "items"} from these sales.`}
+              </p>
+              <InvoiceSearchInput
+                linked={linkedInvoices}
+                onLink={(sales) => {
+                  const merged = [...linkedInvoices];
+                  for (const sale of sales) {
+                    if (!merged.some((existing) => existing.id === sale.id)) {
+                      merged.push(sale);
+                    }
+                  }
+                  setLinkedInvoices(merged);
+                  markDirty();
+                }}
+                onUnlink={(saleId) => {
+                  setLinkedInvoices((prev) => prev.filter((s) => s.id !== saleId));
+                  markDirty();
+                }}
+              />
+            </Card>
+
             <Card as="section" className="space-y-4 p-4">
               <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
                 <h2 className="text-lg font-semibold text-foreground">Cart</h2>
@@ -402,7 +449,15 @@ export default function ReturnPage({ user, onBack }: Props) {
                 </span>
               </div>
 
-              <ItemSearchInput onPick={addLineFromItem} acceptFormula={false} />
+              <ItemSearchInput
+                onPick={addLineFromItem}
+                acceptFormula={false}
+                scope={
+                  linkedInvoices.length > 0
+                    ? { kind: "linked_invoices", allowedItemIds }
+                    : undefined
+                }
+              />
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

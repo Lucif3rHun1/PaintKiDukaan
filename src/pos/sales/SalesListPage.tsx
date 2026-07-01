@@ -159,6 +159,16 @@ export function SalesListPage({ onCreate }: Props) {
         ),
       },
       {
+        id: "kind",
+        header: "Kind",
+        width: "5rem",
+        cell: (s) => (
+          <Badge variant="muted" size="sm">
+            {s.status === "final" ? "Bill" : s.status === "fbill" ? "FBill" : "Quotation"}
+          </Badge>
+        ),
+      },
+      {
         id: "no",
         header: "Inv No",
         width: "8rem",
