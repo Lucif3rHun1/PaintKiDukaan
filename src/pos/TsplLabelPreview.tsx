@@ -121,9 +121,10 @@ export function TsplLabelPreview({
         ctx.fillRect(barcodeX, y, barcodeW, 2);
       }
 
-      // SKU text below barcode.
+      // SKU text below barcode — must match builder: label.sku || label.barcode.
+      const skuText = label.sku || label.barcode;
       const skuMaxChars = Math.floor(usableW / sf.w);
-      const skuT = label.barcode.length > skuMaxChars ? label.barcode.slice(0, skuMaxChars) : label.barcode;
+      const skuT = skuText.length > skuMaxChars ? skuText.slice(0, skuMaxChars) : skuText;
       const skuX = centerX(skuT.length * sf.w, 0, cellW, SIDE);
       ctx.font = `${sf.h}px monospace`;
       ctx.fillText(skuT, skuX, y + BAR_HEIGHT + GAP + sf.h);

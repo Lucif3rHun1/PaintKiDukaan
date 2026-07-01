@@ -1608,6 +1608,7 @@ mod tests {
             kind: "item".into(),
             item_id: Some(1),
             formula_id: None,
+            display_name: None,
             qty,
             price,
             unit_type: "pcs".into(),

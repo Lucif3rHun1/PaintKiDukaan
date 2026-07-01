@@ -456,18 +456,18 @@ pub fn adjust_stock(
 
     // All reads and writes happen in one transaction to prevent TOCTOU races.
     db.with_conn_immediate(|c| {
+        let loc_active: bool = c
+            .query_row(
+                "SELECT is_active FROM locations WHERE id = ?1",
+                params![req.location_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or(false);
+        if !loc_active {
+            return Err(PurchaseError::LocationNotFound(0, req.location_id));
+        }
         if req.qty < 0.0 {
-            let loc_active: bool = c
-                .query_row(
-                    "SELECT is_active FROM locations WHERE id = ?1",
-                    params![req.location_id],
-                    |r| r.get(0),
-                )
-                .optional()?
-                .unwrap_or(false);
-            if !loc_active {
-                return Err(PurchaseError::LocationNotFound(0, req.location_id));
-            }
             let current: f64 = c.query_row(
                 "SELECT COALESCE(SUM(qty), 0) FROM stock_balances WHERE item_id = ?1 AND location_id = ?2",
                 params![req.item_id, req.location_id],

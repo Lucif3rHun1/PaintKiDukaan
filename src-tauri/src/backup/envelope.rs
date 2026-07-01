@@ -150,6 +150,23 @@ impl Pkb1Header {
         if chunk_size == 0 {
             return Err(BackupError::InvalidEnvelope("chunk size must be non-zero"));
         }
+        // Prevent crafted envelopes from causing OOM (Argon2 m_cost) or panics
+        // (manifest_len > chunk_size causes slice out-of-bounds in chunked decrypt).
+        const MAX_ARGON2_M_COST_KIB: u32 = 65536; // 64 MiB — generous ceiling
+        if argon2_m_cost_kib > MAX_ARGON2_M_COST_KIB {
+            return Err(BackupError::InvalidEnvelope("argon2 m_cost exceeds maximum"));
+        }
+        if argon2_t_cost == 0 || argon2_t_cost > 16 {
+            return Err(BackupError::InvalidEnvelope("argon2 t_cost out of range"));
+        }
+        if argon2_p_cost == 0 || argon2_p_cost > 4 {
+            return Err(BackupError::InvalidEnvelope("argon2 p_cost out of range"));
+        }
+        if manifest_len > chunk_size {
+            return Err(BackupError::InvalidEnvelope(
+                "manifest_len exceeds chunk_size",
+            ));
+        }
 
         Ok(Self {
             magic,

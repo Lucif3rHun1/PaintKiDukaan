@@ -1195,6 +1195,7 @@ mod tests {
                     kind: "item".into(),
                     item_id: Some(1),
                     formula_id: None,
+                    display_name: None,
                     qty: 1.0,
                     price: amt,
                     unit_type: "pcs".into(),

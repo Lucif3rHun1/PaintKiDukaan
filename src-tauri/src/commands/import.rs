@@ -212,22 +212,8 @@ pub fn cmd_import_items_csv(
     })?;
 
     // Fetch existing sub-locations (name → (id, location_id), case-insensitive)
-    let sub_locations: std::collections::HashMap<String, (i64, i64)> = db.with_raw(|c| {
-        let mut stmt = c.prepare("SELECT id, location_id, name FROM sub_locations WHERE is_active = 1")?;
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(2)?,
-                r.get::<_, i64>(0)?,
-                r.get::<_, i64>(1)?,
-            ))
-        })?;
-        let mut map = std::collections::HashMap::new();
-        for r in rows {
-            let (name, id, location_id) = r?;
-            map.insert(name.to_lowercase(), (id, location_id));
-        }
-        Ok::<_, AppError>(map)
-    })?;
+    // (ponytail: removed — resolve_sub_location queries sub_locations per-row,
+    //  which is fine for the small row counts CSV import handles)
 
     // Default location
     let default_location_id = locations
@@ -309,18 +295,20 @@ pub fn cmd_import_items_csv(
             let label_line1 = get_field(row, &hmap, &["label_line1", "label1"]);
             let label_line2 = get_field(row, &hmap, &["label_line2", "label2"]);
 
-            // Location resolution by name (case-insensitive)
-            let primary_location_id = get_field(row, &hmap, &["primary_location", "location", "location_name"])
-                .and_then(|s| locations.get(&s.to_lowercase()).copied())
-                .unwrap_or(default_location_id);
-
-            let sub_location_id = get_field(row, &hmap, &["sub_location", "sub", "rack"])
-                .and_then(|s| {
-                    let (sub_id, _) = sub_locations.get(&s.to_lowercase())?;
-                    Some(sub_id)
-                });
+            // Location resolution
+            let primary_location_name =
+                get_field(row, &hmap, &["primary_location", "location", "location_name"]);
+            let primary_location_id =
+                resolve_primary_location(tx, primary_location_name.as_deref(), default_location_id)?;
 
             let position = get_field(row, &hmap, &["position", "pos", "shelf"]);
+            let sub_location_name = get_field(row, &hmap, &["sub_location", "sub", "rack"]);
+            let sub_location_id = resolve_sub_location(
+                tx,
+                primary_location_id,
+                sub_location_name.as_deref(),
+                position.as_deref(),
+            )?;
             let stock_qty = get_field(row, &hmap, &["stock", "qty", "quantity", "stock_qty", "current_stock", "inventory"])
                 .and_then(|s| s.parse::<f64>().ok());
 
@@ -334,17 +322,8 @@ pub fn cmd_import_items_csv(
                 continue;
             }
 
-            // Resolve brand_id if brand name is provided
-            let brand_id: Option<i64> = if let Some(ref bname) = brand {
-                let bid = tx.query_row(
-                    "SELECT id FROM brands WHERE LOWER(name) = LOWER(?1) AND is_active = 1",
-                    params![bname],
-                    |r| r.get(0),
-                );
-                bid.ok()
-            } else {
-                None
-            };
+            // Resolve brand_id
+            let brand_id = resolve_brand(tx, brand.as_deref())?;
 
             // Resolve sell_unit_id if sell_unit is provided
             let sell_unit_id: Option<i64> = if let Some(ref su) = sell_unit {
@@ -527,13 +506,108 @@ pub fn cmd_import_items_csv(
 fn auto_sku(tx: &rusqlite::Connection) -> AppResult<String> {
     let n: i64 = tx
         .query_row(
-            "INSERT INTO sequences(name, value) VALUES ('sku', 1) 
-             ON CONFLICT(name) DO UPDATE SET value = value + 1 
+            "INSERT INTO sequences(name, value) VALUES ('sku', 1)
+             ON CONFLICT(name) DO UPDATE SET value = value + 1
              RETURNING value",
             [],
             |r| r.get(0),
         )?;
     Ok(format!("SKU-{n:06}"))
+}
+
+fn resolve_primary_location(
+    conn: &rusqlite::Connection,
+    name: Option<&str>,
+    default_id: i64,
+) -> AppResult<i64> {
+    match name {
+        Some(n) => conn
+            .query_row(
+                "SELECT id FROM locations WHERE LOWER(name) = LOWER(?1) AND is_active = 1",
+                params![n],
+                |r| r.get::<_, i64>(0),
+            )
+            .map_err(|_| AppError::Validation(format!("primary location '{n}' does not exist"))),
+        None => Ok(default_id),
+    }
+}
+
+fn resolve_sub_location(
+    conn: &rusqlite::Connection,
+    parent_id: i64,
+    name: Option<&str>,
+    position: Option<&str>,
+) -> AppResult<Option<i64>> {
+    let Some(name) = name else {
+        return Ok(None);
+    };
+    let Some(pos) = position else {
+        return Err(AppError::Validation(format!(
+            "sub_location '{name}' requires a position"
+        )));
+    };
+    if let Ok(id) = conn.query_row(
+        "SELECT id FROM sub_locations \
+         WHERE LOWER(name) = LOWER(?1) AND location_id = ?2 AND is_active = 1",
+        params![name, parent_id],
+        |r| r.get::<_, i64>(0),
+    ) {
+        return Ok(Some(id));
+    }
+    let now = chrono::Utc::now().timestamp_millis();
+    conn.execute(
+        "INSERT INTO sub_locations (location_id, name, position, is_active, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, 1, ?4, ?4)",
+        params![parent_id, name, pos, now],
+    )?;
+    Ok(Some(conn.last_insert_rowid()))
+}
+
+fn resolve_brand(
+    conn: &rusqlite::Connection,
+    name: Option<&str>,
+) -> AppResult<Option<i64>> {
+    let Some(name) = name else {
+        return Ok(None);
+    };
+    if let Ok(id) = conn.query_row(
+        "SELECT id FROM brands WHERE LOWER(name) = LOWER(?1) AND is_active = 1",
+        params![name],
+        |r| r.get::<_, i64>(0),
+    ) {
+        return Ok(Some(id));
+    }
+    let prefix = crate::commands::items::make_name_abbreviation(name);
+    if prefix.is_empty() {
+        return Err(AppError::Validation(format!(
+            "cannot derive prefix for brand '{name}'"
+        )));
+    }
+    let collision: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM brands WHERE prefix = ?1 AND is_active = 1",
+            params![prefix],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if collision > 0 {
+        return Err(AppError::Validation(format!(
+            "brand '{name}' would derive prefix '{prefix}' which is already owned by another brand"
+        )));
+    }
+    let now = chrono::Utc::now().timestamp_millis();
+    conn.execute(
+        "INSERT INTO brands (name, prefix, is_active, created_at, updated_at) \
+         VALUES (?1, ?2, 1, ?3, ?3)",
+        params![name, prefix, now],
+    )?;
+    let id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO brand_sequences (brand_id, prefix, next_seq, padding, updated_at) \
+         VALUES (?1, ?2, 1, 4, ?3)",
+        params![id, prefix, now],
+    )?;
+    Ok(Some(id))
 }
 
 fn import_db_error_message(e: &rusqlite::Error) -> String {
@@ -745,9 +819,8 @@ pub fn cmd_import_inward_csv(
 
             // Create purchase
             let now_ms = chrono::Utc::now().timestamp_millis();
-            // ponytail: atomic counter via daily_counters with empty date = global (non-daily) sequence
             let purchase_number = {
-                let next_id: i64 = tx
+                let next_id_opt: Option<i64> = tx
                     .query_row(
                         "INSERT INTO daily_counters(prefix, date, last_serial)
                          VALUES ('PINV', '', 1)
@@ -756,7 +829,15 @@ pub fn cmd_import_inward_csv(
                         [],
                         |r| r.get(0),
                     )
-                    .unwrap_or(1);
+                    .ok();
+                let Some(next_id) = next_id_opt else {
+                    result.errors.push(ImportRowError {
+                        row: row_num,
+                        message: "Failed to generate purchase number".into(),
+                    });
+                    result.skipped += 1;
+                    continue;
+                };
                 format!("PINV-{next_id:04}")
             };
 
@@ -787,7 +868,8 @@ pub fn cmd_import_inward_csv(
                     row: row_num,
                     message: format!("DB error creating line: {}", e),
                 });
-                // Don't skip — purchase row already created
+                // Rollback orphan purchase row (transaction still open)
+                let _ = tx.execute("DELETE FROM purchases WHERE id = ?1", params![pid]);
                 continue;
             }
 
@@ -854,4 +936,140 @@ fn date_to_ms(date: &str) -> i64 {
                 .timestamp_millis()
         })
         .unwrap_or_else(|_| chrono::Utc::now().timestamp_millis())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Db;
+
+    fn seed_location(c: &rusqlite::Connection, name: &str, is_default: bool) -> i64 {
+        let now = chrono::Utc::now().timestamp_millis();
+        c.execute(
+            "INSERT INTO locations (name, is_default, is_active, created_at, updated_at) \
+             VALUES (?1, ?2, 1, ?3, ?3)",
+            params![name, is_default as i64, now],
+        )
+        .unwrap();
+        c.last_insert_rowid()
+    }
+
+    fn seed_sub_location(c: &rusqlite::Connection, parent: i64, name: &str, position: &str) -> i64 {
+        let now = chrono::Utc::now().timestamp_millis();
+        c.execute(
+            "INSERT INTO sub_locations (location_id, name, position, is_active, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, 1, ?4, ?4)",
+            params![parent, name, position, now],
+        )
+        .unwrap();
+        c.last_insert_rowid()
+    }
+
+    fn seed_brand(c: &rusqlite::Connection, name: &str, prefix: &str) -> i64 {
+        let now = chrono::Utc::now().timestamp_millis();
+        c.execute(
+            "INSERT INTO brands (name, prefix, is_active, created_at, updated_at) \
+             VALUES (?1, ?2, 1, ?3, ?3)",
+            params![name, prefix, now],
+        )
+        .unwrap();
+        c.last_insert_rowid()
+    }
+
+    #[test]
+    fn primary_location_found_returns_id() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            let id = seed_location(c, "MainShop", true);
+            assert_eq!(resolve_primary_location(c, Some("MainShop"), 999).unwrap(), id);
+        });
+    }
+
+    #[test]
+    fn primary_location_missing_errors() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            seed_location(c, "MainShop", true);
+            let err = resolve_primary_location(c, Some("NonexistentShop"), 999).unwrap_err();
+            assert!(err.to_string().contains("does not exist"));
+        });
+    }
+
+    #[test]
+    fn primary_location_none_uses_default() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            assert_eq!(resolve_primary_location(c, None, 42).unwrap(), 42);
+        });
+    }
+
+    #[test]
+    fn sub_location_create_with_position() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            let parent = seed_location(c, "MainShop", true);
+            let id = resolve_sub_location(c, parent, Some("Rack-7"), Some("A1"))
+                .unwrap()
+                .expect("id");
+            let stored: String = c
+                .query_row("SELECT name FROM sub_locations WHERE id = ?1", params![id], |r| r.get(0))
+                .unwrap();
+            assert_eq!(stored, "Rack-7");
+        });
+    }
+
+    #[test]
+    fn sub_location_existing_returns_id() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            let parent = seed_location(c, "MainShop", true);
+            let existing = seed_sub_location(c, parent, "Rack-1", "A1");
+            let resolved = resolve_sub_location(c, parent, Some("Rack-1"), Some("A1"))
+                .unwrap()
+                .expect("id");
+            assert_eq!(resolved, existing);
+        });
+    }
+
+    #[test]
+    fn sub_location_without_position_errors() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            let parent = seed_location(c, "MainShop", true);
+            let err = resolve_sub_location(c, parent, Some("Rack-7"), None).unwrap_err();
+            assert!(err.to_string().contains("requires a position"));
+        });
+    }
+
+    #[test]
+    fn brand_existing_returns_id() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            let resolved = resolve_brand(c, Some("Berger Paints")).unwrap();
+            assert!(resolved.is_some(), "Berger Paints is pre-seeded by schema_final.sql");
+        });
+    }
+
+    #[test]
+    fn brand_new_auto_creates_with_derived_prefix() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            let id = resolve_brand(c, Some("Foo Bar")).unwrap().expect("id");
+            let prefix: String = c
+                .query_row("SELECT prefix FROM brands WHERE id = ?1", params![id], |r| r.get(0))
+                .unwrap();
+            // make_name_abbreviation("Foo Bar") → "FOOB" (first word "Foo"→"FOO", second "Bar"→"B" → break at 4)
+            assert_eq!(prefix, "FOOB");
+        });
+    }
+
+    #[test]
+    fn brand_prefix_conflict_errors() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            seed_brand(c, "Apple Inc", "APP");
+            let err = resolve_brand(c, Some("Apple")).unwrap_err();
+            assert!(err.to_string().contains("already owned"));
+        });
+    }
 }

@@ -1,6 +1,6 @@
 // Inward detail page — read-only view of a past inward.
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Printer, Truck } from "lucide-react";
 
 import { Badge, Button, Card, EmptyState, Money } from "../../components/ui";
@@ -34,6 +34,7 @@ export function InwardDetailPage({ id, onBack }: Props) {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setPurchase(null);
     getPurchase(id)
       .then((p) => {
         if (cancelled) return;
@@ -54,8 +55,11 @@ export function InwardDetailPage({ id, onBack }: Props) {
     };
   }, [id]);
 
+  // ponytail: cancelled flag prevents post-unmount DB writes + hash redirect
+  const batchPrintCancelled = useRef(false);
   async function handleBatchPrint() {
     if (!purchase) return;
+    batchPrintCancelled.current = false;
     try {
       const [shopName, allItems, brands] = await Promise.all([
         getSetting("shop_name").catch(() => ""),
@@ -65,6 +69,7 @@ export function InwardDetailPage({ id, onBack }: Props) {
       const seedRows: SeedRow[] = [];
       let nextId = 1;
       for (const line of purchase.items) {
+        if (batchPrintCancelled.current) return;
         const item = allItems.find((i) => i.id === line.item_id);
         if (!item) continue;
         let barcode = item.barcode;
@@ -94,6 +99,7 @@ export function InwardDetailPage({ id, onBack }: Props) {
           });
         }
       }
+      if (batchPrintCancelled.current) return;
       if (seedRows.length === 0) {
         toast.warning("No labels to print — items missing barcodes");
         return;
@@ -101,7 +107,7 @@ export function InwardDetailPage({ id, onBack }: Props) {
       useLabelBatchSeed.getState().setSeed(seedRows, `Inward #${purchase.id}`);
       window.location.hash = "#/barcodes";
     } catch (e) {
-      toast.error(extractError(e));
+      if (!batchPrintCancelled.current) toast.error(extractError(e));
     }
   }
 

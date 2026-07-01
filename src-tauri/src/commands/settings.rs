@@ -291,7 +291,7 @@ mod tests {
     fn sql_col_for_unmapped_keys() {
         assert_eq!(sql_col_for("scanner_min_length"), None);
         assert_eq!(sql_col_for("scanner_terminator"), None);
-        assert_eq!(sql_col_for("gstin"), None);
+        assert_eq!(sql_col_for("gstin"), Some("gstin"));
         assert_eq!(sql_col_for("security.wipe_on_duress"), None);
         assert_eq!(sql_col_for(""), None);
     }

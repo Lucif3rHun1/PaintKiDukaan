@@ -89,7 +89,9 @@ CREATE TABLE IF NOT EXISTS lockouts (
 /// Migrate an existing single-row keywrap table (pre-PDE) to the new schema
 /// with `role` and `pin_verifier` columns. Idempotent: no-op if already migrated.
 pub fn migrate_keystore_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
-    let has_role = conn.prepare("SELECT role FROM keywrap LIMIT 0").is_ok();
+    // ponytail: prepare() defers column validation in SQLite — always returns Ok.
+    // execute() runs the statement and actually checks column existence.
+    let has_role = conn.execute("SELECT role FROM keywrap LIMIT 0", []).is_ok();
 
     if has_role {
         return Ok(());

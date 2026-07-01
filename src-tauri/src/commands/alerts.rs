@@ -420,14 +420,15 @@ fn refresh_low_stock_alerts(conn: &rusqlite::Connection) -> Result<(), AppError>
 fn refresh_day_close_alerts(conn: &rusqlite::Connection) -> Result<(), AppError> {
     // Ponytail: We check YESTERDAY's day_close, not today's. During a calendar
     // day the shift is still open — overdue means yesterday was never closed.
-    let yesterday_ms = (chrono::Local::now() - chrono::Duration::days(1))
-        .date_naive()
+    let yesterday_naive = (chrono::Local::now() - chrono::Duration::days(1)).date_naive();
+    // day_close.day is TEXT 'YYYY-MM-DD', so we must match that format.
+    let yesterday_str = yesterday_naive.format("%Y-%m-%d").to_string();
+    let yesterday_display = yesterday_naive.format("%d/%m/%Y").to_string();
+    // Also compute epoch ms for entity_id (keeps backward compat with existing alerts).
+    let yesterday_ms = yesterday_naive
         .and_hms_opt(0, 0, 0)
         .map(|dt| dt.and_utc().timestamp_millis())
         .unwrap_or(0);
-    let yesterday_display = chrono::NaiveDateTime::from_timestamp_millis(yesterday_ms)
-        .map(|dt| dt.format("%d/%m/%Y").to_string())
-        .unwrap_or_default();
 
     let mut stmt = conn.prepare(
         "SELECT id, name FROM users WHERE is_active = 1 AND role IN ('owner', 'cashier')",
@@ -442,7 +443,7 @@ fn refresh_day_close_alerts(conn: &rusqlite::Connection) -> Result<(), AppError>
         let closed: bool = conn
             .query_row(
                 "SELECT 1 FROM day_close WHERE day = ?1 LIMIT 1",
-                params![yesterday_ms],
+                params![yesterday_str],
                 |_row| Ok(true),
             )
             .optional()?

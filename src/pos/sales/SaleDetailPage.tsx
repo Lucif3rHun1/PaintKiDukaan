@@ -35,6 +35,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setSale(null);
     getSale(id)
       .then((match) => {
         if (cancelled) return;

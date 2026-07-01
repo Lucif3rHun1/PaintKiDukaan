@@ -455,7 +455,22 @@ export function buildReturnReceiptPdf(spec: ReturnReceiptSpec): jsPDF {
   for (const line of ret.lines) {
     const nameLines: string[] = doc.splitTextToSize(line.item_name, nameColW);
     const rowH = nameLines.length * 4;
-    if (y + rowH > pageH - margin) { doc.addPage(); y = margin; }
+    if (y + rowH > pageH - margin) {
+      doc.addPage();
+      y = margin;
+      // Redraw table header on new page so columns are visible
+      doc.setFillColor(...PRIMARY);
+      doc.rect(tableX, y - 4, tableW, 8, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(255, 255, 255);
+      doc.text("Item", tableX + 2, y + 1);
+      doc.text("Qty", colQty, y + 1, { align: "right" });
+      doc.text("Refund", colAmt, y + 1, { align: "right" });
+      y += 7;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...DARK);
+    }
     for (let i = 0; i < nameLines.length; i++) {
       doc.text(nameLines[i], tableX + 2, y + i * 4);
     }

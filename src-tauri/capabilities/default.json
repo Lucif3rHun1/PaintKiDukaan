@@ -15,7 +15,6 @@
     "log:default",
     "autostart:default",
     "updater:default",
-    "dialog:default",
     "process:default",
     "process:allow-restart"
   ]

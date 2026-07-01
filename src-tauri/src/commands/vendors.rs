@@ -272,6 +272,11 @@ pub fn record_vendor_payment(
         return Err(AppError::Validation("mode is required".into()));
     }
     let now = chrono::Utc::now().timestamp_millis();
+    let date_ms = chrono::NaiveDate::parse_from_str(&payload.date, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|t| t.and_utc().timestamp_millis())
+        .unwrap_or(now);
     db.with_tx(|tx| {
         // Ensure vendor exists.
         let exists: bool = tx.query_row(
@@ -288,7 +293,7 @@ pub fn record_vendor_payment(
                 payload.mode,
                 payload.amount,
                 payload.notes,
-                now,
+                date_ms,
                 user.id,
             ],
         )?;

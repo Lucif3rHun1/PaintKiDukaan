@@ -24,6 +24,7 @@ export function ReturnDetailPage({ id, onBack }: Props) {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setRet(null);
     getSaleReturn(id)
       .then((match) => {
         if (cancelled) return;

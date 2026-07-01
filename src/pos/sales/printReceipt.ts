@@ -132,36 +132,39 @@ export async function printSaleReceipt(
     return { destination: "thermal" };
   }
 
-  await printReceiptPdf({
-    shop_name: settings.shopName,
-    shop_address: settings.shopAddress,
-    shop_phone: settings.shopPhone,
-    shop_gstin: settings.shopGstin,
-    paper_size: settings.receiptPaperSize,
-    header: settings.receiptHeader,
-    footer: settings.receiptFooter,
-    terms: settings.receiptTerms,
-    sale,
-  });
-
   let devPdfPath: string | undefined;
-  if (!isWindows()) {
-    try {
-      const blob = await buildReceiptPdfBlob({
-        shop_name: settings.shopName,
-        shop_address: settings.shopAddress,
-        shop_phone: settings.shopPhone,
-        shop_gstin: settings.shopGstin,
-        paper_size: settings.receiptPaperSize,
-        header: settings.receiptHeader,
-        footer: settings.receiptFooter,
-        terms: settings.receiptTerms,
-        sale,
-      });
-      const base64 = await blobToBase64(blob);
-      devPdfPath = await ipc.printReceiptDev(sale.id, base64);
-    } catch {
-      devPdfPath = undefined;
+  try {
+    await printReceiptPdf({
+      shop_name: settings.shopName,
+      shop_address: settings.shopAddress,
+      shop_phone: settings.shopPhone,
+      shop_gstin: settings.shopGstin,
+      paper_size: settings.receiptPaperSize,
+      header: settings.receiptHeader,
+      footer: settings.receiptFooter,
+      terms: settings.receiptTerms,
+      sale,
+    });
+  } catch {
+    // ponytail: browser print failed (e.g. popup blocked) — fall back to dev PDF on non-Windows
+    if (!isWindows()) {
+      try {
+        const blob = await buildReceiptPdfBlob({
+          shop_name: settings.shopName,
+          shop_address: settings.shopAddress,
+          shop_phone: settings.shopPhone,
+          shop_gstin: settings.shopGstin,
+          paper_size: settings.receiptPaperSize,
+          header: settings.receiptHeader,
+          footer: settings.receiptFooter,
+          terms: settings.receiptTerms,
+          sale,
+        });
+        const base64 = await blobToBase64(blob);
+        devPdfPath = await ipc.printReceiptDev(sale.id, base64);
+      } catch {
+        devPdfPath = undefined;
+      }
     }
   }
 
