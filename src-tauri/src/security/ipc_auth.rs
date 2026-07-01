@@ -61,7 +61,7 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (180 total).
+/// Complete ACL table for every command registered in `invoke_handler` (198 total).
 ///
 /// Classification:
 /// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.
@@ -211,6 +211,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Stocker,
     },
     CommandAcl {
+        name: "cmd_list_items_paged",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
         name: "get_item",
         min_role: Role::Stocker,
     },
@@ -220,6 +224,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "list_brands",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_list_brands_paged",
         min_role: Role::Stocker,
     },
     CommandAcl {
@@ -243,6 +251,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Stocker,
     },
     CommandAcl {
+        name: "cmd_list_customer_types_paged",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
         name: "list_locations",
         min_role: Role::Stocker,
     },
@@ -252,6 +264,14 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_list_formulas",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_list_formulas_paged",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_formula_metrics",
         min_role: Role::Stocker,
     },
     CommandAcl {
@@ -414,6 +434,14 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Cashier,
     },
     CommandAcl {
+        name: "cmd_list_customers_paged",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_customer_metrics",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
         name: "lookup_customer",
         min_role: Role::Cashier,
     },
@@ -448,6 +476,14 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "list_vendors",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_vendors_paged",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_vendor_metrics",
         min_role: Role::Cashier,
     },
     CommandAcl {
@@ -508,7 +544,23 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Cashier,
     },
     CommandAcl {
+        name: "cmd_list_sales_paged",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
         name: "cmd_list_sale_returns",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_sale_returns_paged",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_sales_period_summary",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_sale_returns_period_summary",
         min_role: Role::Cashier,
     },
     CommandAcl {
@@ -534,6 +586,14 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_list_purchases",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_purchases_paged",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_purchase_period_summary",
         min_role: Role::Cashier,
     },
     CommandAcl {
@@ -575,6 +635,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_list_day_close",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_day_close_paged",
         min_role: Role::Cashier,
     },
     CommandAcl {
@@ -624,6 +688,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_stock_health_summary",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_sales_report_subgroups_paged",
         min_role: Role::Cashier,
     },
     CommandAcl {
@@ -777,6 +845,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Owner,
     },
     CommandAcl {
+        name: "cmd_list_categories_paged",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
         name: "create_category",
         min_role: Role::Owner,
     },
@@ -798,6 +870,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_list_formula_sales",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
+        name: "cmd_list_formula_sales_paged",
         min_role: Role::Cashier,
     },
     // Drafts (autosave-as-draft for POS forms)
@@ -954,8 +1030,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            180,
-            "ACL has {} entries, expected 180",
+            198,
+            "ACL has {} entries, expected 198",
             COMMAND_ACL.len()
         );
     }

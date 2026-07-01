@@ -11,11 +11,30 @@ import type {
   ItemLookup,
   ItemUpdate,
   LabelPrintRecord,
+  ListPage,
+  ListQuery,
   NewItem,
 } from "../types";
 
 export async function createItem(payload: NewItem): Promise<Item> {
   return invoke<Item>("create_item", { payload });
+}
+
+export async function listItemsPaged(query: ListQuery): Promise<ListPage<Item>> {
+  return invoke<ListPage<Item>>("cmd_list_items_paged", { query });
+}
+
+export interface StockHealthSummary {
+  total_active_items: number;
+  healthy_count: number;
+  low_count: number;
+  zero_count: number;
+  negative_count: number;
+  retail_value_paise: number;
+}
+
+export async function listStockHealthSummary(): Promise<StockHealthSummary> {
+  return invoke<StockHealthSummary>("cmd_stock_health_summary");
 }
 
 export async function updateItem(
@@ -39,6 +58,10 @@ export async function lookupItem(code: string): Promise<ItemLookup | null> {
 
 export async function listBrands(): Promise<Brand[]> {
   return invoke<Brand[]>("list_brands");
+}
+
+export async function listBrandsPaged(query: ListQuery): Promise<ListPage<Brand>> {
+  return invoke<ListPage<Brand>>("cmd_list_brands_paged", { query });
 }
 
 export async function createBrand(name: string, codePrefix: string): Promise<Brand> {

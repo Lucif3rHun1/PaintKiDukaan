@@ -3,12 +3,20 @@
  */
 import { invoke } from "../ipc";
 import type {
+  ListPage,
+  ListQuery,
   NewVendor,
   Vendor,
   VendorOutstanding,
   VendorPayment,
   VendorUpdate,
 } from "../types";
+
+export interface VendorMetrics {
+  total: number;
+  active: number;
+  inactive: number;
+}
 
 export async function createVendor(payload: NewVendor): Promise<Vendor> {
   return invoke<Vendor>("create_vendor", { payload });
@@ -22,6 +30,14 @@ export async function listVendors(
     query: query ?? null,
     include_inactive: includeInactive,
   });
+}
+
+export async function listVendorsPaged(query: ListQuery): Promise<ListPage<Vendor>> {
+  return invoke<ListPage<Vendor>>("cmd_list_vendors_paged", { query });
+}
+
+export async function listVendorMetrics(): Promise<VendorMetrics> {
+  return invoke<VendorMetrics>("cmd_vendor_metrics");
 }
 
 export async function updateVendor(

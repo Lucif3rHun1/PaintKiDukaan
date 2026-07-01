@@ -2,12 +2,16 @@
  * Customer-types domain API.
  */
 import { invoke } from "../ipc";
-import type { CustomerType, NewCustomerType } from "../types";
+import type { CustomerType, ListPage, ListQuery, NewCustomerType } from "../types";
 
 export async function listCustomerTypes(
   includeInactive = false,
 ): Promise<CustomerType[]> {
   return invoke<CustomerType[]>("list_customer_types", { include_inactive: includeInactive });
+}
+
+export async function listCustomerTypesPaged(query: ListQuery): Promise<ListPage<CustomerType>> {
+  return invoke<ListPage<CustomerType>>("cmd_list_customer_types_paged", { query });
 }
 
 export async function addCustomerType(

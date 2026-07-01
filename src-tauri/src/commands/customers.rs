@@ -12,7 +12,6 @@ use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
-use rusqlite::params_from_iter;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 

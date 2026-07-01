@@ -1,17 +1,16 @@
 /**
  * CustomerList — searchable list with flag indicator + role-gated actions.
- * Uses canonical SearchInput, DataTable, PaginationControls, and usePaginatedQuery.
+ * Renders via <DataList> server source (cmd_list_customers_paged).
  */
 import { useMemo } from "react";
-import { UserPlus, Flag, Phone, Banknote } from "lucide-react";
+import { Flag, Phone, UserPlus, Banknote } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
-import { Alert, Badge, Button, Card, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
+import { Badge, Button, Card, DataList, EmptyState, Money } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
-import { listCustomers } from "./api";
-import { usePaginatedQuery } from "../../lib/query";
+import { listCustomersPaged, listCustomerMetrics } from "./api";
 import type { Customer } from "../types";
-import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
@@ -36,38 +35,17 @@ export function CustomerList({
   const canCreate = onCreate && (role === "owner" || role === "cashier");
   const canPay = (role === "owner" || role === "cashier") && onRecordPayment;
 
-  const {
-    data: items,
-    allData,
-    isLoading,
-    isFetching,
-    error,
-    page,
-    setPage,
-    search,
-    setSearch,
-    totalItems,
-    totalPages,
-    pageSize,
-    refetch,
-  } = usePaginatedQuery<Customer>({
-    queryKey: ["customers", refreshKey ?? 0],
-    pageSize: PAGE_SIZE,
-    queryFn: ({ search: debouncedSearch }) =>
-      listCustomers(debouncedSearch || undefined),
+  const customerMetrics = useQuery({
+    queryKey: ["list-metrics", "cmd_customer_metrics"],
+    queryFn: listCustomerMetrics,
   });
 
-  const metrics = useMemo(() => {
-    let active = 0;
-    let inactive = 0;
-    let flagged = 0;
-    for (const c of allData) {
-      if (c.is_active) active++;
-      else inactive++;
-      if (c.is_flagged) flagged++;
-    }
-    return { total: allData.length, active, inactive, flagged };
-  }, [allData]);
+  const serverSource = useMemo(() => ({
+    endpoint: "cmd_list_customers_paged",
+    pageSize: PAGE_SIZE,
+    initialSort: { field: "name", dir: "asc" as const },
+    clientFn: listCustomersPaged,
+  }), [refreshKey]);
 
   function handlePay(c: Customer) {
     if (onRecordPayment) {
@@ -80,6 +58,7 @@ export function CustomerList({
   const columns = useMemo<ColumnDef<Customer>[]>(() => {
     const cols: ColumnDef<Customer>[] = [
       {
+        id: "name",
         header: "Name",
         cell: (c) => (
           <div>
@@ -99,8 +78,12 @@ export function CustomerList({
             ) : null}
           </div>
         ),
+        sortField: "name",
+        sortable: true,
+        searchable: true,
       },
       {
+        id: "phone",
         header: "Phone",
         cell: (c) =>
           c.phone ? (
@@ -111,8 +94,11 @@ export function CustomerList({
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
+        sortField: "phone",
+        sortable: true,
       },
       {
+        id: "type",
         header: "Type",
         cell: (c) => (
           <span className="text-muted-foreground">
@@ -121,6 +107,7 @@ export function CustomerList({
         ),
       },
       {
+        id: "status",
         header: "Status",
         cell: (c) =>
           !c.is_active ? (
@@ -134,6 +121,7 @@ export function CustomerList({
           ),
       },
       {
+        id: "credit",
         header: "Credit",
         align: "right",
         cell: (c) =>
@@ -144,14 +132,18 @@ export function CustomerList({
           ),
       },
       {
+        id: "opening",
         header: "Opening",
         align: "right",
         cell: (c) => <Money paise={c.opening_balance_paise} muted />,
+        sortField: "opening_balance_paise",
+        sortable: true,
       },
     ];
 
     if (canPay) {
       cols.push({
+        id: "action",
         header: "Action",
         align: "right",
         cell: (c) => (
@@ -174,22 +166,20 @@ export function CustomerList({
   const rowClassName = (c: Customer) => (c.is_active ? "" : "opacity-60");
 
   useFocusShortcut({ key: "F2", selector: '[data-shortcut="search"]', description: "Focus search" });
-  useShortcut({ key: "F5", scope: "page", description: "Refresh list", onMatch: () => { void refetch(); } });
+  useShortcut({
+    key: "F5",
+    scope: "page",
+    description: "Refresh list",
+    onMatch: () => {
+      void customerMetrics.refetch();
+    },
+  });
   useShortcut({
     key: "F6",
     scope: "page",
     description: "New customer",
     onMatch: () => {
       if (canCreate && onCreate) onCreate();
-    },
-  });
-  useShortcut({
-    key: "Escape",
-    allowInInputs: true,
-    preventDefault: true,
-    description: "Clear search",
-    onMatch: () => {
-      if (search) setSearch("");
     },
   });
 
@@ -199,103 +189,65 @@ export function CustomerList({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Card as="section" className="space-y-1 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Total</p>
-          <p className="text-2xl font-semibold tabular-nums text-foreground">{metrics.total}</p>
+          <p className="text-2xl font-semibold tabular-nums text-foreground">{customerMetrics.data?.total ?? "—"}</p>
         </Card>
         <Card as="section" className="space-y-1 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Active</p>
-          <p className="text-2xl font-semibold tabular-nums text-success">{metrics.active}</p>
+          <p className="text-2xl font-semibold tabular-nums text-success">{customerMetrics.data?.active ?? "—"}</p>
         </Card>
         <Card as="section" className="space-y-1 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Inactive</p>
-          <p className="text-2xl font-semibold tabular-nums text-muted-foreground">{metrics.inactive}</p>
+          <p className="text-2xl font-semibold tabular-nums text-muted-foreground">{customerMetrics.data?.inactive ?? "—"}</p>
         </Card>
         <Card
           as="section"
           className={
-            metrics.flagged > 0
+            (customerMetrics.data?.flagged ?? 0) > 0
               ? "space-y-1 border-warning/40 bg-warning/5 p-4"
               : "space-y-1 p-4"
           }
         >
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Flagged</p>
-          <p className={`text-2xl font-semibold tabular-nums ${metrics.flagged > 0 ? "text-warning" : "text-foreground"}`}>
-            {metrics.flagged}
+          <p className={`text-2xl font-semibold tabular-nums ${(customerMetrics.data?.flagged ?? 0) > 0 ? "text-warning" : "text-foreground"}`}>
+            {customerMetrics.data?.flagged ?? "—"}
           </p>
         </Card>
       </div>
 
-      {/* ── Filter bar ───────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search by name or phone…"
-          ariaLabel="Search customers"
-          data-shortcut="search"
-          className="min-w-[220px] flex-1"
-        />
-        {canCreate ? (
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            icon={UserPlus}
-            onClick={onCreate}
-            shortcut="F6"
-          >
-            New Customer
-          </Button>
-        ) : null}
-      </div>
-
-      {error ? (
-        <Alert title="Could not load customers" variant="destructive">
-          {extractError(error)}
-        </Alert>
-      ) : null}
-
-      <DataTable
-        data={items}
+      <DataList
+        source={serverSource}
         columns={columns}
         keyExtractor={(c) => c.id}
-        loading={isLoading || isFetching}
-        emptyState={
+        searchPlaceholder="Search by name or phone…"
+        emptyState={({ hasActiveFilter }) => (
           <EmptyState
             icon={UserPlus}
-            title={search ? "No matches" : "No customers yet"}
+            title={hasActiveFilter ? "No matches" : "No customers yet"}
             description={
-              search
-                ? `Nothing matches "${search}". Try a different search.`
+              hasActiveFilter
+                ? "Nothing matches your search. Try a different query."
                 : "Add the first customer to start recording sales and credit."
             }
             primary={
               canCreate ? (
-                <Button
-                  type="button"
-                  onClick={onCreate}
-                  icon={UserPlus}
-                >
+                <Button type="button" onClick={onCreate} icon={UserPlus}>
                   Add Customer
                 </Button>
               ) : undefined
             }
           />
-        }
-        error={error}
-        onRetry={refetch}
+        )}
         onRowClick={onSelect ? (c) => onSelect(c) : undefined}
         rowClassName={rowClassName}
+        actions={
+          canCreate ? (
+            <Button type="button" variant="primary" size="sm" icon={UserPlus} onClick={onCreate} shortcut="F6">
+              New Customer
+            </Button>
+          ) : null
+        }
+        height={520}
       />
-
-      {!isLoading && allData.length > 0 ? (
-        <PaginationControls
-          page={page}
-          totalPages={totalPages}
-          totalItems={totalItems}
-          pageSize={pageSize}
-          onPageChange={setPage}
-        />
-      ) : null}
     </div>
   );
 }

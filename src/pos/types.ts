@@ -40,6 +40,9 @@ export interface SaleItem {
   line_discount: number;
   shade_note?: string | null;
   line_order: number;
+  /** Aggregated qty already returned across all prior returns for this
+   * sale_item. Use `qty - returned_qty` for refundable headroom. Defaults to 0. */
+  returned_qty?: number;
 }
 
 export interface Sale {

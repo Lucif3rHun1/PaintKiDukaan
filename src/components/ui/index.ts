@@ -19,7 +19,18 @@ export { Toaster } from "./Toaster";
 export { PaginationControls } from "./PaginationControls";
 export { PageHeader, type PageHeaderProps, type PageHeaderAccent } from "./PageHeader";
 export { SearchInput } from "./SearchInput";
-export { DataTable, type ColumnDef } from "./DataTable";
+export { DataTable, type ColumnDef as LegacyColumnDef } from "./DataTable";
+export {
+  DataList,
+  type ColumnDef,
+  type DataListProps,
+  type DataListSource,
+  type DataListClientSource,
+  type DataListServerSource,
+  type DataListSelection,
+  type GroupAccessor,
+  type DataListRole,
+} from "./DataList";
 export { KbdHint } from "./KbdHint";
 export { DatePicker } from "./DatePicker";
 export { Radio } from "./Radio";

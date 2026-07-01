@@ -1,26 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 
 import {
-  Alert,
   Badge,
   Button,
+  DataList,
   EmptyState,
-  InlineDialog,
   Money,
-  SearchInput,
-  Skeleton,
 } from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { formatDateForDisplay } from "../../lib/date";
 import { toast } from "../../lib/feedback/toast";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
-import { usePaginatedQuery } from "../../lib/query";
-import { listFormulas } from "./api";
+import { invalidateList, invalidateListMetrics } from "../../lib/query";
+import { listFormulasPaged, listFormulaMetrics } from "./api";
 import type { Formula } from "./api";
 import { FormulaForm } from "./FormulaForm";
-import { extractError } from "../../lib/extractError";
+import { useMemo } from "react";
 
 type Mode = "list" | "create";
 type Filter = "all" | "active" | "inactive";
@@ -37,6 +35,19 @@ export function FormulasPage({ role }: Props) {
   const [mode, setMode] = useState<Mode>("list");
   const [filter, setFilter] = useState<Filter>(readFilterFromHash);
 
+  const formulaMetrics = useQuery({
+    queryKey: ["list-metrics", "cmd_formula_metrics"],
+    queryFn: listFormulaMetrics,
+  });
+
+  const serverSource = useMemo(() => ({
+    endpoint: "cmd_list_formulas_paged",
+    pageSize: PAGE_SIZE,
+    initialSort: { field: "id_code", dir: "asc" as const },
+    filters: { active: filter === "all" ? undefined : filter === "active" },
+    clientFn: listFormulasPaged,
+  }), [filter]);
+
   useEffect(() => {
     writeFilterToHash(filter);
   }, [filter]);
@@ -47,44 +58,13 @@ export function FormulasPage({ role }: Props) {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  const {
-    data: formulas,
-    allData,
-    isLoading,
-    isFetching,
-    error,
-    page,
-    setPage,
-    search,
-    setSearch,
-    totalItems,
-    totalPages,
-    pageSize,
-    refetch,
-  } = usePaginatedQuery<Formula>({
-    queryKey: ["formulas", filter],
-    pageSize: PAGE_SIZE,
-    queryFn: ({ search: q }) =>
-      listFormulas({
-        query: q || undefined,
-        active: filter === "all" ? null : filter === "active",
-      }),
-    clientSort: (a, b) => {
-      const aTime = a.last_sold_at ?? "";
-      const bTime = b.last_sold_at ?? "";
-      if (aTime !== bTime) return bTime.localeCompare(aTime);
-      return a.id_code.localeCompare(b.id_code, undefined, { numeric: true });
-    },
-  });
-  void pageSize;
-
   useFocusShortcut({ key: "F2", selector: '[data-shortcut="search"]', description: "Focus search" });
   useShortcut({
     key: "F5",
     scope: "page",
     description: "Refresh list",
     onMatch: () => {
-      if (mode === "list") void refetch();
+      if (mode === "list") void formulaMetrics.refetch();
     },
   });
   useShortcut({
@@ -101,6 +81,8 @@ export function FormulasPage({ role }: Props) {
       toast.success(`Saved ${saved.id_code}`);
       setMode("list");
       queryClient.invalidateQueries({ queryKey: ["formulas"] });
+      void invalidateList(queryClient, "cmd_list_formulas_paged");
+      void invalidateListMetrics(queryClient, "cmd_formula_metrics");
     },
     [queryClient],
   );
@@ -115,16 +97,64 @@ export function FormulasPage({ role }: Props) {
     );
   }
 
+  const formulaColumns: ColumnDef<Formula>[] = [
+    {
+      header: "Shade ID",
+      cell: (f) => <span className="font-mono tabular-nums text-foreground">{f.id_code}</span>,
+      sortField: "id_code",
+      sortable: true,
+    },
+    {
+      header: "Name",
+      cell: (f) => f.name ? <span className="text-foreground">{f.name}</span> : <span className="text-muted-foreground">—</span>,
+      sortField: "name",
+      sortable: true,
+      searchable: true,
+    },
+    {
+      header: "Base",
+      cell: (f) => (
+        <span className="text-muted-foreground">
+          {f.with_base ? f.base_item_name ?? "With base" : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Price",
+      align: "right",
+      cell: (f) => <Money paise={f.retail_price_paise} />,
+    },
+    {
+      header: "Sales",
+      align: "right",
+      cell: (f) => <span className="tabular-nums text-muted-foreground">{f.sales_count}</span>,
+      sortField: "sales_count",
+      sortable: true,
+    },
+    {
+      header: "Last sold",
+      cell: (f) => (
+        <span className="text-xs text-muted-foreground">
+          {f.last_sold_at ? formatDateForDisplay(f.last_sold_at) : "—"}
+        </span>
+      ),
+      sortField: "last_sold_at",
+      sortable: true,
+    },
+    {
+      header: "Status",
+      cell: (f) =>
+        f.is_active ? (
+          <Badge variant="success" size="sm">Active</Badge>
+        ) : (
+          <Badge variant="muted" size="sm">Inactive</Badge>
+        ),
+    },
+  ];
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search by shade ID or name…"
-          ariaLabel="Search formulas"
-          data-shortcut="search"
-        />
         <div
           role="radiogroup"
           aria-label="Filter by status"
@@ -160,117 +190,40 @@ export function FormulasPage({ role }: Props) {
         ) : null}
       </div>
 
-      {error ? (
-        <Alert variant="destructive">{extractError(error)}</Alert>
-      ) : null}
-      {isLoading || isFetching ? <Skeleton variant="card" className="h-40" /> : null}
-
-      {!isLoading && allData.length === 0 ? (
-        <EmptyState
-          icon={Plus}
-          title="No formulas match this view"
-          description={
-            canEdit
-              ? "Create a shade mix — each formula gets a unique ID like 8827 that cashiers search at the counter."
-              : "Add a formula in Settings or ask an owner."
-          }
-          primary={
-            canEdit ? (
-              <Button type="button" onClick={() => setMode("create")}>
-                New formula
-              </Button>
-            ) : undefined
-          }
-        />
-      ) : null}
-
-      {!isLoading && allData.length > 0 ? (
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Shade ID</th>
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 font-medium">Base</th>
-                  <th className="px-3 py-2 text-right font-medium">Price</th>
-                  <th className="px-3 py-2 text-right font-medium">Sales</th>
-                  <th className="px-3 py-2 font-medium">Last sold</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {formulas.map((f) => (
-                  <tr
-                    key={f.id}
-                    onClick={() => (window.location.hash = `#/formulas/${f.id}`)}
-                    className="cursor-pointer border-b border-border transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-                  >
-                    <td className="px-3 py-2 font-mono tabular-nums text-foreground">
-                      {f.id_code}
-                    </td>
-                    <td className="px-3 py-2 text-foreground">
-                      {f.name ? f.name : <span className="text-muted-foreground">—</span>}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
-                      {f.with_base
-                        ? f.base_item_name ?? "With base"
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right text-foreground">
-                      <Money paise={f.retail_price_paise} />
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {f.sales_count}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {f.last_sold_at ? formatDateForDisplay(f.last_sold_at) : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      {f.is_active ? (
-                        <Badge variant="success" size="sm">Active</Badge>
-                      ) : (
-                        <Badge variant="muted" size="sm">Inactive</Badge>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : null}
-
-      {!isLoading && allData.length > 0 ? (
-        <div className="flex items-center justify-between rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
-          <span>
-            Showing {formulas.length} of {totalItems}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={page <= 1}
-              onClick={() => setPage(page - 1)}
-            >
-              Prev
-            </Button>
-            <span>
-              Page {page} / {totalPages || 1}
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={page >= totalPages}
-              onClick={() => setPage(page + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      ) : null}
+      <DataList
+        source={serverSource}
+        columns={formulaColumns}
+        keyExtractor={(f) => f.id}
+        searchPlaceholder="Search by shade ID or name…"
+        emptyMessage="No formulas match this view"
+        emptyCta={
+          <EmptyState
+            icon={Plus}
+            title="No formulas match this view"
+            description={
+              canEdit
+                ? "Create a shade mix — each formula gets a unique ID like 8827 that cashiers search at the counter."
+                : "Add a formula in Settings or ask an owner."
+            }
+            primary={
+              canEdit ? (
+                <Button type="button" onClick={() => setMode("create")}>New formula</Button>
+              ) : undefined
+            }
+          />
+        }
+        onRowClick={(f) => (window.location.hash = `#/formulas/${f.id}`)}
+        headerMetrics={
+          formulaMetrics.data ? (
+            <div className="flex gap-3 text-xs text-muted-foreground">
+              <span>Total: <strong className="text-foreground">{formulaMetrics.data.total}</strong></span>
+              <span>Active: <strong className="text-success">{formulaMetrics.data.active}</strong></span>
+              <span>Inactive: <strong className="text-muted-foreground">{formulaMetrics.data.inactive}</strong></span>
+            </div>
+          ) : undefined
+        }
+        height={520}
+      />
     </div>
   );
 }

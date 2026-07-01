@@ -5,6 +5,8 @@ description = "PaintKiDukaan Master — paint shop inventory + billing system"
 authors = ["PaintKiDukaan"]
 edition = "2021"
 rust-version = "1.77"
+default-run = "paintkiduakan-master"
+autobenches = false
 
 [lib]
 name = "paintkiduakan_lib"
@@ -14,6 +16,10 @@ crate-type = ["lib", "cdylib"]
 [[bin]]
 name = "paintkiduakan-master"
 path = "src/main.rs"
+
+[[bin]]
+name = "bench_list_items"
+path = "benches/list_items.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

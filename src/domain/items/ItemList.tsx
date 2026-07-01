@@ -31,6 +31,7 @@ import {
   Alert,
   Badge,
   Button,
+  DataList,
   DownloadMenu,
   EmptyState,
   MetricCard,
@@ -40,14 +41,14 @@ import {
   Select,
   Skeleton,
 } from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { formatRupeesFromPaise } from "../../lib/money";
-import { toTitleCase } from "../../lib/format/titleCase";
 import { toast } from "../../lib/feedback/toast";
-import { usePaginatedQuery } from "../../lib/query";
-import { adjustStock, getSetting, listBrands, listItems, normalizeItemNames, updateItem } from "./api";
+import { useClientListQuery, invalidateList, invalidateListMetrics } from "../../lib/query";
+import { adjustStock, getSetting, listBrands, listItems, listItemsPaged, listStockHealthSummary, normalizeItemNames, updateItem } from "./api";
 import { formatItemName, brandDisplayName } from "./display";
-import { useQueryClient } from "@tanstack/react-query";
-import type { Brand, Item, SubLocation } from "../types";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Brand, Item, ListPage, ListQuery, SubLocation } from "../types";
 import { ItemForm } from "./ItemForm";
 import { CsvImportDialog } from "./CsvImportDialog";
 import { printLabel } from "../../pos/print";
@@ -115,7 +116,7 @@ export function ItemList({ role }: Props) {
     totalPages,
     pageSize,
     refetch,
-  } = usePaginatedQuery<Item>({
+  } = useClientListQuery<Item>({
     queryKey: ["items", lowStockOnly, activeFilter, sortField, sortDirection],
     pageSize: ITEM_PAGE_SIZE,
     queryFn: ({ search: debouncedSearch }) =>
@@ -128,6 +129,54 @@ export function ItemList({ role }: Props) {
       }),
     clientSort: sorted,
   });
+
+  // ── PR-3: DataList server source ──
+
+  const stockHealth = useQuery({
+    queryKey: ["list-metrics", "stock_health_summary"],
+    queryFn: listStockHealthSummary,
+  });
+
+  function sortFieldToServer(f: ItemSortField): string {
+    if (f === "sku") return "sku_code";
+    if (f === "stock") return "current_qty";
+    if (f === "retail") return "retail_price_paise";
+    return "name";
+  }
+
+  const listArgs: ListQuery = useMemo(() => ({
+    search: search || undefined,
+    sort_field: sortFieldToServer(sortField),
+    sort_dir: sortDirection,
+    limit: ITEM_PAGE_SIZE,
+    offset: ((page ?? 1) - 1) * ITEM_PAGE_SIZE,
+    filters: {
+      low_stock_only: lowStockOnly,
+      include_inactive: activeFilter === "all",
+      archived_only: activeFilter === "archived",
+    },
+  }), [search, sortField, sortDirection, page, lowStockOnly, activeFilter]);
+
+  const serverSource = useMemo(() => ({
+    endpoint: "cmd_list_items_paged",
+    pageSize: ITEM_PAGE_SIZE,
+    filters: {
+      low_stock_only: lowStockOnly,
+      include_inactive: activeFilter === "all",
+      archived_only: activeFilter === "archived",
+    },
+    initialSort: { field: sortFieldToServer(sortField), dir: sortDirection },
+    clientFn: listItemsPaged,
+  }), [lowStockOnly, activeFilter, sortField, sortDirection]);
+
+  const serverList = useQuery({
+    queryKey: ["list", "cmd_list_items_paged", listArgs],
+    queryFn: () => listItemsPaged(listArgs),
+    placeholderData: (prev) => prev,
+  });
+  const serverTotal = serverList.data?.total ?? 0;
+  const serverLoading = serverList.isLoading;
+  const serverError = serverList.error as Error | null;
 
   useEffect(() => {
     listLocations(false)
@@ -288,6 +337,8 @@ export function ItemList({ role }: Props) {
       // missing). invalidateQueries with a partial key invalidates every
       // page/filter combination so the next read pulls fresh data.
       queryClient.invalidateQueries({ queryKey: ["items"] });
+      void invalidateList(queryClient, "cmd_list_items_paged");
+      void invalidateListMetrics(queryClient, "stock_health_summary");
     } catch (e) {
       toast.error(extractError(e));
     }
@@ -321,6 +372,8 @@ export function ItemList({ role }: Props) {
       toast.success(`Archived ${selected.length} item${selected.length === 1 ? "" : "s"}`);
       setSelectedIds(new Set());
       queryClient.invalidateQueries({ queryKey: ["items"] });
+      void invalidateList(queryClient, "cmd_list_items_paged");
+      void invalidateListMetrics(queryClient, "stock_health_summary");
     } catch (e) {
       toast.error(extractError(e));
     }
@@ -426,6 +479,94 @@ export function ItemList({ role }: Props) {
     });
   }, [allItems, brandNameById, brandPrefixById, locationNameById, subLocationNameById]);
 
+  const itemColumns: ColumnDef<Item>[] = useMemo(() => {
+    const cols: ColumnDef<Item>[] = [
+      {
+        header: "SKU",
+        cell: (i) => <span className="inline-block max-w-[10rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]" title={i.sku_code}>{i.sku_code}</span>,
+        className: "px-3 py-2",
+        sortField: "sku_code",
+        sortable: true,
+      },
+      {
+        header: "Name",
+        cell: (i) => (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium">{formatItemName(i, brands, { style: "prefix" })}</span>
+            {!i.is_active ? <Badge variant="muted">Archived</Badge> : null}
+          </div>
+        ),
+        className: "px-3 py-2",
+        sortField: "name",
+        sortable: true,
+        searchable: true,
+      },
+      {
+        header: "Unit",
+        cell: (i) => <Badge variant="muted">{i.sell_unit}</Badge>,
+        className: "px-3 py-2",
+      },
+      {
+        header: "Location",
+        cell: (i) => formatLocation(i),
+        className: "px-3 py-2 text-xs",
+      },
+    ];
+    if (role === "owner") {
+      cols.push({
+        header: "Cost",
+        cell: (i) => <Money paise={i.cost_paise} />,
+        className: "px-3 py-2 text-right",
+        align: "right",
+        sortField: "cost_paise",
+        sortable: true,
+      });
+    }
+    cols.push(
+      {
+        header: "Retail",
+        cell: (i) => <Money paise={i.retail_price_paise} />,
+        className: "px-3 py-2 text-right",
+        align: "right",
+        sortField: "retail_price_paise",
+        sortable: true,
+      },
+      {
+        header: "Min qty",
+        cell: (i) => i.min_stock,
+        className: "px-3 py-2 text-right text-xs",
+        align: "right",
+      },
+      {
+        header: "Stock",
+        cell: (i) => <StockDisplay currentQty={i.current_qty} minQty={i.min_stock} />,
+        className: "px-3 py-2 text-right",
+        align: "right",
+        sortField: "current_qty",
+        sortable: true,
+      },
+      {
+        header: "Actions",
+        cell: (i) => (
+          <ActionMenu
+            label={`Actions for ${formatItemName(i, brands)}`}
+            items={[
+              ...(canEdit ? [{ label: "Edit", icon: Edit3, onSelect: () => openEdit(i) }] : []),
+              ...(role === "owner" ? [{ label: "Adjust Stock", icon: PackagePlus, onSelect: () => { setStockAdjustItem(i); setStockAdjustQty(""); } }] : []),
+              { label: "Print Barcode", icon: Barcode, onSelect: () => void handlePrint(i), disabled: !i.barcode },
+              { label: "Add Inward", icon: ArrowDownToLine, onSelect: () => (window.location.hash = "#/inward") },
+              { label: "Record Outward", icon: ArrowUpFromLine, onSelect: () => (window.location.hash = "#/sales") },
+              ...(canEdit ? [{ label: i.is_active ? "Archive" : "Restore", icon: Archive, danger: i.is_active, onSelect: () => void handleArchive(i) }] : []),
+            ]}
+          />
+        ),
+        className: "px-3 py-2 text-right",
+        align: "right",
+      },
+    );
+    return cols;
+  }, [brands, role, canEdit]);
+
   const handleStockAdjust = useCallback(async (print = false) => {
     if (!stockAdjustItem || adjustBusy) return;
     const absQty = Number(stockAdjustQty);
@@ -482,12 +623,14 @@ export function ItemList({ role }: Props) {
       setStockAdjustQty("");
       setStockAdjustDir("add");
       refetch();
+      void invalidateList(queryClient, "cmd_list_items_paged");
+      void invalidateListMetrics(queryClient, "stock_health_summary");
     } catch (e) {
       toast.error(extractError(e));
     } finally {
       setAdjustBusy(false);
     }
-  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, adjustBusy, refetch, brands]);
+  }, [stockAdjustItem, stockAdjustQty, stockAdjustDir, adjustBusy, refetch, brands, queryClient]);
 
   if (mode === "create") {
     return (
@@ -514,479 +657,231 @@ export function ItemList({ role }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* ── Metrics cards ────────────────────────────────────── */}
+      {/* ── Metrics cards (always rendered; source depends on flag) ── */}
       <div
         className={`grid grid-cols-2 gap-3 ${
-          metrics.stockAnomaly > 0 ? "sm:grid-cols-5" : "sm:grid-cols-4"
+          (flagOn ? (stockHealth.data?.negative_count ?? 0) : metrics.stockAnomaly) > 0
+            ? "sm:grid-cols-5"
+            : "sm:grid-cols-4"
         }`}
       >
-        <MetricCard
-          label="Total Items"
-          icon={PackagePlus}
-          tone="info"
-        >
-          <span className="text-lg font-semibold tabular-nums">{metrics.total}</span>
+        <MetricCard label="Total Items" icon={PackagePlus} tone="info">
+          <span className="text-lg font-semibold tabular-nums">
+            {flagOn ? (stockHealth.data?.total_active_items ?? "—") : metrics.total}
+          </span>
         </MetricCard>
-        <MetricCard
-          label="Out of Stock"
-          icon={TrendingDown}
-          tone="destructive"
-        >
-          <span className="text-lg font-semibold tabular-nums">{metrics.outOfStock}</span>
+        <MetricCard label="Out of Stock" icon={TrendingDown} tone="destructive">
+          <span className="text-lg font-semibold tabular-nums">
+            {flagOn ? (stockHealth.data?.zero_count ?? "—") : metrics.outOfStock}
+          </span>
         </MetricCard>
-        <MetricCard
-          label="Low Stock"
-          icon={TriangleAlert}
-          tone="warning"
-        >
-          <span className="text-lg font-semibold tabular-nums">{metrics.lowStock}</span>
+        <MetricCard label="Low Stock" icon={TriangleAlert} tone="warning">
+          <span className="text-lg font-semibold tabular-nums">
+            {flagOn ? (stockHealth.data?.low_count ?? "—") : metrics.lowStock}
+          </span>
         </MetricCard>
-        {metrics.stockAnomaly > 0 ? (
-          <MetricCard
-            label="Stock Anomaly"
-            icon={TriangleAlert}
-            tone="destructive"
-          >
-            <span className="text-lg font-semibold tabular-nums">{metrics.stockAnomaly}</span>
+        {(flagOn ? (stockHealth.data?.negative_count ?? 0) : metrics.stockAnomaly) > 0 ? (
+          <MetricCard label="Stock Anomaly" icon={TriangleAlert} tone="destructive">
+            <span className="text-lg font-semibold tabular-nums">
+              {flagOn ? (stockHealth.data?.negative_count ?? "—") : metrics.stockAnomaly}
+            </span>
           </MetricCard>
         ) : null}
-        <MetricCard
-          label="Total Value"
-          icon={IndianRupee}
-          tone="primary"
-        >
+        <MetricCard label="Total Value" icon={IndianRupee} tone="primary">
           <span className="text-lg font-semibold tabular-nums">
-            {formatRupeesFromPaise(metrics.totalRetail)}
+            {flagOn
+              ? formatRupeesFromPaise(stockHealth.data?.retail_value_paise ?? 0)
+              : formatRupeesFromPaise(metrics.totalRetail)}
           </span>
         </MetricCard>
       </div>
 
-      {/* ── Filter bar ───────────────────────────────────────── */}
+      {/* ── Filter bar (always rendered) ── */}
       <div className="flex flex-wrap items-center gap-2">
-        <SearchInput
-          value={search}
-          onChange={(v) => setSearch(v)}
-          placeholder="Search by name, SKU, brand, category, barcode…"
-          ariaLabel="Search inventory"
-          data-shortcut="search"
-        />
+        <SearchInput value={search} onChange={(v) => setSearch(v)} placeholder="Search by name, SKU, brand, category, barcode…" ariaLabel="Search inventory" data-shortcut="search" />
         <label className="flex h-9 items-center gap-1.5 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={lowStockOnly}
-            onChange={(e) => setLowStockOnly(e.target.checked)}
-            className="h-3.5 w-3.5"
-          />
+          <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} className="h-3.5 w-3.5" />
           Low stock
         </label>
-        <Select
-          value={activeFilter}
-          onChange={(e) => {
-            setActiveFilter(e.target.value as "active" | "archived" | "all");
-            setPage(1);
-          }}
-          className="w-auto"
-          size="sm"
-          aria-label="Filter by status"
-          options={[
-            { value: "active", label: "Active" },
-            { value: "archived", label: "Archived" },
-            { value: "all", label: "All" },
-          ]}
-        />
-
-        <Select
-          value={`${sortField}:${sortDirection}`}
-          onChange={(e) => {
-            const [field, direction] = e.target.value.split(":");
-            setSortField(field as ItemSortField);
-            setSortDirection(direction as SortDirection);
-            setPage(1);
-          }}
-          className="w-auto"
-          size="sm"
-          aria-label="Sort inventory"
-          options={[
-            { value: "name:asc", label: "Name A-Z" },
-            { value: "name:desc", label: "Name Z-A" },
-            { value: "sku:asc", label: "SKU A-Z" },
-            { value: "stock:asc", label: "Lowest stock" },
-            { value: "stock:desc", label: "Highest stock" },
-            { value: "retail:desc", label: "Highest retail" },
-            { value: "retail:asc", label: "Lowest retail" },
-          ]}
-        />
-
+        <Select value={activeFilter} onChange={(e) => { setActiveFilter(e.target.value as "active" | "archived" | "all"); setPage(1); }} className="w-auto" size="sm" aria-label="Filter by status" options={[{ value: "active", label: "Active" }, { value: "archived", label: "Archived" }, { value: "all", label: "All" }]} />
+        <Select value={`${sortField}:${sortDirection}`} onChange={(e) => { const [field, direction] = e.target.value.split(":"); setSortField(field as ItemSortField); setSortDirection(direction as SortDirection); setPage(1); }} className="w-auto" size="sm" aria-label="Sort inventory" options={[{ value: "name:asc", label: "Name A-Z" }, { value: "name:desc", label: "Name Z-A" }, { value: "sku:asc", label: "SKU A-Z" }, { value: "stock:asc", label: "Lowest stock" }, { value: "stock:desc", label: "Highest stock" }, { value: "retail:desc", label: "Highest retail" }, { value: "retail:asc", label: "Lowest retail" }]} />
         <div className="h-5 w-px bg-border" />
-
         {canEdit ? (
           <>
-            <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} shortcut="F6" className="!text-xs">
-              Add Item
-            </Button>
-            <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">
-              Import
-            </Button>
-            <DownloadMenu
-              headers={exportHeaders}
-              rows={exportRows}
-              filename="items-export"
-              title="Items Export"
-            />
+            <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} shortcut="F6" className="!text-xs">Add Item</Button>
+            <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">Import</Button>
+            <DownloadMenu headers={exportHeaders} rows={exportRows} filename="items-export" title="Items Export" />
             {role === "owner" ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                icon={Sparkles}
-                loading={normalizeBusy}
-                onClick={async () => {
-                  if (!confirm("Normalise all item names to title-case?")) return;
-                  setNormalizeBusy(true);
-                  try {
-                    const res = await normalizeItemNames();
-                    toast.success(`Normalised ${res.updated} item name${res.updated === 1 ? "" : "s"}`);
-                    void refetch();
-                  } catch (e) {
-                    toast.error(extractError(e));
-                  } finally {
-                    setNormalizeBusy(false);
-                  }
-                }}
-                className="!text-xs"
-              >
-                Normalise Names
-              </Button>
+              <Button type="button" size="sm" variant="secondary" icon={Sparkles} loading={normalizeBusy} onClick={async () => {
+                if (!confirm("Normalise all item names to title-case?")) return;
+                setNormalizeBusy(true);
+                try { const res = await normalizeItemNames(); toast.success(`Normalised ${res.updated} item name${res.updated === 1 ? "" : "s"}`); void refetch(); }
+                catch (e) { toast.error(extractError(e)); }
+                finally { setNormalizeBusy(false); }
+              }} className="!text-xs">Normalise Names</Button>
             ) : null}
           </>
         ) : null}
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          icon={ArrowDownToLine}
-          onClick={() => (window.location.hash = "#/inward")}
-          className="!text-xs"
-        >
-          Inward
-        </Button>
+        <Button type="button" size="sm" variant="secondary" icon={ArrowDownToLine} onClick={() => (window.location.hash = "#/inward")} className="!text-xs">Inward</Button>
         {allFilteredSelected ? (
-          <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">
-            Deselect all ({allItems.length})
-          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Deselect all ({allItems.length})</Button>
         ) : (
-          <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">
-            Select all ({allItems.length})
-          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Select all ({allItems.length})</Button>
         )}
         {selectedIds.size > 0 && canEdit ? (
-          <Button type="button" size="sm" variant="danger" icon={Archive} onClick={() => void handleBulkArchive()} className="!text-xs">
-            Archive {selectedIds.size}
-          </Button>
+          <Button type="button" size="sm" variant="danger" icon={Archive} onClick={() => void handleBulkArchive()} className="!text-xs">Archive {selectedIds.size}</Button>
         ) : null}
       </div>
 
-      {/* ── Status ───────────────────────────────────────────── */}
-      {error ? <Alert title="Inventory failed to load">{error.message}</Alert> : null}
-      {loading ? <Skeleton variant="card" className="h-40" /> : null}
+      {/* ── Status (always rendered) ── */}
+      {(flagOn ? serverError : error) ? (
+        <Alert title="Inventory failed to load">{(flagOn ? serverError : error)?.message ?? "Unknown error"}</Alert>
+      ) : null}
+      {(flagOn ? serverLoading : loading) ? <Skeleton variant="card" className="h-40" /> : null}
 
-      {!loading && allItems.length === 0 && (
-        <EmptyState
-          icon={PackagePlus}
-          title="No items match this view"
-          description="Try clearing filters or add the first SKU before selling or receiving stock."
-          primary={
-            canEdit ? (
-              <Button type="button" onClick={openCreate}>
-                Add Item
-              </Button>
-            ) : undefined
+      {/* ── Empty state ── */}
+      {!(flagOn ? serverLoading : loading) && (flagOn ? serverTotal : allItems.length) === 0 ? (
+        <EmptyState icon={PackagePlus} title="No items match this view" description="Try clearing filters or add the first SKU before selling or receiving stock." primary={canEdit ? <Button type="button" onClick={openCreate}>Add Item</Button> : undefined} />
+      ) : null}
+
+      {/* ── Pagination (only when there's data) ── */}
+      {!(flagOn ? serverLoading : loading) && (flagOn ? serverTotal : allItems.length) > 0 ? (
+        <PaginationControls page={page ?? 1} totalPages={flagOn ? Math.max(1, Math.ceil(serverTotal / ITEM_PAGE_SIZE)) : totalPages} totalItems={flagOn ? serverTotal : totalItems} pageSize={flagOn ? ITEM_PAGE_SIZE : pageSize} onPageChange={setPage} className="rounded-lg border border-border bg-muted px-3 py-2" />
+      ) : null}
+
+      {/* ── List body (branched) ── */}
+      {flagOn ? (
+        <DataList
+          source={serverSource}
+          columns={itemColumns}
+          keyExtractor={(i) => String(i.id)}
+          height={560}
+          groupBy={[
+            { key: (i: Item) => brandDisplayName(i, brands), label: (k: string) => k, level: 1 as const },
+            { key: (i: Item) => i.category?.trim() || "No category", label: (k: string) => k, level: 2 as const },
+          ]}
+          selection={{
+            selected: selectedIds as Set<string | number>,
+            onChange: (next) => {
+              const ids = new Set<number>();
+              for (const k of next) ids.add(Number(k));
+              setSelectedIds(ids);
+            },
+            keyOf: (i: Item) => i.id,
+          }}
+          onRowClick={(i) => openEdit(i)}
+          emptyState={({ total, hasActiveFilter }) =>
+            total === 0 && !hasActiveFilter ? (
+              <EmptyState icon={PackagePlus} title="No items configured" description="Add the first SKU before selling or receiving stock." primary={canEdit ? <Button onClick={openCreate}>Add Item</Button> : undefined} />
+            ) : (
+              <EmptyState icon={PackagePlus} title="No matches" description="Try clearing filters." />
+            )
           }
         />
+      ) : (
+        /* LEGACY grouped tables */
+        !loading && allItems.length > 0 ? (
+          <>
+            {[...grouped.entries()].map(([itemBrand, categories]) => (
+              <section key={itemBrand} className="space-y-1.5">
+                <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{itemBrand}</h3>
+                {[...categories.entries()].map(([itemCategory, rows], catIdx) => (
+                  <div key={itemCategory} className="animate-in fade-in motion-reduce:animate-none slide-in-from-bottom-2 overflow-hidden rounded-lg border border-border bg-card duration-200" style={{ animationDelay: `${catIdx * 40}ms` }}>
+                    <div className="border-b border-border bg-muted px-3 py-1.5 text-[11px] font-medium text-muted-foreground">{itemCategory}</div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          <tr className="border-b border-border">
+                            <th className="w-10 px-3 py-2 font-medium">
+                              <input type="checkbox" checked={allPageSelected} onChange={togglePageSelected} aria-label="Select all items on this page" className="h-3.5 w-3.5" />
+                            </th>
+                            <th className="px-3 py-2 font-medium">SKU</th>
+                            <th className="px-3 py-2 font-medium">Name</th>
+                            <th className="px-3 py-2 font-medium">Unit</th>
+                            <th className="px-3 py-2 font-medium">Location</th>
+                            {role === "owner" ? <th className="px-3 py-2 text-right font-medium">Cost</th> : null}
+                            <th className="px-3 py-2 text-right font-medium">Retail</th>
+                            <th className="px-3 py-2 text-right font-medium">Min qty</th>
+                            <th className="px-3 py-2 text-right font-medium">Stock</th>
+                            <th className="w-12 px-3 py-2 text-right font-medium">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((item, rowIdx) => {
+                            const stockAnomaly = item.current_qty < 0;
+                            const isOut = item.current_qty === 0;
+                            const lowStock = !isOut && !stockAnomaly && item.current_qty <= (item.min_stock);
+                            return (
+                              <tr key={item.id} onClick={() => openEdit(item)} className={[
+                                "cursor-pointer border-b border-border transition-colors hover:bg-muted/70",
+                                rowIdx % 2 === 1 ? "bg-muted/20" : "",
+                                stockAnomaly ? "border-l-2 border-l-destructive bg-destructive/15" : isOut ? "border-l-2 border-l-destructive/70 bg-destructive/10" : "",
+                                lowStock ? "border-l-2 border-l-warning bg-warning/10" : "",
+                                !item.is_active ? "opacity-60" : "",
+                              ].join(" ")}>
+                                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                  <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelected(item.id)} aria-label={`Select ${formatItemName(item, brands)}`} className="h-3.5 w-3.5 accent-accent" />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className="inline-block max-w-[10rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80" title={item.sku_code}>{item.sku_code}</span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-medium text-foreground">{formatItemName(item, brands, { style: "prefix" })}</span>
+                                    {!item.is_active ? <Badge variant="muted">Archived</Badge> : null}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2"><Badge variant="muted">{item.sell_unit}</Badge></td>
+                                <td className="px-3 py-2 text-xs leading-snug text-foreground/80">{formatLocation(item)}</td>
+                                {role === "owner" ? <td className="px-3 py-2 text-right text-muted-foreground tabular-nums"><Money paise={item.cost_paise} /></td> : null}
+                                <td className="px-3 py-2 text-right font-medium text-foreground tabular-nums"><Money paise={item.retail_price_paise} /></td>
+                                <td className="px-3 py-2 text-right text-xs text-muted-foreground tabular-nums">{item.min_stock}</td>
+                                <td className="px-3 py-2 text-right tabular-nums"><StockDisplay currentQty={item.current_qty} minQty={item.min_stock} /></td>
+                                <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                                  <ActionMenu
+                                    label={`Actions for ${formatItemName(item, brands)}`}
+                                    items={[
+                                      ...(canEdit ? [{ label: "Edit", icon: Edit3, onSelect: () => openEdit(item) }] : []),
+                                      ...(role === "owner" ? [{ label: "Adjust Stock", icon: PackagePlus, onSelect: () => { setStockAdjustItem(item); setStockAdjustQty(""); } }] : []),
+                                      { label: "Print Barcode", icon: Barcode, onSelect: () => void handlePrint(item), disabled: !item.barcode },
+                                      { label: "Add Inward", icon: ArrowDownToLine, onSelect: () => (window.location.hash = "#/inward") },
+                                      { label: "Record Outward", icon: ArrowUpFromLine, onSelect: () => (window.location.hash = "#/sales") },
+                                      ...(canEdit ? [{ label: item.is_active ? "Archive" : "Restore", icon: Archive, danger: item.is_active, onSelect: () => void handleArchive(item) }] : []),
+                                    ]}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </section>
+            ))}
+          </>
+        ) : null
       )}
 
-      {/* ── Grouped tables ───────────────────────────────────── */}
-      {!loading && allItems.length > 0 ? (
-        <PaginationControls
-          page={page}
-          totalPages={totalPages}
-          totalItems={totalItems}
-          pageSize={pageSize}
-          onPageChange={setPage}
-          className="rounded-lg border border-border bg-muted px-3 py-2"
-        />
-      ) : null}
-      {[...grouped.entries()].map(([itemBrand, categories]) => (
-        <section key={itemBrand} className="space-y-1.5">
-          <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {itemBrand}
-          </h3>
-          {[...categories.entries()].map(([itemCategory, rows], catIdx) => (
-            <div
-              key={itemCategory}
-              className="animate-in fade-in motion-reduce:animate-none slide-in-from-bottom-2 overflow-hidden rounded-lg border border-border bg-card duration-200"
-              style={{ animationDelay: `${catIdx * 40}ms` }}
-            >
-              <div className="border-b border-border bg-muted px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
-                {itemCategory}
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <tr className="border-b border-border">
-                      <th className="w-10 px-3 py-2 font-medium">
-                        <input
-                          type="checkbox"
-                          checked={allPageSelected}
-                          onChange={togglePageSelected}
-                          aria-label="Select all items on this page"
-                          className="h-3.5 w-3.5"
-                        />
-                      </th>
-                      <th className="px-3 py-2 font-medium">SKU</th>
-                      <th className="px-3 py-2 font-medium">Name</th>
-                      <th className="px-3 py-2 font-medium">Unit</th>
-                      <th className="px-3 py-2 font-medium">Location</th>
-                      {role === "owner" ? (
-                        <th className="px-3 py-2 text-right font-medium">Cost</th>
-                      ) : null}
-                      <th className="px-3 py-2 text-right font-medium">Retail</th>
-                      <th className="px-3 py-2 text-right font-medium">Min qty</th>
-                      <th className="px-3 py-2 text-right font-medium">Stock</th>
-                      <th className="w-12 px-3 py-2 text-right font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((item, rowIdx) => {
-                      const stockAnomaly = item.current_qty < 0;
-                      const isOut = item.current_qty === 0;
-                      const lowStock = !isOut && !stockAnomaly && item.current_qty <= (item.min_stock);
-                      return (
-                        <tr
-                          key={item.id}
-                          onClick={() => openEdit(item)}
-                          className={[
-                            "cursor-pointer border-b border-border transition-colors hover:bg-muted/70",
-                            rowIdx % 2 === 1 ? "bg-muted/20" : "",
-                            stockAnomaly
-                              ? "border-l-2 border-l-destructive bg-destructive/15"
-                              : isOut
-                                ? "border-l-2 border-l-destructive/70 bg-destructive/10"
-                                : "",
-                            lowStock
-                              ? "border-l-2 border-l-warning bg-warning/10"
-                              : "",
-                            !item.is_active ? "opacity-60" : "",
-                          ].join(" ")}
-                        >
-                          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(item.id)}
-                              onChange={() => toggleSelected(item.id)}
-                              aria-label={`Select ${formatItemName(item, brands)}`}
-                              className="h-3.5 w-3.5 accent-accent"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className="inline-block max-w-[10rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80" title={item.sku_code}>
-                              {item.sku_code}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-medium text-foreground">
-                                {formatItemName(item, brands, { style: "prefix" })}
-                              </span>
-                              {!item.is_active ? (
-                                <Badge variant="muted">Archived</Badge>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2">
-                            <Badge variant="muted">{item.sell_unit}</Badge>
-                          </td>
-                          <td className="px-3 py-2 text-xs leading-snug text-foreground/80">
-                            {formatLocation(item)}
-                          </td>
-                          {role === "owner" ? (
-                            <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
-                              <Money paise={item.cost_paise} />
-                            </td>
-                          ) : null}
-                          <td className="px-3 py-2 text-right font-medium text-foreground tabular-nums">
-                            <Money paise={item.retail_price_paise} />
-                          </td>
-                          <td className="px-3 py-2 text-right text-xs text-muted-foreground tabular-nums">
-                            {item.min_stock}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            <StockDisplay
-                              currentQty={item.current_qty}
-                              minQty={item.min_stock}
-                            />
-                          </td>
-                          <td
-                            className="px-3 py-2 text-right"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <ActionMenu
-                              label={`Actions for ${formatItemName(item, brands)}`}
-                              items={[
-                                ...(canEdit
-                                  ? [
-                                      {
-                                        label: "Edit",
-                                        icon: Edit3,
-                                        onSelect: () => openEdit(item),
-                                      },
-                                    ]
-                                  : []),
-                                ...(role === "owner"
-                                  ? [
-                                      {
-                                        label: "Adjust Stock",
-                                        icon: PackagePlus,
-                                        onSelect: () => {
-                                          setStockAdjustItem(item);
-                                          setStockAdjustQty("");
-                                        },
-                                      },
-                                    ]
-                                  : []),
-                                {
-                                  label: "Print Barcode",
-                                  icon: Barcode,
-                                  onSelect: () => void handlePrint(item),
-                                  disabled: !item.barcode,
-                                },
-                                {
-                                  label: "Add Inward",
-                                  icon: ArrowDownToLine,
-                                  onSelect: () =>
-                                    (window.location.hash = "#/inward"),
-                                },
-                                {
-                                  label: "Record Outward",
-                                  icon: ArrowUpFromLine,
-                                  onSelect: () =>
-                                    (window.location.hash = "#/sales"),
-                                },
-                                ...(canEdit
-                                  ? [
-                                      {
-                                        label: item.is_active
-                                          ? "Archive"
-                                          : "Restore",
-                                        icon: Archive,
-                                        danger: item.is_active,
-                                        onSelect: () => void handleArchive(item),
-                                      },
-                                    ]
-                                  : []),
-                              ]}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
-        </section>
-      ))}
+      <CsvImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={() => { toast.success("Items imported successfully"); refetch(); }} />
 
-      <CsvImportDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImported={() => {
-          toast.success("Items imported successfully");
-          refetch();
-        }}
-      />
-
-      {/* ── Stock adjust dialog ──────────────────────────────── */}
       {stockAdjustItem ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg border border-border bg-card p-4 shadow-xl">
             <h3 className="mb-3 text-sm font-semibold">Adjust Stock</h3>
-            <p className="mb-3 text-xs text-muted-foreground">
-              {stockAdjustItem.name} — current: {stockAdjustItem.current_qty}
-            </p>
+            <p className="mb-3 text-xs text-muted-foreground">{stockAdjustItem.name} — current: {stockAdjustItem.current_qty}</p>
             <div className="mb-3 flex gap-1 rounded-md border border-border bg-muted/40 p-0.5">
-              <button
-                type="button"
-                className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
-                  stockAdjustDir === "add"
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setStockAdjustDir("add")}
-              >
-                <ArrowUpFromLine className="mr-1 inline h-3 w-3" />
-                Add
-              </button>
-              <button
-                type="button"
-                className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
-                  stockAdjustDir === "reduce"
-                    ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setStockAdjustDir("reduce")}
-                disabled={stockAdjustItem.current_qty <= 0}
-              >
-                <TrendingDown className="mr-1 inline h-3 w-3" />
-                Reduce
-              </button>
+              <button type="button" className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${stockAdjustDir === "add" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setStockAdjustDir("add")}><ArrowUpFromLine className="mr-1 inline h-3 w-3" />Add</button>
+              <button type="button" className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${stockAdjustDir === "reduce" ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setStockAdjustDir("reduce")} disabled={stockAdjustItem.current_qty <= 0}><TrendingDown className="mr-1 inline h-3 w-3" />Reduce</button>
             </div>
-            <input
-              type="number"
-              value={stockAdjustQty}
-              onChange={(e) => setStockAdjustQty(e.target.value)}
-              placeholder={stockAdjustDir === "add" ? "Qty to add" : `Max ${stockAdjustItem.current_qty}`}
-              max={stockAdjustDir === "reduce" ? stockAdjustItem.current_qty : undefined}
-              className="mb-3 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleStockAdjust();
-                if (e.key === "Escape") {
-                  setStockAdjustItem(null);
-                  setStockAdjustQty("");
-                  setStockAdjustDir("add");
-                }
-              }}
-            />
+            <input type="number" value={stockAdjustQty} onChange={(e) => setStockAdjustQty(e.target.value)} placeholder={stockAdjustDir === "add" ? "Qty to add" : `Max ${stockAdjustItem.current_qty}`} max={stockAdjustDir === "reduce" ? stockAdjustItem.current_qty : undefined} className="mb-3 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm" autoFocus onKeyDown={(e) => { if (e.key === "Enter") void handleStockAdjust(); if (e.key === "Escape") { setStockAdjustItem(null); setStockAdjustQty(""); setStockAdjustDir("add"); } }} />
             <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  setStockAdjustItem(null);
-                  setStockAdjustQty("");
-                  setStockAdjustDir("add");
-                }}
-              >
-                Cancel
-              </Button>
-              {stockAdjustDir === "add" && stockAdjustItem.barcode && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  icon={Printer}
-                  onClick={() => void handleStockAdjust(true)}
-                  disabled={adjustBusy || !stockAdjustQty || Number(stockAdjustQty) <= 0}
-                >
-                  Add &amp; print label
-                </Button>
-              )}
-              <Button type="button" size="sm" onClick={() => void handleStockAdjust()}>
-                {stockAdjustDir === "add" ? "Add Stock" : "Reduce Stock"}
-              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => { setStockAdjustItem(null); setStockAdjustQty(""); setStockAdjustDir("add"); }}>Cancel</Button>
+              {stockAdjustDir === "add" && stockAdjustItem.barcode ? (
+                <Button type="button" size="sm" variant="secondary" icon={Printer} onClick={() => void handleStockAdjust(true)} disabled={adjustBusy || !stockAdjustQty || Number(stockAdjustQty) <= 0}>Add &amp; print label</Button>
+              ) : null}
+              <Button type="button" size="sm" onClick={() => void handleStockAdjust()}>{stockAdjustDir === "add" ? "Add Stock" : "Reduce Stock"}</Button>
             </div>
           </div>
         </div>

@@ -8,9 +8,18 @@ import type {
   CustomerLedger,
   CustomerOutstanding,
   CustomerUpdate,
+  ListPage,
+  ListQuery,
   NewCustomer,
   RecordCustomerPaymentArgs,
 } from "../types";
+
+export interface CustomerMetrics {
+  total: number;
+  active: number;
+  inactive: number;
+  flagged: number;
+}
 
 export async function createCustomer(
   payload: NewCustomer,
@@ -33,6 +42,14 @@ export async function listCustomers(
     query: query ?? null,
     include_inactive: includeInactive,
   });
+}
+
+export async function listCustomersPaged(query: ListQuery): Promise<ListPage<Customer>> {
+  return invoke<ListPage<Customer>>("cmd_list_customers_paged", { query });
+}
+
+export async function listCustomerMetrics(): Promise<CustomerMetrics> {
+  return invoke<CustomerMetrics>("cmd_customer_metrics");
 }
 
 export async function customerOutstanding(

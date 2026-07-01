@@ -1,35 +1,31 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { useQuery, type QueryKey } from "@tanstack/react-query";
+import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useQuery } from "@tanstack/react-query";
 
+import type { ListPage } from "../../domain/types";
 import { useDebounce } from "../hooks/useDebounce";
 
-export interface PaginatedRows<TItem> {
-  rows: TItem[];
-  total: number;
-}
-
-type QueryRows<TItem> = TItem[] | PaginatedRows<TItem>;
-
-interface QueryContext {
+export interface ClientListContext {
   search: string;
   page: number;
   pageSize: number;
 }
 
-export interface UsePaginatedQueryOptions<TItem> {
-  queryKey: QueryKey;
-  queryFn: (context: QueryContext) => Promise<QueryRows<TItem>>;
+export type ClientListFn<T> = (ctx: ClientListContext) => Promise<T[] | ListPage<T>>;
+
+export interface UseClientListQueryOptions<T> {
+  queryKey: readonly unknown[];
+  queryFn: ClientListFn<T>;
   pageSize?: number;
   initialSearch?: string;
   debounceMs?: number;
   enabled?: boolean;
-  clientFilter?: (item: TItem, search: string) => boolean;
-  clientSort?: (a: TItem, b: TItem) => number;
+  clientFilter?: (item: T, search: string) => boolean;
+  clientSort?: (a: T, b: T) => number;
 }
 
-export interface UsePaginatedQueryResult<TItem> {
-  data: TItem[];
-  allData: TItem[];
+export interface UseClientListQueryResult<T> {
+  data: T[];
+  allData: T[];
   isLoading: boolean;
   isFetching: boolean;
   error: Error | null;
@@ -41,35 +37,39 @@ export interface UsePaginatedQueryResult<TItem> {
   pageSize: number;
   totalItems: number;
   totalPages: number;
-  refetch: () => Promise<import("@tanstack/react-query").QueryObserverResult>;
+  refetch: () => Promise<unknown>;
 }
 
-function normalizeRows<TItem>(result: QueryRows<TItem>): PaginatedRows<TItem> | null {
+function normalize<T>(result: T[] | ListPage<T>): ListPage<T> | null {
   if (Array.isArray(result)) return { rows: result, total: result.length };
   return result;
 }
 
-export function usePaginatedQuery<TItem>({
-  queryKey,
-  queryFn,
-  pageSize = 25,
-  initialSearch = "",
-  debounceMs = 250,
-  enabled = true,
-  clientFilter,
-  clientSort,
-}: UsePaginatedQueryOptions<TItem>): UsePaginatedQueryResult<TItem> {
+export function useClientListQuery<T>(opts: UseClientListQueryOptions<T>): UseClientListQueryResult<T> {
+  const {
+    queryKey,
+    queryFn,
+    pageSize = 25,
+    initialSearch = "",
+    debounceMs = 100,
+    enabled = true,
+    clientFilter,
+    clientSort,
+  } = opts;
+
   const [page, setPageState] = useState(1);
   const [searchState, setSearchState] = useState(initialSearch);
   const debouncedSearch = useDebounce(searchState, debounceMs).trim();
 
-  const setPage = useCallback<Dispatch<SetStateAction<number>>>((nextPage) => {
-    setPageState((current) => Math.max(1, typeof nextPage === "function" ? nextPage(current) : nextPage));
+  const setPage = useCallback<Dispatch<SetStateAction<number>>>((next) => {
+    setPageState((current) =>
+      Math.max(1, typeof next === "function" ? (next as (p: number) => number)(current) : next),
+    );
   }, []);
 
-  const setSearch = useCallback<Dispatch<SetStateAction<string>>>((nextSearch) => {
+  const setSearch = useCallback<Dispatch<SetStateAction<string>>>((next) => {
     setSearchState((current) => {
-      const resolved = typeof nextSearch === "function" ? nextSearch(current) : nextSearch;
+      const resolved = typeof next === "function" ? (next as (s: string) => string)(current) : next;
       if (resolved !== current) setPageState(1);
       return resolved;
     });
@@ -80,18 +80,15 @@ export function usePaginatedQuery<TItem>({
     [debouncedSearch, page, pageSize, queryKey],
   );
 
-  const query = useQuery({
+  const query = useQuery<ListPage<T>, Error>({
     queryKey: normalizedKey,
     enabled,
-    queryFn: async () => normalizeRows(await queryFn({ search: debouncedSearch, page, pageSize })),
-    // ponytail: removed placeholderData — stale data during filter/search changes causes UX bugs
+    queryFn: async () => normalize(await queryFn({ search: debouncedSearch, page, pageSize })) ?? { rows: [], total: 0 },
   });
 
   const preparedRows = useMemo(() => {
     const rows = [...(query.data?.rows ?? [])];
-    const filtered = clientFilter
-      ? rows.filter((item) => clientFilter(item, debouncedSearch))
-      : rows;
+    const filtered = clientFilter ? rows.filter((it) => clientFilter(it, debouncedSearch)) : rows;
     return clientSort ? [...filtered].sort(clientSort) : filtered;
   }, [clientFilter, clientSort, debouncedSearch, query.data?.rows]);
 
@@ -99,10 +96,6 @@ export function usePaginatedQuery<TItem>({
     ? query.data.total
     : preparedRows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-
-  useEffect(() => {
-    if (page > totalPages) setPageState(totalPages);
-  }, [page, totalPages]);
 
   const pageRows = useMemo(() => {
     if (query.data && query.data.total !== query.data.rows.length) return preparedRows;

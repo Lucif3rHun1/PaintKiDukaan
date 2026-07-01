@@ -610,3 +610,19 @@ export interface FormulaSearchHit {
   with_base: boolean;
   base_item_name: string | null;
 }
+
+export type SortDirection = "asc" | "desc";
+
+export interface ListQuery {
+  search?: string;
+  sort_field?: string | null;
+  sort_dir?: SortDirection | null;
+  limit: number;
+  offset: number;
+  filters?: Record<string, unknown>;
+}
+
+export interface ListPage<T> {
+  rows: T[];
+  total: number;
+}

@@ -3,71 +3,26 @@
  *
  * Categories are simple name-only labels used to group items.
  * Mirrors the BrandAdmin pattern but without prefix/sequence fields.
+ *
+ * Renders via <DataList> server source (cmd_list_categories_paged).
  */
-import { useEffect, useState } from "react";
-import { listCategories, createCategory, deactivateCategory } from "../categories/api";
+import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { listCategories, listCategoriesPaged, createCategory, deactivateCategory } from "../categories/api";
 import type { Category } from "../types";
-import { DataTable } from "../../components/ui";
+import { DataList } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { toTitleCase } from "../../lib/format/titleCase";
+import { invalidateList } from "../../lib/query";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
 }
 
-interface CategoryTableProps {
-  categories: Category[];
-  loading: boolean;
-  busy: boolean;
-  onDeactivate: (id: number) => void;
-}
-
-function CategoryTable({
-  categories,
-  loading,
-  busy,
-  onDeactivate,
-}: CategoryTableProps) {
-  const columns: ColumnDef<Category>[] = [
-    {
-      header: "Name",
-      cell: (c) => <span className="text-foreground">{toTitleCase(c.name)}</span>,
-    },
-    {
-      header: "Actions",
-      align: "right",
-      cell: (c) => (
-        <button
-          type="button"
-          onClick={() => onDeactivate(c.id)}
-          disabled={busy}
-          className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive outline-none transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-        >
-          Deactivate
-        </button>
-      ),
-    },
-  ];
-
-  return (
-    <DataTable
-      data={categories}
-      columns={columns}
-      keyExtractor={(c) => c.id}
-      loading={loading}
-      emptyState={
-        <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-          No categories configured.
-        </p>
-      }
-    />
-  );
-}
-
 export function CategoryAdmin({ role }: Props) {
   const isOwner = role === "owner";
-  const [categories, setCategories] = useState<Category[]>([]);
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -76,11 +31,21 @@ export function CategoryAdmin({ role }: Props) {
   // Add form state
   const [newName, setNewName] = useState("");
 
+  const serverSource = useMemo(() => ({
+    endpoint: "cmd_list_categories_paged",
+    pageSize: 100,
+    initialSort: { field: "name", dir: "asc" as const },
+    clientFn: listCategoriesPaged,
+  }), []);
+
   const refresh = () => {
     setLoading(true);
     setError(null);
     listCategories()
-      .then((d) => setCategories(d ?? []))
+      .then(() => {
+        // Source-driven; refresh via cache invalidation.
+        void invalidateList(queryClient, "cmd_list_categories_paged");
+      })
       .catch((e: unknown) => setError(extractError(e)))
       .finally(() => setLoading(false));
   };
@@ -105,6 +70,7 @@ export function CategoryAdmin({ role }: Props) {
       setSuccess("Category added.");
       setNewName("");
       refresh();
+      void invalidateList(queryClient, "cmd_list_categories_paged");
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -119,6 +85,7 @@ export function CategoryAdmin({ role }: Props) {
       await deactivateCategory(id);
       setSuccess("Category deactivated.");
       refresh();
+      void invalidateList(queryClient, "cmd_list_categories_paged");
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -135,6 +102,16 @@ export function CategoryAdmin({ role }: Props) {
   }
 
   const addDisabled = busy || !newName.trim();
+
+  const categoryColumns: ColumnDef<Category>[] = [
+    {
+      header: "Name",
+      cell: (c) => <span className="text-foreground">{toTitleCase(c.name)}</span>,
+      sortField: "name",
+      sortable: true,
+      searchable: true,
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -182,12 +159,23 @@ export function CategoryAdmin({ role }: Props) {
         </button>
       </form>
 
-      {/* Category table */}
-      <CategoryTable
-        categories={categories}
-        loading={loading}
-        busy={busy}
-        onDeactivate={handleDeactivate}
+      <DataList
+        source={serverSource}
+        columns={categoryColumns}
+        keyExtractor={(c) => c.id}
+        searchPlaceholder="Search categories…"
+        emptyMessage="No categories configured."
+        height={400}
+        rowActions={(c) => (
+          <button
+            type="button"
+            onClick={() => handleDeactivate(c.id)}
+            disabled={busy}
+            className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive outline-none transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          >
+            Deactivate
+          </button>
+        )}
       />
 
       <p className="text-[11px] text-muted-foreground">

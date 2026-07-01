@@ -5,6 +5,7 @@
 //! server-side so a malicious frontend cannot see cost_paise as a cashier.
 
 use crate::commands::auth::AppState;
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
 use crate::session::{current_user, require_role, Role};
 use rusqlite::params;
@@ -553,6 +554,117 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
             args.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(dyn_args.as_slice(), row_to_item)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    })
+}
+
+const ITEMS_SORT_WHITELIST: &[&str] = &[
+    "name", "sku_code", "barcode", "category", "brand", "retail_price_paise",
+    "cost_paise", "current_qty", "min_stock", "created_at", "updated_at",
+];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_items_paged(
+    state: State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<Item>> {
+    let _ = current_user()?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field = sanitize_sort(query.sort_field.as_deref(), ITEMS_SORT_WHITELIST, "name");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        let include_inactive = query
+            .filters
+            .get("include_inactive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let archived_only = query
+            .filters
+            .get("archived_only")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let low_stock_only = query
+            .filters
+            .get("low_stock_only")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if !include_inactive {
+            if archived_only {
+                wheres.push("i.is_active = 0".to_string());
+            } else {
+                wheres.push("i.is_active = 1".to_string());
+            }
+        }
+        if let Some(q) = query.search.as_ref().filter(|s| !s.is_empty()) {
+            let like = format!("%{}%", q);
+            wheres.push("(i.name LIKE ? OR i.sku_code LIKE ? OR i.barcode LIKE ?)".to_string());
+            params.push(Box::new(like.clone()));
+            params.push(Box::new(like.clone()));
+            params.push(Box::new(like));
+        }
+        if let Some(brand) = query.filters.get("brand").and_then(|v| v.as_str()) {
+            wheres.push("COALESCE(b.name, i.brand) = ?".to_string());
+            params.push(Box::new(brand.to_string()));
+        }
+        if let Some(category) = query.filters.get("category").and_then(|v| v.as_str()) {
+            wheres.push("i.category = ?".to_string());
+            params.push(Box::new(category.to_string()));
+        }
+        if low_stock_only {
+            wheres.push(
+                "i.id IN (SELECT item_id FROM stock_balances GROUP BY item_id HAVING SUM(qty) <= i.min_stock)"
+                    .to_string(),
+            );
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let sort_col = if sort_field == "current_qty" {
+            "COALESCE(sb.qty, 0)".to_string()
+        } else {
+            format!("i.{}", sort_field)
+        };
+        let order_by = format!(
+            " ORDER BY {} COLLATE NOCASE {} LIMIT ? OFFSET ?",
+            sort_col, sort_dir
+        );
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select =
+            "SELECT i.id, i.sku_code, i.barcode, i.name, COALESCE(b.name, i.brand) AS brand, \
+                    i.category, i.unit_code, i.unit_label, i.unit, i.units_per_pack, \
+                    i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, \
+                    i.promo_price_paise, i.label_line1, i.label_line2, \
+                    i.primary_location_id, i.sub_location_id, i.position, i.min_stock, \
+                    i.barcode_format, i.is_active, i.created_at, i.updated_at, \
+                    COALESCE(sb.qty, 0) AS current_qty, i.brand_id \
+             FROM items i \
+             LEFT JOIN brands b ON b.id = i.brand_id \
+             LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb \
+                    ON sb.item_id = i.id";
+        let count_select = "SELECT COUNT(*) FROM items i \
+             LEFT JOIN brands b ON b.id = i.brand_id";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            row_to_item,
+        )?;
+        Ok(ListPage { rows, total })
     })
 }
 

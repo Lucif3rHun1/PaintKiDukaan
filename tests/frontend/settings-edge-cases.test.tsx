@@ -37,6 +37,7 @@ const locationsApiMocks = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   listBrands: vi.fn(),
+  listBrandsPaged: vi.fn(),
   createBrand: vi.fn(),
   deactivateBrand: vi.fn(),
   updateBrandCodePrefix: vi.fn(),
@@ -165,7 +166,7 @@ describe("Soft-delete dependency handling", () => {
   it("brand deactivation calls deactivateBrand (soft-delete)", async () => {
     apiMocks.listBrands.mockResolvedValue(SAMPLE_BRANDS);
     const user = userEvent.setup();
-    render(<BrandAdmin role="owner" />);
+    render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByText("Asian Paints");
 
@@ -240,7 +241,7 @@ describe("Validation edge cases", () => {
   it("brand prefix rejects special characters", async () => {
     apiMocks.listBrands.mockResolvedValue([]);
     const user = userEvent.setup();
-    render(<BrandAdmin role="owner" />);
+    render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByLabelText(/Brand name/i);
 
@@ -256,7 +257,7 @@ describe("Validation edge cases", () => {
 
   it("brand prefix enforces max length via HTML attribute", async () => {
     apiMocks.listBrands.mockResolvedValue([]);
-    render(<BrandAdmin role="owner" />);
+    render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByLabelText(/Code prefix/i);
 
@@ -267,7 +268,7 @@ describe("Validation edge cases", () => {
   it("brand name required before add", async () => {
     apiMocks.listBrands.mockResolvedValue([]);
     const user = userEvent.setup();
-    render(<BrandAdmin role="owner" />);
+    render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByLabelText(/Brand name/i);
 
@@ -283,7 +284,7 @@ describe("Validation edge cases", () => {
   it("brand edit prefix validates empty prefix", async () => {
     apiMocks.listBrands.mockResolvedValue(SAMPLE_BRANDS);
     const user = userEvent.setup();
-    render(<BrandAdmin role="owner" />);
+    render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByText("Asian Paints");
 
@@ -390,7 +391,7 @@ describe("UI state edge cases", () => {
     apiMocks.listBrands.mockResolvedValue([]);
     apiMocks.createBrand.mockResolvedValue({ id: 3, name: "Nerolac", prefix: "NR", next_seq: 1 });
     const user = userEvent.setup();
-    render(<BrandAdmin role="owner" />);
+    render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByLabelText(/Brand name/i);
 
@@ -409,7 +410,7 @@ describe("UI state edge cases", () => {
       .mockRejectedValueOnce(new Error("duplicate"))
       .mockResolvedValueOnce(SAMPLE_BRANDS[0]);
     const user = userEvent.setup();
-    render(<BrandAdmin role="owner" />);
+    render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByLabelText(/Brand name/i);
 
@@ -436,7 +437,7 @@ describe("UI state edge cases", () => {
       () => new Promise<void>((resolve) => { resolveDeactivate = resolve; }),
     );
     const user = userEvent.setup();
-    render(<BrandAdmin role="owner" />);
+    render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByText("Asian Paints");
 
@@ -482,7 +483,7 @@ describe("UI state edge cases", () => {
 describe("Role-based access", () => {
   it("BrandAdmin shows full UI for owner", async () => {
     apiMocks.listBrands.mockResolvedValue(SAMPLE_BRANDS);
-    render(<BrandAdmin role="owner" />);
+    render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByText("Asian Paints");
 
@@ -494,7 +495,7 @@ describe("Role-based access", () => {
   });
 
   it("BrandAdmin shows restricted message for cashier", () => {
-    render(<BrandAdmin role="cashier" />);
+    render(<BrandAdmin role="cashier" />, { wrapper: createWrapper() });
 
     expect(screen.getByText(/Owners only\. Switch to an owner account/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add brand" })).not.toBeInTheDocument();
@@ -503,14 +504,14 @@ describe("Role-based access", () => {
   });
 
   it("BrandAdmin shows restricted message for stocker", () => {
-    render(<BrandAdmin role="stocker" />);
+    render(<BrandAdmin role="stocker" />, { wrapper: createWrapper() });
 
     expect(screen.getByText(/Owners only\. Switch to an owner account/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add brand" })).not.toBeInTheDocument();
   });
 
   it("non-owner BrandAdmin does not show brand table", () => {
-    render(<BrandAdmin role="cashier" />);
+    render(<BrandAdmin role="cashier" />, { wrapper: createWrapper() });
 
     expect(screen.queryByText("Configured brands")).not.toBeInTheDocument();
     expect(screen.queryByText("Asian Paints")).not.toBeInTheDocument();

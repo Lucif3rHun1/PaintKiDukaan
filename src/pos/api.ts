@@ -3,7 +3,7 @@
 // UI can still be exercised during development.
 
 import { tauriInvoke } from "../lib/security/tauri";
-import type { Draft, ImportResult } from "../domain/types";
+import type { Draft, ImportResult, ListQuery, ListPage, SaleReturn } from "../domain/types";
 import type {
   BackupGate,
   CashSalesSummary,
@@ -156,3 +156,34 @@ export const receivableAging = (): Promise<ReceivableAgingReport> =>
   isTauri()
     ? tauriInvoke<ReceivableAgingReport>("cmd_receivable_aging")
     : Promise.resolve({ bucket_0_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_91_plus: 0 });
+
+// ── PR-5: paged list + summary wrappers ──────────────────────────────────
+
+export interface SalesPeriodSummary { count: number; total_paise: number; avg_paise: number; paid_paise: number }
+export interface PurchasePeriodSummary { count: number; total_paise: number; avg_paise: number }
+export interface ReturnsPeriodSummary { count: number; total_refund_paise: number; refunded_paise: number }
+
+export async function listSalesPaged(query: ListQuery): Promise<ListPage<Sale>> {
+  return tauriInvoke<ListPage<Sale>>("cmd_list_sales_paged", { query });
+}
+export async function salesPeriodSummary(fromDate?: string, toDate?: string): Promise<SalesPeriodSummary> {
+  return tauriInvoke<SalesPeriodSummary>("cmd_sales_period_summary", { from_date: fromDate, to_date: toDate });
+}
+
+export async function listPurchasesPaged(query: ListQuery): Promise<ListPage<Purchase>> {
+  return tauriInvoke<ListPage<Purchase>>("cmd_list_purchases_paged", { query });
+}
+export async function purchasePeriodSummary(fromDate?: string, toDate?: string): Promise<PurchasePeriodSummary> {
+  return tauriInvoke<PurchasePeriodSummary>("cmd_purchase_period_summary", { from_date: fromDate, to_date: toDate });
+}
+
+export async function listReturnsPaged(query: ListQuery): Promise<ListPage<SaleReturn>> {
+  return tauriInvoke<ListPage<SaleReturn>>("cmd_list_sale_returns_paged", { query });
+}
+export async function returnsPeriodSummary(fromDate?: string, toDate?: string): Promise<ReturnsPeriodSummary> {
+  return tauriInvoke<ReturnsPeriodSummary>("cmd_sale_returns_period_summary", { from_date: fromDate, to_date: toDate });
+}
+
+export async function listDayClosePaged(query: ListQuery): Promise<ListPage<DayClose>> {
+  return tauriInvoke<ListPage<DayClose>>("cmd_list_day_close_paged", { query });
+}

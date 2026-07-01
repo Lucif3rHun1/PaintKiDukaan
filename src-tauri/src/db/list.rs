@@ -20,6 +20,7 @@ pub struct ListQuery {
     pub search: Option<String>,
     pub sort_field: Option<String>,
     pub sort_dir: Option<String>, // "asc" | "desc" | null
+    #[serde(default)]
     pub filters: HashMap<String, serde_json::Value>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -91,7 +92,13 @@ where
     let where_suffix = if where_clauses.is_empty() {
         String::new()
     } else {
-        format!(" {}", where_clauses.join(" "))
+        let mut parts = where_clauses.iter();
+        let first = parts.next().unwrap();
+        let mut s = format!(" WHERE {}", first);
+        for clause in parts {
+            s.push_str(&format!(" AND {}", clause));
+        }
+        s
     };
 
     let rows_sql = format!("{}{}{}", base_select, where_suffix, order_by_clause);
@@ -103,10 +110,15 @@ where
     let rows: rusqlite::Result<Vec<T>> = rows_iter.collect();
     let rows = rows?;
 
-    // Count query (no LIMIT/OFFSET).
+    // Count query (no LIMIT/OFFSET — skip last 2 params).
+    let count_params = if params.len() >= 2 {
+        &params[..params.len() - 2]
+    } else {
+        params
+    };
     let total: i64 = conn.query_row(
         &count_sql,
-        params_from_iter(params.iter().map(|b| b.as_ref())),
+        params_from_iter(count_params.iter().map(|b| b.as_ref())),
         |r| r.get(0),
     )?;
 

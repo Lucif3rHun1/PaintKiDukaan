@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Archive, Edit3, Copy, MoreHorizontal } from "lucide-react";
+import { ArrowLeft, Archive, Edit3, Copy } from "lucide-react";
 import { ActionMenu } from "../../components/ui/ActionMenu";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -8,12 +8,13 @@ import {
   Badge,
   Button,
   Card,
+  DataList,
   EmptyState,
   InlineDialog,
   Money,
   SearchInput,
-  Skeleton,
 } from "../../components/ui";
+import type { ColumnDef } from "../../components/ui";
 import { ConfirmDialog } from "../../shell/components/ConfirmDialog";
 import { formatDateForDisplay } from "../../lib/date";
 import { toast } from "../../lib/feedback/toast";
@@ -22,9 +23,11 @@ import {
   deactivateFormula,
   getFormula,
   listFormulaSales,
+  listFormulaSalesPaged,
 } from "./api";
-import type { Formula, FormulaSaleRow } from "./api";
+import type { Formula } from "./api";
 import { FormulaForm } from "./FormulaForm";
+import { invalidateList, invalidateListMetrics } from "../../lib/query";
 
 interface Props {
   id: number;
@@ -41,12 +44,20 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
   const [editing, setEditing] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
 
-  const [history, setHistory] = useState<FormulaSaleRow[]>([]);
+  const [history, setHistory] = useState<unknown[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+
+  const salesServerSource = useMemo(() => ({
+    endpoint: "cmd_list_formula_sales_paged",
+    pageSize: 50,
+    initialSort: { field: "sold_at", dir: "desc" as const },
+    filters: { formula_id: id, from_date: fromDate || undefined, to_date: toDate || undefined },
+    clientFn: listFormulaSalesPaged,
+  }), [id, fromDate, toDate]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,6 +76,7 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
     void load();
   }, [load]);
 
+  // Legacy fetch kept for fallback (no longer used by DataList server source).
   useEffect(() => {
     let cancelled = false;
     setHistoryLoading(true);
@@ -98,6 +110,8 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
         error: (e) => extractError(e),
       });
       queryClient.invalidateQueries({ queryKey: ["formulas"] });
+      void invalidateList(queryClient, "cmd_list_formulas_paged");
+      void invalidateListMetrics(queryClient, "cmd_formula_metrics");
       setConfirmArchive(false);
       void load();
     } catch {
@@ -111,14 +125,68 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
       setEditing(false);
       setFormula(saved);
       queryClient.invalidateQueries({ queryKey: ["formulas"] });
+      void invalidateList(queryClient, "cmd_list_formulas_paged");
+      void invalidateListMetrics(queryClient, "cmd_formula_metrics");
     },
     [queryClient],
   );
 
-  const historyTotal = useMemo(
-    () => history.reduce((sum, r) => sum + r.line_total, 0),
-    [history],
-  );
+  const salesColumns: ColumnDef<{
+    sale_id: number;
+    sale_no: string;
+    sale_kind: string;
+    date: string;
+    customer_name: string | null;
+    price: number;
+    line_total: number;
+  }>[] = [
+    {
+      header: "Invoice",
+      cell: (row) => (
+        <span className="font-mono text-xs tabular-nums text-foreground">
+          {row.sale_no}
+          {row.sale_kind === "quotation" ? (
+            <Badge variant="info" size="sm" className="ml-1">Qtn</Badge>
+          ) : null}
+        </span>
+      ),
+      sortField: "sale_no",
+      sortable: true,
+    },
+    {
+      header: "Date",
+      cell: (row) => (
+        <span className="text-xs text-muted-foreground">
+          {formatDateForDisplay(row.date)}
+        </span>
+      ),
+      sortField: "date",
+      sortable: true,
+    },
+    {
+      header: "Customer",
+      cell: (row) => (
+        <span className="text-foreground">
+          {row.customer_name ?? <span className="text-muted-foreground">Walk-in</span>}
+        </span>
+      ),
+      searchable: true,
+    },
+    {
+      header: "Price",
+      align: "right",
+      cell: (row) => <Money paise={row.price} />,
+      sortField: "price",
+      sortable: true,
+    },
+    {
+      header: "Total",
+      align: "right",
+      cell: (row) => <Money paise={row.line_total} />,
+      sortField: "line_total",
+      sortable: true,
+    },
+  ];
 
   if (loading) {
     return (
@@ -270,58 +338,19 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
           {historyError ? (
             <Alert title="History failed to load">{historyError}</Alert>
           ) : null}
-          {historyLoading ? <Skeleton variant="card" className="h-32" /> : null}
-          {!historyLoading && history.length === 0 ? (
-            <p className="py-6 text-center text-xs text-muted-foreground">
-              No sales match the filters.
-            </p>
+          {historyLoading ? (
+            <p className="py-3 text-xs text-muted-foreground">Loading…</p>
           ) : null}
-          {!historyLoading && history.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-                  <tr>
-                    <th className="py-2">Invoice</th>
-                    <th>Date</th>
-                    <th>Customer</th>
-                    <th className="text-right">Price</th>
-                    <th className="text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map((row) => (
-                    <tr
-                      key={row.sale_id}
-                      onClick={() => (window.location.hash = `#/sales/${row.sale_id}`)}
-                      className="cursor-pointer border-b border-border transition-colors hover:bg-muted"
-                    >
-                      <td className="py-2 font-mono text-xs tabular-nums text-foreground">
-                        {row.sale_no}
-                        {row.sale_kind === "quotation" ? (
-                          <Badge variant="info" size="sm" className="ml-1">Qtn</Badge>
-                        ) : null}
-                      </td>
-                      <td className="py-2 text-xs text-muted-foreground">
-                        {formatDateForDisplay(row.date)}
-                      </td>
-                      <td className="py-2 text-foreground">
-                        {row.customer_name ?? <span className="text-muted-foreground">Walk-in</span>}
-                      </td>
-                      <td className="py-2 text-right">
-                        <Money paise={row.price} />
-                      </td>
-                      <td className="py-2 text-right">
-                        <Money paise={row.line_total} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="mt-2 flex justify-end text-xs text-muted-foreground">
-                Total: <Money paise={historyTotal} className="ml-1 font-medium text-foreground" />
-              </div>
-            </div>
-          ) : null}
+
+          <DataList
+            source={salesServerSource}
+            columns={salesColumns}
+            keyExtractor={(row) => row.sale_id}
+            searchPlaceholder="Search invoice or customer…"
+            emptyMessage="No sales match the filters."
+            onRowClick={(row) => (window.location.hash = `#/sales/${row.sale_id}`)}
+            height={300}
+          />
         </Card>
       </div>
 

@@ -4,140 +4,27 @@
  * Each brand carries a `prefix` used by the auto-generated barcode scheme
  * (e.g. AP → APACE001). Owners can add brands, tweak the prefix, and
  * deactivate brands that have no items referencing them.
+ *
+ * Renders via <DataList> server source (cmd_list_brands_paged).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Tag } from "lucide-react";
-import { listBrands, createBrand, updateBrandCodePrefix, deactivateBrand } from "./api";
+import { useQueryClient } from "@tanstack/react-query";
+import { listBrands, listBrandsPaged, createBrand, updateBrandCodePrefix, deactivateBrand } from "./api";
 import type { Brand } from "../types";
 import { extractError } from "../../lib/extractError";
 import { toTitleCase } from "../../lib/format/titleCase";
-import { DataTable, SkeletonRow, EmptyState } from "../../components/ui";
+import { DataList, EmptyState } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
+import { invalidateList } from "../../lib/query";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
 }
 
-interface BrandTableProps {
-  brands: Brand[];
-  loading: boolean;
-  editingId: number | null;
-  editingPrefix: string;
-  setEditingPrefix: (value: string) => void;
-  busy: boolean;
-  onStartEdit: (b: Brand) => void;
-  onSaveEdit: () => void;
-  onCancelEdit: () => void;
-  onDeactivate: (id: number) => void;
-}
-
-function BrandTable({
-  brands,
-  loading,
-  editingId,
-  editingPrefix,
-  setEditingPrefix,
-  busy,
-  onStartEdit,
-  onSaveEdit,
-  onCancelEdit,
-  onDeactivate,
-}: BrandTableProps) {
-  const columns: ColumnDef<Brand>[] = [
-    {
-      header: "Name",
-      cell: (b) => <span className="text-foreground">{toTitleCase(b.name)}</span>,
-    },
-    {
-      header: "Code prefix",
-      cell: (b) =>
-        editingId === b.id ? (
-          <input
-            type="text"
-            value={editingPrefix}
-            maxLength={4}
-            onChange={(e) => setEditingPrefix(e.target.value.toUpperCase())}
-            className="w-20 rounded border border-border bg-card px-2 py-1 font-mono text-sm text-foreground focus:border-primary focus:outline-none"
-          />
-        ) : (
-          <span className="font-mono text-foreground">{b.prefix}</span>
-        ),
-    },
-    {
-      header: "Next seq",
-      align: "right",
-      cell: (b) => (
-        <span className="font-mono tabular-nums text-muted-foreground">
-          {String(b.next_seq).padStart(3, "0")}
-        </span>
-      ),
-    },
-    {
-      header: "Actions",
-      align: "right",
-      cell: (b) =>
-        editingId === b.id ? (
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onSaveEdit}
-              disabled={busy}
-              className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground outline-none transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={onCancelEdit}
-              disabled={busy}
-              className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-card disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => onStartEdit(b)}
-              disabled={busy}
-              className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-card disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            >
-              Edit prefix
-            </button>
-            <button
-              type="button"
-              onClick={() => onDeactivate(b.id)}
-              disabled={busy}
-              className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive outline-none transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            >
-              Deactivate
-            </button>
-          </div>
-        ),
-    },
-  ];
-
-  return (
-    <DataTable
-      data={brands}
-      columns={columns}
-      keyExtractor={(b) => b.id}
-      loading={loading}
-      emptyState={
-        <EmptyState
-          icon={Tag}
-          title="No brands configured"
-          description="Add a brand above to enable auto-generated barcodes."
-        />
-      }
-    />
-  );
-}
-
 export function BrandAdmin({ role }: Props) {
   const isOwner = role === "owner";
-  const [brands, setBrands] = useState<Brand[]>([]);
+  const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingPrefix, setEditingPrefix] = useState("");
   const [loading, setLoading] = useState(false);
@@ -149,11 +36,20 @@ export function BrandAdmin({ role }: Props) {
   const [newName, setNewName] = useState("");
   const [newPrefix, setNewPrefix] = useState("");
 
+  const serverSource = useMemo(() => ({
+    endpoint: "cmd_list_brands_paged",
+    pageSize: 100,
+    initialSort: { field: "name", dir: "asc" as const },
+    clientFn: listBrandsPaged,
+  }), []);
+
   const refresh = () => {
     setLoading(true);
     setError(null);
     listBrands()
-      .then((d) => setBrands(d ?? []))
+      .then(() => {
+        void invalidateList(queryClient, "cmd_list_brands_paged");
+      })
       .catch((e: unknown) => setError(extractError(e)))
       .finally(() => setLoading(false));
   };
@@ -192,6 +88,7 @@ export function BrandAdmin({ role }: Props) {
       setNewName("");
       setNewPrefix("");
       refresh();
+      void invalidateList(queryClient, "cmd_list_brands_paged");
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -232,6 +129,7 @@ export function BrandAdmin({ role }: Props) {
       setSuccess("Saved.");
       setEditingId(null);
       refresh();
+      void invalidateList(queryClient, "cmd_list_brands_paged");
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -246,6 +144,7 @@ export function BrandAdmin({ role }: Props) {
       await deactivateBrand(id);
       setSuccess("Brand deactivated.");
       refresh();
+      void invalidateList(queryClient, "cmd_list_brands_paged");
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -263,11 +162,46 @@ export function BrandAdmin({ role }: Props) {
 
   const addDisabled = busy || !newName.trim() || !newPrefix.trim();
 
+  const brandColumns: ColumnDef<Brand>[] = [
+    {
+      header: "Name",
+      cell: (b) => <span className="text-foreground">{toTitleCase(b.name)}</span>,
+      sortField: "name",
+      sortable: true,
+      searchable: true,
+    },
+    {
+      header: "Code prefix",
+      cell: (b) =>
+        editingId === b.id ? (
+          <input
+            type="text"
+            value={editingPrefix}
+            maxLength={4}
+            onChange={(e) => setEditingPrefix(e.target.value.toUpperCase())}
+            className="w-20 rounded border border-border bg-card px-2 py-1 font-mono text-sm text-foreground focus:border-primary focus:outline-none"
+          />
+        ) : (
+          <span className="font-mono text-foreground">{b.prefix}</span>
+        ),
+      sortField: "prefix",
+      sortable: true,
+    },
+    {
+      header: "Next seq",
+      align: "right",
+      cell: (b) => (
+        <span className="font-mono tabular-nums text-muted-foreground">
+          {String(b.next_seq).padStart(3, "0")}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Brands</h3>
-        {loading && <SkeletonRow count={1} />}
       </div>
 
       {error && (
@@ -335,18 +269,40 @@ export function BrandAdmin({ role }: Props) {
         </button>
       </div>
 
-      {/* Brand table */}
-      <BrandTable
-        brands={brands}
-        loading={loading}
-        editingId={editingId}
-        editingPrefix={editingPrefix}
-        setEditingPrefix={setEditingPrefix}
-        busy={busy}
-        onStartEdit={startEdit}
-        onSaveEdit={saveEdit}
-        onCancelEdit={cancelEdit}
-        onDeactivate={handleDeactivate}
+      <DataList
+        source={serverSource}
+        columns={brandColumns}
+        keyExtractor={(b) => b.id}
+        searchPlaceholder="Search brands…"
+        emptyMessage="No brands configured"
+        emptyCta={
+          <EmptyState
+            icon={Tag}
+            title="No brands configured"
+            description="Add a brand above to enable auto-generated barcodes."
+          />
+        }
+        height={400}
+        rowActions={(b) => (
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => startEdit(b)}
+              disabled={busy}
+              className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-card disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            >
+              Edit prefix
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDeactivate(b.id)}
+              disabled={busy}
+              className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive outline-none transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            >
+              Deactivate
+            </button>
+          </div>
+        )}
       />
 
       <p className="text-[11px] text-muted-foreground">

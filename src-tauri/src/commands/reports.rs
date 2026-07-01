@@ -13,6 +13,7 @@ use serde::Serialize;
 
 use crate::commands::auth::AppState;
 use crate::commands::purchases::{date_to_ms, StockMovement};
+use crate::db::list::{sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
@@ -1115,6 +1116,101 @@ pub fn cmd_receivable_aging(
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     receivable_aging(db).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Serialize)]
+pub struct SalesReportSubgroup {
+    pub customer_id: Option<i64>,
+    pub customer_name: Option<String>,
+    pub total: i64,
+    pub sale_count: i64,
+}
+
+const SALES_REPORT_SUBGROUPS_SORT_WHITELIST: &[&str] =
+    &["sale_date", "total", "customer_name"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_sales_report_subgroups_paged(
+    state: tauri::State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<SalesReportSubgroup>> {
+    ipc_auth::authorize_err("cmd_list_sales_report_subgroups_paged", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field = sanitize_sort(
+        query.sort_field.as_deref(),
+        SALES_REPORT_SUBGROUPS_SORT_WHITELIST,
+        "sale_date",
+    );
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    let sort_col = match sort_field.as_str() {
+        "customer_name" => "COALESCE(c.name, '')",
+        "total" => "SUM(s.total)",
+        "sale_date" | _ => "MAX(s.date)",
+    };
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = vec!["s.status = 'final'".to_string()];
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(d) = query.filters.get("from_date").and_then(|v| v.as_str()) {
+            wheres.push("s.date >= ?".to_string());
+            params.push(Box::new(d.to_string()));
+        }
+        if let Some(d) = query.filters.get("to_date").and_then(|v| v.as_str()) {
+            wheres.push("s.date <= ?".to_string());
+            params.push(Box::new(d.to_string()));
+        }
+        if let Some(cid) = query.filters.get("customer_id").and_then(|v| v.as_i64()) {
+            wheres.push("s.customer_id = ?".to_string());
+            params.push(Box::new(cid));
+        }
+
+        let where_suffix = format!(" WHERE {}", wheres.join(" AND "));
+        let group_by = " GROUP BY s.customer_id";
+
+        let order_by = format!(
+            " ORDER BY {} {} LIMIT ? OFFSET ?",
+            sort_col, sort_dir
+        );
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM (SELECT 1 FROM sales s LEFT JOIN customers c ON c.id = s.customer_id{} {})",
+            where_suffix, group_by
+        );
+        let total: i64 = c
+            .query_row(
+                &count_sql,
+                rusqlite::params_from_iter(params[..params.len() - 2].iter().map(|b| b.as_ref())),
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let rows_sql = format!(
+            "SELECT s.customer_id, COALESCE(c.name, ''), SUM(s.total), COUNT(*) \
+             FROM sales s LEFT JOIN customers c ON c.id = s.customer_id{}{}{}",
+            where_suffix, group_by, order_by
+        );
+        let mut stmt = c.prepare(&rows_sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter().map(|b| b.as_ref())), |r| {
+            Ok(SalesReportSubgroup {
+                customer_id: r.get(0)?,
+                customer_name: r.get::<_, String>(1)?.into(),
+                total: r.get(2)?,
+                sale_count: r.get(3)?,
+            })
+        })?;
+        let rows: Vec<SalesReportSubgroup> = rows.collect::<Result<Vec<_>, _>>()?;
+        Ok(ListPage { rows, total })
+    })
 }
 
 // -----------------------------------------------------------------------------

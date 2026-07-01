@@ -8,7 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
-  DataTable,
+  DataList,
   Money,
   MoneyStatic,
   Skeleton,
@@ -22,6 +22,7 @@ import {
   lastOpeningFor,
   triggerDayClose,
   listDayClose,
+  listDayClosePaged,
 } from "../api";
 import type { BackupGate, CashSalesSummary, DayClose } from "../types";
 import { todayLocalYyyymmdd, formatDateForDisplay } from "../../lib/date";
@@ -86,6 +87,14 @@ export default function DayClosePage({ user }: Props) {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [gate, setGate] = useState<BackupGate | null>(null);
+
+  const serverSource = useMemo(() => ({
+    endpoint: "cmd_list_day_close_paged",
+    pageSize: 30,
+    initialSort: { field: "day", dir: "desc" as const },
+    enabled: view === "list",
+    clientFn: listDayClosePaged,
+  }), [view]);
 
   const [date, setDate] = useState(() => todayLocalYyyymmdd());
   const [openingRupees, setOpeningRupees] = useState("0");
@@ -525,24 +534,13 @@ export default function DayClosePage({ user }: Props) {
 
       <Card>
         <h2 className="mb-2 text-sm font-semibold">Recent closes</h2>
-        {listLoading ? (
-          <div className="space-y-2 p-3">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        ) : (
-          <DataTable
-            data={recent}
-            columns={recentClosesColumns}
-            keyExtractor={(d) => d.id}
-            emptyState={
-              <p className="px-3 py-3 text-center text-muted-foreground">
-                No recent day closes.
-              </p>
-            }
-          />
-        )}
+        <DataList
+          source={serverSource}
+          columns={recentClosesColumns}
+          keyExtractor={(d) => d.id}
+          emptyMessage="No recent day closes."
+          height={320}
+        />
       </Card>
     </div>
   );

@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::auth::AppState;
 use crate::commands::{customers, sequences};
+use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
@@ -63,6 +64,11 @@ pub struct SaleItem {
     pub line_discount: i64,
     pub shade_note: Option<String>,
     pub line_order: i64,
+    /// Aggregated qty already returned across all prior returns for this
+    /// sale_item. Computed via LEFT JOIN to sale_return_lines. Defaults to 0
+    /// when no returns exist. Use `qty - returned_qty` for refundable headroom.
+    #[serde(default)]
+    pub returned_qty: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -933,7 +939,9 @@ fn load_items(c: &rusqlite::Connection, sale_id: i64) -> anyhow::Result<Vec<Sale
                 COALESCE(si.display_name, COALESCE(b.name || ' · ' || i.name, i.name), f.id_code, '') AS display_name,
                 i.sku_code,
                 si.qty, si.price, si.unit_type, si.line_discount,
-                si.shade_note, si.line_order
+                si.shade_note, si.line_order,
+                COALESCE((SELECT SUM(srl.qty) FROM sale_return_lines srl
+                          WHERE srl.sale_item_id = si.id), 0.0) AS returned_qty
          FROM sale_items si
          LEFT JOIN items i ON i.id = si.item_id
          LEFT JOIN brands b ON b.id = i.brand_id
@@ -955,6 +963,7 @@ fn load_items(c: &rusqlite::Connection, sale_id: i64) -> anyhow::Result<Vec<Sale
             line_discount: r.get(9)?,
             shade_note: r.get(10)?,
             line_order: r.get(11)?,
+            returned_qty: r.get(12)?,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1302,15 +1311,29 @@ pub fn create_sale_return(
             });
         }
 
+        // Partition tenders: only the cash-equivalent portion reduces the
+        // sale's paid_amount. `balance` tender adjusts the customer's
+        // outstanding via a customer_payments row instead (below).
+        let (cash_share_paise, balance_share_paise): (i64, i64) = payload
+            .payment_modes
+            .iter()
+            .fold((0i64, 0i64), |(cash, bal), m| {
+                if m.mode == "balance" {
+                    (cash, bal.saturating_add(m.amount))
+                } else {
+                    (cash.saturating_add(m.amount), bal)
+                }
+            });
+
         if !is_standalone {
             let paid_amount: i64 = c.query_row(
                 "SELECT paid_amount FROM sales WHERE id = ?1",
                 params![payload.sale_id],
                 |r| r.get(0),
             )?;
-            if refund_total > paid_amount {
+            if cash_share_paise > paid_amount {
                 return Err(ReturnError::OverRefund {
-                    refund: refund_total,
+                    refund: cash_share_paise,
                     paid: paid_amount,
                 });
             }
@@ -1430,14 +1453,43 @@ pub fn create_sale_return(
             // TODO: adjust customer opening_balance_paise if refund > paid.
         } else {
             // Refund reduces the customer's paid amount on the original sale so
-            // the outstanding ledger stays correct. Floors at 0 — a return can
-            // never make paid_amount negative.
+            // the outstanding ledger stays correct. Only the cash-equivalent
+            // share affects paid_amount; `balance` tenders settle via
+            // customer_payments below and leave paid_amount untouched.
             c.execute(
                 "UPDATE sales
                  SET paid_amount = MAX(0, paid_amount - ?1)
                  WHERE id = ?2",
-                params![refund_total, payload.sale_id],
+                params![cash_share_paise, payload.sale_id],
             )?;
+
+            // Balance tenders credit/debit the customer's outstanding ledger
+            // by writing a customer_payments row linked to this sale.
+            if balance_share_paise > 0 {
+                let cust_id: Option<i64> = c
+                    .query_row(
+                        "SELECT customer_id FROM sales WHERE id = ?1",
+                        params![payload.sale_id],
+                        |r| r.get(0),
+                    )
+                    .ok();
+                if let Some(cid) = cust_id {
+                    c.execute(
+                        "INSERT INTO customer_payments
+                            (customer_id, sale_id, mode, amount_paise, reference, note, created_at, created_by)
+                         VALUES (?1, ?2, 'balance', ?3, ?4, ?5, ?6, ?7)",
+                        params![
+                            cid,
+                            payload.sale_id,
+                            balance_share_paise,
+                            no.as_str(),
+                            format!("Refund via balance"),
+                            created_at,
+                            user_id,
+                        ],
+                    )?;
+                }
+            }
         }
 
         Ok(return_id)
@@ -1670,6 +1722,288 @@ pub fn cmd_list_sale_returns(
         to_date.as_deref(),
         limit.unwrap_or(100).max(1).min(500),
     )
+}
+
+const SALES_SORT_WHITELIST: &[&str] =
+    &["date", "no", "total", "subtotal", "paid_amount", "customer_name", "created_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_sales_paged(
+    state: tauri::State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<Sale>> {
+    ipc_auth::authorize_err("cmd_list_sales_paged", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field =
+        sanitize_sort(query.sort_field.as_deref(), SALES_SORT_WHITELIST, "date");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(s) = query.filters.get("status").and_then(|v| v.as_str()) {
+            wheres.push("status = ?".to_string());
+            params.push(Box::new(s.to_string()));
+        }
+        if let Some(cid) = query.filters.get("customer_id").and_then(|v| v.as_i64()) {
+            wheres.push("customer_id = ?".to_string());
+            params.push(Box::new(cid));
+        }
+        if let Some(d) = query.filters.get("from_date").and_then(|v| v.as_str()) {
+            wheres.push("date >= ?".to_string());
+            params.push(Box::new(d.to_string()));
+        }
+        if let Some(d) = query.filters.get("to_date").and_then(|v| v.as_str()) {
+            let upper = NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                .ok()
+                .and_then(|nd| nd.succ_opt())
+                .map(|nd| nd.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| d.to_string());
+            wheres.push("date < ?".to_string());
+            params.push(Box::new(upper));
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = format!(" ORDER BY {} {} LIMIT ? OFFSET ?", sort_field, sort_dir);
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select =
+            "SELECT id, no, customer_id, date, status, subtotal, bill_discount, \
+                    total, paid_amount, payment_modes_json, validity_days, \
+                    converted_from_id, user_id, created_at \
+             FROM sales";
+        let count_select = "SELECT COUNT(*) FROM sales";
+
+        let (rows, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            row_to_sale_header,
+        )?;
+
+        let mut enriched = Vec::with_capacity(rows.len());
+        for s in rows {
+            let customer_name = if let Some(cid) = s.customer_id {
+                customers::get_by_id(c, cid)?.map(|c| c.name)
+            } else {
+                None
+            };
+            enriched.push(Sale {
+                customer_name,
+                ..s
+            });
+        }
+        Ok(ListPage {
+            rows: enriched,
+            total,
+        })
+    })
+}
+
+const SALE_RETURNS_SORT_WHITELIST: &[&str] =
+    &["id", "no", "refund_total", "date", "created_at"];
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_list_sale_returns_paged(
+    state: tauri::State<'_, AppState>,
+    query: ListQuery,
+) -> AppResult<ListPage<SaleReturn>> {
+    ipc_auth::authorize_err("cmd_list_sale_returns_paged", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let sort_field =
+        sanitize_sort(query.sort_field.as_deref(), SALE_RETURNS_SORT_WHITELIST, "id");
+    let sort_dir = sanitize_dir(query.sort_dir.as_deref());
+
+    let sort_col = match sort_field.as_str() {
+        "no" => "sr.no",
+        "refund_total" => "sr.refund_total_paise",
+        "date" => "COALESCE(sr.date, sr.created_at)",
+        "created_at" => "sr.created_at",
+        "id" | _ => "sr.id",
+    };
+
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(cid) = query.filters.get("customer_id").and_then(|v| v.as_i64()) {
+            wheres.push("s.customer_id = ?".to_string());
+            params.push(Box::new(cid));
+        }
+        if let Some(d) = query.filters.get("from_date").and_then(|v| v.as_str()) {
+            wheres.push("sr.created_at >= ?".to_string());
+            params.push(Box::new(date_to_ms(d)));
+        }
+        if let Some(d) = query.filters.get("to_date").and_then(|v| v.as_str()) {
+            wheres.push("sr.created_at <= ?".to_string());
+            params.push(Box::new(date_to_ms(d)));
+        }
+
+        let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
+        let order_by = format!(" ORDER BY {} {} LIMIT ? OFFSET ?", sort_col, sort_dir);
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let base_select =
+            "SELECT sr.id, COALESCE(sr.no, ''), sr.sale_id, \
+                    COALESCE(sr.date, sr.created_at), sr.reason, \
+                    sr.refund_total_paise, sr.created_at, sr.created_by \
+             FROM sale_returns sr \
+             JOIN sales s ON s.id = sr.sale_id";
+        let count_select =
+            "SELECT COUNT(*) FROM sale_returns sr \
+             JOIN sales s ON s.id = sr.sale_id";
+
+        let (headers, total) = paged_query(
+            c,
+            base_select,
+            count_select,
+            &where_refs,
+            &order_by,
+            &params,
+            |r| {
+                Ok(SaleReturnHeader {
+                    id: r.get(0)?,
+                    no: r.get(1)?,
+                    sale_id: r.get(2)?,
+                    date: r.get(3)?,
+                    reason: r.get(4)?,
+                    refund_total: r.get(5)?,
+                    created_at: r.get(6)?,
+                    created_by: r.get(7)?,
+                })
+            },
+        )?;
+
+        let mut out = Vec::with_capacity(headers.len());
+        for h in headers {
+            out.push(row_to_sale_return(c, &h)?);
+        }
+        Ok(ListPage { rows: out, total })
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct SalesPeriodSummary {
+    pub count: i64,
+    pub total_paise: i64,
+    pub avg_paise: i64,
+    pub paid_paise: i64,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_sales_period_summary(
+    state: tauri::State<'_, AppState>,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    status: Option<String>,
+) -> AppResult<SalesPeriodSummary> {
+    ipc_auth::authorize_err("cmd_sales_period_summary", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let status_filter = status.as_deref().unwrap_or("final");
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = vec!["status = ?".to_string()];
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> =
+            vec![Box::new(status_filter.to_string())];
+        if let Some(d) = from_date.as_deref() {
+            wheres.push("date >= ?".to_string());
+            params.push(Box::new(d.to_string()));
+        }
+        if let Some(d) = to_date.as_deref() {
+            wheres.push("date <= ?".to_string());
+            params.push(Box::new(d.to_string()));
+        }
+        let where_suffix = format!(" WHERE {}", wheres.join(" AND "));
+        let sql = format!(
+            "SELECT COUNT(*), COALESCE(SUM(total), 0), COALESCE(AVG(total), 0), \
+                    COALESCE(SUM(paid_amount), 0) FROM sales{}",
+            where_suffix
+        );
+        let arg_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+        let (count, total, avg, paid): (i64, i64, i64, i64) =
+            c.query_row(&sql, arg_refs.as_slice(), |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })?;
+        Ok(SalesPeriodSummary {
+            count,
+            total_paise: total,
+            avg_paise: avg,
+            paid_paise: paid,
+        })
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct SaleReturnsPeriodSummary {
+    pub count: i64,
+    pub total_refund_paise: i64,
+    pub refunded_paise: i64,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_sale_returns_period_summary(
+    state: tauri::State<'_, AppState>,
+    from_date: Option<String>,
+    to_date: Option<String>,
+) -> AppResult<SaleReturnsPeriodSummary> {
+    ipc_auth::authorize_err("cmd_sale_returns_period_summary", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    db.with_raw(|c| {
+        let mut wheres: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(d) = from_date.as_deref() {
+            wheres.push("created_at >= ?".to_string());
+            params.push(Box::new(date_to_ms(d)));
+        }
+        if let Some(d) = to_date.as_deref() {
+            wheres.push("created_at <= ?".to_string());
+            params.push(Box::new(date_to_ms(d)));
+        }
+        let where_suffix = if wheres.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", wheres.join(" AND "))
+        };
+        let sql = format!(
+            "SELECT COUNT(*), COALESCE(SUM(refund_total_paise), 0) FROM sale_returns{}",
+            where_suffix
+        );
+        let arg_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+        let (count, total_refund): (i64, i64) =
+            c.query_row(&sql, arg_refs.as_slice(), |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?;
+        Ok(SaleReturnsPeriodSummary {
+            count,
+            total_refund_paise: total_refund,
+            refunded_paise: total_refund,
+        })
+    })
 }
 
 #[cfg(test)]

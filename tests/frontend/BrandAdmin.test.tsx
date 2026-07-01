@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrandAdmin } from "../../src/domain/items/BrandAdmin";
 
 /* ------------------------------------------------------------------ */
@@ -10,6 +11,7 @@ vi.mock("../../src/domain/items/api", () => ({
   createBrand: vi.fn(),
   deactivateBrand: vi.fn(),
   listBrands: vi.fn(),
+  listBrandsPaged: vi.fn(),
   updateBrandCodePrefix: vi.fn(),
 }));
 
@@ -29,6 +31,12 @@ const mockDeactivateBrand = vi.mocked(deactivateBrand);
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+function wrapper({ children }: { children: React.ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+
 /** Default brands returned by listBrands in happy-path tests. */
 const SAMPLE_BRANDS = [
   { id: 1, name: "Asian Paints", prefix: "AP", next_seq: 1 },
@@ -37,11 +45,11 @@ const SAMPLE_BRANDS = [
 
 function renderOwner(brands = SAMPLE_BRANDS) {
   mockListBrands.mockResolvedValue(brands);
-  return render(<BrandAdmin role="owner" />);
+  return render(<BrandAdmin role="owner" />, { wrapper });
 }
 
 function renderNonOwner() {
-  return render(<BrandAdmin role="cashier" />);
+  return render(<BrandAdmin role="cashier" />, { wrapper });
 }
 
 /* ------------------------------------------------------------------ */
@@ -93,7 +101,7 @@ describe("BrandAdmin", () => {
   describe("owner view — loading", () => {
     it("renders skeleton while listBrands resolves", async () => {
       mockListBrands.mockReturnValue(new Promise(() => {}));
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
 
       expect(screen.queryByText("Asian Paints")).not.toBeInTheDocument();
       expect(screen.queryByText("Berger")).not.toBeInTheDocument();
@@ -106,7 +114,7 @@ describe("BrandAdmin", () => {
   describe("owner view — empty state", () => {
     it("shows 'No brands configured' when listBrands returns []", async () => {
       mockListBrands.mockResolvedValue([]);
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText(/no brands configured/i)).toBeInTheDocument();
@@ -164,7 +172,7 @@ describe("BrandAdmin", () => {
         { id: 3, name: "Nerolac", prefix: "NR", next_seq: 1 },
       ]);
 
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       const nameInput = screen.getByPlaceholderText(/asian paints/i);
@@ -185,7 +193,7 @@ describe("BrandAdmin", () => {
       mockCreateBrand.mockResolvedValue(undefined as never);
       mockListBrands.mockResolvedValue([]);
 
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalledTimes(1));
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
@@ -203,7 +211,7 @@ describe("BrandAdmin", () => {
       mockCreateBrand.mockResolvedValue(undefined as never);
       mockListBrands.mockResolvedValue([]);
 
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       const nameInput = screen.getByPlaceholderText(/asian paints/i);
@@ -224,7 +232,7 @@ describe("BrandAdmin", () => {
       mockCreateBrand.mockResolvedValue(undefined as never);
       mockListBrands.mockResolvedValue([]);
 
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Nerolac");
@@ -283,7 +291,7 @@ describe("BrandAdmin", () => {
     it("rejects prefix longer than 4 chars", async () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue([]);
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
@@ -301,7 +309,7 @@ describe("BrandAdmin", () => {
     it("rejects prefix with special characters", async () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue([]);
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
@@ -318,7 +326,7 @@ describe("BrandAdmin", () => {
     it("shows 'Brand name is required' error when name is empty and prefix is filled (via Enter key)", async () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue([]);
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       // Fill prefix, leave name empty
@@ -467,7 +475,7 @@ describe("BrandAdmin", () => {
       mockDeactivateBrand.mockResolvedValue(undefined as never);
       mockListBrands.mockResolvedValue(SAMPLE_BRANDS);
 
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalledTimes(1));
 
       await user.click(screen.getAllByRole("button", { name: /deactivate/i })[0]);
@@ -501,7 +509,7 @@ describe("BrandAdmin", () => {
   describe("error handling", () => {
     it("shows error alert when listBrands fails", async () => {
       mockListBrands.mockRejectedValue(new Error("Network down"));
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByRole("alert")).toHaveTextContent(/network down/i);
@@ -512,7 +520,7 @@ describe("BrandAdmin", () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue([]);
       mockCreateBrand.mockRejectedValue(new Error("Duplicate brand"));
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
@@ -529,7 +537,7 @@ describe("BrandAdmin", () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue(SAMPLE_BRANDS);
       mockUpdateBrandCodePrefix.mockRejectedValue(new Error("Prefix taken"));
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Asian Paints")).toBeInTheDocument();
@@ -547,7 +555,7 @@ describe("BrandAdmin", () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue(SAMPLE_BRANDS);
       mockDeactivateBrand.mockRejectedValue(new Error("Cannot deactivate"));
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Asian Paints")).toBeInTheDocument();
@@ -600,7 +608,7 @@ describe("BrandAdmin", () => {
       mockCreateBrand.mockReturnValue(new Promise(() => {}));
       mockListBrands.mockResolvedValue([]);
 
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
@@ -623,7 +631,7 @@ describe("BrandAdmin", () => {
       // Make updateBrandCodePrefix hang
       mockUpdateBrandCodePrefix.mockReturnValue(new Promise(() => {}));
       mockListBrands.mockResolvedValue(SAMPLE_BRANDS);
-      render(<BrandAdmin role="owner" />);
+      render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Asian Paints")).toBeInTheDocument();

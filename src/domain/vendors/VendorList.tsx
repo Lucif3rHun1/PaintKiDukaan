@@ -1,16 +1,16 @@
 /**
  * VendorList — searchable list with outstanding + role-gated Pay action.
- * Uses canonical SearchInput, DataTable, PaginationControls, and usePaginatedQuery.
+ * Renders via <DataList> server source (cmd_list_vendors_paged).
  */
 import { useEffect, useMemo, useState } from "react";
 import { Banknote, Phone, Truck } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
-import { Alert, Button, DataTable, EmptyState, Money, PaginationControls, SearchInput } from '../../components/ui';
+import { Button, DataList, EmptyState, Money } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
-import { listVendors } from "./api";
+import { listVendorsPaged, listVendorMetrics } from "./api";
 import { outstandingReport } from "../../pos/api";
-import { usePaginatedQuery } from "../../lib/query";
 import { type Vendor } from "../types";
 import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
@@ -36,31 +36,23 @@ export function VendorList({
 }: Props) {
   const [outstandings, setOutstandings] = useState<Record<number, number>>({});
 
-  const {
-    data: items,
-    allData,
-    isLoading,
-    isFetching,
-    error,
-    page,
-    setPage,
-    search,
-    setSearch,
-    totalItems,
-    totalPages,
-    pageSize,
-    refetch,
-  } = usePaginatedQuery<Vendor>({
-    queryKey: ["vendors", refreshKey ?? 0],
-    pageSize: PAGE_SIZE,
-    queryFn: ({ search: debouncedSearch }) =>
-      listVendors(debouncedSearch || undefined),
+  const vendorMetrics = useQuery({
+    queryKey: ["list-metrics", "cmd_vendor_metrics"],
+    queryFn: listVendorMetrics,
   });
 
-  // Batch fetch outstanding report once the vendor list changes.
+  const serverSource = useMemo(() => ({
+    endpoint: "cmd_list_vendors_paged",
+    pageSize: PAGE_SIZE,
+    initialSort: { field: "name", dir: "asc" as const },
+    clientFn: listVendorsPaged,
+  }), [refreshKey]);
+
+  // Batch fetch outstanding report when total changes (so we have vendor IDs).
+  const totalVendors = vendorMetrics.data?.total ?? 0;
   useEffect(() => {
     let cancelled = false;
-    if (allData.length === 0) {
+    if (totalVendors === 0) {
       setOutstandings({});
       return;
     }
@@ -82,7 +74,7 @@ export function VendorList({
     return () => {
       cancelled = true;
     };
-  }, [allData]);
+  }, [totalVendors]);
 
   function handlePay(v: Vendor) {
     if (onRecordPayment) {
@@ -98,12 +90,17 @@ export function VendorList({
   const columns = useMemo<ColumnDef<Vendor>[]>(() => {
     const cols: ColumnDef<Vendor>[] = [
       {
+        id: "name",
         header: "Name",
         cell: (v) => (
           <span className="font-medium text-foreground">{toTitleCase(v.name)}</span>
         ),
+        sortField: "name",
+        sortable: true,
+        searchable: true,
       },
       {
+        id: "phone",
         header: "Phone",
         cell: (v) =>
           v.phone ? (
@@ -114,13 +111,19 @@ export function VendorList({
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
+        sortField: "phone",
+        sortable: true,
       },
       {
+        id: "opening",
         header: "Opening",
         align: "right",
         cell: (v) => <Money paise={v.opening_balance ?? 0} muted />,
+        sortField: "opening_balance_paise",
+        sortable: true,
       },
       {
+        id: "outstanding",
         header: "Outstanding",
         align: "right",
         cell: (v) =>
@@ -137,6 +140,7 @@ export function VendorList({
 
     if (canPay) {
       cols.push({
+        id: "action",
         header: "Action",
         align: "right",
         cell: (v) => (
@@ -159,22 +163,20 @@ export function VendorList({
   const rowClassName = (v: Vendor) => (v.is_active ? "" : "opacity-60");
 
   useFocusShortcut({ key: "F2", selector: '[data-shortcut="search"]', description: "Focus search" });
-  useShortcut({ key: "F5", scope: "page", description: "Refresh list", onMatch: () => { void refetch(); } });
+  useShortcut({
+    key: "F5",
+    scope: "page",
+    description: "Refresh list",
+    onMatch: () => {
+      void vendorMetrics.refetch();
+    },
+  });
   useShortcut({
     key: "F6",
     scope: "page",
     description: "New vendor",
     onMatch: () => {
       if (canCreate && onCreate) onCreate();
-    },
-  });
-  useShortcut({
-    key: "Escape",
-    allowInInputs: true,
-    preventDefault: true,
-    description: "Clear search",
-    onMatch: () => {
-      if (search) setSearch("");
     },
   });
 
@@ -184,8 +186,7 @@ export function VendorList({
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold tracking-tight">Vendors</h2>
           <p className="text-sm text-muted-foreground">
-            {totalItems} {totalItems === 1 ? "vendor" : "vendors"}
-            {search ? ` matching "${search}"` : ""}
+            {vendorMetrics.data?.total ?? "—"} {(vendorMetrics.data?.total ?? 0) === 1 ? "vendor" : "vendors"}
           </p>
         </div>
         {canCreate ? (
@@ -202,60 +203,33 @@ export function VendorList({
         ) : null}
       </header>
 
-      <div className="space-y-3">
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search by name or phone…"
-          ariaLabel="Search vendors"
-          data-shortcut="search"
-        />
-
-        {error ? (
-          <Alert title="Could not load vendors" variant="destructive">
-            {extractError(error)}
-          </Alert>
-        ) : null}
-
-        <DataTable
-          data={items}
-          columns={columns}
-          keyExtractor={(v) => v.id}
-          loading={isLoading || isFetching}
-          emptyState={
-            <EmptyState
-              icon={Truck}
-              title={search ? "No matches" : "No vendors yet"}
-              description={
-                search
-                  ? `Nothing matches "${search}". Try a different search.`
-                  : "Add the first vendor to start receiving stock and tracking payables."
-              }
-              primary={
-                canCreate ? (
-                  <Button type="button" onClick={onCreate} icon={Truck}>
-                    Add Vendor
-                  </Button>
-                ) : undefined
-              }
-            />
-          }
-          error={error}
-          onRetry={refetch}
-          onRowClick={onSelect ? (v) => onSelect(v) : undefined}
-          rowClassName={rowClassName}
-        />
-
-        {!isLoading && allData.length > 0 ? (
-          <PaginationControls
-            page={page}
-            totalPages={totalPages}
-            totalItems={totalItems}
-            pageSize={pageSize}
-            onPageChange={setPage}
+      <DataList
+        source={serverSource}
+        columns={columns}
+        keyExtractor={(v) => v.id}
+        searchPlaceholder="Search by name or phone…"
+        emptyState={({ hasActiveFilter }) => (
+          <EmptyState
+            icon={Truck}
+            title={hasActiveFilter ? "No matches" : "No vendors yet"}
+            description={
+              hasActiveFilter
+                ? "Nothing matches your search. Try a different query."
+                : "Add the first vendor to start receiving stock and tracking payables."
+            }
+            primary={
+              canCreate ? (
+                <Button type="button" onClick={onCreate} icon={Truck}>
+                  Add Vendor
+                </Button>
+              ) : undefined
+            }
           />
-        ) : null}
-      </div>
+        )}
+        onRowClick={onSelect ? (v) => onSelect(v) : undefined}
+        rowClassName={rowClassName}
+        height={520}
+      />
     </div>
   );
 }
