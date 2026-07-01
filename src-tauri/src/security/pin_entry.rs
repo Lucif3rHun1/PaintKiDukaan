@@ -84,7 +84,7 @@ pub fn try_unlock(
             let stored: KdfParams = serde_json::from_slice(&row.pin_params)
                 .unwrap_or(KdfParams::PIN);
             let target = KdfParams::PIN;
-            if stored.m_cost_kib > target.m_cost_kib || stored.t_cost != target.t_cost {
+            if stored.m_cost_kib < target.m_cost_kib || stored.t_cost < target.t_cost {
                 let new_salt = random_salt();
                 if let Ok(mut new_kek) = derive_pin_kek(pin, &new_salt, &target) {
                     let verifier = keywrap::pin_verifier_for_kek(&new_kek).to_vec();

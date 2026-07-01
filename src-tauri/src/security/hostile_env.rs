@@ -3,53 +3,50 @@
 
 use serde::Serialize;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::OnceLock;
+use std::time::Instant;
 
 use super::anti_debug::{self, DebugReport};
 use super::anti_sniff::{self, SniffReport};
 use super::anti_vm::{self, VmReport};
 use super::ntdll_integrity::{self, NtdllReport};
 
-/// Counts registry change events fired by the background `registry_watch` thread.
-/// Incremented via `increment_registry_change_count()` from the watch callback.
 static REGISTRY_CHANGES: AtomicU8 = AtomicU8::new(0);
 
-/// Called from the registry watch callback when a monitored key changes.
+static PROCESS_START: OnceLock<Instant> = OnceLock::new();
+
 pub fn increment_registry_change_count() {
     REGISTRY_CHANGES.fetch_add(1, Ordering::Relaxed);
 }
 
+// ponytail: Windows Update hot-patches ntdll without updating the on-disk copy,
+// causing hash mismatch until reboot. 30s grace prevents false locks on startup.
+fn startup_grace_active() -> bool {
+    PROCESS_START.get_or_init(Instant::now).elapsed().as_secs() < 30
+}
+
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-/// Configurable response when hostile environment is detected.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostileResponse {
-    /// Log the detection but allow normal operation.
     Warn,
-    /// Lock the session (require re-authentication).
     Lock,
-    /// Wipe sensitive data from disk.
     Wipe,
 }
 
-/// Action to take after hostile environment detection.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum ResponseAction {
-    /// Logged detection — no state change.
     Log,
-    /// Session locked — requires re-auth.
     LockSession,
-    /// Data wiped — destructive, last resort.
     WipeData,
 }
 
-/// Aggregated hostile environment report.
 #[derive(Clone, Debug, Serialize)]
 pub struct HostileEnvReport {
     pub debug: DebugReport,
     pub vm: VmReport,
     pub sniff: SniffReport,
     pub ntdll: NtdllReport,
-    /// Weighted risk score (0-100).
     pub score: u8,
 }
 
@@ -63,27 +60,17 @@ const NTDLL_WEIGHT: u8 = 15;
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /// Run all hostile environment detectors and compute a weighted risk score.
-///
-/// Score weighting:
-/// - debug:          35 points max
-/// - vm:             35 points max
-/// - sniff:          15 points max
-/// - ntdll:          15 points max (hooks detected = 100 → 15 weighted)
-/// - amsi bypass:    +30 flat (Windows only — non-Windows returns "unknown")
-/// - registry changes: +20 per change, capped at +40
 pub fn check_all() -> HostileEnvReport {
     let debug = anti_debug::detect();
     let vm    = anti_vm::detect();
     let sniff = anti_sniff::detect();
     let ntdll = ntdll_integrity::check_ntdll_integrity();
 
-    // ── per-module signal dump ──────────────────────────────────────────────
     log_vm_signals(&vm);
     log_debug_signals(&debug);
     log_sniff_signals(&sniff);
     log_ntdll_signals(&ntdll);
 
-    // ── score components ────────────────────────────────────────────────────
     let debug_raw  = compute_debug_score(&debug);
     let vm_raw     = compute_vm_score(&vm);
     let sniff_raw  = compute_sniff_score(&sniff);
@@ -92,7 +79,15 @@ pub fn check_all() -> HostileEnvReport {
     let debug_pts  = (debug_raw  as u16 * DEBUG_WEIGHT  as u16) / 100;
     let vm_pts     = (vm_raw     as u16 * VM_WEIGHT     as u16) / 100;
     let sniff_pts  = (sniff_raw  as u16 * SNIFF_WEIGHT  as u16) / 100;
-    let ntdll_pts  = (ntdll_raw  as u16 * NTDLL_WEIGHT  as u16) / 100;
+    let mut ntdll_pts = (ntdll_raw  as u16 * NTDLL_WEIGHT  as u16) / 100;
+
+    // ponytail: skip ntdll during 30s startup grace. Windows Update hot-patches
+    // ntdll in memory without updating on-disk copy → hash mismatch until reboot.
+    if startup_grace_active() {
+        log::debug!("hostile_env: ntdll scoring skipped (within 30s startup grace period)");
+        ntdll_pts = 0;
+    }
+
     let base_score = (debug_pts + vm_pts + sniff_pts + ntdll_pts).min(100) as u8;
 
     log::debug!(
@@ -105,32 +100,20 @@ pub fn check_all() -> HostileEnvReport {
         base  = base_score,
     );
 
+    #[allow(unused_mut)]
     let mut score = base_score;
 
-    // ── AMSI bypass (Windows only — skip on non-Windows to avoid always +30) ─
     #[cfg(target_os = "windows")]
     let amsi_bump = amsi_check_with_log(&mut score);
     #[cfg(not(target_os = "windows"))]
     let amsi_bump: u8 = 0;
 
-    // ── registry changes ────────────────────────────────────────────────────
-    let reg_changes = REGISTRY_CHANGES.load(Ordering::Relaxed);
-    let reg_bump    = reg_changes.saturating_mul(20).min(40);
-    if reg_bump > 0 {
-        log::debug!(
-            "hostile_env: registry changes={} → +{} pts",
-            reg_changes, reg_bump
-        );
-    }
-    score = score.saturating_add(reg_bump).min(100);
-
     log::info!(
         "hostile_env: score={total}  (debug={pts_d} vm={pts_v} sniff={pts_s} \
-         ntdll={pts_n} amsi=+{amsi} reg=+{reg})",
+         ntdll={pts_n} amsi=+{amsi})",
         total = score,
         pts_d = debug_pts, pts_v = vm_pts, pts_s = sniff_pts, pts_n = ntdll_pts,
         amsi  = amsi_bump,
-        reg   = reg_bump,
     );
 
     HostileEnvReport { debug, vm, sniff, ntdll, score }
@@ -182,11 +165,11 @@ fn log_ntdll_signals(ntdll: &ntdll_integrity::NtdllReport) {
     );
 }
 
-/// Run the AMSI check with detailed logging, add score bump, and return the
-/// bump value (0 or 30) so callers can include it in the score summary.
+// ponytail: AMSI init fails on fresh Windows installs without AV configured.
+// Require at least one other signal (score > 0) before adding the +30 penalty.
 #[cfg(target_os = "windows")]
 fn amsi_check_with_log(score: &mut u8) -> u8 {
-    match super::amsi_check::init_amsi("PaintKiDukaan") {
+    let bump = match super::amsi_check::init_amsi("PaintKiDukaan") {
         Ok(ctx) if ctx.initialized => {
             let verdict = super::amsi_check::self_scan_eicar(&ctx);
             log::debug!(
@@ -198,36 +181,37 @@ fn amsi_check_with_log(score: &mut u8) -> u8 {
                 0
             } else {
                 log::debug!("hostile_env/amsi: EICAR not detected — bypass confirmed (+30 pts)");
-                *score = score.saturating_add(30);
                 30
             }
         }
         Ok(_ctx) => {
-            // AmsiInitialize returned S_OK but handle was null or init flag is false.
             log::debug!(
                 "hostile_env/amsi: AmsiInitialize returned non-null but context not initialized \
                  (AV may be blocking AMSI load) → treating as bypassed (+30 pts)"
             );
-            *score = score.saturating_add(30);
             30
         }
         Err(e) => {
             log::debug!("hostile_env/amsi: init failed — {e} → treating as bypassed (+30 pts)");
-            *score = score.saturating_add(30);
             30
         }
+    };
+
+    if bump == 0 {
+        return 0;
     }
+    if *score == 0 {
+        log::debug!(
+            "hostile_env/amsi: bypass signal ignored — no corroborating signals (score=0)"
+        );
+        return 0;
+    }
+
+    *score = score.saturating_add(bump);
+    bump
 }
 
-/// Determine the action to take based on the report and configured response.
-///
-/// Default response is `Lock` (don't auto-wipe).
 pub fn respond(report: &HostileEnvReport, action: HostileResponse) -> ResponseAction {
-    // Only trigger action if score exceeds threshold.
-    // Raised from 10 → 25: hypervisor_cpu alone scores 13 (38 raw * 35 weight / 100)
-    // which was a false positive on any Windows 11 machine with Hyper-V, WSL2, or
-    // Docker Desktop enabled. A threshold of 25 requires at least two independent
-    // signals before locking the session.
     const THRESHOLD: u8 = 25;
 
     if report.score < THRESHOLD {
@@ -238,7 +222,6 @@ pub fn respond(report: &HostileEnvReport, action: HostileResponse) -> ResponseAc
         HostileResponse::Warn => ResponseAction::Log,
         HostileResponse::Lock => ResponseAction::LockSession,
         HostileResponse::Wipe => {
-            // Wipe requires score >= 60 to prevent accidental data loss.
             if report.score >= 60 {
                 ResponseAction::WipeData
             } else {
@@ -250,8 +233,6 @@ pub fn respond(report: &HostileEnvReport, action: HostileResponse) -> ResponseAc
 
 // ─── Score computation ─────────────────────────────────────────────────────
 
-/// Compute weighted risk score from detection reports.
-/// Returns 0-100.
 #[cfg(test)]
 fn compute_score(
     debug: &DebugReport,
@@ -276,19 +257,19 @@ fn compute_score(
 fn compute_debug_score(report: &DebugReport) -> u8 {
     let mut score: u8 = 0;
     if report.debugger_present {
-        score = score.saturating_add(38); // ~15/40
+        score = score.saturating_add(38);
     }
     if report.remote_debugger {
-        score = score.saturating_add(25); // ~10/40
+        score = score.saturating_add(25);
     }
     if report.hardware_breakpoints {
-        score = score.saturating_add(12); // ~5/40
+        score = score.saturating_add(12);
     }
     if report.timing_anomaly {
-        score = score.saturating_add(12); // ~5/40
+        score = score.saturating_add(12);
     }
     if report.ptrace_attached {
-        score = score.saturating_add(13); // ~5/40
+        score = score.saturating_add(13);
     }
     score.min(100)
 }
@@ -296,19 +277,19 @@ fn compute_debug_score(report: &DebugReport) -> u8 {
 fn compute_vm_score(report: &VmReport) -> u8 {
     let mut score: u8 = 0;
     if report.hypervisor_cpu {
-        score = score.saturating_add(38); // ~15/40
+        score = score.saturating_add(38);
     }
     if report.vm_registry {
-        score = score.saturating_add(25); // ~10/40
+        score = score.saturating_add(25);
     }
     if report.vm_mac_oui {
-        score = score.saturating_add(25); // ~10/40
+        score = score.saturating_add(25);
     }
     if report.sandbox_dll {
-        score = score.saturating_add(7); // ~3/40
+        score = score.saturating_add(7);
     }
     if report.disk_anomaly {
-        score = score.saturating_add(5); // ~2/40
+        score = score.saturating_add(5);
     }
     score.min(100)
 }
@@ -362,7 +343,6 @@ mod tests {
     #[test]
     fn check_all_produces_report() {
         let report = check_all();
-        // Score should be 0-100.
         assert!(report.score <= 100);
     }
 
@@ -529,8 +509,6 @@ mod tests {
 
     #[test]
     fn ntdll_hooked_score_triggers_lock() {
-        // ntdll hooks score 100 raw * 15 weight / 100 = 15 weighted. Use a
-        // score above the new threshold (25) to verify the lock fires.
         let report = HostileEnvReport {
             debug: DebugReport::default(),
             vm: VmReport::default(),

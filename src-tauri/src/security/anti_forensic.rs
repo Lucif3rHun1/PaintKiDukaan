@@ -342,20 +342,22 @@ pub fn install<R: tauri::Runtime>(
         .name("pkb-svc".into())
         .spawn(move || loop {
             std::thread::sleep(std::time::Duration::from_secs(SCRUB_INTERVAL_SECS));
-            crate::security::telemetry_suppress::suppress_all();
+            // ponytail: removed OS-wide destructive operations from periodic loop:
+            // - telemetry_suppress::suppress_all() — includes OS-wide DNS flush
+            // - clear_shellbags_and_recent() — clears ALL apps' shellbags/recent docs
+            // - clear_thumbnail_cache() — deletes ALL apps' thumbnail cache
+            // - clear_user_assist() — wipes ALL apps' GUI launch history
+            // - clear_recent_and_jumplists() — wipes ALL apps' recent items/jump lists/timeline
+            // These were destroying other apps' data, not just ours.
             crate::session::rotate_log().ok();
-            clear_shellbags_and_recent().ok();
-            clear_thumbnail_cache().ok();
-            clear_user_assist().ok();
-            clear_recent_and_jumplists().ok();
-            clear_macos_recent_items().ok();
+            clear_macos_recent_items().ok(); // self-scoped: only in.paintkiduakan.master defaults
         })
         .map_err(|e| AppError::Internal(format!("failed to spawn scrub thread: {e}")))?;
 
     // Startup scrubs (once, before the periodic loop).
-    clear_user_assist().ok();
-    clear_recent_and_jumplists().ok();
-    clear_macos_recent_items().ok();
+    // ponytail: removed clear_user_assist() and clear_recent_and_jumplists() —
+    // these affect ALL apps on the system, not just ours.
+    clear_macos_recent_items().ok(); // self-scoped: only in.paintkiduakan.master defaults
     // ponytail: clear_ebwebview_cache() removed — secure-deleting EBWebView
     // files while WebView2 is running corrupts rendering (blank screen).
     // WebView2 needs its profile data to render. This should only be called

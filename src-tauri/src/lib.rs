@@ -446,27 +446,20 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building PaintKiDukaan");
 
-    app.run(|app_handle, event| {
-        // On clean exit, wipe WAL and SHM files before the DB handle drops.
-        // Unclean shutdown (kill-9, power loss) cannot be covered here, but
-        // this handles the normal close path to prevent WAL-based DB recovery.
+    app.run(|_app_handle, event| {
         if let tauri::RunEvent::WindowEvent {
             label,
             event: tauri::WindowEvent::CloseRequested { .. },
             ..
         } = &event
         {
-            if label == "main" {
-                if let Ok(app_data) = app_handle.path().app_data_dir() {
-                    let db_n = security::app_paths::db_name();
-                    let db = app_data.join(db_n);
-                    let wal = app_data.join(format!("{db_n}-wal"));
-                    let shm = app_data.join(format!("{db_n}-shm"));
-                    let _ = security::anti_forensic::secure_delete(&wal);
-                    let _ = security::anti_forensic::secure_delete(&shm);
-                    let _ = db; // DB file itself is encrypted; WAL/SHM may be cleartext pages
-                }
-            }
+            // ponytail: WAL/SHM secure_delete removed — same bug class as
+            // EBWebView. SQLCipher owns these files while the connection is
+            // open; overwriting them corrupts the content (random data in
+            // WAL pages) and rename+delete fails with ERROR_SHARING_VIOLATION,
+            // leaving orphaned random-named files. SQLite cleans up WAL/SHM
+            // automatically when the connection closes properly.
+            let _ = label;
         }
     });
 }

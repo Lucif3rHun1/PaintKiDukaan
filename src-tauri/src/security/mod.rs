@@ -248,7 +248,6 @@ fn run_security_init_inner(
     // Registry watch (non-blocking, spawns thread)
     match registry_watch::watch_critical_keys(|| {
         log::warn!("security: critical registry key changed");
-        hostile_env::increment_registry_change_count();
     }) {
         Ok(_) => log::info!("security: registry watch started"),
         Err(e) => log::warn!("security: registry watch failed: {e}"),

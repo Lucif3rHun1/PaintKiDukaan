@@ -200,30 +200,26 @@ pub fn insert_alert(db: &Db, alert: CreateAlert) -> Result<i64, AppError> {
 }
 
 pub fn resolve_alerts_by_entity(
-    db: &Db,
+    conn: &rusqlite::Connection,
     kind: AlertKind,
     entity_id: &str,
 ) -> Result<usize, AppError> {
-    db.with_conn_immediate(|conn| {
-        let resolved_at = now_ms();
-        let kind_str = kind.as_str();
-        let rows = conn.execute(
-            "UPDATE alerts SET resolved_at = ?1 WHERE kind = ?2 AND entity_id = ?3 AND resolved_at IS NULL",
-            params![resolved_at, kind_str, entity_id],
-        )?;
-        Ok(rows)
-    })
+    let resolved_at = now_ms();
+    let kind_str = kind.as_str();
+    let rows = conn.execute(
+        "UPDATE alerts SET resolved_at = ?1 WHERE kind = ?2 AND entity_id = ?3 AND resolved_at IS NULL",
+        params![resolved_at, kind_str, entity_id],
+    )?;
+    Ok(rows)
 }
 
-pub fn cleanup_resolved_alerts(db: &Db, retention_days: u32) -> Result<usize, AppError> {
+pub fn cleanup_resolved_alerts(conn: &rusqlite::Connection, retention_days: u32) -> Result<usize, AppError> {
     let cutoff = now_ms() - (retention_days as i64) * 24 * 60 * 60 * 1000;
-    db.with_conn_immediate(|conn| {
-        let rows = conn.execute(
-            "DELETE FROM alerts WHERE resolved_at IS NOT NULL AND resolved_at < ?1",
-            params![cutoff],
-        )?;
-        Ok(rows)
-    })
+    let rows = conn.execute(
+        "DELETE FROM alerts WHERE resolved_at IS NOT NULL AND resolved_at < ?1",
+        params![cutoff],
+    )?;
+    Ok(rows)
 }
 
 /// SELECT used by list_alerts_for_role and unread_alert_count_for_role.
@@ -376,8 +372,10 @@ fn upsert_alert(
 }
 
 fn refresh_low_stock_alerts(conn: &rusqlite::Connection) -> Result<(), AppError> {
+    // ponytail: SUM(sb.qty) needed because items can have multiple stock_balances
+    // rows (one per location). Without SUM, an arbitrary single row was picked.
     let mut stmt = conn.prepare(
-        "SELECT i.id, COALESCE(b.name || ' · ' || i.name, i.name), COALESCE(sb.qty, 0) as balance
+        "SELECT i.id, COALESCE(b.name || ' · ' || i.name, i.name), COALESCE(SUM(sb.qty), 0) as balance
          FROM items i
          LEFT JOIN brands b ON b.id = i.brand_id
          LEFT JOIN stock_balances sb ON sb.item_id = i.id
@@ -468,7 +466,6 @@ fn refresh_day_close_alerts(conn: &rusqlite::Connection) -> Result<(), AppError>
 
 fn refresh_backup_alerts(
     conn: &rusqlite::Connection,
-    db: &Db,
     state: &State<'_, AppState>,
 ) -> Result<(), AppError> {
     let last_backup = *state
@@ -488,7 +485,7 @@ fn refresh_backup_alerts(
             Some("backup".to_string()),
         )?;
     } else {
-        resolve_alerts_by_entity(db, AlertKind::BackupOverdue, "backup")?;
+        resolve_alerts_by_entity(conn, AlertKind::BackupOverdue, "backup")?;
     }
     Ok(())
 }
@@ -500,7 +497,7 @@ pub fn cmd_refresh_alerts(state: State<'_, AppState>) -> Result<(), AppError> {
         db.with_conn_immediate(|conn| {
             refresh_low_stock_alerts(conn)?;
             refresh_day_close_alerts(conn)?;
-            refresh_backup_alerts(conn, db, &state)?;
+            refresh_backup_alerts(conn, &state)?;
             let retention_days: u32 = {
                 let settings = state
                     .settings
@@ -512,7 +509,7 @@ pub fn cmd_refresh_alerts(state: State<'_, AppState>) -> Result<(), AppError> {
                     .unwrap_or(7)
                     .max(1)
             };
-            cleanup_resolved_alerts(db, retention_days)?;
+            cleanup_resolved_alerts(conn, retention_days)?;
             Ok(())
         })
     })
@@ -650,8 +647,9 @@ mod tests {
             },
         )
         .unwrap();
-        resolve_alerts_by_entity(&db, AlertKind::LowStock, "item-x").unwrap();
         db.with_conn(|conn| {
+            resolve_alerts_by_entity(conn, AlertKind::LowStock, "item-x").unwrap();
+            let owner_alerts = list_alerts_for_role(conn, "owner").unwrap();
             let owner_alerts = list_alerts_for_role(conn, "owner").unwrap();
             assert!(owner_alerts.is_empty());
             Ok::<(), AppError>(())

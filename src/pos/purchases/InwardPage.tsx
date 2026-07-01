@@ -193,9 +193,11 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
   const { draft: savedDraft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave("purchase", draftData);
 
+  // ponytail: mark dirty when any field changes — lines OR notes
   useEffect(() => {
-    if (!draftLoading && draftData.draftLines.length > 0) markDirty();
-  }, [draftData, draftLoading, markDirty]);
+    if (draftLoading) return;
+    if (draftData.draftLines.length > 0 || (notes?.trim() ?? "") !== "") markDirty();
+  }, [draftData, draftLoading, notes, markDirty]);
 
   const draftRestored = useRef(false);
   useEffect(() => {

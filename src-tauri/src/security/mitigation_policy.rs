@@ -1,7 +1,7 @@
 //! SetProcessMitigationPolicy subset — bank-grade process hardening that
 //! doesn't break the Tauri / WebView2 / V8 stack.
 //!
-//! Applies DEP, ASLR, CFG, handle strictness, and extension-point disable.
+//! Applies DEP, ASLR, and CFG.
 //!
 //! Policies INTENTIONALLY OMITTED (would break the host process):
 //! - `DynamicCode` (ProhibitDynamicCode) — V8 / WebView2 emit JIT code.
@@ -9,6 +9,10 @@
 //! - `FontDisable` (DisableNonSystemFonts) — breaks Tauri text rendering.
 //! - `ImageLoad` (NoRemoteImages) — DLL search-order hardening is safer.
 //! - `ProcessSystemCallDisablePolicy` — breaks GUI apps entirely.
+//! - ponytail: `StrictHandleCheck` — any invalid handle kills the process; too
+//!   aggressive for a desktop app with WebView2 that touches many COM handles.
+//! - ponytail: `ExtensionPointDisable` — can break WebView2 codec/COM loading;
+//!   DLL search-order hardening is safer for this threat model.
 //!
 //! All Windows API calls are behind `#[cfg(target_os = "windows")]`. Non-Windows
 //! stubs return safe defaults so the module compiles and tests pass everywhere.
@@ -51,11 +55,11 @@ pub struct MitigationReport {
 ///
 /// ProcessSystemCallDisablePolicy is intentionally omitted (breaks GUI apps).
 pub fn apply_full_hardening() -> Result<MitigationReport, AppError> {
+    // ponytail: StrictHandleCheck removed — invalid handles shouldn't kill a desktop app.
+    // ponytail: ExtensionPointDisable removed — can break WebView2 codec/COM loading.
     let policies = [
         MitigationPolicy::Dep,
         MitigationPolicy::Aslr,
-        MitigationPolicy::StrictHandleCheck,
-        MitigationPolicy::ExtensionPointDisable,
         MitigationPolicy::ControlFlowGuard,
     ];
 
@@ -71,7 +75,6 @@ pub fn apply_full_hardening() -> Result<MitigationReport, AppError> {
 
     let all_critical_applied = applied.contains(&MitigationPolicy::Dep)
         && applied.contains(&MitigationPolicy::Aslr)
-        && applied.contains(&MitigationPolicy::StrictHandleCheck)
         && applied.contains(&MitigationPolicy::ControlFlowGuard);
 
     Ok(MitigationReport {
@@ -267,8 +270,8 @@ mod tests {
         // On Windows, some may fail depending on process privileges.
         assert_eq!(
             report.applied.len() + report.skipped.len(),
-            5,
-            "report must account for all 5 policies"
+            3,
+            "report must account for all 3 policies (DEP, ASLR, CFG)"
         );
     }
 
@@ -280,7 +283,7 @@ mod tests {
             report.all_critical_applied,
             "stubs return Ok, so all critical should pass"
         );
-        assert_eq!(report.applied.len(), 5);
+        assert_eq!(report.applied.len(), 3);
         assert!(report.skipped.is_empty());
     }
 

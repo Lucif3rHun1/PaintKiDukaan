@@ -10,7 +10,8 @@
 /// Run all suppression routines. Call at startup and on each periodic scrub.
 pub fn suppress_all() {
     clear_appcompat_shim_flags();
-    flush_dns_resolver_cache();
+    // ponytail: removed flush_dns_resolver_cache() — DnsFlushResolverCache flushes
+    // OS-wide DNS for ALL apps, not just ours.
     clear_prefetch_entry();
     disable_activity_history_for_process();
 }
@@ -22,32 +23,6 @@ fn clear_appcompat_shim_flags() {
     {
         let _ = std::env::set_var("__COMPAT_LAYER", "");
         let _ = std::env::remove_var("SHIM_FILE_LOG");
-    }
-}
-
-/// Flush the DNS resolver cache to remove any record of hostnames we resolved.
-/// Best-effort — requires elevation on some configurations.
-fn flush_dns_resolver_cache() {
-    #[cfg(target_os = "windows")]
-    unsafe {
-        type FlushFn = unsafe extern "system" fn() -> i32;
-        extern "system" {
-            fn LoadLibraryW(name: *const u16) -> *mut std::ffi::c_void;
-            fn GetProcAddress(
-                module: *mut std::ffi::c_void,
-                name: *const u8,
-            ) -> Option<unsafe extern "system" fn() -> isize>;
-        }
-        let wide: Vec<u16> = "dnsapi.dll\0".encode_utf16().collect();
-        let module = LoadLibraryW(wide.as_ptr());
-        if module.is_null() {
-            return;
-        }
-        let proc_name = b"DnsFlushResolverCache\0";
-        if let Some(proc) = GetProcAddress(module, proc_name.as_ptr()) {
-            let flush: FlushFn = std::mem::transmute(proc);
-            flush();
-        }
     }
 }
 

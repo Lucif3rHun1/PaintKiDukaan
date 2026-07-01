@@ -166,13 +166,15 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     if (primaryLocationId <= 0) e.primary_location_id = "Pick a location";
     if (retailPricePaise < 0) e.retail_price_paise = "Cannot be negative";
     if (costPaise < 0) e.cost_paise = "Cannot be negative";
-    if (Number(minStock) < 0) e.min_stock = "Cannot be negative";
+    if (minStock !== "" && isNaN(Number(minStock))) e.min_stock = "Must be a number";
+    else if (Number(minStock) < 0) e.min_stock = "Cannot be negative";
     setFieldErrors(e);
     return Object.keys(e).length === 0;
   }
 
   async function submit(e?: React.FormEvent): Promise<Item | null> {
     e?.preventDefault();
+    if (busy) return null;
     setError(null);
     if (!validate()) return null;
     setNameSuggestions([]);

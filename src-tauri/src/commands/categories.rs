@@ -58,7 +58,7 @@ pub fn create_category(state: State<'_, AppState>, name: String) -> AppResult<Ca
     require_role(&user, &[Role::Owner])?;
     db.with_tx(|tx| {
         let collision: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM categories WHERE name = ?1",
+            "SELECT COUNT(*) FROM categories WHERE name = ?1 COLLATE NOCASE",
             params![name],
             |r| r.get(0),
         )?;
@@ -99,7 +99,7 @@ pub fn deactivate_category(state: State<'_, AppState>, id: i64) -> AppResult<()>
             )
             .map_err(|_| AppError::NotFound(format!("category {id} not found")))?;
         let in_use: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM items WHERE category = ?1",
+            "SELECT COUNT(*) FROM items WHERE category = ?1 COLLATE NOCASE",
             params![cat_name],
             |r| r.get(0),
         )?;
