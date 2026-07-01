@@ -327,7 +327,8 @@ pub fn restore_from_recovery(
 }
 
 #[tauri::command]
-pub async fn cmd_pick_backup_file() -> Result<Option<String>, AppError> {
+pub async fn cmd_pick_backup_file(state: State<'_, AppState>) -> Result<Option<String>, AppError> {
+    ipc_auth::authorize_err("cmd_pick_backup_file", state.inner())?;
     let file = rfd::FileDialog::new()
         .add_filter("PaintKiDukaan Backup", &["pkb1"])
         .pick_file();

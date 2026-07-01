@@ -401,7 +401,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           setItemPackagingMap((prev) => new Map(prev).set(itemId, pkgs));
         })
         .catch((e: unknown) => {
-          console.error("[InwardPage] setItemPackaging failed", e);
+          toast.error(`Failed to save packaging: ${extractError(e)}`);
         });
     }
   }
@@ -497,7 +497,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       await Promise.allSettled(
         overrides.map((l) =>
           updateItem(l.item_id, { retail_price_paise: l.retail_price }).catch((e) => {
-            console.warn(`updateItem retail ${l.item_id} failed:`, e);
+            toast.error(`Failed to update retail price for item #${l.item_id}: ${extractError(e)}`);
           }),
         ),
       );

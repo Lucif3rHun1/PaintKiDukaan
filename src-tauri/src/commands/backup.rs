@@ -117,6 +117,58 @@ pub fn list_targets(state: State<'_, AppState>) -> Result<Vec<BackupTarget>, Str
     list_backup_targets().map_err(err_str)
 }
 
+/// Core backup work — no `state.db` lock held, so it's safe to call from
+/// inside other Tauri commands (e.g. `cmd_trigger_day_close` before the day
+/// close INSERT).
+pub(crate) fn do_backup<R: tauri::Runtime>(
+    state: &AppState,
+    app: &tauri::AppHandle<R>,
+    passphrase_override: Option<String>,
+) -> Result<BackupMetadata, String> {
+    let mut passphrase = passphrase_override
+        .filter(|p| !p.is_empty())
+        .map(Zeroizing::new)
+        .or_else(|| state.recovery_passphrase.lock().unwrap().clone())
+        .ok_or_else(|| "backup failed: no recovery passphrase on file. Re-run onboarding or use Settings → System to reset.".to_string())?;
+
+    let result = (|| -> Result<BackupMetadata, String> {
+        let targets = list_backup_targets().map_err(err_str)?;
+        let target = targets
+            .into_iter()
+            .find(|t| t.available)
+            .ok_or_else(|| "backup failed: no available backup target".to_string())?;
+
+        let live_db = resolve_live_db_path(app);
+        if !live_db.exists() {
+            return Err("backup failed: no live database to back up".into());
+        }
+
+        let target_dir = PathBuf::from(target.path);
+        std::fs::create_dir_all(&target_dir).map_err(|e| err_str(BackupError::Io(e)))?;
+
+        let timestamp = Utc::now().format("%Y%m%d-%H%M%S").to_string();
+        let envelope_path = target_dir.join(format!("paintkiduakan-{timestamp}.pkb1"));
+
+        // Snapshot into the OS temporary directory so a crash never leaves a
+        // plaintext copy inside the backup target folder.
+        let temp_snapshot = NamedTempFile::new().map_err(|e| err_str(BackupError::Io(e)))?;
+        let temp_path = temp_snapshot.path().to_path_buf();
+
+        // TODO(slice-A): Read DEK from AppState.db once Slice A exposes Db::dek().
+        let dek: Option<[u8; 32]> = None;
+        snapshot::snapshot_via_backup_api(&live_db, dek.as_ref(), &temp_path).map_err(err_str)?;
+
+        let metadata = encrypt_snapshot(&temp_path, &envelope_path, &passphrase).map_err(err_str)?;
+
+        // Drop the tempfile handle so the OS removes the plaintext snapshot.
+        drop(temp_snapshot);
+        Ok(metadata)
+    })();
+
+    passphrase.zeroize();
+    result
+}
+
 /// Create a new `.pkb1` backup of the live database.
 #[tauri::command(rename_all = "snake_case")]
 pub fn backup_now<R: tauri::Runtime>(
@@ -127,46 +179,7 @@ pub fn backup_now<R: tauri::Runtime>(
     if let Err(e) = ipc_auth::authorize_err("backup_now", state.inner()) {
         return Err(e.to_string());
     }
-    let mut passphrase = passphrase
-        .filter(|p| !p.is_empty())
-        .map(Zeroizing::new)
-        .or_else(|| state.recovery_passphrase.lock().unwrap().clone())
-        .ok_or_else(|| "backup failed: no recovery passphrase on file. Re-run onboarding or use Settings → System to reset.".to_string())?;
-
-    let targets = list_backup_targets().map_err(err_str)?;
-    let target = targets
-        .into_iter()
-        .find(|t| t.available)
-        .ok_or_else(|| "backup failed: no available backup target".to_string())?;
-
-    let live_db = resolve_live_db_path(&app);
-    if !live_db.exists() {
-        passphrase.zeroize();
-        return Err("backup failed: no live database to back up".into());
-    }
-
-    let target_dir = PathBuf::from(target.path);
-    std::fs::create_dir_all(&target_dir).map_err(|e| err_str(BackupError::Io(e)))?;
-
-    let timestamp = Utc::now().format("%Y%m%d-%H%M%S").to_string();
-    let envelope_path = target_dir.join(format!("paintkiduakan-{timestamp}.pkb1"));
-
-    // Snapshot into the OS temporary directory so a crash never leaves a
-    // plaintext copy inside the backup target folder.
-    let temp_snapshot = NamedTempFile::new().map_err(|e| err_str(BackupError::Io(e)))?;
-    let temp_path = temp_snapshot.path().to_path_buf();
-
-    // TODO(slice-A): Read DEK from AppState.db once Slice A exposes Db::dek().
-    // For the stubbed Db in Slice D we pass None, which treats the source as a
-    // plain SQLite database for snapshotting purposes.
-    let dek: Option<[u8; 32]> = None;
-    snapshot::snapshot_via_backup_api(&live_db, dek.as_ref(), &temp_path).map_err(err_str)?;
-
-    let metadata = encrypt_snapshot(&temp_path, &envelope_path, &passphrase).map_err(err_str)?;
-
-    // Drop the tempfile handle so the OS removes the plaintext snapshot.
-    drop(temp_snapshot);
-    passphrase.zeroize();
+    let metadata = do_backup(state.inner(), &app, passphrase)?;
 
     *state.last_backup_unix_ms.lock().unwrap() = Some(metadata.created_at_unix_ms);
 

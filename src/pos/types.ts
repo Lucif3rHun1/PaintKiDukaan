@@ -174,6 +174,8 @@ export interface DayClose {
   card_sales_paise: number;
   upi_sales_paise: number;
   expenses_paise: number;
+  cash_in_paise: number;
+  cash_out_paise: number;
   closing_cash_paise: number;
   actual_cash_paise: number;
   variance_paise: number;

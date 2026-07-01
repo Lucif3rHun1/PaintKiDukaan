@@ -765,10 +765,144 @@ impl Db {
             }
         }
 
+        // M-INLINE-021: Add cash_in_paise and cash_out_paise columns to day_close.
+        // Fixes B2 (cash_out bound to expenses_paise) and B3 (cash_in never stored).
+        {
+            let has_cash_in: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('day_close') WHERE name = 'cash_in_paise'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_cash_in {
+                conn.execute_batch(
+                    "ALTER TABLE day_close ADD COLUMN cash_in_paise INTEGER NOT NULL DEFAULT 0;",
+                )?;
+            }
+            let has_cash_out: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('day_close') WHERE name = 'cash_out_paise'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_cash_out {
+                conn.execute_batch(
+                    "ALTER TABLE day_close ADD COLUMN cash_out_paise INTEGER NOT NULL DEFAULT 0;",
+                )?;
+            }
+        }
+
+        // M-INLINE-022: Add day_close re-model tables (header, lines, audit, categories).
+        // Old `day_close` table remains untouched and in use; new tables are empty placeholders
+        // for #6 and #7 to fill. Rename old -> _day_close_legacy and day_close_v2 -> day_close
+        // happens in a later migration once all queries are rewritten.
+        {
+            let has_categories: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='cash_movement_categories'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_categories {
+                conn.execute_batch(
+                    "CREATE TABLE cash_movement_categories (\
+                         id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                         name TEXT UNIQUE NOT NULL,\
+                         kind TEXT NOT NULL CHECK (kind IN ('expense','cash_in','cash_out')),\
+                         active INTEGER NOT NULL DEFAULT 1,\
+                         created_at INTEGER NOT NULL\
+                     );",
+                )?;
+            }
+
+            let has_dcv2: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='day_close_v2'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_dcv2 {
+                conn.execute_batch(
+                    "CREATE TABLE day_close_v2 (\
+                         id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                         business_day TEXT NOT NULL,\
+                         location_id INTEGER NOT NULL,\
+                         status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','submitted','amended','voided')),\
+                         opened_by INTEGER NOT NULL,\
+                         opened_at INTEGER NOT NULL,\
+                         closed_by INTEGER,\
+                         closed_at INTEGER,\
+                         opening_cash_paise INTEGER NOT NULL,\
+                         closing_cash_paise INTEGER NOT NULL,\
+                         actual_cash_paise INTEGER NOT NULL,\
+                         variance_paise INTEGER NOT NULL,\
+                         note TEXT,\
+                         backup_id TEXT,\
+                         created_at INTEGER NOT NULL,\
+                         updated_at INTEGER NOT NULL,\
+                         UNIQUE (business_day, location_id)\
+                     );\
+                     CREATE INDEX idx_day_close_v2_business_day ON day_close_v2(business_day);\
+                     CREATE INDEX idx_day_close_v2_location_day ON day_close_v2(location_id, business_day DESC);",
+                )?;
+            }
+
+            let has_lines: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='day_close_lines'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_lines {
+                conn.execute_batch(
+                    "CREATE TABLE day_close_lines (\
+                         id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                         day_close_id INTEGER NOT NULL REFERENCES day_close_v2(id) ON DELETE CASCADE,\
+                         kind TEXT NOT NULL CHECK (kind IN ('cash_in','cash_out','expense','held_bill','return','credit','stock_ack')),\
+                         category_id INTEGER REFERENCES cash_movement_categories(id),\
+                         amount_paise INTEGER NOT NULL,\
+                         reference_id INTEGER,\
+                         reference_type TEXT,\
+                         note TEXT,\
+                         created_by INTEGER NOT NULL,\
+                         created_at INTEGER NOT NULL\
+                     );\
+                     CREATE INDEX idx_day_close_lines_close ON day_close_lines(day_close_id);\
+                     CREATE INDEX idx_day_close_lines_kind ON day_close_lines(kind);",
+                )?;
+            }
+
+            let has_audit: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='day_close_audit'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_audit {
+                conn.execute_batch(
+                    "CREATE TABLE day_close_audit (\
+                         id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                         day_close_id INTEGER NOT NULL REFERENCES day_close_v2(id) ON DELETE CASCADE,\
+                         action TEXT NOT NULL CHECK (action IN ('open','submit','amend','void','reopen')),\
+                         actor_user_id INTEGER NOT NULL,\
+                         payload_json TEXT,\
+                         created_at INTEGER NOT NULL\
+                     );\
+                     CREATE INDEX idx_day_close_audit_close ON day_close_audit(day_close_id);",
+                )?;
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
-            "PRAGMA journal_mode = WAL;\
-              PRAGMA busy_timeout = 5000;\
+            "PRAGMA busy_timeout = 5000;\
+              PRAGMA journal_mode = WAL;\
               PRAGMA foreign_keys = ON;\
               PRAGMA cache_size = -64000;\
               PRAGMA mmap_size = 268435456;\

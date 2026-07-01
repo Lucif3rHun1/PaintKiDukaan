@@ -43,6 +43,8 @@ pub struct DayClose {
     pub card_sales_paise: i64,
     pub upi_sales_paise: i64,
     pub expenses_paise: i64,
+    pub cash_in_paise: i64,
+    pub cash_out_paise: i64,
     pub closing_cash_paise: i64,
     pub actual_cash_paise: i64,
     pub variance_paise: i64,
@@ -254,7 +256,8 @@ pub fn list(db: &Db, limit: i64) -> Result<Vec<DayClose>, DayCloseError> {
         let mut stmt = c.prepare(
             "SELECT id, day, location_id, user_id, opening_cash_paise, cash_sales_paise,
                     card_sales_paise, upi_sales_paise, expenses_paise, closing_cash_paise,
-                    actual_cash_paise, variance_paise, note, created_at, updated_at
+                    actual_cash_paise, variance_paise, note, created_at, updated_at,
+                    cash_in_paise, cash_out_paise
              FROM day_close ORDER BY day DESC, id DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit], |r| {
@@ -274,6 +277,8 @@ pub fn list(db: &Db, limit: i64) -> Result<Vec<DayClose>, DayCloseError> {
                 note: r.get(12)?,
                 created_at: r.get::<_, i64>(13)?.to_string(),
                 updated_at: r.get::<_, i64>(14)?.to_string(),
+                cash_in_paise: r.get(15)?,
+                cash_out_paise: r.get(16)?,
             })
         })?;
         let mut out = Vec::new();
@@ -290,7 +295,8 @@ pub fn get(db: &Db, id: i64) -> Result<Option<DayClose>, DayCloseError> {
             .query_row(
                 "SELECT id, day, location_id, user_id, opening_cash_paise, cash_sales_paise,
                         card_sales_paise, upi_sales_paise, expenses_paise, closing_cash_paise,
-                        actual_cash_paise, variance_paise, note, created_at, updated_at
+                        actual_cash_paise, variance_paise, note, created_at, updated_at,
+                        cash_in_paise, cash_out_paise
                  FROM day_close WHERE id = ?1",
                 params![id],
                 |row| {
@@ -310,6 +316,8 @@ pub fn get(db: &Db, id: i64) -> Result<Option<DayClose>, DayCloseError> {
                         note: row.get(12)?,
                         created_at: row.get::<_, i64>(13)?.to_string(),
                         updated_at: row.get::<_, i64>(14)?.to_string(),
+                        cash_in_paise: row.get(15)?,
+                        cash_out_paise: row.get(16)?,
                     })
                 },
             )
@@ -368,8 +376,9 @@ pub fn trigger_day_close(db: &Db, user_id: i64, req: NewDayClose) -> Result<i64,
             "INSERT INTO day_close
                 (day, location_id, user_id, opening_cash_paise, cash_sales_paise, card_sales_paise,
                  upi_sales_paise, expenses_paise, closing_cash_paise, actual_cash_paise,
-                 variance_paise, note, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)
+                 variance_paise, note, created_at, updated_at,
+                 cash_in_paise, cash_out_paise)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?14, ?15)
              RETURNING id",
             params![
                 day,
@@ -379,12 +388,14 @@ pub fn trigger_day_close(db: &Db, user_id: i64, req: NewDayClose) -> Result<i64,
                 summary.cash_sales_paise,
                 summary.card_sales_paise,
                 summary.upi_sales_paise,
-                req.cash_out,
+                0i64, // expenses_paise: 0 in v1; replaced by cash_movement_categories in Phase B
                 closing,
                 req.counted_cash,
                 var,
                 req.notes,
                 now,
+                req.cash_in,  // B3 fix: was previously dropped
+                req.cash_out, // B2 fix: was incorrectly bound to expenses_paise
             ],
             |r| r.get(0),
         )?;
@@ -460,11 +471,19 @@ pub fn cmd_backup_gate_check(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn cmd_trigger_day_close(
+pub fn cmd_trigger_day_close<R: tauri::Runtime>(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<R>,
     req: NewDayClose,
 ) -> AppResult<i64> {
     ipc_auth::authorize_err("cmd_trigger_day_close", state.inner())?;
+
+    // ponytail: do_backup first; does NOT touch state.db so safe before lock.
+    if req.backup_decision == "back_up" {
+        crate::commands::backup::do_backup(state.inner(), &app, None)
+            .map_err(|e| AppError::Internal(format!("backup before day close failed: {e}")))?;
+    }
+
     let guard = state
         .db
         .lock()

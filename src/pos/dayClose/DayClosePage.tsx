@@ -110,27 +110,28 @@ export default function DayClosePage({ user }: Props) {
   const [denom, setDenom] = useState<Record<number, number>>({});
   const [useDenom, setUseDenom] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
-    backupGateCheck().then((d) => setGate(d ?? null)).catch((e: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error("[DayClosePage] failed to load backup gate", e);
+    let cancelled = false;
+    setBootError(null);
+    Promise.allSettled([
+      backupGateCheck().then((d) => { if (!cancelled) setGate(d ?? null); }),
+      cashSalesFor(user.id, date).then((d) => { if (!cancelled) setSummary(d ?? null); }),
+      lastOpeningFor(user.id, date).then((n) => {
+        if (!cancelled) setOpeningRupees(String((n ?? 0) / 100));
+      }),
+      listDayClose(30).then((d) => { if (!cancelled) setRecent(d ?? []); }),
+    ]).then((results) => {
+      if (cancelled) return;
+      const failures = results.filter((r) => r.status === "rejected");
+      if (failures.length > 0) {
+        setBootError(`Failed to load ${failures.length} data source(s). Retrying…`);
+        void queryClient.invalidateQueries({ queryKey: ["dayClose"] });
+      }
     });
-    cashSalesFor(user.id, date).then((d) => setSummary(d ?? null)).catch((e: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error("[DayClosePage] failed to load cash sales summary", e);
-    });
-    lastOpeningFor(user.id, date).then((n) => {
-      setOpeningRupees(String((n ?? 0) / 100));
-    }).catch((e: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error("[DayClosePage] failed to load last opening", e);
-    });
-    listDayClose(30).then((d) => setRecent(d ?? [])).catch((e: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error("[DayClosePage] failed to load day-close history", e);
-    });
-  }, [user.id, date]);
+    return () => { cancelled = true; };
+  }, [user.id, date, queryClient]);
 
   const denomTotal = useMemo(() => {
     return DENOMINATIONS.reduce((sum, d) => sum + d * (denom[d] || 0), 0);
@@ -392,6 +393,7 @@ export default function DayClosePage({ user }: Props) {
               </Button>
             )}
 
+            {bootError && <p className="text-xs text-destructive">{bootError}</p>}
             {status && <p className="text-xs text-muted-foreground">{status}</p>}
           </div>
         </Card>
