@@ -928,13 +928,14 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             </div>
 
             <div className="mt-3 flex justify-end">
-              <button
+              <Button
+                variant="primary"
+                size="sm"
                 type="button"
                 onClick={commitEntry}
-                className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               >
                 {editingIndex != null ? "Update" : "Add to inward"}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -996,14 +997,16 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                         <Money paise={l.retail_price} />
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           onClick={(e) => { e.stopPropagation(); removeLine(l.row_id); }}
                           aria-label={`Remove ${itemName(l.item_id)}`}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                         >
                           ×
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))

@@ -176,14 +176,15 @@ export function SplitPayment({ total, splits, onChange, balanceTenderAvailable }
               min={0}
             />
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={X}
             type="button"
             onClick={() => removeSplit(index)}
             aria-label="Remove payment"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            <X className="h-4 w-4" />
-          </button>
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          />
         </div>
       ))}
     </div>

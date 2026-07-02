@@ -198,7 +198,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                   )}
                   <div className="flex flex-col items-center gap-1">
                     <div
-                      className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition-all duration-200 ${
+                      className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition-[transform,colors,box-shadow] duration-200 ${
                         done
                           ? "bg-success text-success-foreground"
                           : active
@@ -242,7 +242,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
             </div>
           ) : null}
 
-          <div className={`transition-all duration-200 ease-in-out ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"}`}>
+          <div className={`transition-[opacity,transform] duration-200 ease-in-out ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"}`}>
           {step === 0 ? (
             <div>
               <label className={labelClass} htmlFor="envelopePath">

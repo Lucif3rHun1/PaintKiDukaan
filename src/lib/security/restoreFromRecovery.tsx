@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tauriInvoke as invoke } from "./tauri";
 import logo from "../../assets/logo-64.png";
-import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
@@ -12,6 +12,7 @@ import {
   type RestoreFromRecoveryInput,
 } from "./pin";
 import { type Role, type Session, type User, useSecurity } from "./state";
+import { Alert, Button, Field } from "../../components/ui";
 
 interface RestoreResponse {
   user?: { id?: number; name?: string; role?: Role } | null;
@@ -23,11 +24,6 @@ interface RestoreResponse {
 
 const inputClass =
   "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
-const labelClass = "text-sm font-medium text-foreground";
-const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
-const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: RestoreResponse): Session {
   const role: Role = result.user?.role ?? result.role ?? "stocker";
@@ -35,16 +31,6 @@ function normalizeSession(result: RestoreResponse): Session {
   const id = result.user?.id ?? result.user_id ?? 0;
   const user: User | null = result.user === null ? null : { id, name, role };
   return { user, locked: result.locked ?? false, pinRole: "real" };
-}
-
-function fieldError(message?: string) {
-  if (!message) return null;
-  return (
-    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
-      <AlertCircle className="h-4 w-4" aria-hidden="true" />
-      {message}
-    </p>
-  );
 }
 
 export function RestoreFromRecovery() {
@@ -126,23 +112,15 @@ export function RestoreFromRecovery() {
           </div>
 
           {backendError ? (
-            <div
-              className="mb-5 flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
-              role="alert"
-            >
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{backendError}</span>
-            </div>
+            <Alert variant="destructive" className="mb-5">
+              {backendError}
+            </Alert>
           ) : null}
 
           {step === 0 ? (
-            <div>
-              <label className={labelClass} htmlFor="passphrase">
-                Recovery password
-              </label>
-              <div className="relative mt-2">
+            <Field label="Recovery password" error={errors.passphrase?.message}>
+              <div className="relative">
                 <input
-                  id="passphrase"
                   className={`${inputClass} pr-11`}
                   aria-label="Recovery password"
                   aria-invalid={Boolean(errors.passphrase)}
@@ -160,18 +138,13 @@ export function RestoreFromRecovery() {
                   {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              {fieldError(errors.passphrase?.message)}
-            </div>
+            </Field>
           ) : null}
 
           {step === 1 ? (
             <div className="space-y-4">
-              <div>
-                <label className={labelClass} htmlFor="newPin">
-                  New owner PIN
-                </label>
+              <Field label="New owner PIN" error={errors.newPin?.message}>
                 <input
-                  id="newPin"
                   className={inputClass}
                   aria-label="New owner PIN"
                   aria-invalid={Boolean(errors.newPin)}
@@ -182,14 +155,9 @@ export function RestoreFromRecovery() {
                   type="password"
                   {...register("newPin")}
                 />
-                {fieldError(errors.newPin?.message)}
-              </div>
-              <div>
-                <label className={labelClass} htmlFor="newPinConfirm">
-                  Confirm new PIN
-                </label>
+              </Field>
+              <Field label="Confirm new PIN" error={errors.newPinConfirm?.message}>
                 <input
-                  id="newPinConfirm"
                   className={inputClass}
                   aria-label="Confirm new owner PIN"
                   aria-invalid={Boolean(errors.newPinConfirm)}
@@ -200,36 +168,36 @@ export function RestoreFromRecovery() {
                   type="password"
                   {...register("newPinConfirm")}
                 />
-                {fieldError(errors.newPinConfirm?.message)}
-              </div>
+              </Field>
             </div>
           ) : null}
 
           <div className="mt-6 flex gap-3">
             {step === 1 ? (
-              <button className={ghostButtonClass} type="button" onClick={() => setStep(0)}>
+              <Button variant="secondary" size="lg" type="button" onClick={() => setStep(0)}>
                 Back
-              </button>
+              </Button>
             ) : null}
             {step === 0 ? (
-              <button className={`${buttonClass} flex-1`} type="button" onClick={goNext} disabled={!passphraseValid}>
+              <Button className="flex-1" variant="primary" size="lg" type="button" onClick={goNext} disabled={!passphraseValid}>
                 Next
-              </button>
+              </Button>
             ) : (
-              <button className={`${buttonClass} flex-1`} type="submit" disabled={!pinStepValid || isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              <Button className="flex-1" variant="primary" size="lg" type="submit" loading={isSubmitting} disabled={!pinStepValid}>
                 Restore and unlock
-              </button>
+              </Button>
             )}
           </div>
 
-          <button
-            className="mt-5 w-full text-center text-sm font-medium text-primary transition-colors duration-150 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          <Button
+            className="mt-5 w-full"
+            variant="ghost"
+            size="md"
             type="button"
             onClick={() => setPhase("locked")}
           >
             Back to PIN entry
-          </button>
+          </Button>
         </form>
       </section>
     </main>

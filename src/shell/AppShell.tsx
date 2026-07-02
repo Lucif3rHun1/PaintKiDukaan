@@ -26,7 +26,7 @@ import {
 import logo32 from "../assets/logo-32.png";
 import logo64 from "../assets/logo-64.png";
 const LOGO_64 = logo64;
-import { cn, Toaster } from "../components/ui";
+import { Button, cn, Toaster } from "../components/ui";
 import { DraftBadge } from "../components/ui/DraftBadge";
 import { KbdHint } from "../components/ui/KbdHint";
 import { ShortcutOverlay, type ShortcutGroup } from "../components/ui/ShortcutOverlay";
@@ -412,14 +412,14 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           <div className="flex items-center gap-2">
             <AlertBell currentRole={user?.role as Role | undefined} />
             <BackupActivity backupAge={backupQuery.data?.backup_age_hours ?? null} />
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Lock}
               type="button"
               onClick={onLock}
               aria-label="Lock app"
-              className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            >
-              <Lock className="h-4 w-4" aria-hidden="true" />
-            </button>
+            />
           </div>
         </header>
 
@@ -434,14 +434,14 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           <div className="flex items-center gap-1">
             <AlertBell currentRole={user?.role as Role | undefined} />
             <BackupActivity backupAge={backupQuery.data?.backup_age_hours ?? null} />
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Lock}
               type="button"
               onClick={onLock}
               aria-label="Lock app"
-              className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            >
-              <Lock className="h-4 w-4" aria-hidden="true" />
-            </button>
+            />
           </div>
         </header>
 

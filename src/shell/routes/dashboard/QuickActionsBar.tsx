@@ -22,7 +22,7 @@ function QuickAction({ icon: Icon, title, subtitle, href, badge }: QuickActionIt
   return (
     <a
       href={href}
-      className="group relative flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm shadow-foreground/5 ring-1 ring-border/30 transition-all motion-reduce:transition-none hover:-translate-y-0.5 hover:bg-accent hover:shadow-md motion-reduce:hover:translate-y-0 active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      className="group relative flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm shadow-foreground/5 ring-1 ring-border/30 transition-[transform,colors,box-shadow] duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:bg-accent hover:shadow-md motion-reduce:hover:translate-y-0 active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
         <Icon className="h-5 w-5" />

@@ -10,6 +10,7 @@ import { isAppError } from "../../domain/types";
 import { extractError } from "../../lib/extractError";
 import { type UnlockInput, unlockSchema } from "./pin";
 import { type Role, type Session, type User, useSecurity } from "./state";
+import { Alert, Button } from "../../components/ui";
 
 interface UnlockResponse {
   user?: { id?: number; name?: string; role?: Role } | null;
@@ -127,13 +128,15 @@ export function LockScreen() {
               You must use your recovery password to restore your data and set a new PIN.
             </p>
           </div>
-          <button
-            className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          <Button
+            className="h-12 w-full"
+            variant="primary"
+            size="lg"
             type="button"
             onClick={() => setPhase("restore-recovery")}
           >
             Use recovery password
-          </button>
+          </Button>
         </div>
       </main>
     );
@@ -185,10 +188,12 @@ export function LockScreen() {
 
           {/* Error */}
           {backendError ? (
-            <div className="flex gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
-              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-              <span className="leading-snug">{backendError}</span>
-            </div>
+            <Alert variant="destructive">
+              <div className="flex gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                <span className="leading-snug">{backendError}</span>
+              </div>
+            </Alert>
           ) : null}
 
           {/* Lockout */}
@@ -210,7 +215,7 @@ export function LockScreen() {
             <div className="relative">
               <input
                 id="pin"
-                className="h-14 w-full rounded-xl border-2 border-border bg-background px-4 text-center text-2xl font-semibold tracking-[0.5em] text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/20 disabled:opacity-50"
+                className="h-14 w-full rounded-xl border-2 border-border bg-background px-4 text-center text-2xl font-semibold tracking-[0.5em] text-foreground outline-none transition-[colors,box-shadow] duration-150 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/20 disabled:opacity-50"
                 aria-label="Six digit PIN"
                 aria-invalid={Boolean(errors.pin)}
                 autoComplete="off"
@@ -246,24 +251,26 @@ export function LockScreen() {
           </div>
 
           {/* Submit */}
-          <button
-            className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground transition-all duration-150 hover:bg-primary/90 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+          <Button
+            className="h-12 w-full"
+            variant="primary"
+            size="lg"
             type="submit"
-            disabled={!canSubmit || isSubmitting}
+            loading={isSubmitting}
+            disabled={!canSubmit}
           >
-            {isSubmitting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            ) : null}
             {lockedUntil ? "Please wait..." : "Unlock"}
-          </button>
+          </Button>
 
-          <button
-            className="w-full text-center text-sm font-medium text-primary transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          <Button
+            className="w-full"
+            variant="ghost"
+            size="md"
             type="button"
             onClick={() => setPhase("restore-recovery")}
           >
             Forgot PIN? Use recovery password
-          </button>
+          </Button>
         </form>
       </div>
     </main>

@@ -78,11 +78,11 @@ describe("ItemSearchInput scope (linked invoices)", () => {
 
     await waitFor(() => expect(screen.getByText("Item One")).toBeInTheDocument());
 
-    expect(screen.getAllByText(/bought/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/refundable/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/retail/i).length).toBeGreaterThan(0);
-    expect(screen.getByText("10")).toBeInTheDocument();
-    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("Refundable 7")).toBeInTheDocument();
+    expect(screen.getByText("Refundable 5")).toBeInTheDocument();
+    expect(screen.queryByText(/^Bought/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Retail/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/IN STOCK/i)).not.toBeInTheDocument();
   });
 
   it("disables the row + labels 'fully refunded' when refundable <= 0", async () => {

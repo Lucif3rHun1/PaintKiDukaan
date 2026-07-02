@@ -976,15 +976,16 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                                 </div>
                               )}
                             </div>
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              icon={X}
                               type="button"
                               onClick={() => removeLine(i)}
                               aria-label={`Remove ${l.item_name ?? "item"} from cart`}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                               title="Remove line"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
+                              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            />
                           </div>
                           {l.line_discount > 0 ? (
                             <div className="mt-1 flex items-center justify-end gap-2 text-xs">

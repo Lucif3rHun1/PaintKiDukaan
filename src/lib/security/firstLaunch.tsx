@@ -32,6 +32,7 @@ import {
 import { FirstLaunchRestore } from "./firstLaunchRestore";
 import { PdeSetupWizard } from "./pdeSetup";
 import { type Role, type Session, type User, useSecurity } from "./state";
+import { Alert, Button } from "../../components/ui";
 
 interface SetupResponse {
   user?: { id?: number; name?: string; role?: Role } | null;
@@ -74,12 +75,8 @@ const PREVIOUS_STEP: Record<FreshStep, Step> = {
 };
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-border bg-background px-3.5 text-sm text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:opacity-50";
+  "h-11 w-full rounded-lg border border-border bg-background px-3.5 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:opacity-50";
 const labelClass = "text-[13px] font-medium text-foreground";
-const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition-all duration-150 hover:bg-primary/90 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50";
-const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-border bg-background px-5 text-sm font-medium text-foreground shadow-sm transition-all duration-150 hover:bg-muted active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50";
 
 function normalizeSession(result: SetupResponse): Session {
   const role: Role = result.user?.role ?? result.role ?? "stocker";
@@ -112,7 +109,7 @@ function StepIndicator({ current }: { current: number }) {
               <div className={`absolute left-1/2 right-[-50%] top-[18px] h-0.5 ${done ? "bg-success" : "bg-border"}`} />
             ) : null}
               <div
-                className={`relative z-10 flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-all duration-200 ${
+                className={`relative z-10 flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-[transform,colors,box-shadow] duration-200 ${
                   done
                     ? "bg-success text-success-foreground"
                     : active
@@ -293,10 +290,12 @@ export function FirstLaunch() {
 
           {/* Backend error */}
           {backendError ? (
-            <div className="flex gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-sm text-destructive" role="alert">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="leading-snug">{backendError}</span>
-            </div>
+            <Alert variant="destructive">
+              <div className="flex gap-2.5">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="leading-snug">{backendError}</span>
+              </div>
+            </Alert>
           ) : null}
 
           <div key={step} className="animate-in fade-in slide-in-from-right-2 duration-300 motion-reduce:animate-none">
@@ -304,11 +303,11 @@ export function FirstLaunch() {
             {step === "path" ? (
               <div className="space-y-3">
                 <button
-                  className="group flex w-full items-center gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-all duration-150 hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="group flex w-full items-center gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-[colors,box-shadow,border-color] duration-150 hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   type="button"
                   onClick={() => setStep("shop")}
                 >
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-all duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
                     <Store className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -320,11 +319,11 @@ export function FirstLaunch() {
                   <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />
                 </button>
                 <button
-                  className="group flex w-full items-center gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-all duration-150 hover:border-info/50 hover:bg-info/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="group flex w-full items-center gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-[colors,box-shadow,border-color] duration-150 hover:border-info/50 hover:bg-info/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   type="button"
                   onClick={() => setShowRestore(true)}
                 >
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-info/10 text-info transition-all duration-150 group-hover:bg-info group-hover:text-info-foreground">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-info/10 text-info transition-colors duration-150 group-hover:bg-info group-hover:text-info-foreground">
                     <HardDrive className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -439,17 +438,14 @@ export function FirstLaunch() {
               </div>
             ) : null}
 
-            {/* ── Step: Passphrase ── */}
-            {step === "passphrase" ? (
-              <div className="space-y-4">
-              <div className="rounded-xl border border-warning/30 bg-warning/10 p-3.5">
-                <p className="text-sm font-semibold text-warning">Important — read this first</p>
-                <p className="mt-1 text-xs leading-5 text-warning/80">
-                  Your recovery password is the <strong>only way</strong> to regain access if you
-                  forget your PIN. Write it down and store it somewhere safe (not on this device).
-                  We cannot recover it for you.
-                </p>
-              </div>
+{/* ── Step: Passphrase ── */}
+          {step === "passphrase" ? (
+            <div className="space-y-4">
+              <Alert variant="warning" title="Important — read this first">
+                Your recovery password is the <strong>only way</strong> to regain access if you
+                forget your PIN. Write it down and store it somewhere safe (not on this device).
+                We cannot recover it for you.
+              </Alert>
               <div>
                 <label className={labelClass} htmlFor="passphrase">Recovery password</label>
                 <div className="relative">
@@ -530,13 +526,15 @@ export function FirstLaunch() {
             {/* ── Step: PDE ── */}
             {step === "pde" ? (
               <div className="-mx-1 space-y-4">
-                <button
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  size="md"
                   type="button"
                   onClick={() => finalizeSetup()}
-                  className="w-full rounded-lg border border-border bg-muted/30 px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/50 hover:text-foreground"
                 >
                   Skip for now — I'll set this up later from Settings
-                </button>
+                </Button>
                 <div className="px-1">
                   <PdeSetupWizard
                     onComplete={() => finalizeSetup()}
@@ -550,33 +548,36 @@ export function FirstLaunch() {
           {/* Navigation */}
           {step !== "path" && step !== "pde" ? (
             <div className="flex gap-3 pt-1">
-              <button
-                className={ghostButtonClass}
+              <Button
+                variant="secondary"
+                size="lg"
                 type="button"
                 onClick={() => setStep(PREVIOUS_STEP[step])}
               >
                 Back
-              </button>
+              </Button>
               {step === "inventory" ? (
-                <button
-                  className={`${buttonClass} flex-1`}
+                <Button
+                  className="flex-1"
+                  variant="primary"
+                  size="lg"
                   type="submit"
-                  disabled={!canContinue || isSubmitting}
+                  loading={isSubmitting}
+                  disabled={!canContinue}
                 >
-                  {isSubmitting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                  ) : null}
                   Continue
-                </button>
+                </Button>
               ) : (
-                <button
-                  className={`${buttonClass} flex-1`}
+                <Button
+                  className="flex-1"
+                  variant="primary"
+                  size="lg"
                   type="button"
                   onClick={goNext}
                   disabled={!canContinue}
                 >
                   Continue
-                </button>
+                </Button>
               )}
             </div>
           ) : null}

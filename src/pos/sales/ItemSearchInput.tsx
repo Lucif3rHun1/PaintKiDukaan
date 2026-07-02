@@ -482,7 +482,7 @@ export function ItemSearchInput({
             type="button"
             onClick={() => inputRef.current?.focus()}
             title="Focus the scan input (Ctrl/Cmd-K)"
-            className="absolute right-2 top-1/2 inline-flex h-7 -translate-y-1/2 items-center gap-1 rounded-md border border-border bg-muted/60 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            className="absolute right-2 top-1/2 inline-flex h-7 -translate-y-1/2 items-center gap-1 rounded-md border border-border bg-muted/60 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ScanBarcode className="h-3.5 w-3.5" aria-hidden="true" />
             Scan
@@ -572,8 +572,6 @@ export function ItemSearchInput({
                 );
               }
               const status = stockStatus(hit);
-              const styles = STATUS_STYLES[status];
-              const StatusIcon = styles.icon;
               const isOut = status === "out";
               const scopeInfo = scope?.kind === "linked_invoices" ? scope.itemsByItemId.get(hit.id) : undefined;
               const fullyRefunded = scopeInfo != null && scopeInfo.refundable <= 0;
@@ -598,63 +596,36 @@ export function ItemSearchInput({
                     handlePick(hit);
                   }}
                   className={cn(
-                    "flex w-full items-start gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0",
+                    "flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0",
                     isActive && !isRowDisabled ? "bg-muted" : "hover:bg-muted",
                     isRowDisabled && "cursor-not-allowed opacity-60",
                   )}
                 >
-                  <StatusIcon
-                    className={cn("mt-0.5 h-4 w-4 shrink-0", styles.text)}
-                    aria-hidden="true"
-                  />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
+                    <div className="flex items-center gap-2">
                       <span
                         className={cn(
                           "truncate font-medium",
-                          status === "out" ? "text-muted-foreground line-through" : "text-foreground",
+                          isRowDisabled ? "text-muted-foreground" : "text-foreground",
                         )}
                       >
                         {display?.showBrand ? formatHitName(hit) : toTitleCase(hit.name)}
                       </span>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {fullyRefunded && (
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            Fully refunded
-                          </span>
-                        )}
-                        {showStock && (
-                          <span
-                            className={cn(
-                              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                              styles.pill,
-                            )}
-                          >
-                            {stockLabel(hit, status)}
-                          </span>
-                        )}
-                      </div>
+                      {fullyRefunded && (
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Fully refunded
+                        </span>
+                      )}
+                      {scopeInfo && (
+                        <span className="shrink-0 rounded-md bg-info/10 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-info">
+                          Refundable {scopeInfo.refundable}
+                        </span>
+                      )}
                     </div>
-                    <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                      {showSku && <span className="font-mono">{hit.sku_code}</span>}
-                      <span className="font-semibold text-foreground">
-                        {formatRupeesFromPaise(priceField === "cost" ? hit.cost_paise : hit.retail_price_paise)}
-                      </span>
-                    </div>
-                    {scopeInfo && (
-                      <div className="mt-0.5 grid grid-cols-3 gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        <span>
-                          Bought <span className="font-semibold tabular-nums text-foreground">{scopeInfo.bought}</span>
-                        </span>
-                        <span>
-                          Refundable <span className={cn("font-semibold tabular-nums", fullyRefunded ? "text-muted-foreground line-through" : "text-foreground")}>{scopeInfo.refundable}</span>
-                        </span>
-                        <span className="text-right">
-                          Retail <span className="font-semibold tabular-nums text-foreground">{formatRupeesFromPaise(scopeInfo.retail_price_paise)}</span>
-                        </span>
-                      </div>
-                    )}
                   </div>
+                  <span className="shrink-0 font-semibold tabular-nums text-foreground">
+                    {formatRupeesFromPaise(priceField === "cost" ? hit.cost_paise : hit.retail_price_paise)}
+                  </span>
                 </button>
               );
             })
