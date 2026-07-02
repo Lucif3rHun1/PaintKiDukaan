@@ -49,13 +49,13 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
         sortable: true,
         sortField: "date",
         cell: (r) => (
-          <span className="text-foreground tabular-nums">{formatDateForDisplay(r.date)}</span>
+          <span className="text-foreground tabular-nums whitespace-nowrap">{formatDateForDisplay(r.date)}</span>
         ),
       },
       {
         id: "no",
         header: "Ret No",
-        width: "8rem",
+        width: "11rem",
         sortable: true,
         sortField: "no",
         cell: (r) => (

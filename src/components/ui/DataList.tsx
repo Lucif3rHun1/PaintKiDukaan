@@ -435,11 +435,11 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
         aria-rowcount={rows.length}
         aria-label={caption ?? "Data list"}
         onKeyDown={onKeyDown}
-        className="relative overflow-auto rounded border border-border bg-card"
+        className="relative overflow-auto rounded border border-border bg-card [box-shadow:0_1px_2px_0_rgb(0_0_0_/_0.04),0_4px_12px_-2px_rgb(0_0_0_/_0.06)]"
         style={{ height: typeof height === "number" ? `${height}px` : height }}
       >
         {caption ? <div className="sr-only">{caption}</div> : null}
-        <div className="sticky top-0 z-10 flex border-b border-border bg-card text-left text-xs uppercase text-muted-foreground" role="row">
+        <div className="sticky top-0 z-10 flex bg-card/95 [backdrop-filter:saturate(180%)_blur(8px)] [box-shadow:inset_0_-1px_0_0_theme(colors.border)] text-left text-xs uppercase text-muted-foreground" role="row">
           {finalColumns.map((col, colIdx) => (
             <div
               key={col.id ?? (typeof col.header === "string" ? col.header : undefined) ?? `col-${colIdx}`}
@@ -554,7 +554,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
                       role="gridcell"
                       aria-colindex={ci + 1}
                       style={col.width ? { width: col.width, minWidth: col.width } : undefined}
-                      className={cn("flex items-center px-3", alignClass(col.align), col.className)}
+                      className={cn("flex min-w-0 items-center px-3", alignClass(col.align), col.className)}
                     >
                       {col.cell(row, realIndex)}
                     </div>

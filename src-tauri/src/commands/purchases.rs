@@ -712,7 +712,7 @@ pub fn cmd_purchase_period_summary(
             format!(" WHERE {}", wheres.join(" AND "))
         };
         let sql = format!(
-            "SELECT COUNT(*), COALESCE(SUM(total_paise), 0), COALESCE(AVG(total_paise), 0) FROM purchases{}",
+            "SELECT COUNT(*), COALESCE(SUM(total_paise), 0), CAST(COALESCE(AVG(total_paise), 0) AS INTEGER) FROM purchases{}",
             where_suffix
         );
         let arg_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();

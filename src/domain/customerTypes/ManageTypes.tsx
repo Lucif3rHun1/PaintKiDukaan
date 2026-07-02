@@ -2,12 +2,11 @@
  * ManageTypes — owner-only screen to add / rename / deactivate customer types.
  * Renders via <DataList> server source (cmd_list_customer_types_paged).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   addCustomerType,
   deactivateCustomerType,
-  listCustomerTypes,
   listCustomerTypesPaged,
   renameCustomerType,
 } from "./api";
@@ -19,12 +18,10 @@ import { type CustomerType } from "../types";
 
 export function ManageTypes() {
   const queryClient = useQueryClient();
-  const [types, setTypes] = useState<CustomerType[]>([]);
   const [newName, setNewName] = useState("");
   const [editing, setEditing] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const serverSource = useMemo(() => ({
     endpoint: "cmd_list_customer_types_paged",
@@ -33,23 +30,6 @@ export function ManageTypes() {
     clientFn: listCustomerTypesPaged,
   }), []);
 
-  async function refresh() {
-    setLoading(true);
-    setError(null);
-    try {
-      const rows = await listCustomerTypes(true);
-      setTypes(rows);
-    } catch (e) {
-      setError(extractError(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    refresh();
-  }, []);
-
   async function add(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim()) return;
@@ -57,7 +37,6 @@ export function ManageTypes() {
     try {
       await addCustomerType({ name: newName.trim() });
       setNewName("");
-      refresh();
       void invalidateList(queryClient, "cmd_list_customer_types_paged");
     } catch (e) {
       setError(extractError(e));
@@ -70,7 +49,6 @@ export function ManageTypes() {
     try {
       await renameCustomerType(id, editName.trim());
       setEditing(null);
-      refresh();
       void invalidateList(queryClient, "cmd_list_customer_types_paged");
     } catch (e) {
       setError(extractError(e));
@@ -81,7 +59,6 @@ export function ManageTypes() {
     setError(null);
     try {
       await deactivateCustomerType(id);
-      refresh();
       void invalidateList(queryClient, "cmd_list_customer_types_paged");
     } catch (e) {
       setError(extractError(e));

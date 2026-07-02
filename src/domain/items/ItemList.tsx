@@ -379,12 +379,7 @@ export function ItemList({ role }: Props) {
     }
   }, [buildExportRows]);
 
-  // Refresh export cache when brands/locations/sub-locations change (used in row rendering).
-  useEffect(() => {
-    if (exportRows.length === 0) {
-      void handleExport();
-    }
-  }, [brands, locations, subLocations]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ponytail: removed auto-fetch of exportRows on mount — export now fetches on-demand via "Prepare export" button.
 
   const itemColumns: ColumnDef<Item>[] = useMemo(() => {
     const cols: ColumnDef<Item>[] = [
@@ -661,9 +656,9 @@ export function ItemList({ role }: Props) {
         <Button type="button" size="sm" variant="secondary" icon={ArrowDownToLine} onClick={() => (window.location.hash = "#/inward")} className="!text-xs">Inward</Button>
         {exportDataReady ? (
           allFilteredSelected ? (
-            <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Deselect all ({exportRows.length})</Button>
+            <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Deselect all ({stockHealth.data?.total_active_items ?? exportRows.length})</Button>
           ) : (
-            <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Select all ({exportRows.length})</Button>
+            <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Select all ({stockHealth.data?.total_active_items ?? exportRows.length})</Button>
           )
         ) : null}
         {selectedIds.size > 0 && canEdit ? (
@@ -688,7 +683,7 @@ export function ItemList({ role }: Props) {
         source={serverSource}
         columns={itemColumns}
         keyExtractor={(i) => String(i.id)}
-        height={560}
+        height={400}
         groupBy={[
           { key: (i: Item) => brandDisplayName(i, brands), label: (k: string) => k, level: 1 as const },
           { key: (i: Item) => i.category?.trim() || "No category", label: (k: string) => k, level: 2 as const },

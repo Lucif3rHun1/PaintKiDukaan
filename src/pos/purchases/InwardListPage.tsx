@@ -50,7 +50,7 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
         sortable: true,
         sortField: "bill_date",
         cell: (p) => (
-          <span className="text-foreground tabular-nums">{formatDateForDisplay(p.date)}</span>
+          <span className="text-foreground tabular-nums whitespace-nowrap">{formatDateForDisplay(p.date)}</span>
         ),
       },
       {

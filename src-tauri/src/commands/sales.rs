@@ -1575,8 +1575,10 @@ struct SaleReturnHeader {
 fn fetch_return_header(c: &rusqlite::Connection, id: i64) -> AppResult<Option<SaleReturnHeader>> {
     let row = c
         .query_row(
-            "SELECT id, COALESCE(no, ''), sale_id, COALESCE(date, created_at), reason,
-                    refund_total_paise, created_at, created_by
+            "SELECT id, COALESCE(no, ''), sale_id,
+                    COALESCE(date, CAST(created_at AS TEXT)) AS date,
+                    reason, refund_total_paise,
+                    CAST(created_at AS TEXT) AS created_at, created_by
              FROM sale_returns WHERE id = ?1",
             params![id],
             |r| {
@@ -1615,8 +1617,10 @@ pub fn list_returns(
 ) -> AppResult<Vec<SaleReturn>> {
     db.with_raw(|c| {
         let mut sql = String::from(
-            "SELECT sr.id, COALESCE(sr.no, ''), sr.sale_id, COALESCE(sr.date, sr.created_at), sr.reason,
-                    sr.refund_total_paise, sr.created_at, sr.created_by
+            "SELECT sr.id, COALESCE(sr.no, ''), sr.sale_id,
+                    COALESCE(sr.date, CAST(sr.created_at AS TEXT)) AS date,
+                    sr.reason, sr.refund_total_paise,
+                    CAST(sr.created_at AS TEXT) AS created_at, sr.created_by
              FROM sale_returns sr
              JOIN sales s ON s.id = sr.sale_id
              WHERE 1=1",
@@ -1863,8 +1867,9 @@ pub fn cmd_list_sale_returns_paged(
 
         let base_select =
             "SELECT sr.id, COALESCE(sr.no, ''), sr.sale_id, \
-                    COALESCE(sr.date, sr.created_at), sr.reason, \
-                    sr.refund_total_paise, sr.created_at, sr.created_by \
+                    COALESCE(sr.date, CAST(sr.created_at AS TEXT)) AS date, sr.reason, \
+                    sr.refund_total_paise, \
+                    CAST(sr.created_at AS TEXT) AS created_at, sr.created_by \
              FROM sale_returns sr \
              JOIN sales s ON s.id = sr.sale_id";
         let count_select =
@@ -1936,7 +1941,7 @@ pub fn cmd_sales_period_summary(
         }
         let where_suffix = format!(" WHERE {}", wheres.join(" AND "));
         let sql = format!(
-            "SELECT COUNT(*), COALESCE(SUM(total), 0), COALESCE(AVG(total), 0), \
+            "SELECT COUNT(*), COALESCE(SUM(total), 0), CAST(COALESCE(AVG(total), 0) AS INTEGER), \
                     COALESCE(SUM(paid_amount), 0) FROM sales{}",
             where_suffix
         );

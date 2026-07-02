@@ -114,6 +114,7 @@ beforeEach(() => {
   unitsApiMocks.updateUnit.mockReset().mockResolvedValue(SAMPLE_UNITS[0]);
   unitsApiMocks.deactivateUnit.mockReset().mockResolvedValue(undefined);
   apiMocks.listBrands.mockReset().mockResolvedValue([]);
+  apiMocks.listBrandsPaged.mockReset().mockResolvedValue({ rows: [], total: 0 });
   apiMocks.createBrand.mockReset().mockResolvedValue(SAMPLE_BRANDS[0]);
   apiMocks.deactivateBrand.mockReset().mockResolvedValue(undefined);
   apiMocks.updateBrandCodePrefix.mockReset().mockResolvedValue(SAMPLE_BRANDS[0]);
@@ -165,6 +166,7 @@ describe("Soft-delete dependency handling", () => {
 
   it("brand deactivation calls deactivateBrand (soft-delete)", async () => {
     apiMocks.listBrands.mockResolvedValue(SAMPLE_BRANDS);
+    apiMocks.listBrandsPaged.mockResolvedValue({ rows: SAMPLE_BRANDS, total: SAMPLE_BRANDS.length });
     const user = userEvent.setup();
     render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
@@ -283,6 +285,7 @@ describe("Validation edge cases", () => {
 
   it("brand edit prefix validates empty prefix", async () => {
     apiMocks.listBrands.mockResolvedValue(SAMPLE_BRANDS);
+    apiMocks.listBrandsPaged.mockResolvedValue({ rows: SAMPLE_BRANDS, total: SAMPLE_BRANDS.length });
     const user = userEvent.setup();
     render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
@@ -432,6 +435,7 @@ describe("UI state edge cases", () => {
 
   it("brand deactivate button is disabled while busy", async () => {
     apiMocks.listBrands.mockResolvedValue(SAMPLE_BRANDS);
+    apiMocks.listBrandsPaged.mockResolvedValue({ rows: SAMPLE_BRANDS, total: SAMPLE_BRANDS.length });
     let resolveDeactivate: () => void;
     apiMocks.deactivateBrand.mockImplementation(
       () => new Promise<void>((resolve) => { resolveDeactivate = resolve; }),
@@ -483,6 +487,7 @@ describe("UI state edge cases", () => {
 describe("Role-based access", () => {
   it("BrandAdmin shows full UI for owner", async () => {
     apiMocks.listBrands.mockResolvedValue(SAMPLE_BRANDS);
+    apiMocks.listBrandsPaged.mockResolvedValue({ rows: SAMPLE_BRANDS, total: SAMPLE_BRANDS.length });
     render(<BrandAdmin role="owner" />, { wrapper: createWrapper() });
 
     await screen.findByText("Asian Paints");

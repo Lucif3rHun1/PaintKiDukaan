@@ -729,7 +729,7 @@ pub fn stock_health_summary(db: &Db) -> Result<StockHealthSummary, ReportsError>
                 SUM(CASE WHEN total_qty > 0 AND min_stock > 0 AND total_qty <= min_stock THEN 1 ELSE 0 END) AS low_count,
                 SUM(CASE WHEN total_qty = 0 THEN 1 ELSE 0 END) AS zero_count,
                 SUM(CASE WHEN total_qty < 0 THEN 1 ELSE 0 END) AS negative_count,
-                SUM(CASE WHEN total_qty > 0 THEN total_qty * retail_price_paise ELSE 0 END) AS retail_value_paise
+                CAST(SUM(CASE WHEN total_qty > 0 THEN total_qty * retail_price_paise ELSE 0 END) AS INTEGER) AS retail_value_paise
              FROM (
                 SELECT i.id, i.min_stock, i.retail_price_paise,
                        COALESCE(SUM(sb.qty), 0) AS total_qty

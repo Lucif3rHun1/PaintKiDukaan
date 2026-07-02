@@ -134,7 +134,7 @@ export function FormulasPage({ role }: Props) {
     {
       header: "Last sold",
       cell: (f) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
           {f.last_sold_at ? formatDateForDisplay(f.last_sold_at) : "—"}
         </span>
       ),
@@ -222,7 +222,7 @@ export function FormulasPage({ role }: Props) {
             </div>
           ) : undefined
         }
-        height={520}
+        height={400}
       />
     </div>
   );

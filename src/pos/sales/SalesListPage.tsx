@@ -3,16 +3,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, Plus, Printer, Receipt, RotateCcw, Share2, FilePenLine } from "lucide-react";
+import {
+  Banknote,
+  Download,
+  Eye,
+  Plus,
+  Printer,
+  Receipt,
+  RotateCcw,
+  Share2,
+  FilePenLine,
+  TrendingUp,
+} from "lucide-react";
 import { PeriodDropdown } from "../../components/ui";
 
 import {
   ActionMenu,
   Badge,
   Button,
-  Card,
   DataList,
   EmptyState,
+  MetricCard,
   Money,
 } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
@@ -71,7 +82,7 @@ export function SalesListPage({ onCreate }: Props) {
         sortable: true,
         sortField: "date",
         cell: (s) => (
-          <span className="text-foreground tabular-nums">{formatDateForDisplay(s.date)}</span>
+          <span className="text-foreground tabular-nums whitespace-nowrap">{formatDateForDisplay(s.date)}</span>
         ),
       },
       {
@@ -99,7 +110,7 @@ export function SalesListPage({ onCreate }: Props) {
       {
         id: "no",
         header: "Inv No",
-        width: "8rem",
+        width: "11rem",
         cell: (s) => (
           <a
             href={`#/sales/${s.id}`}
@@ -226,19 +237,42 @@ export function SalesListPage({ onCreate }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Card as="section" className="space-y-1 p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Invoices</p>
-          <p className="text-2xl font-semibold tabular-nums text-foreground">{sm?.count ?? "—"}</p>
-        </Card>
-        <Card as="section" className="space-y-1 p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total value</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetricCard
+          icon={Receipt}
+          label="Invoices"
+          loading={summary.isLoading}
+          tone="primary"
+          footer={<span className="text-xs text-muted-foreground">in selected period</span>}
+        >
+          <span className="tabular-nums">{sm?.count ?? "—"}</span>
+        </MetricCard>
+        <MetricCard
+          icon={Banknote}
+          label="Total value"
+          loading={summary.isLoading}
+          tone="success"
+          footer={<span className="text-xs text-muted-foreground">paid + due</span>}
+        >
           {sm ? (
-            <Money paise={sm.total_paise} className="text-2xl font-semibold tabular-nums" />
+            <Money paise={sm.total_paise} className="tabular-nums" />
           ) : (
-            <span className="text-2xl text-muted-foreground">—</span>
+            <span className="text-muted-foreground">—</span>
           )}
-        </Card>
+        </MetricCard>
+        <MetricCard
+          icon={TrendingUp}
+          label="Avg bill"
+          loading={summary.isLoading}
+          tone="info"
+          footer={<span className="text-xs text-muted-foreground">per invoice</span>}
+        >
+          {sm ? (
+            <Money paise={sm.avg_paise} className="tabular-nums" />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </MetricCard>
       </div>
 
       <DataList
@@ -246,6 +280,8 @@ export function SalesListPage({ onCreate }: Props) {
         columns={columns}
         keyExtractor={(s) => s.id}
         searchPlaceholder="Search by invoice, customer…"
+        estimateRowHeight={44}
+        height={520}
         onRowClick={(s) => (window.location.hash = `#/sales/${s.id}`)}
         emptyMessage="No sales found"
         emptyCta={

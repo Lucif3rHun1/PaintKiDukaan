@@ -228,7 +228,7 @@ export function VendorList({
         )}
         onRowClick={onSelect ? (v) => onSelect(v) : undefined}
         rowClassName={rowClassName}
-        height={520}
+        height={400}
       />
     </div>
   );

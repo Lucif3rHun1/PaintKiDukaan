@@ -246,7 +246,7 @@ export function CustomerList({
             </Button>
           ) : null
         }
-        height={520}
+        height={400}
       />
     </div>
   );

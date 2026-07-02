@@ -12,7 +12,6 @@ import {
   EmptyState,
   InlineDialog,
   Money,
-  SearchInput,
 } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { ConfirmDialog } from "../../shell/components/ConfirmDialog";
@@ -22,7 +21,6 @@ import { extractError } from "../../lib/extractError";
 import {
   deactivateFormula,
   getFormula,
-  listFormulaSales,
   listFormulaSalesPaged,
 } from "./api";
 import type { Formula } from "./api";
@@ -43,11 +41,6 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
-
-  const [history, setHistory] = useState<unknown[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
@@ -75,32 +68,6 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
-
-  // Legacy fetch kept for fallback (no longer used by DataList server source).
-  useEffect(() => {
-    let cancelled = false;
-    setHistoryLoading(true);
-    setHistoryError(null);
-    listFormulaSales(id, {
-      query: query || undefined,
-      from_date: fromDate || undefined,
-      to_date: toDate || undefined,
-    })
-      .then((rows) => {
-        if (cancelled) return;
-        setHistory(rows);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setHistoryError(extractError(e));
-      })
-      .finally(() => {
-        if (!cancelled) setHistoryLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, query, fromDate, toDate]);
 
   const handleArchive = useCallback(async () => {
     try {
@@ -156,7 +123,7 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
     {
       header: "Date",
       cell: (row) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
           {formatDateForDisplay(row.date)}
         </span>
       ),
@@ -299,7 +266,7 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
               {formula.last_sold_at ? formatDateForDisplay(formula.last_sold_at) : "Never"}
             </Row>
             <Row label="Created">
-              {formatDateForDisplay(formula.created_at)}
+              <span className="tabular-nums whitespace-nowrap">{formatDateForDisplay(formula.created_at)}</span>
             </Row>
           </dl>
         </Card>
@@ -307,12 +274,6 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
         <Card as="section" className="space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Sales</h2>
           <div className="space-y-2">
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Search invoice or customer…"
-              ariaLabel="Search history"
-            />
             <div className="grid grid-cols-2 gap-2">
               <label className="block text-xs">
                 <span className="mb-1 block text-muted-foreground">From</span>
@@ -334,13 +295,6 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
               </label>
             </div>
           </div>
-
-          {historyError ? (
-            <Alert title="History failed to load">{historyError}</Alert>
-          ) : null}
-          {historyLoading ? (
-            <p className="py-3 text-xs text-muted-foreground">Loading…</p>
-          ) : null}
 
           <DataList
             source={salesServerSource}

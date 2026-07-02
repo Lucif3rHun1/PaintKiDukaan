@@ -15,7 +15,7 @@ import { useForm } from "react-hook-form";
 
 import { createUserSchema, type CreateUserInput, pinSchema } from "./pin";
 import { type Role, useSecurity } from "./state";
-import { Select } from "../../components/ui/Select";
+import { Alert, Badge, Button, Card, Field, Select } from "../../components/ui";
 
 interface ListedUser {
   id: number;
@@ -26,12 +26,6 @@ interface ListedUser {
 const inputClass =
   "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 const labelClass = "text-sm font-medium text-foreground";
-const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
-const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
-const dangerButtonClass =
-  "inline-flex h-9 items-center justify-center rounded-lg border border-destructive/30 px-3 text-sm font-medium text-destructive transition-colors duration-150 hover:border-destructive/50 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function fieldError(message?: string) {
   if (!message) return null;
@@ -44,15 +38,15 @@ function fieldError(message?: string) {
 }
 
 function roleBadge(role: Role) {
-  const colors: Record<Role, string> = {
-    owner: "bg-warning/20 text-warning",
-    cashier: "bg-success/20 text-success",
-    stocker: "bg-info/20 text-info",
+  const variant: Record<Role, "warning" | "success" | "info"> = {
+    owner: "warning",
+    cashier: "success",
+    stocker: "info",
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colors[role]}`}>
+    <Badge variant={variant[role]} className="uppercase tracking-wide">
       {role}
-    </span>
+    </Badge>
   );
 }
 
@@ -161,25 +155,16 @@ export function UserManagement() {
               onSubmit={handleSubmit(onCreateUser)}
             >
               <p className="text-sm font-medium text-foreground">Add staff member</p>
-              <div>
-                <label className={labelClass} htmlFor="staffName">
-                  Name *
-                </label>
+              <Field label="Name" required error={errors.name?.message}>
                 <input
-                  id="staffName"
                   className={inputClass}
                   placeholder="e.g. Ramesh"
                   autoComplete="off"
                   {...register("name")}
                 />
-                {fieldError(errors.name?.message)}
-              </div>
-              <div>
-                <label className={labelClass} htmlFor="staffRole">
-                  Role *
-                </label>
+              </Field>
+              <Field label="Role" required error={errors.role?.message} hint="Cashiers can process sales. Stockers can manage stock and purchases.">
                 <Select
-                  id="staffRole"
                   className={inputClass}
                   placeholder="Select role"
                   options={[
@@ -189,18 +174,10 @@ export function UserManagement() {
                   size="md"
                   {...register("role")}
                 />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Cashiers can process sales. Stockers can manage stock and purchases.
-                </p>
-                {fieldError(errors.role?.message)}
-              </div>
-              <div>
-                <label className={labelClass} htmlFor="staffPin">
-                  PIN *
-                </label>
+              </Field>
+              <Field label="PIN" required error={errors.pin?.message}>
                 <div className="relative">
                   <input
-                    id="staffPin"
                     className={`${inputClass} pr-11`}
                     autoComplete="off"
                     inputMode="numeric"
@@ -218,14 +195,9 @@ export function UserManagement() {
                     {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                {fieldError(errors.pin?.message)}
-              </div>
-              <div>
-                <label className={labelClass} htmlFor="staffPinConfirm">
-                  Confirm PIN *
-                </label>
+              </Field>
+              <Field label="Confirm PIN" required error={errors.pinConfirm?.message}>
                 <input
-                  id="staffPinConfirm"
                   className={inputClass}
                   autoComplete="off"
                   inputMode="numeric"
@@ -234,40 +206,41 @@ export function UserManagement() {
                   type="password"
                   {...register("pinConfirm")}
                 />
-                {fieldError(errors.pinConfirm?.message)}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  className={ghostButtonClass}
+              </Field>
+              <div className="flex gap-3 pt-1">
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="lg"
                   onClick={() => {
                     setShowCreateForm(false);
                     reset();
                   }}
                 >
                   Cancel
-                </button>
-                <button
-                  className={`${buttonClass} flex-1`}
+                </Button>
+                <Button
                   type="submit"
-                  disabled={isSubmitting}
+                  variant="primary"
+                  size="lg"
+                  className="flex-1"
+                  loading={isSubmitting}
                 >
-                  {isSubmitting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                  ) : null}
                   Add staff member
-                </button>
+                </Button>
               </div>
             </form>
           ) : (
-            <button
-              className={`${buttonClass} mb-6 w-full`}
+            <Button
+              variant="primary"
+              size="lg"
+              icon={Plus}
+              className="mb-6 w-full"
               type="button"
               onClick={() => setShowCreateForm(true)}
             >
-              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
               Add staff member
-            </button>
+            </Button>
           )}
 
           {/* User list */}
@@ -286,72 +259,76 @@ export function UserManagement() {
             <div className="space-y-4">
               {cashiers.length > 0 && (
                 <div>
-                  <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Cashiers
                   </h2>
-                  <div className="space-y-2">
+                  <ul className="space-y-1.5">
                     {cashiers.map((user) => (
-                      <div
+                      <li
                         key={user.id}
-                        className="flex items-center justify-between rounded-xl border border-border bg-background/60 px-4 py-3"
+                        className="flex items-center justify-between rounded-lg border border-border bg-background/60 px-3 py-2.5"
                       >
                         <div className="flex items-center gap-3">
                           <span className="text-sm font-medium text-foreground">{user.name}</span>
                           {roleBadge(user.role)}
                         </div>
-                        <button
-                          className={dangerButtonClass}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={Trash2}
                           type="button"
                           onClick={() => onDeleteUser(user.id, user.name)}
                           aria-label={`Remove ${user.name}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        />
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
               {stockers.length > 0 && (
                 <div>
-                  <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Stockers
                   </h2>
-                  <div className="space-y-2">
+                  <ul className="space-y-1.5">
                     {stockers.map((user) => (
-                      <div
+                      <li
                         key={user.id}
-                        className="flex items-center justify-between rounded-xl border border-border bg-background/60 px-4 py-3"
+                        className="flex items-center justify-between rounded-lg border border-border bg-background/60 px-3 py-2.5"
                       >
                         <div className="flex items-center gap-3">
                           <span className="text-sm font-medium text-foreground">{user.name}</span>
                           {roleBadge(user.role)}
                         </div>
-                        <button
-                          className={dangerButtonClass}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={Trash2}
                           type="button"
                           onClick={() => onDeleteUser(user.id, user.name)}
                           aria-label={`Remove ${user.name}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        />
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
             </div>
           )}
 
           {/* Back button */}
-          <button
-            className={`${ghostButtonClass} mt-6 w-full`}
+          <Button
+            variant="secondary"
+            size="lg"
+            icon={ArrowLeft}
             type="button"
+            className="mt-6 w-full"
             onClick={() => setPhase("unlocked")}
           >
-            <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
             Back to shop
-          </button>
+          </Button>
         </div>
       </section>
     </main>

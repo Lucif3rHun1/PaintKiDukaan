@@ -1,8 +1,9 @@
 import { tauriInvoke as invoke } from "./lib/security/tauri";
 import { toast } from "./lib/feedback/toast";
-import { Toaster } from "./components/ui/Toaster";
+import { Button, Toaster } from "./components/ui";
+import { Alert } from "./components/ui/Alert";
 import logo from "./assets/logo-64.png";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
@@ -410,47 +411,65 @@ export default function App() {
         {phase === "restore-recovery" && <RestoreFromRecovery />}
         {phase === "user-management" && <UserManagement />}
         {phase === "keystore-error" && (
-          <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-            <div className="w-full max-w-sm space-y-4 p-8">
-              <h2 className="text-xl font-bold text-red-400">Security Store Unavailable</h2>
-              <p className="text-sm text-zinc-400">{keystoreErrorReason}</p>
-              <button
-                className="w-full rounded bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700"
-                onClick={() => {
-                  setKeystoreErrorReason(null);
-                  setPhase("locked");
-                }}
-              >
-                Try PIN Unlock
-              </button>
-              {!wipeConfirm ? (
-                <button
-                  className="w-full rounded border border-red-800 px-4 py-2 text-sm text-red-400 hover:bg-red-950"
-                  onClick={() => setWipeConfirm(true)}
-                >
-                  Erase &amp; Start Fresh
-                </button>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs text-red-400/80">This will permanently erase all data. Click again to confirm.</p>
-                  <div className="flex gap-2">
-                    <button
-                      className="flex-1 rounded border border-zinc-700 px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800"
-                      onClick={() => setWipeConfirm(false)}
-                      disabled={wipeLoading}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      className="flex-1 rounded bg-red-800 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
-                      onClick={doWipe}
-                      disabled={wipeLoading}
-                    >
-                      {wipeLoading ? "Erasing…" : "Confirm Erase"}
-                    </button>
-                  </div>
+          <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-6 text-zinc-100">
+            <div className="w-full max-w-md space-y-5 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-8 shadow-2xl backdrop-blur">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-500/10 text-red-400 ring-1 ring-red-500/20">
+                  <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-red-400">Keystore error</p>
+                  <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-zinc-100">Security Store Unavailable</h2>
                 </div>
-              )}
+              </div>
+              <Alert variant="destructive" title="Action required">
+                {keystoreErrorReason}
+              </Alert>
+              <div className="space-y-2 pt-1">
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  onClick={() => {
+                    setKeystoreErrorReason(null);
+                    setPhase("locked");
+                  }}
+                >
+                  Try PIN Unlock
+                </Button>
+                {!wipeConfirm ? (
+                  <Button
+                    className="w-full"
+                    variant="danger"
+                    onClick={() => setWipeConfirm(true)}
+                  >
+                    Erase &amp; Start Fresh
+                  </Button>
+                ) : (
+                  <div className="space-y-2 rounded-xl border border-red-900/50 bg-red-950/30 p-3">
+                    <p className="text-xs leading-5 text-red-300">
+                      This will permanently erase all data. Click again to confirm.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1"
+                        variant="secondary"
+                        onClick={() => setWipeConfirm(false)}
+                        disabled={wipeLoading}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        className="flex-1"
+                        variant="danger"
+                        loading={wipeLoading}
+                        onClick={doWipe}
+                      >
+                        Confirm Erase
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

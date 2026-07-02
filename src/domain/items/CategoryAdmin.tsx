@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { listCategories, listCategoriesPaged, createCategory, deactivateCategory } from "../categories/api";
+import { listCategoriesPaged, createCategory, deactivateCategory } from "../categories/api";
 import type { Category } from "../types";
 import { DataList } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
@@ -23,7 +23,6 @@ interface Props {
 export function CategoryAdmin({ role }: Props) {
   const isOwner = role === "owner";
   const queryClient = useQueryClient();
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,15 +38,7 @@ export function CategoryAdmin({ role }: Props) {
   }), []);
 
   const refresh = () => {
-    setLoading(true);
-    setError(null);
-    listCategories()
-      .then(() => {
-        // Source-driven; refresh via cache invalidation.
-        void invalidateList(queryClient, "cmd_list_categories_paged");
-      })
-      .catch((e: unknown) => setError(extractError(e)))
-      .finally(() => setLoading(false));
+    void invalidateList(queryClient, "cmd_list_categories_paged");
   };
 
   useEffect(refresh, []);
@@ -117,7 +108,6 @@ export function CategoryAdmin({ role }: Props) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Categories</h3>
-        {loading && <span className="text-xs text-muted-foreground">Loading…</span>}
       </div>
 
       {error && (

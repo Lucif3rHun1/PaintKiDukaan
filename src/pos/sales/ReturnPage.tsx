@@ -23,6 +23,7 @@ import { ItemSearchInput } from "./ItemSearchInput";
 import { InvoiceSearchInput } from "./InvoiceSearchInput";
 import { SplitPayment } from "./SplitPayment";
 import { extractError } from "../../lib/extractError";
+import { findSourceSaleItem, deriveSaleIdForReturn } from "./refundable";
 import { RETURN_DRAFT_KEY, type ReturnDraft } from "./ReturnBillSelectModal";
 
 interface Props {
@@ -167,14 +168,6 @@ export default function ReturnPage({ user, onBack }: Props) {
     (user.role === "owner" || ownerPin.trim().length > 0) &&
     refundAmount === subtotal;
 
-  function findSourceSaleItem(itemId: number): { sale_item_id: number; sale_id: number; sold_qty: number } | null {
-    for (const sale of linkedInvoices) {
-      const match = sale.items.find((it) => it.item_id === itemId);
-      if (match) return { sale_item_id: match.id, sale_id: sale.id, sold_qty: match.qty };
-    }
-    return null;
-  }
-
   function addLineFromItem(hit: ItemSearchHit | FormulaSearchHit) {
     if ("kind" in hit && hit.kind === "formula") {
       // Formulas are not returnable (ADR-013). Hit shouldn't appear because
@@ -201,7 +194,7 @@ export default function ReturnPage({ user, onBack }: Props) {
           unit_code: item.unit_code,
           sale_id: source?.sale_id ?? null,
           reason: null,
-          original_qty: source?.sold_qty,
+          original_qty: source?.refundable_qty,
         },
       ];
     });
@@ -290,8 +283,8 @@ export default function ReturnPage({ user, onBack }: Props) {
       setFormError(`Refund total must equal the return subtotal (${formatRupeesFromPaise(subtotal)}).`);
       return;
     }
-    const saleIds = returnLines.map((l) => l.sale_id).filter((id): id is number => id != null && id > 0);
-    const derivedSaleId = saleIds.length > 0 && saleIds.every((id) => id === saleIds[0]) ? saleIds[0] : 0;
+    const saleIds = returnLines.map((l) => l.sale_id);
+    const derivedSaleId = deriveSaleIdForReturn(saleIds);
     setSubmitting(true);
     const payload: CreateSaleReturnPayload = {
       sale_id: derivedSaleId,

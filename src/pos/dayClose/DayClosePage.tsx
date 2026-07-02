@@ -21,7 +21,6 @@ import {
   cashSalesFor,
   lastOpeningFor,
   triggerDayClose,
-  listDayClose,
   listDayClosePaged,
 } from "../api";
 import type { BackupGate, CashSalesSummary, DayClose } from "../types";
@@ -35,7 +34,7 @@ const recentClosesColumns: ColumnDef<DayClose>[] = [
   {
     header: "Date",
     cell: (d) => (
-      <span className="text-foreground">{formatDateForDisplay(d.day)}</span>
+      <span className="text-foreground tabular-nums whitespace-nowrap">{formatDateForDisplay(d.day)}</span>
     ),
   },
   { header: "Cash", align: "right", cell: (d) => <Money paise={d.cash_sales_paise} /> },
@@ -83,8 +82,6 @@ export default function DayClosePage({ user }: Props) {
   const [view, setView] = useState<"list" | "form" | "summary">("list");
   const { markDirty, resetDirty } = useDirtyForm();
 
-  const [recent, setRecent] = useState<DayClose[]>([]);
-  const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [gate, setGate] = useState<BackupGate | null>(null);
 
@@ -131,15 +128,9 @@ export default function DayClosePage({ user }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.allSettled([
-      listDayClose(30).then((d) => { if (!cancelled) setRecent(d ?? []); }),
-      backupGateCheck().then((d) => { if (!cancelled) setGate(d ?? null); }),
-    ]).then((results) => {
-      if (cancelled) return;
-      setListLoading(false);
-      const failures = results.filter((r) => r.status === "rejected");
-      if (failures.length > 0) setListError("Failed to load data.");
-    });
+    backupGateCheck()
+      .then((d) => { if (!cancelled) setGate(d ?? null); })
+      .catch(() => { if (!cancelled) setListError("Failed to load gate data."); });
     return () => { cancelled = true; };
   }, [user.id, view === "list"]);
 
@@ -255,7 +246,7 @@ export default function DayClosePage({ user }: Props) {
 
         <Card>
           <h2 className="mb-3 text-sm font-semibold">
-            {formatDateForDisplay(lc.date)}
+            <span className="tabular-nums whitespace-nowrap">{formatDateForDisplay(lc.date)}</span>
           </h2>
           <div className="space-y-2 text-sm">
             <SummaryRow label="Opening cash" value={<Money paise={lc.opening} />} />
@@ -307,7 +298,7 @@ export default function DayClosePage({ user }: Props) {
         <button
           type="button"
           onClick={() => { setView("list"); setFormError(null); resetDirty(); }}
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
           ← Back
         </button>
@@ -353,12 +344,12 @@ export default function DayClosePage({ user }: Props) {
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-foreground">Count Drawer</h3>
-              <p className="text-[10px] text-muted-foreground">How much cash is in the drawer?</p>
+              <p className="text-xs text-muted-foreground">How much cash is in the drawer?</p>
             </div>
             <button
               type="button"
               onClick={() => setUseDenom(!useDenom)}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             >
               {useDenom ? "Type amount" : "Count notes"}
             </button>
@@ -366,10 +357,10 @@ export default function DayClosePage({ user }: Props) {
 
           {useDenom ? (
             <>
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {DENOMINATIONS.map((d) => (
                   <label key={d} className="space-y-0.5 text-center">
-                    <span className="text-[10px] text-muted-foreground">₹{d}</span>
+                    <span className="text-xs text-muted-foreground">₹{d}</span>
                     <input
                       type="number"
                       min="0"
@@ -466,7 +457,7 @@ export default function DayClosePage({ user }: Props) {
           </div>
 
           {formError && (
-            <div className="mt-3 rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive">
+            <div className="mt-3 rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive" role="alert" aria-live="assertive">
               {formError}
             </div>
           )}
@@ -538,7 +529,7 @@ export default function DayClosePage({ user }: Props) {
           source={serverSource}
           columns={recentClosesColumns}
           keyExtractor={(d) => d.id}
-          emptyMessage="No recent day closes."
+          emptyMessage="No day closes yet. Click Close day to record your first one."
           height={320}
         />
       </Card>
@@ -557,7 +548,7 @@ function ReadonlyMetric({
 }) {
   return (
     <div className="rounded-lg bg-muted/50 px-3 py-2">
-      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
       {loading ? (
         <Skeleton className="mt-1 h-5 w-16" />
       ) : (
