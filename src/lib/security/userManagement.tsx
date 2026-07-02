@@ -1,7 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tauriInvoke as invoke } from "./tauri";
 import {
-  AlertCircle,
   ArrowLeft,
   Eye,
   EyeOff,
@@ -15,7 +14,7 @@ import { useForm } from "react-hook-form";
 
 import { createUserSchema, type CreateUserInput, pinSchema } from "./pin";
 import { type Role, useSecurity } from "./state";
-import { Alert, Badge, Button, Card, Field, Select } from "../../components/ui";
+import { Alert, Badge, Button, Field, Select } from "../../components/ui";
 
 interface ListedUser {
   id: number;
@@ -25,17 +24,6 @@ interface ListedUser {
 
 const inputClass =
   "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
-const labelClass = "text-sm font-medium text-foreground";
-
-function fieldError(message?: string) {
-  if (!message) return null;
-  return (
-    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
-      <AlertCircle className="h-4 w-4" aria-hidden="true" />
-      {message}
-    </p>
-  );
-}
 
 function roleBadge(role: Role) {
   const variant: Record<Role, "warning" | "success" | "info"> = {
@@ -139,13 +127,9 @@ export function UserManagement() {
 
           {/* Error */}
           {error ? (
-            <div
-              className="mb-5 flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
-              role="alert"
-            >
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{error}</span>
-            </div>
+            <Alert variant="destructive" className="mb-5">
+              {error}
+            </Alert>
           ) : null}
 
           {/* Create form */}

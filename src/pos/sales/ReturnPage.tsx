@@ -175,7 +175,7 @@ export default function ReturnPage({ user, onBack }: Props) {
       return;
     }
     const item = hit as ItemSearchHit;
-    const source = scopeItemsByItemId.has(item.id) ? findSourceSaleItem(item.id) : null;
+    const source = scopeItemsByItemId.has(item.id) ? findSourceSaleItem(linkedInvoices, item.id) : null;
     setLines((prev) => {
       const existing = prev.find((line) => line.item_id === item.id);
       if (existing) {
