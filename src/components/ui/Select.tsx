@@ -1,66 +1,50 @@
-import { forwardRef, type SelectHTMLAttributes, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
-import { cn } from "./cn";
+import { forwardRef, type SelectHTMLAttributes } from "react"
+import { ChevronDown } from "lucide-react"
 
-export interface SelectOption {
-  value: string;
-  label: string;
-  disabled?: boolean;
+import { cn } from "./cn"
+
+interface SelectOption {
+  value: string
+  label: string
+  disabled?: boolean
 }
 
-export interface SelectProps
-  extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> {
-  options: SelectOption[];
-  placeholder?: string;
-  size?: "sm" | "md";
-  className?: string;
-  children?: ReactNode;
+interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> {
+  options: SelectOption[]
+  placeholder?: string
+  size?: "sm" | "md"
 }
 
-const sizeMap = {
-  sm: "h-7 text-xs",
-  md: "h-9 text-sm",
-} as const;
-
-export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  (
-    { options, placeholder, size = "md", className, disabled, children, ...rest },
-    ref,
-  ) => {
+const Select = forwardRef<HTMLSelectElement, SelectProps>(
+  ({ className, options, placeholder, size = "md", children, ...props }, ref) => {
     return (
-      <div className={cn("relative w-full", className)}>
+      <div className="relative inline-flex">
         <select
           ref={ref}
-          disabled={disabled}
-          aria-label={rest["aria-label"]}
           className={cn(
-            "w-full appearance-none rounded-md border border-border bg-background pl-2 pr-7 text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
-            sizeMap[size],
+            "appearance-none rounded-lg border border-input bg-transparent pr-8 pl-2.5 text-sm transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50",
+            size === "sm" ? "h-7 text-[0.8rem]" : "h-8",
+            className
           )}
-          {...rest}
+          {...props}
         >
-          {placeholder !== undefined ? (
-            <option value="" disabled hidden>
+          {placeholder && (
+            <option value="" disabled>
               {placeholder}
             </option>
-          ) : null}
-          {children ??
-            options.map((o) => (
-              <option key={o.value} value={o.value} disabled={o.disabled}>
-                {o.label}
-              </option>
-            ))}
-        </select>
-        <ChevronDown
-          aria-hidden="true"
-          className={cn(
-            "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground",
-            size === "sm" ? "h-3 w-3" : "h-4 w-4",
-            disabled && "opacity-50",
           )}
-        />
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+              {opt.label}
+            </option>
+          ))}
+          {children}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       </div>
-    );
-  },
-);
-Select.displayName = "Select";
+    )
+  }
+)
+Select.displayName = "Select"
+
+export { Select, type SelectProps, type SelectOption }

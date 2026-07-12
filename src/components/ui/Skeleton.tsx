@@ -20,8 +20,8 @@ export function Skeleton({
   if (width !== undefined) style.width = width;
   if (height !== undefined) style.height = height;
 
-  const bar = "bg-surface-sunken";
-  const surface = "border-border bg-surface-raised";
+  const bar = "bg-muted";
+  const surface = "border-border bg-card";
 
   if (variant === "circle") {
     return (
