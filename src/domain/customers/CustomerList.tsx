@@ -16,6 +16,7 @@ import type { Customer } from "../types";
 import { useShortcut } from "../../lib/shortcuts";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
+import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   onSelect?: (c: Customer) => void;
@@ -226,6 +227,7 @@ export function CustomerList({
   });
 
   return (
+  <Skeleton name="customers-list" loading={customerMetrics.isLoading} select="viewport">
     <div className="space-y-3">
       {/* ── Metric cards ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -301,5 +303,6 @@ export function CustomerList({
         onCancel={() => setArchiveConfirmCustomer(null)}
       />
     </div>
+  </Skeleton>
   );
 }

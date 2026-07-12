@@ -17,6 +17,7 @@ import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { toTitleCase } from "../../lib/format/titleCase";
+import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   onSelect?: (v: Vendor) => void;
@@ -220,6 +221,7 @@ export function VendorList({
   });
 
   return (
+  <Skeleton name="vendors-list" loading={vendorMetrics.isLoading} select="viewport">
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
@@ -280,5 +282,6 @@ export function VendorList({
         onCancel={() => setArchiveConfirmVendor(null)}
       />
     </div>
+  </Skeleton>
   );
 }

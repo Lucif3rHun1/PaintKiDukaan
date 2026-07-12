@@ -37,6 +37,7 @@ import { useFocusShortcut } from "../lib/shortcuts/useFocusShortcut";
 import { extractError } from "../lib/extractError";
 import { generateSimpleSequence, type SequenceType } from "./sequence";
 import { useLabelBatchSeed } from "./seed";
+import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 
 type PrinterType = "thermal" | "laser-a4";
 type LaserPerSheet = 21 | 65;
@@ -620,6 +621,7 @@ export function BulkLabelsPage() {
   const labelCapacity = useMemo(() => calcLabelCapacity(rollW, rollH, cols, tsplConfig), [rollW, rollH, cols, tsplConfig]);
 
   return (
+  <BoneSkeleton name="bulk-labels" loading={false} select="viewport">
     <div className="grid gap-4 lg:grid-cols-12">
       {/* LEFT: compose — 5 cols */}
       <section className="space-y-3 rounded-lg border border-border bg-card/60 p-4 lg:col-span-5">
@@ -1381,5 +1383,6 @@ export function BulkLabelsPage() {
         </div>
       </section>
     </div>
+  </BoneSkeleton>
   );
 }

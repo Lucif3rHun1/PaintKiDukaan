@@ -26,6 +26,7 @@ import { setHash } from "../../lib/navigate";
 import type { Formula } from "./api";
 import { FormulaForm } from "./FormulaForm";
 import { invalidateList, invalidateListMetrics } from "../../lib/query";
+import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   id: number;
@@ -197,6 +198,7 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
   }
 
   return (
+  <Skeleton name="formula-detail" loading={loading} select="viewport">
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -344,6 +346,7 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
         onCancel={() => setConfirmArchive(false)}
       />
     </div>
+  </Skeleton>
   );
 }
 

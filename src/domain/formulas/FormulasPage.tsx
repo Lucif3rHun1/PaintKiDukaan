@@ -20,6 +20,7 @@ import { listFormulasPaged, listFormulaMetrics } from "./api";
 import type { Formula } from "./api";
 import { FormulaForm } from "./FormulaForm";
 import { useMemo } from "react";
+import { Skeleton } from "boneyard-js/react";
 
 type Mode = "list" | "create";
 type Filter = "all" | "active" | "inactive";
@@ -171,6 +172,7 @@ export function FormulasPage({ role }: Props) {
   ];
 
   return (
+  <Skeleton name="formulas-list" loading={formulaMetrics.isLoading} select="viewport">
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <div
@@ -243,6 +245,7 @@ export function FormulasPage({ role }: Props) {
         height={400}
       />
     </div>
+  </Skeleton>
   );
 }
 

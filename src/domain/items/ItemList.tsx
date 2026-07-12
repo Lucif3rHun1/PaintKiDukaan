@@ -61,6 +61,7 @@ import { setHash } from "../../lib/navigate";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { createInward } from "../../pos/api";
 import type { NewPurchase } from "../../pos/types";
+import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
@@ -576,6 +577,7 @@ export function ItemList({ role }: Props) {
   }, [exportDataReady, exportRows, brandNameById, brandPrefixById, locationNameById, subLocationNameById]);
 
   return (
+  <Skeleton name="items-list" loading={false} select="viewport">
     <div className="space-y-3">
       {/* ── Metrics cards (server source) ── */}
       <div
@@ -728,6 +730,7 @@ export function ItemList({ role }: Props) {
         onCancel={() => setArchiveConfirmItem(null)}
       />
     </div>
+  </Skeleton>
   );
 }
 
