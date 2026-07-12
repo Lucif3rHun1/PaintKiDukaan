@@ -28,11 +28,11 @@ jobs:
             artifact_name: windows-aarch64
           - os: macos-latest
             target: aarch64-apple-darwin
-            asset_glob: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+            asset_glob: release-output/*.app.tar.gz
             artifact_name: macos-aarch64
           - os: macos-latest
             target: x86_64-apple-darwin
-            asset_glob: src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
+            asset_glob: release-output/*.app.tar.gz
             artifact_name: macos-x86_64
 
     steps:
@@ -103,14 +103,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bundle_dir="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
-          app_path="$(find "$bundle_dir" -maxdepth 1 -type d -name '*.app' | sort | head -n 1)"
+          mkdir -p release-output
+          app_path="$(find src-tauri/target -path '*/release/bundle/macos/*.app' -type d | sort | head -n 1)"
           if [[ -z "$app_path" ]]; then
-            echo "No .app bundle found under $bundle_dir" >&2
-            find "$bundle_dir" -maxdepth 2 -print >&2 || true
+            echo "No .app bundle found under src-tauri/target" >&2
+            find src-tauri/target -maxdepth 5 -type d -name bundle -print >&2 || true
             exit 1
           fi
-          tar -C "$bundle_dir" -czf "$app_path.tar.gz" "$(basename "$app_path")"
+          tar -C "$(dirname "$app_path")" -czf "release-output/$(basename "$app_path").tar.gz" "$(basename "$app_path")"
 
       - uses: actions/upload-artifact@v4
         with:
