@@ -18,7 +18,7 @@ import {
   Skeleton,
   ShortcutsHint,
   StockStatusBadge,
-  Tabs,
+  TabsLegacy,
 } from "../../components/ui";
 import { PeriodDropdown } from "../../components/ui/PeriodDropdown";
 import type { ColumnDef } from "../../components/ui";
@@ -42,6 +42,7 @@ import type {
   ComparisonMetricsReport,
   ComparisonMetric,
 } from "../types";
+import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 
 type ReportSection = "sales" | "inventory" | "customers";
 
@@ -172,7 +173,7 @@ function ReportSubNav({ active, onSelect }: { active: ReportSection; onSelect: (
     { id: "customers", label: "Outstanding" },
   ];
   return (
-    <Tabs
+    <TabsLegacy
       items={tabs}
       value={active}
       onChange={(id) => {
@@ -450,6 +451,7 @@ export default function ReportsPage({ user }: Props) {
   }
 
   return (
+  <BoneSkeleton name="reports" loading={loading} select="viewport">
     <div className="space-y-4">
       <PageHeader
         title="Reports"
@@ -755,5 +757,6 @@ export default function ReportsPage({ user }: Props) {
         ]}
       />
     </div>
+  </BoneSkeleton>
   );
 }

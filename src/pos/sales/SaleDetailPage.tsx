@@ -17,6 +17,7 @@ import { toast } from "../../lib/feedback/toast";
 import { formatDateForDisplay } from "../../lib/date";
 import type { Sale } from "../types";
 import { saleStatus } from "./saleStatus";
+import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   id: number;
@@ -165,6 +166,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
   const isFbill = sale.status === "fbill";
 
   return (
+  <Skeleton name="sale-detail" loading={loading} select="viewport">
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -381,5 +383,6 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
         </div>
       </div>
     </div>
+  </Skeleton>
   );
 }

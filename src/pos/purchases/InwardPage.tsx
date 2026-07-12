@@ -35,6 +35,7 @@ import { ItemSearchInput } from "../sales/ItemSearchInput";
 import type { InwardLine, ItemSearchHit, NewPurchase, Purchase, PurchaseCreated } from "../types";
 import { setHash } from "../../lib/navigate";
 import { getPref, setPref } from "../../lib/storage";
+import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 
 // ponytail: packaging APIs — import from shared module
 import {
@@ -642,6 +643,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   }
 
   return (
+  <BoneSkeleton name="inward-form" loading={false} select="viewport">
     <PageBadgeCtx.Provider value={{ status: draftStatus, draft: savedDraft }}>
     <div className="space-y-4">
       <PageHeader
@@ -1137,5 +1139,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
 
     </div>
     </PageBadgeCtx.Provider>
+  </BoneSkeleton>
   );
 }

@@ -20,6 +20,7 @@ import { formatItemName } from "../../domain/items/display";
 import type { BatchLabel } from "../print";
 import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
 import { setHash } from "../../lib/navigate";
+import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   id: number;
@@ -143,6 +144,7 @@ export function InwardDetailPage({ id, onBack }: Props) {
   }
 
   return (
+  <Skeleton name="inward-detail" loading={loading} select="viewport">
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -240,5 +242,6 @@ export function InwardDetailPage({ id, onBack }: Props) {
         </div>
       </div>
     </div>
+  </Skeleton>
   );
 }

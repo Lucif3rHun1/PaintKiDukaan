@@ -10,6 +10,7 @@ import { formatDateForDisplay } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 import { safePrintReturnById } from "./printOrDownload";
 import { setHash } from "../../lib/navigate";
+import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   id: number;
@@ -79,6 +80,7 @@ export function ReturnDetailPage({ id, onBack }: Props) {
   const refunded = ret.payment_modes.reduce((sum, m) => sum + m.amount, 0);
 
   return (
+  <Skeleton name="return-detail" loading={loading} select="viewport">
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -203,5 +205,6 @@ export function ReturnDetailPage({ id, onBack }: Props) {
         </div>
       </div>
     </div>
+  </Skeleton>
   );
 }

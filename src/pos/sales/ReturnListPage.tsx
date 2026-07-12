@@ -14,6 +14,7 @@ import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { formatDateForDisplay, shiftDaysLocal, todayLocalYyyymmdd } from "../../lib/date";
 import { setHash } from "../../lib/navigate";
+import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   onCreate: () => void;
@@ -124,6 +125,7 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
   const sm = summary.data;
 
   return (
+  <Skeleton name="return-list" loading={summary.isLoading} select="viewport">
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 sm:max-w-2xl">
         <Card as="section" className="space-y-1 p-4">
@@ -187,5 +189,6 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
         }
       />
     </div>
+  </Skeleton>
   );
 }

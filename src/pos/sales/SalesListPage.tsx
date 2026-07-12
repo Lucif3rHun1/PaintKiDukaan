@@ -43,6 +43,7 @@ import {
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import { saleStatus } from "./saleStatus";
+import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   onCreate: () => void;
@@ -239,6 +240,7 @@ export function SalesListPage({ onCreate }: Props) {
   const sm = summary.data;
 
   return (
+  <Skeleton name="sales-list" loading={summary.isLoading} select="viewport">
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard
@@ -328,5 +330,6 @@ export function SalesListPage({ onCreate }: Props) {
         rowActions={rowActions}
       />
     </div>
+  </Skeleton>
   );
 }

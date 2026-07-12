@@ -28,6 +28,7 @@ import type { BackupGate, CashSalesSummary, DayClose } from "../types";
 import { todayLocalYyyymmdd, formatDateForDisplay } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 import { useDirtyForm } from "../hooks/useDirtyForm";
+import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 
 const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
 
@@ -523,6 +524,7 @@ export default function DayClosePage({ user }: Props) {
   }
 
   return (
+  <BoneSkeleton name="day-close" loading={!gate && view === 'list'} select="viewport">
     <div className="space-y-4">
       {listError && (
         <div className="rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive">
@@ -551,6 +553,7 @@ export default function DayClosePage({ user }: Props) {
         />
       </Card>
     </div>
+  </BoneSkeleton>
   );
 }
 
