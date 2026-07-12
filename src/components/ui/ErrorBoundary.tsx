@@ -5,6 +5,7 @@ import { tauriInvoke, generateCorrelationId } from "../../lib/security/tauri";
 import { Card } from "./Card";
 import { Button } from "./Button";
 import { cn } from "./cn";
+import { setHash } from "../../lib/navigate";
 
 interface ErrorFallbackProps {
   error: Error;
@@ -59,7 +60,7 @@ function ErrorFallback({ error, resetErrorBoundary, context }: ErrorFallbackProp
                 size="sm"
                 icon={Home}
                 onClick={() => {
-                  window.location.hash = "dashboard";
+                  setHash("dashboard");
                   resetErrorBoundary();
                 }}
               >

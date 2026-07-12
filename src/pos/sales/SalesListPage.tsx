@@ -34,6 +34,7 @@ import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { formatDateForDisplay, shiftDaysLocal, todayLocalYyyymmdd } from "../../lib/date";
 import type { Sale } from "../types";
 import type { Draft } from "../../domain/types";
+import { setHash } from "../../lib/navigate";
 import {
   safeDownloadSalePdfById,
   safePrintSaleById,
@@ -88,13 +89,31 @@ export function SalesListPage({ onCreate }: Props) {
       {
         id: "customer",
         header: "Customer",
-        width: "minmax(10rem, 1fr)",
+        flex: true,
+        minWidth: "8rem",
+        maxWidth: "12rem",
         sortable: true,
         sortField: "customer_name",
         cell: (s) => (
           <span className="truncate text-foreground" title={s.customer_name ?? "Walk-in"}>
             {s.customer_name ?? "Walk-in"}
           </span>
+        ),
+      },
+      {
+        id: "no",
+        header: "Inv No",
+        width: "13rem",
+        cell: (s) => (
+          <a
+            href={`#/sales/${s.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block max-w-full font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded whitespace-nowrap"
+            aria-label={`Open invoice ${s.no}`}
+            title={s.no}
+          >
+            {s.no}
+          </a>
         ),
       },
       {
@@ -105,22 +124,6 @@ export function SalesListPage({ onCreate }: Props) {
           <Badge variant="muted" size="sm">
             {s.status === "final" ? "Bill" : s.status === "fbill" ? "FBill" : "Quotation"}
           </Badge>
-        ),
-      },
-      {
-        id: "no",
-        header: "Inv No",
-        width: "11rem",
-        cell: (s) => (
-          <a
-            href={`#/sales/${s.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="block max-w-full truncate font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
-            aria-label={`Open invoice ${s.no}`}
-            title={s.no}
-          >
-            {s.no}
-          </a>
         ),
       },
       {
@@ -163,7 +166,7 @@ export function SalesListPage({ onCreate }: Props) {
         {
           label: "View",
           icon: Eye,
-          onSelect: () => (window.location.hash = `#/sales/${s.id}`),
+          onSelect: () => (setHash(`#/sales/${s.id}`)),
         },
         {
           label: "Print",
@@ -194,7 +197,7 @@ export function SalesListPage({ onCreate }: Props) {
                     void queryClient.invalidateQueries({ queryKey: ["sales-list"] });
                     void invalidateList(queryClient, "cmd_list_sales_paged");
                     void invalidateListMetrics(queryClient, "cmd_sales_period_summary");
-                    window.location.hash = `#/sales/edit/${newId}`;
+                    setHash(`#/sales/edit/${newId}`);
                   } catch (e) {
                     toast.error(`Convert failed: ${extractError(e)}`);
                   }
@@ -204,7 +207,7 @@ export function SalesListPage({ onCreate }: Props) {
                 label: "Return items",
                 icon: RotateCcw,
                 onSelect: () => {
-                  window.location.hash = `#/sales/return?preLink=${s.id}`;
+                  setHash(`#/sales/return?preLink=${s.id}`);
                 },
               },
             ]
@@ -281,8 +284,8 @@ export function SalesListPage({ onCreate }: Props) {
         keyExtractor={(s) => s.id}
         searchPlaceholder="Search by invoice, customer…"
         estimateRowHeight={44}
-        height={520}
-        onRowClick={(s) => (window.location.hash = `#/sales/${s.id}`)}
+        fill
+        onRowClick={(s) => (setHash(`#/sales/${s.id}`))}
         emptyMessage="No sales found"
         emptyCta={
           <EmptyState
@@ -309,7 +312,7 @@ export function SalesListPage({ onCreate }: Props) {
                 if (!data.customerId) label = "Walk-in";
               } catch { /* corrupt draft */ }
               return (
-                <button type="button" onClick={() => { window.location.hash = "#/sales/new?restore=1"; }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
+                <button type="button" onClick={() => { setHash("#/sales/new?restore=1"); }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
                   <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                   Open draft ({itemCount} item{itemCount !== 1 ? "s" : ""})
                 </button>

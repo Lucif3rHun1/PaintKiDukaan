@@ -136,7 +136,7 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
           className="input h-10 w-full pl-9 pr-3"
         />
       </div>
-      {open && (showSuggestions || hasResults) && (
+      {open && (showSuggestions || hasResults || query.trim()) && (
         <div className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-card shadow-lg">
           {showSuggestions && allowWalkIn && (
             <>
@@ -173,6 +173,11 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
                 <CustomerOption key={c.id} customer={c} onSelect={() => handleSelectCustomer(c)} showBalance={showBalance} showType={showType} />
               ))}
             </>
+          )}
+          {query.trim() && !hasResults && (
+            <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+              No customers found
+            </div>
           )}
           <div className="border-t border-border p-2">
             <Button type="button" variant="secondary" size="sm" icon={UserPlus} onClick={handleCreate} className="w-full">

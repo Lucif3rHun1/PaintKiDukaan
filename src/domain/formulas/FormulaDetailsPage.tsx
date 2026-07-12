@@ -4,7 +4,6 @@ import { ActionMenu } from "../../components/ui/ActionMenu";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -23,6 +22,7 @@ import {
   getFormula,
   listFormulaSalesPaged,
 } from "./api";
+import { setHash } from "../../lib/navigate";
 import type { Formula } from "./api";
 import { FormulaForm } from "./FormulaForm";
 import { invalidateList, invalidateListMetrics } from "../../lib/query";
@@ -108,7 +108,9 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
     line_total: number;
   }>[] = [
     {
+      id: "sale_no",
       header: "Invoice",
+      width: "12rem",
       cell: (row) => (
         <span className="font-mono text-xs tabular-nums text-foreground">
           {row.sale_no}
@@ -121,7 +123,9 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
       sortable: true,
     },
     {
+      id: "date",
       header: "Date",
+      width: "7rem",
       cell: (row) => (
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           {formatDateForDisplay(row.date)}
@@ -131,23 +135,31 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
       sortable: true,
     },
     {
+      id: "customer",
       header: "Customer",
+      flex: true,
+      minWidth: "10rem",
+      maxWidth: "16rem",
       cell: (row) => (
-        <span className="text-foreground">
+        <span className="truncate text-foreground">
           {row.customer_name ?? <span className="text-muted-foreground">Walk-in</span>}
         </span>
       ),
       searchable: true,
     },
     {
+      id: "price",
       header: "Price",
+      width: "7rem",
       align: "right",
       cell: (row) => <Money paise={row.price} />,
       sortField: "price",
       sortable: true,
     },
     {
+      id: "line_total",
       header: "Total",
+      width: "7rem",
       align: "right",
       cell: (row) => <Money paise={row.line_total} />,
       sortField: "line_total",
@@ -302,7 +314,7 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
             keyExtractor={(row) => row.sale_id}
             searchPlaceholder="Search invoice or customer…"
             emptyMessage="No sales match the filters."
-            onRowClick={(row) => (window.location.hash = `#/sales/${row.sale_id}`)}
+            onRowClick={(row) => (setHash(`#/sales/${row.sale_id}`))}
             height={300}
           />
         </Card>

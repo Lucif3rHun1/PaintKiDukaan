@@ -934,6 +934,9 @@ CREATE TABLE IF NOT EXISTS drafts (
   UNIQUE(user_id, form_type)
 );
 
+-- serves: "load last draft for this user + form"
+CREATE INDEX IF NOT EXISTS idx_drafts_user ON drafts(user_id);
+
 -- ============================================================
 -- FTS5 full-text search index for items
 -- Indexes: name, sku_code, barcode, brand (denormalized text)

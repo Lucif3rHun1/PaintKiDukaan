@@ -5,9 +5,9 @@ node_modules/
 
 # Tauri / Rust
 src-tauri/target/
-src-tauri/Cargo.lock
+
 src-tauri/gen/
-Cargo.lock
+
 
 # OS
 .DS_Store
@@ -55,6 +55,8 @@ vite.config.d.ts
 vite.config.js
 
 # Tauri signing (platform-specific)
+# Legacy: updater.key/key.pub were for minisign signing; the app now uses
+# SHA-256 verified GitHub releases (commands::updater). Keep for rollback.
 src-tauri/bundle/**
 src-tauri/updater.key
 src-tauri/*.bak

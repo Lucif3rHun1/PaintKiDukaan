@@ -164,14 +164,20 @@ export function BrandAdmin({ role }: Props) {
 
   const brandColumns: ColumnDef<Brand>[] = [
     {
+      id: "name",
       header: "Name",
-      cell: (b) => <span className="text-foreground">{toTitleCase(b.name)}</span>,
+      flex: true,
+      minWidth: "10rem",
+      maxWidth: "20rem",
+      cell: (b) => <span className="truncate text-foreground">{toTitleCase(b.name)}</span>,
       sortField: "name",
       sortable: true,
       searchable: true,
     },
     {
+      id: "prefix",
       header: "Code prefix",
+      width: "8rem",
       cell: (b) =>
         editingId === b.id ? (
           <input
@@ -188,7 +194,9 @@ export function BrandAdmin({ role }: Props) {
       sortable: true,
     },
     {
+      id: "next_seq",
       header: "Next seq",
+      width: "6rem",
       align: "right",
       cell: (b) => (
         <span className="font-mono tabular-nums text-muted-foreground">

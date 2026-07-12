@@ -5,18 +5,18 @@ use zeroize::Zeroize;
 
 use crate::backup::{BACKUP_ARGON2_M_COST_KIB, BACKUP_ARGON2_P_COST, BACKUP_ARGON2_T_COST};
 
-/// Derive a 32-byte AES-256-GCM key from a recovery passphrase and salt.
-///
-/// Uses Argon2id v1.3 with the backup-specific cost parameters defined in
-/// §10.8 of the master plan. The returned key is cleared from the stack by the
-/// caller; this function zeroises its own internal buffer before returning.
 pub fn derive_backup_key(passphrase: &str, salt: &[u8; 16]) -> [u8; 32] {
-    let params = Params::new(
-        BACKUP_ARGON2_M_COST_KIB,
-        BACKUP_ARGON2_T_COST,
-        BACKUP_ARGON2_P_COST,
-        Some(32),
-    );
+    derive_backup_key_with_params(passphrase, salt, BACKUP_ARGON2_M_COST_KIB, BACKUP_ARGON2_T_COST, BACKUP_ARGON2_P_COST)
+}
+
+pub fn derive_backup_key_with_params(
+    passphrase: &str,
+    salt: &[u8; 16],
+    m_cost_kib: u32,
+    t_cost: u32,
+    p_cost: u32,
+) -> [u8; 32] {
+    let params = Params::new(m_cost_kib, t_cost, p_cost, Some(32));
 
     let params = match params {
         Ok(p) => p,

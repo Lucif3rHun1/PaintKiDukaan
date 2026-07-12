@@ -191,10 +191,11 @@ pub fn make_name_abbreviation(name: &str) -> String {
             abbr.push_str(&clean[..take].to_uppercase());
         } else {
             // Subsequent words: take first char only
-            let first = clean.chars().next().unwrap().to_uppercase().to_string();
-            abbr.push_str(&first);
-            if abbr.len() >= 4 {
-                break;
+            if let Some(first) = clean.chars().next() {
+                abbr.push_str(&first.to_uppercase().to_string());
+                if abbr.len() >= 4 {
+                    break;
+                }
             }
         }
     }

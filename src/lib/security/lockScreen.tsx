@@ -97,9 +97,9 @@ export function LockScreen() {
       }
 
       if (isAppError(error) && error.code === "locked_out") {
-        const match = (error.message ?? "").match(/locked out until unix (\d+)/i);
-        if (match) {
-          setLockedUntil(Number(match[1]));
+        const lockedUntil = (error as unknown as Record<string, unknown>).locked_until;
+        if (typeof lockedUntil === "number") {
+          setLockedUntil(Math.floor(lockedUntil / 1000));
           setBackendError(null);
           return;
         }

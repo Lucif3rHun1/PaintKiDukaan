@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import {
@@ -22,6 +22,7 @@ import {
 } from "./pin";
 import { type Role, useSecurity } from "./state";
 import { ipc } from "../../shell/lib/ipc";
+import { fieldError } from "../validation";
 
 interface FirstLaunchRestoreProps {
   onCancel: () => void;
@@ -42,16 +43,6 @@ const ghostButtonClass =
   "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 const dangerButtonClass =
   "inline-flex h-11 items-center justify-center rounded-lg bg-destructive px-4 text-sm font-medium text-destructive-foreground transition-colors duration-150 hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
-
-function fieldError(message?: string) {
-  if (!message) return null;
-  return (
-    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
-      <FileWarning className="h-4 w-4" aria-hidden="true" />
-      {message}
-    </p>
-  );
-}
 
 function truncateMiddle(value: string) {
   if (value.length <= 54) return value;
@@ -111,6 +102,10 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
       // noop
     }
   }, [setValue]);
+
+  useEffect(() => {
+    return () => { clearTimeout(timerRef.current); };
+  }, []);
 
   async function goToPassphrase() {
     const ok = await trigger("envelopePath");
@@ -272,7 +267,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 Absolute path to a backup file. E.g. /Users/me/backups/shop-2025-01-15.pkb1
               </p>
-              {fieldError(errors.envelopePath?.message)}
+              {fieldError(errors.envelopePath?.message, { icon: FileWarning })}
             </div>
           ) : null}
 
@@ -301,7 +296,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                   {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              {fieldError(errors.passphrase?.message)}
+              {fieldError(errors.passphrase?.message, { icon: FileWarning })}
             </div>
           ) : null}
 

@@ -12,8 +12,12 @@ export function formatRupeesFromPaise(paise: number): string {
 }
 
 export function parseRupeesToPaise(rupees: string): number {
-  const num = parseFloat(rupees.replace(/[₹,\s]/g, ""));
-  return isNaN(num) ? 0 : Math.round(num * 100);
+  const cleaned = rupees.replace(/[₹,\s]/g, "");
+  if (/[eE]/.test(cleaned)) return 0;
+  const num = parseFloat(cleaned);
+  if (!Number.isFinite(num) || num < 0) return 0;
+  const paise = Math.round(num * 100);
+  return paise > 100_000_000_000 ? 0 : paise; // ponytail: ₹1B cap (100 billion paise)
 }
 
 export function formatRupeesCompact(paise: number): string {

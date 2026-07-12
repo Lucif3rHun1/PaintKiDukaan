@@ -63,8 +63,9 @@ pub(crate) fn first_launch_setup_at_path(
     gstin: Option<String>,
 ) -> Result<Session, AppError> {
     log::info!("[SETUP] first_launch_setup_at_path called");
-    if passphrase.is_empty() {
-        return Err(AppError::Validation("recovery passphrase must not be empty".into()));
+    // ponytail: frontend enforces 12 chars, backend must too
+    if passphrase.len() < 12 {
+        return Err(AppError::Validation("recovery passphrase must be at least 12 characters".into()));
     }
     log::info!(
         "[SETUP] pin len={}, passphrase len={}, shop={}",
@@ -173,8 +174,8 @@ pub(crate) fn first_launch_setup_at_path(
 
     // --- Set state -------------------------------------------------------
     log::info!("[SETUP] Setting app state...");
-    *state.db_path.lock().unwrap() = Some(db_path.to_path_buf());
-    *state.db.lock().unwrap() = Some(db);
+    *state.db_path.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(db_path.to_path_buf());
+    *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(db);
 
     let user = User {
         id: 1,
@@ -182,9 +183,9 @@ pub(crate) fn first_launch_setup_at_path(
         role: "owner".into(),
         is_active: true,
     };
-    *state.session.lock().unwrap() = Some(user.clone());
+    *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(user.clone());
     sync_session_to_static(state);
-    *state.recovery_passphrase.lock().unwrap() = Some(Zeroizing::new(passphrase));
+    *state.recovery_passphrase.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(Zeroizing::new(passphrase));
 
     state
         .last_activity
@@ -244,13 +245,18 @@ pub fn set_recovery_passphrase(
 ) -> Result<(), AppError> {
     ipc_auth::authorize("set_recovery_passphrase", state.inner())?;
 
+    // ponytail: frontend enforces 12 chars, backend must too
+    if new_passphrase.len() < 12 {
+        return Err(AppError::Validation("recovery passphrase must be at least 12 characters".into()));
+    }
+
     let db_path = state
         .db_path
         .lock()
         .unwrap()
         .clone()
         .ok_or(AppError::NoDb)?;
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
     let dek = db.dek();
 
@@ -275,7 +281,7 @@ pub fn restore_from_recovery(
 ) -> Result<Session, AppError> {
     validate_owner_pin(&new_pin)?;
 
-    let db_path = match state.db_path.lock().unwrap().clone() {
+    let db_path = match state.db_path.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?.clone() {
         Some(p) => p,
         None => {
             let app_dir = app
@@ -296,7 +302,7 @@ pub fn restore_from_recovery(
 
     // Open the main DB.
     let db = db::Db::open(&db_path, &dek)?;
-    *state.db_path.lock().unwrap() = Some(db_path.clone());
+    *state.db_path.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(db_path.clone());
 
     let user = db.with_conn(|conn: &Connection| {
         let mut stmt = conn.prepare(
@@ -312,10 +318,10 @@ pub fn restore_from_recovery(
         })
     })?;
 
-    *state.db.lock().unwrap() = Some(db);
-    *state.session.lock().unwrap() = Some(user.clone());
+    *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(db);
+    *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(user.clone());
     sync_session_to_static(&state);
-    *state.failed_attempts.lock().unwrap() = 0;
+    *state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = 0;
     state
         .last_activity
         .store(now_unix(), std::sync::atomic::Ordering::SeqCst);

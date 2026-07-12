@@ -9,6 +9,7 @@ import type { SaleReturn } from "../../domain/types";
 import { formatDateForDisplay } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 import { safePrintReturnById } from "./printOrDownload";
+import { setHash } from "../../lib/navigate";
 
 interface Props {
   id: number;
@@ -105,7 +106,7 @@ export function ReturnDetailPage({ id, onBack }: Props) {
               variant="secondary"
               size="md"
               icon={ExternalLink}
-              onClick={() => (window.location.hash = `#/sales/${ret.sale_id}`)}
+              onClick={() => (setHash(`#/sales/${ret.sale_id}`))}
             >
               View original sale
             </Button>

@@ -69,6 +69,9 @@ export function ManageTypes() {
     {
       id: "name",
       header: "Name",
+      flex: true,
+      minWidth: "10rem",
+      maxWidth: "16rem",
       cell: (t) =>
         editing === t.id ? (
           <input
@@ -77,7 +80,7 @@ export function ManageTypes() {
             className="rounded border border-border bg-background px-2 py-1 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
           />
         ) : (
-          <span className="text-foreground">{t.name}</span>
+          <span className="truncate text-foreground">{t.name}</span>
         ),
       sortField: "name",
       sortable: true,
@@ -86,6 +89,7 @@ export function ManageTypes() {
     {
       id: "status",
       header: "Status",
+      width: "7rem",
       cell: (t) =>
         t.is_active ? (
           <span className="rounded bg-success/20 px-2 text-xs text-success">active</span>

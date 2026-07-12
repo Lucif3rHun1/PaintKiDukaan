@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
 import { X } from "lucide-react";
 import { cn } from "./cn";
 import { pushModalScope, popModalScope } from "../../lib/shortcuts";
@@ -23,6 +23,7 @@ export function InlineDialog({
   children,
 }: InlineDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
 
   useEffect(() => {
     const el = dialogRef.current;
@@ -41,6 +42,7 @@ export function InlineDialog({
     <dialog
       ref={dialogRef}
       onClose={onClose}
+      aria-labelledby={title ? titleId : undefined}
       className={cn(
         "rounded-xl border border-border bg-card p-0 backdrop:bg-foreground/60",
         sizes[size],
@@ -50,7 +52,7 @@ export function InlineDialog({
         <div className="flex items-start justify-between border-b border-border px-6 py-4">
           <div>
             {title && (
-              <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+              <h2 id={titleId} className="text-lg font-semibold text-foreground">{title}</h2>
             )}
             {description && (
               <p className="mt-1 text-sm text-muted-foreground">{description}</p>

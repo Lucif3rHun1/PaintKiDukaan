@@ -85,6 +85,8 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
       <button
         type="button"
         onClick={() => setOpen(!open)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         className={cn(
           "input flex w-full items-center gap-2 px-2 py-1 text-left text-sm",
           !value && "text-muted-foreground",
@@ -144,6 +146,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
                   key={d}
                   type="button"
                   onClick={() => select(viewYear, viewMonth, d)}
+                  aria-current={isSelected ? "date" : undefined}
                   className={cn(
                     "h-8 w-8 rounded text-sm transition-colors",
                     isSelected

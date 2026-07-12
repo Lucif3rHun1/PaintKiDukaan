@@ -96,8 +96,12 @@ export function CategoryAdmin({ role }: Props) {
 
   const categoryColumns: ColumnDef<Category>[] = [
     {
+      id: "name",
       header: "Name",
-      cell: (c) => <span className="text-foreground">{toTitleCase(c.name)}</span>,
+      flex: true,
+      minWidth: "10rem",
+      maxWidth: "20rem",
+      cell: (c) => <span className="truncate text-foreground">{toTitleCase(c.name)}</span>,
       sortField: "name",
       sortable: true,
       searchable: true,

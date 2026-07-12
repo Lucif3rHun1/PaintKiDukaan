@@ -13,6 +13,7 @@ import type { ColumnDef } from "../../components/ui";
 import { formatDateForDisplay } from "../../lib/date";
 import { toast } from "../../lib/feedback/toast";
 import { useShortcut } from "../../lib/shortcuts";
+import { setHash } from "../../lib/navigate";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { invalidateList, invalidateListMetrics } from "../../lib/query";
 import { listFormulasPaged, listFormulaMetrics } from "./api";
@@ -99,40 +100,54 @@ export function FormulasPage({ role }: Props) {
 
   const formulaColumns: ColumnDef<Formula>[] = [
     {
+      id: "id_code",
       header: "Shade ID",
+      width: "8rem",
       cell: (f) => <span className="font-mono tabular-nums text-foreground">{f.id_code}</span>,
       sortField: "id_code",
       sortable: true,
     },
     {
+      id: "name",
       header: "Name",
-      cell: (f) => f.name ? <span className="text-foreground">{f.name}</span> : <span className="text-muted-foreground">—</span>,
+      flex: true,
+      minWidth: "12rem",
+      maxWidth: "20rem",
+      cell: (f) => f.name ? <span className="truncate text-foreground">{f.name}</span> : <span className="text-muted-foreground">—</span>,
       sortField: "name",
       sortable: true,
       searchable: true,
     },
     {
+      id: "base",
       header: "Base",
+      width: "10rem",
       cell: (f) => (
-        <span className="text-muted-foreground">
+        <span className="truncate text-muted-foreground">
           {f.with_base ? f.base_item_name ?? "With base" : "—"}
         </span>
       ),
     },
     {
+      id: "retail_price",
       header: "Price",
+      width: "7rem",
       align: "right",
       cell: (f) => <Money paise={f.retail_price_paise} />,
     },
     {
+      id: "sales_count",
       header: "Sales",
+      width: "5rem",
       align: "right",
       cell: (f) => <span className="tabular-nums text-muted-foreground">{f.sales_count}</span>,
       sortField: "sales_count",
       sortable: true,
     },
     {
+      id: "last_sold_at",
       header: "Last sold",
+      width: "8rem",
       cell: (f) => (
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           {f.last_sold_at ? formatDateForDisplay(f.last_sold_at) : "—"}
@@ -142,7 +157,10 @@ export function FormulasPage({ role }: Props) {
       sortable: true,
     },
     {
+      id: "is_active",
       header: "Status",
+      width: "6rem",
+      align: "center",
       cell: (f) =>
         f.is_active ? (
           <Badge variant="success" size="sm">Active</Badge>
@@ -212,7 +230,7 @@ export function FormulasPage({ role }: Props) {
             }
           />
         }
-        onRowClick={(f) => (window.location.hash = `#/formulas/${f.id}`)}
+        onRowClick={(f) => (setHash(`#/formulas/${f.id}`))}
         headerMetrics={
           formulaMetrics.data ? (
             <div className="flex gap-3 text-xs text-muted-foreground">

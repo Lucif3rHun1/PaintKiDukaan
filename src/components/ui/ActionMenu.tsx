@@ -14,7 +14,9 @@ interface Action {
 
 interface Props {
   label?: string;
+  /** Primary API — prefer this. Each action's `onSelect` fires on click/Enter. */
   actions?: Action[];
+  /** Alias for `actions`. Accepts the same shape; use whichever your callers already pass. */
   items?: Action[];
   className?: string;
 }
@@ -185,7 +187,6 @@ export function ActionMenu({ label, actions, items, className }: Props) {
                   key={action.label}
                   type="button"
                   role="menuitem"
-                  tabIndex={-1}
                   className={cn(
                     "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
                     action.danger

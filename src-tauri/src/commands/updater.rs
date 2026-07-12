@@ -12,8 +12,16 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+fn is_trusted_update_url(url: &str) -> bool {
+    url.starts_with(ALLOWED_UPDATE_PREFIX)
+}
+
 const LATEST_JSON_URL: &str =
     "https://github.com/Lucif3rHun1/PaintKiDukaan/releases/latest/download/latest.json";
+
+/// Only allow downloads from our own GitHub Releases page.
+const ALLOWED_UPDATE_PREFIX: &str =
+    "https://github.com/Lucif3rHun1/PaintKiDukaan/releases/download/";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateInfo {
@@ -112,6 +120,10 @@ pub async fn cmd_download_update(url: String, expected_sha256: String) -> Result
     if expected_sha256.len() != 64 || !expected_sha256.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("expected_sha256 must be 64-char hex".into());
     }
+    if !is_trusted_update_url(&url) {
+        log::warn!("updater: rejected untrusted download URL: {url}");
+        return Err("download URL not from trusted source".into());
+    }
     let resp = reqwest::get(&url)
         .await
         .map_err(|e| format!("download: {}", e))?;
@@ -146,6 +158,14 @@ pub async fn cmd_download_update(url: String, expected_sha256: String) -> Result
 pub async fn cmd_install_update(path: PathBuf, _app: tauri::AppHandle) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("file not found: {}", path.display()));
+    }
+    let temp_dir = std::env::temp_dir();
+    match path.canonicalize().and_then(|p| Ok(p.starts_with(&temp_dir))) {
+        Ok(true) => {}
+        _ => {
+            log::warn!("updater: rejected install path outside temp_dir: {}", path.display());
+            return Err("install path must be in system temp directory".into());
+        }
     }
     #[cfg(target_os = "windows")]
     {

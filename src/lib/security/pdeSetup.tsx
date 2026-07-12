@@ -21,6 +21,7 @@ import {
   pinSchema,
   shopNameSchema,
 } from "./pin";
+import { fieldError } from "../validation";
 
 type Step = "opt-in" | "decoy-pin" | "duress-pin" | "fake-data" | "confirm";
 
@@ -39,16 +40,6 @@ const buttonClass =
   "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 const ghostButtonClass =
   "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
-
-function fieldError(message?: string) {
-  if (!message) return null;
-  return (
-      <p className="mt-1.5 flex items-center gap-1.5 text-sm text-destructive" role="alert">
-      <AlertCircle className="h-4 w-4" aria-hidden="true" />
-      {message}
-    </p>
-  );
-}
 
 function pinStrength(pin: string): { label: string; color: string; width: string } {
   if (pin.length === 0) return { label: "", color: "bg-muted", width: "w-0" };

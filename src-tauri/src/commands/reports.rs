@@ -789,7 +789,7 @@ pub fn dead_stock(db: &Db, days_idle: i64) -> Result<Vec<DeadStockRow>, ReportsE
              LEFT JOIN stock_balances sb ON sb.item_id = i.id
 LEFT JOIN stock_movements sm
                    ON sm.item_id = i.id AND sm.ref_kind = 'sale' AND sm.created_at >= ?1
-             WHERE i.is_active = 1
+             WHERE i.is_active = 1 AND i.created_at <= ?1
              GROUP BY i.id
              HAVING current_qty > 0 AND last_sale_ms IS NULL
              ORDER BY COALESCE(b.name || ' · ' || i.name, i.name)
@@ -837,17 +837,12 @@ pub fn inventory_aging(db: &Db) -> Result<InventoryAgingReport, ReportsError> {
         let t90 = now_ms - 90 * 86_400_000;
         let row = c.query_row(
             "SELECT
-                SUM(CASE WHEN last_sale_ms >= ?1 THEN 1 ELSE 0 END) AS b0,
-                SUM(CASE WHEN last_sale_ms >= ?2 AND last_sale_ms < ?1 THEN 1 ELSE 0 END) AS b30,
-                SUM(CASE WHEN last_sale_ms >= ?3 AND last_sale_ms < ?2 THEN 1 ELSE 0 END) AS b60,
-                SUM(CASE WHEN last_sale_ms IS NULL OR last_sale_ms < ?3 THEN 1 ELSE 0 END) AS b90
-             FROM (
-                SELECT i.id, MAX(sm.created_at) AS last_sale_ms
-                FROM items i
-                LEFT JOIN stock_movements sm ON sm.item_id = i.id AND sm.ref_kind = 'sale'
-                WHERE i.is_active = 1
-                GROUP BY i.id
-             )",
+                SUM(CASE WHEN created_at >= ?1 THEN 1 ELSE 0 END) AS b0,
+                SUM(CASE WHEN created_at >= ?2 AND created_at < ?1 THEN 1 ELSE 0 END) AS b30,
+                SUM(CASE WHEN created_at >= ?3 AND created_at < ?2 THEN 1 ELSE 0 END) AS b60,
+                SUM(CASE WHEN created_at < ?3 THEN 1 ELSE 0 END) AS b90
+             FROM items
+             WHERE is_active = 1",
             params![t30, t60, t90],
             |r| {
                 Ok(InventoryAgingReport {
@@ -1016,7 +1011,7 @@ pub struct InventoryTurnoverReport {
 pub fn inventory_turnover(db: &Db) -> Result<InventoryTurnoverReport, ReportsError> {
     db.with_conn(|c| -> Result<InventoryTurnoverReport, ReportsError> {
         let val: i64 = c.query_row(
-            "SELECT COALESCE(SUM(CAST(sb.qty AS REAL) * i.cost_paise), 0)
+            "SELECT CAST(COALESCE(SUM(sb.qty * i.cost_paise), 0) AS INTEGER)
              FROM stock_balances sb
              JOIN items i ON sb.item_id = i.id
              WHERE sb.qty > 0",
@@ -1366,6 +1361,28 @@ mod tests {
         // Vendors.
         assert_eq!(rep.vendors.len(), 1);
         assert_eq!(rep.vendor_total, 5000);
+    }
+
+    #[test]
+    fn inventory_turnover_handles_fractional_qty() {
+        // Regression for cmd_inventory_turnover: stock_balances.qty is REAL
+        // after migration N12 (paint measured in mtr/kg). The original query
+        // CAST(qty AS REAL) * cost_paise produces a REAL sum and fails
+        // InvalidColumnType when read into i64.
+        let db = crate::db::Db::open_in_memory().expect("mem db");
+        seed(&db);
+        db.with_conn(|c| -> anyhow::Result<()> {
+            c.execute(
+                "INSERT INTO stock_balances (item_id, location_id, qty, last_movement_id, updated_at)
+                 VALUES (2, 1, 2.5, NULL, 0)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        let report = inventory_turnover(&db).expect("inventory_turnover must accept REAL qty");
+        assert_eq!(report.stock_value_paise, 20_000);
     }
 
     #[test]

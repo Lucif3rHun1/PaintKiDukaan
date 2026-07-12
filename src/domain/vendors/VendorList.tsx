@@ -2,14 +2,15 @@
  * VendorList — searchable list with outstanding + role-gated Pay action.
  * Renders via <DataList> server source (cmd_list_vendors_paged).
  */
-import { useEffect, useMemo, useState } from "react";
-import { Banknote, Phone, Truck } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Archive, Banknote, Phone, Truck } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { Button, DataList, EmptyState, Money } from '../../components/ui';
+import { ActionMenu, Button, DataList, EmptyState, Money } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
+import { ConfirmDialog } from "../../shell/components/ConfirmDialog";
 import { toast } from "../../lib/feedback/toast";
-import { listVendorsPaged, listVendorMetrics } from "./api";
+import { listVendorsPaged, listVendorMetrics, updateVendor } from "./api";
 import { outstandingReport } from "../../pos/api";
 import { type Vendor } from "../types";
 import { extractError } from "../../lib/extractError";
@@ -35,11 +36,25 @@ export function VendorList({
   role,
 }: Props) {
   const [outstandings, setOutstandings] = useState<Record<number, number>>({});
+  const canEdit = role === "owner";
+  const queryClient = useQueryClient();
+  const [archiveConfirmVendor, setArchiveConfirmVendor] = useState<Vendor | null>(null);
 
   const vendorMetrics = useQuery({
     queryKey: ["list-metrics", "cmd_vendor_metrics"],
     queryFn: listVendorMetrics,
   });
+
+  const handleArchive = useCallback(async (vendor: Vendor) => {
+    try {
+      await updateVendor(vendor.id, { is_active: !vendor.is_active });
+      toast.success(vendor.is_active ? "Archived" : "Restored");
+      queryClient.invalidateQueries({ queryKey: ["vendors"] });
+      void vendorMetrics.refetch();
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  }, [queryClient, vendorMetrics]);
 
   const serverSource = useMemo(() => ({
     endpoint: "cmd_list_vendors_paged",
@@ -92,8 +107,11 @@ export function VendorList({
       {
         id: "name",
         header: "Name",
+        flex: true,
+        minWidth: "12rem",
+        maxWidth: "16rem",
         cell: (v) => (
-          <span className="font-medium text-foreground">{toTitleCase(v.name)}</span>
+          <span className="truncate font-medium text-foreground" title={toTitleCase(v.name)}>{toTitleCase(v.name)}</span>
         ),
         sortField: "name",
         sortable: true,
@@ -102,11 +120,12 @@ export function VendorList({
       {
         id: "phone",
         header: "Phone",
+        width: "8rem",
         cell: (v) =>
           v.phone ? (
-            <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
-              <Phone className="h-3 w-3" />
-              {v.phone}
+            <span className="inline-flex items-center gap-1 truncate font-mono text-xs text-muted-foreground" title={v.phone}>
+              <Phone className="h-3 w-3 shrink-0" />
+              <span className="truncate">{v.phone}</span>
             </span>
           ) : (
             <span className="text-muted-foreground">—</span>
@@ -117,6 +136,7 @@ export function VendorList({
       {
         id: "opening",
         header: "Opening",
+        width: "8rem",
         align: "right",
         cell: (v) => <Money paise={v.opening_balance ?? 0} muted />,
         sortField: "opening_balance_paise",
@@ -125,9 +145,10 @@ export function VendorList({
       {
         id: "outstanding",
         header: "Outstanding",
+        width: "8rem",
         align: "right",
         cell: (v) =>
-          outstandings[v.id] != null ? (
+          v.id in outstandings ? (
             <Money
               paise={outstandings[v.id]}
               negative={outstandings[v.id] < 0}
@@ -138,10 +159,28 @@ export function VendorList({
       },
     ];
 
+    if (canEdit) {
+      cols.push({
+        id: "actions",
+        header: "",
+        width: "3.5rem",
+        align: "right",
+        cell: (v) => (
+          <ActionMenu
+            label={`Actions for ${v.name}`}
+            items={[
+              { label: v.is_active ? "Archive" : "Restore", icon: Archive, danger: v.is_active, onSelect: () => setArchiveConfirmVendor(v) },
+            ]}
+          />
+        ),
+      });
+    }
+
     if (canPay) {
       cols.push({
         id: "action",
-        header: "Action",
+        header: "",
+        width: "5rem",
         align: "right",
         cell: (v) => (
           <Button
@@ -158,7 +197,7 @@ export function VendorList({
     }
 
     return cols;
-  }, [canPay, outstandings]);
+  }, [canPay, canEdit, outstandings]);
 
   const rowClassName = (v: Vendor) => (v.is_active ? "" : "opacity-60");
 
@@ -228,7 +267,17 @@ export function VendorList({
         )}
         onRowClick={onSelect ? (v) => onSelect(v) : undefined}
         rowClassName={rowClassName}
-        height={400}
+        fill
+      />
+
+      <ConfirmDialog
+        open={archiveConfirmVendor !== null}
+        title={archiveConfirmVendor?.is_active ? "Archive this vendor?" : "Restore this vendor?"}
+        body={archiveConfirmVendor?.is_active ? `${archiveConfirmVendor.name} will be hidden from search. Existing records are kept.` : `${archiveConfirmVendor?.name} will be visible again.`}
+        confirmLabel={archiveConfirmVendor?.is_active ? "Archive" : "Restore"}
+        destructive={archiveConfirmVendor?.is_active ?? false}
+        onConfirm={() => { if (archiveConfirmVendor) { void handleArchive(archiveConfirmVendor); setArchiveConfirmVendor(null); } }}
+        onCancel={() => setArchiveConfirmVendor(null)}
       />
     </div>
   );

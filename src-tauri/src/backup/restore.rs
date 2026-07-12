@@ -1,6 +1,7 @@
 //! Restore flow: decrypt envelope to a temp DB, run `PRAGMA quick_check`,
 //! atomic-swap into place. The live DB is never overwritten in place.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -57,6 +58,19 @@ pub fn restore_envelope(
     let temp_path = parent.join(format!("{}.{}.restore.tmp", file_name, uuid_simple()));
 
     decrypt_and_verify(envelope, recovery_passphrase, &temp_path)?;
+
+    // Quick integrity check before swapping into the live database.
+    {
+        use rusqlite::Connection;
+        let conn = Connection::open(&temp_path)?;
+        let result: String = conn.query_row("PRAGMA quick_check", [], |row| row.get(0))?;
+        if result != "ok" {
+            fs::remove_file(&temp_path)?;
+            return Err(BackupError::Other(format!(
+                "PRAGMA quick_check failed: {result}"
+            )));
+        }
+    }
 
     let prev_path = atomic_swap(live_db, &temp_path)?;
     let restored_at_unix_ms = SystemTime::now()

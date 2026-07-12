@@ -420,11 +420,16 @@ function SaleUnitsSettings() {
 
   const columns: ColumnDef<SaleUnit>[] = [
     {
+      id: "code",
       header: "Code",
+      width: "7rem",
       cell: (u) => <span className="font-mono font-medium text-foreground">{u.code}</span>,
     },
     {
+      id: "label",
       header: "Label",
+      flex: true,
+      minWidth: "10rem",
       cell: (u) =>
         editingId === u.id ? (
           <input
@@ -434,11 +439,13 @@ function SaleUnitsSettings() {
             className="w-32 rounded border border-border bg-card px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none"
           />
         ) : (
-          <span className="text-foreground">{u.label}</span>
+          <span className="truncate text-foreground">{u.label}</span>
         ),
     },
     {
+      id: "precision",
       header: "Precision",
+      width: "10rem",
       cell: (u) =>
         editingId === u.id ? (
           <div className="flex gap-3 text-xs">
@@ -456,7 +463,10 @@ function SaleUnitsSettings() {
         ),
     },
     {
+      id: "active",
       header: "Active",
+      width: "5rem",
+      align: "center",
       cell: (u) => (
         <button
           type="button"
@@ -471,9 +481,10 @@ function SaleUnitsSettings() {
       ),
     },
     {
+      id: "actions",
       header: "Actions",
       align: "right",
-      className: "w-28",
+      width: "7rem",
       cell: (u) =>
         editingId === u.id ? (
           <div className="flex justify-end gap-2">
@@ -623,7 +634,10 @@ function PurchaseUnitsSettings() {
 
   const columns: ColumnDef<PurchaseUnit>[] = [
     {
+      id: "label",
       header: "Label",
+      flex: true,
+      minWidth: "10rem",
       cell: (u) =>
         editingId === u.id ? (
           <input
@@ -635,11 +649,14 @@ function PurchaseUnitsSettings() {
             autoFocus
           />
         ) : (
-          <span className="text-foreground">{u.label}</span>
+          <span className="truncate text-foreground">{u.label}</span>
         ),
     },
     {
+      id: "active",
       header: "Active",
+      width: "5rem",
+      align: "center",
       cell: (u) => (
         <button
           type="button"
@@ -654,9 +671,10 @@ function PurchaseUnitsSettings() {
       ),
     },
     {
+      id: "actions",
       header: "Actions",
       align: "right",
-      className: "w-28",
+      width: "7rem",
       cell: (u) =>
         editingId === u.id ? (
           <div className="flex justify-end gap-2">

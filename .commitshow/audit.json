@@ -1,0 +1,56 @@
+npm warn config optional Use `--omit=optional` to exclude optional dependencies, or
+npm warn config `--include=optional` to include them.
+npm warn config
+npm warn config       Default value does install optional deps unless otherwise omitted.
+npm warn exec The following package was not found and will be installed: commitshow@0.4.3
+{
+  "schema_version": "1",
+  "generated_at": "2026-07-05T13:35:05.622Z",
+  "project": {
+    "id": "e4fe0d73-d8a5-4731-b990-7d755b6636ed",
+    "name": ".",
+    "live_url": "https://.",
+    "status": "preview",
+    "creator": {},
+    "url": "https://commit.show/projects/e4fe0d73-d8a5-4731-b990-7d755b6636ed",
+    "scanned_scope": null
+  },
+  "score": {
+    "track": "walk_on",
+    "total": 0,
+    "total_max": 100,
+    "audit": 0,
+    "audit_max": 50,
+    "scout_max": 30,
+    "community_max": 20,
+    "delta_since_last": null,
+    "band": "weak",
+    "walk_on_total": 0,
+    "walk_on_band": "weak",
+    "walk_on_audit_normalized": 0
+  },
+  "standing": null,
+  "strengths": [],
+  "concerns": [],
+  "snapshot": null,
+  "quota": {
+    "reset_at": "2026-07-06T00:00:00.000Z",
+    "ip": {
+      "count": 1,
+      "limit": 10,
+      "remaining": 9,
+      "tier": "authed"
+    },
+    "domain": {
+      "count": 0,
+      "limit": 5,
+      "remaining": 5
+    },
+    "global": {
+      "count": 1,
+      "limit": 2000,
+      "remaining": 1999
+    }
+  },
+  "audit_kind": "url_fast_lane"
+}

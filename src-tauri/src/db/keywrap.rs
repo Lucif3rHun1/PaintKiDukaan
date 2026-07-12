@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
-use crate::crypto::kdf::{self, derive_pin_kek, KdfParams};
+use crate::crypto::kdf::{self, derive_pin_kek, random_salt, KdfParams};
 use crate::crypto::wrap::{unwrap_dek, wrap_dek};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -463,15 +463,14 @@ pub fn derive_backup_key(
 // ---------------------------------------------------------------------------
 
 /// Re-wrap the DEK with a new PIN (e.g. on PIN change).
+/// Generates a fresh salt and KdfParams for the new PIN.
 pub fn rewrap_pin(
     row: &mut KeywrapRow,
     dek: &[u8; 32],
     new_pin: &str,
 ) -> Result<(), crate::AppError> {
-    let params: KdfParams = serde_json::from_slice(&row.pin_params)
-        .map_err(|e| crate::AppError::Crypto(format!("bad pin_params: {e}")))?;
-
-    let mut new_kek = derive_pin_kek(new_pin, &row.pin_salt, &params)
+    let new_salt = random_salt();
+    let mut new_kek = derive_pin_kek(new_pin, &new_salt, &KdfParams::PIN)
         .map_err(|e| crate::AppError::Crypto(e.to_string()))?;
 
     let new_wrapped =
@@ -480,21 +479,23 @@ pub fn rewrap_pin(
     row.pin_verifier = pin_verifier_for_kek(&new_kek).to_vec();
     kdf::zeroize_key(&mut new_kek);
 
+    row.pin_salt = new_salt.to_vec();
+    row.pin_params = serde_json::to_vec(&KdfParams::PIN)
+        .map_err(|e| crate::AppError::Crypto(format!("serialize pin_params: {e}")))?;
     row.pin_wrapped_dek = new_wrapped;
     row.updated_at = now_unix();
     Ok(())
 }
 
 /// Re-wrap the DEK with a new recovery passphrase.
+/// Generates a fresh salt and KdfParams for the new passphrase.
 pub fn rewrap_recovery(
     row: &mut KeywrapRow,
     dek: &[u8; 32],
     new_passphrase: &str,
 ) -> Result<(), crate::AppError> {
-    let params: KdfParams = serde_json::from_slice(&row.rec_params)
-        .map_err(|e| crate::AppError::Crypto(format!("bad rec_params: {e}")))?;
-
-    let mut new_kek = derive_pin_kek(new_passphrase, &row.rec_salt, &params)
+    let new_salt = random_salt();
+    let mut new_kek = derive_pin_kek(new_passphrase, &new_salt, &KdfParams::RECOVERY)
         .map_err(|e| crate::AppError::Crypto(e.to_string()))?;
 
     let new_wrapped =
@@ -502,6 +503,9 @@ pub fn rewrap_recovery(
 
     kdf::zeroize_key(&mut new_kek);
 
+    row.rec_salt = new_salt.to_vec();
+    row.rec_params = serde_json::to_vec(&KdfParams::RECOVERY)
+        .map_err(|e| crate::AppError::Crypto(format!("serialize rec_params: {e}")))?;
     row.rec_wrapped_dek = new_wrapped;
     row.updated_at = now_unix();
     Ok(())

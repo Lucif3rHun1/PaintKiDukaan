@@ -101,6 +101,12 @@ export interface Device {
   is_active: boolean;
 }
 
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
 export interface BackupStatus {
   last_backup_unix_ms: number | null;
   last_test_restore_unix_ms: number | null;
@@ -124,7 +130,7 @@ export const ipc = {
   createUser: (name: string, role: string, pin: string) =>
     invoke<User>("create_user", { name, pin, role }),
   deleteUser: (userId: number) =>
-    invoke<void>("delete_user", { userId }),
+    invoke<void>("delete_user", { user_id: userId }),
   listDevices: () => invoke<Device[]>("list_devices"),
   enrollDevice: (name: string, role: string) =>
     invoke<Device>("enroll_device", { name, role }),
@@ -187,12 +193,12 @@ export const ipc = {
   backupNow: (passphrase: string) =>
     invoke<BackupMetadata>("backup_now", { passphrase }),
   restore: (path: string, passphrase: string) =>
-    invoke<void>("restore", { path, passphrase }),
+    invoke<void>("restore", { path }),
   testRestore: (path: string, passphrase: string) =>
-    invoke<TestRestoreResult>("test_restore", { path, passphrase }),
+    invoke<TestRestoreResult>("test_restore", { path }),
   backupStatus: () => invoke<BackupStatus>("backup_status"),
   restoreIntoFirstLaunch: (envelopePath: string, passphrase: string) =>
-    invoke<void>("restore_into_first_launch", { envelopePath, passphrase }),
+    invoke<void>("restore_into_first_launch", { path: envelopePath }),
   pickBackupFile: () => invoke<string | null>("cmd_pick_backup_file"),
   discoverSystemPrinters: () => invoke<DiscoveredPrinter[]>("discover_system_printers"),
   printEscPosReceipt: (printerName: string, receiptData: Record<string, unknown>) =>
@@ -220,6 +226,9 @@ export const ipc = {
   setPreventSleep: (enabled: boolean) =>
     invoke<boolean>("set_prevent_sleep", { enabled }),
   bitlockerStatus: () => invoke<string>("bitlocker_status"),
+
+  readSessionLogs: (limit?: number) =>
+    invoke<LogEntry[]>("cmd_read_session_logs", { limit: limit ?? null }),
 
   setScanTarget: (target: ScanTarget | string) =>
     invoke<void>("set_scan_target", { target }),

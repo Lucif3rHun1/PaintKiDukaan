@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { saveDraft, getDraft, deleteDraft } from "../api";
 import type { Draft } from "../../domain/types";
+import { toast } from "../../lib/feedback/toast";
+import { extractError } from "../../lib/extractError";
 
 export type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 
@@ -25,6 +27,7 @@ export function useAutosave(formType: string, data: unknown): UseAutosaveReturn 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef<Promise<unknown> | null>(null);
   const isInitialMount = useRef(true);
+  const isRestoring = useRef(false);
 
   // Load existing draft on mount
   useEffect(() => {
@@ -37,6 +40,7 @@ export function useAutosave(formType: string, data: unknown): UseAutosaveReturn 
           setDraft(existingDraft);
           setStatus(existingDraft ? "saved" : "idle");
           setLoading(false);
+          if (existingDraft) isRestoring.current = true;
         }
       })
       .catch(() => {
@@ -52,12 +56,19 @@ export function useAutosave(formType: string, data: unknown): UseAutosaveReturn 
 
   // Auto-save on data change
   useEffect(() => {
+    let cancelled = false;
     if (isInitialMount.current) {
       isInitialMount.current = false;
       return;
     }
 
     if (isEmptyData(data)) return;
+
+    // Skip dirty marking when the data change is from draft restoration
+    if (isRestoring.current) {
+      isRestoring.current = false;
+      return;
+    }
 
     if (timer.current) clearTimeout(timer.current);
 
@@ -68,17 +79,23 @@ export function useAutosave(formType: string, data: unknown): UseAutosaveReturn 
       const json = JSON.stringify(data);
       const p = saveDraft(formType, json)
         .then((saved) => {
-          setDraft(saved);
-          setStatus("saved");
+          if (!cancelled) {
+            setDraft(saved);
+            setStatus("saved");
+          }
         })
-        .catch(() => {
-          setStatus("error");
+        .catch((e) => {
+          if (!cancelled) {
+            setStatus("error");
+            toast.error(extractError(e));
+          }
         })
         .finally(() => { inFlight.current = null; });
       inFlight.current = p;
     }, 2000);
 
     return () => {
+      cancelled = true;
       if (timer.current) clearTimeout(timer.current);
     };
   }, [formType, data]);

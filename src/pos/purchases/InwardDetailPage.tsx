@@ -19,6 +19,7 @@ import {
 import { formatItemName } from "../../domain/items/display";
 import type { BatchLabel } from "../print";
 import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
+import { setHash } from "../../lib/navigate";
 
 interface Props {
   id: number;
@@ -105,7 +106,7 @@ export function InwardDetailPage({ id, onBack }: Props) {
         return;
       }
       useLabelBatchSeed.getState().setSeed(seedRows, `Inward #${purchase.id}`);
-      window.location.hash = "#/barcodes";
+      setHash("#/barcodes");
     } catch (e) {
       if (!batchPrintCancelled.current) toast.error(extractError(e));
     }

@@ -1,67 +1,122 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import type React from "react";
+import { describe, expect, it, vi } from "vitest";
 
-import { Donut, TwoLineTrend } from "./shared";
+import { DonutCard, TrendChartCard } from "../../../components/ui";
+
+vi.mock("recharts", async () => {
+  const actual = await vi.importActual<typeof import("recharts")>("recharts");
+  return {
+    ...actual,
+    ResponsiveContainer: ({
+      children,
+      width,
+      height,
+    }: {
+      children: React.ReactNode;
+      width: number | string;
+      height: number | string;
+    }) => (
+      <div
+        data-testid="recharts-responsive-container"
+        style={{ width: typeof width === "number" ? `${width}px` : width, height: typeof height === "number" ? `${height}px` : height }}
+      >
+        {children}
+      </div>
+    ),
+  };
+});
+
+function withChartSize(node: React.ReactNode) {
+  return <div style={{ width: 500, height: 100 }}>{node}</div>;
+}
 
 describe("dashboard shared charts", () => {
-  it("renders stock donut states with distinct visual classes", () => {
+  it("renders stock donut segments with legend", () => {
     // Given: every stock state is present.
-    render(<Donut healthy={10} low={2} zero={1} negative={1} />);
+    render(
+      <DonutCard
+        segments={[
+          { name: "Healthy", value: 10, colorClass: "bg-success", fill: "hsl(var(--success))" },
+          { name: "Low", value: 2, colorClass: "bg-warning", fill: "hsl(var(--warning))" },
+          { name: "Zero", value: 1, colorClass: "bg-destructive", fill: "hsl(var(--destructive))" },
+          { name: "Negative", value: 1, colorClass: "bg-info", fill: "hsl(var(--info))" },
+        ]}
+      />,
+    );
 
     // When: the donut and legend render.
-    const circles = document.querySelectorAll("circle");
+    // Then: every legend row is present with its count.
+    expect(screen.getByText("Healthy")).toBeInTheDocument();
+    expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.getByText("Low")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getByText("Zero")).toBeInTheDocument();
+    expect(screen.getByText("Negative")).toBeInTheDocument();
+  });
 
-    // Then: low, zero, and negative are visually distinguishable.
-    expect(circles[1]).toHaveClass("stroke-success");
-    expect(circles[2]).toHaveClass("stroke-warning");
-    expect(circles[3]).toHaveClass("stroke-destructive");
-    expect(circles[4]).toHaveClass("stroke-info");
-    expect(screen.getByText("Low").previousSibling).toHaveClass("bg-warning");
-    expect(screen.getByText("Zero").previousSibling).toHaveClass("bg-destructive");
-    expect(screen.getByText("Negative").previousSibling).toHaveClass("bg-info");
+  it("drops zero-value segments from the donut", () => {
+    // Given: a segment has zero value.
+    const { container } = render(
+      <DonutCard
+        segments={[
+          { name: "Healthy", value: 5, colorClass: "bg-success", fill: "hsl(var(--success))" },
+          { name: "Zero", value: 0, colorClass: "bg-destructive", fill: "hsl(var(--destructive))" },
+        ]}
+      />,
+    );
+
+    // When: the donut renders.
+    // Then: only the non-zero segment is present.
+    expect(screen.getByText("Healthy")).toBeInTheDocument();
+    expect(screen.queryByText("Zero")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("li")).toHaveLength(1);
   });
 
   it("renders guarded actual trend lines before forecast threshold", () => {
     // Given: enough history to show actual trend lines, but not enough to forecast.
     render(
-      <TwoLineTrend
-        sales={[10000, 20000, 15000, 12000, 11000, 13000, 14000]}
-        purchases={[5000, 8000, 7000, 6000, 5000, 4000, 3000]}
-        labels={["2026-06-21", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-27"]}
-      />,
+      withChartSize(
+        <TrendChartCard
+          sales={[10000, 20000, 15000, 12000, 11000, 13000, 14000]}
+          purchases={[5000, 8000, 7000, 6000, 5000, 4000, 3000]}
+          labels={["2026-06-21", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-27"]}
+        />,
+      ),
     );
 
     // When: the trend chart renders.
-    const lines = document.querySelectorAll("polyline");
-
-    // Then: both actual series are present and forecast remains gated.
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toHaveClass("text-primary");
-    expect(lines[1]).toHaveClass("text-info");
-    expect(screen.getAllByText("Sales")).toHaveLength(1);
-    expect(screen.getAllByText("Purchases")).toHaveLength(1);
+    // Then: the summary line mentions both series and the forecast gate message is shown.
+    expect(screen.getByText(/Sales ·/)).toBeInTheDocument();
+    expect(screen.getByText(/Purchases/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sales forecast/)).not.toBeInTheDocument();
     expect(screen.getByText(/Forecast needs at least 14 daily points/)).toBeInTheDocument();
-    expect(screen.getByText("21/06")).toBeInTheDocument();
-    expect(screen.getByText("27/06")).toBeInTheDocument();
   });
 
-  it("renders a dashed forecast only after enough daily history", () => {
+  it("renders a forecast message once history is long enough", () => {
     // Given: enough regular sales history for forecast guardrails to pass.
     render(
-      <TwoLineTrend
-        sales={Array.from({ length: 30 }, (_value, index) => 10000 + index * 2000)}
-        purchases={Array.from({ length: 30 }, () => 5000)}
-        labels={Array.from({ length: 30 }, (_value, index) => `2026-06-${String(index + 1).padStart(2, "0")}`)}
-      />,
+      withChartSize(
+        <TrendChartCard
+          sales={Array.from({ length: 30 }, (_value, index) => 10000 + index * 2000)}
+          purchases={Array.from({ length: 30 }, () => 5000)}
+          labels={Array.from({ length: 30 }, (_value, index) => `2026-06-${String(index + 1).padStart(2, "0")}`)}
+        />,
+      ),
     );
 
     // When: the trend chart renders.
-    const lines = document.querySelectorAll("polyline");
-
-    // Then: actual sales, actual purchases, and dashed forecast are separate.
-    expect(lines).toHaveLength(3);
-    expect(lines[2]).toHaveAttribute("stroke-dasharray", "5 5");
-    expect(screen.getByText("Sales forecast")).toBeInTheDocument();
+    // Then: a forecast message is shown alongside the summary line.
     expect(screen.getByText(/confidence forecast/)).toBeInTheDocument();
+    expect(screen.getByText(/across 30 days/)).toBeInTheDocument();
+  });
+
+  it("returns null for empty data", () => {
+    // Given: all series are empty.
+    const { container } = render(<TrendChartCard sales={[]} purchases={[]} labels={[]} />);
+
+    // When: the chart tries to render.
+    // Then: nothing is rendered.
+    expect(container.firstChild).toBeNull();
   });
 });

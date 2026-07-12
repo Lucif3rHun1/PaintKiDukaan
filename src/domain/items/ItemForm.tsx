@@ -20,6 +20,7 @@ import { formatItemName } from "./display";
 import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
 import type { BatchLabel } from "../../pos/print";
 import { BarcodeThumb } from "../../components/ui/BarcodeThumb";
+import { setHash } from "../../lib/navigate";
 import type {
   AppError,
   Brand,
@@ -276,7 +277,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
       itemName,
     }));
     useLabelBatchSeed.getState().setSeed(rows, `Item ${item.sku_code ?? item.name}`);
-    window.location.hash = "#/barcodes";
+    setHash("#/barcodes");
   }
 
   // ---- Shortcuts ----
@@ -348,6 +349,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                   key={item.id}
                   type="button"
                   onClick={() => {
+                    if (!window.confirm("This will overwrite current form values. Continue?")) return;
                     setName(item.name);
                     if (item.brand_id) setBrandId(item.brand_id);
                     if (item.category) setCategory(item.category);

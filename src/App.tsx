@@ -12,7 +12,6 @@ import { FirstLaunch } from "./lib/security/firstLaunch";
 import { LockScreen } from "./lib/security/lockScreen";
 import { RestoreFromRecovery } from "./lib/security/restoreFromRecovery";
 import { type Bootstrap, useSecurity } from "./lib/security/state";
-import { UserManagement } from "./lib/security/userManagement";
 import { RoleGuard } from "./lib/security/roleGuard";
 
 /* ── Domain UI (Slice B) ─────────────────────────────────── */
@@ -29,6 +28,7 @@ import { InlineDialog } from "./components/ui/InlineDialog";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { UnsavedChangesModal } from "./components/ui/UnsavedChangesModal";
 import { isAnyFormDirty } from "./pos/hooks";
+import { setHash } from "./lib/navigate";
 import type { Customer, CustomerType, Vendor } from "./domain/types";
 
 /* Route pages are split into per-route Vite chunks via React.lazy so the
@@ -136,7 +136,7 @@ function restoreLastHash(): void {
   if (window.location.hash) return; // already has a route
   const saved = localStorage.getItem("pkb:lastHash");
   if (saved && saved !== "#/" && saved !== "") {
-    window.location.hash = saved;
+    setHash(saved);
     localStorage.removeItem("pkb:lastHash");
   }
 }
@@ -301,11 +301,12 @@ export default function App() {
     const onHash = () => {
       if (suppressing) { suppressing = false; return; }
       if (isAnyFormDirty()) {
-        // Compute target tab from the NEW hash before restoring the old one
+        // Capture full target hash BEFORE restoring the old one
+        const targetHash = window.location.hash;
         const targetTab = readTab();
         suppressing = true;
-        window.location.hash = prevHash.current;
-        setPendingNav({ tab: targetTab });
+        setHash(prevHash.current);
+        setPendingNav({ tab: targetTab, hash: targetHash });
         setShowNavGuard(true);
         return;
       }
@@ -378,12 +379,12 @@ export default function App() {
       return;
     }
     setTab(t);
-    window.location.hash = hash ?? (t === "dashboard" ? "#/" : `#/${t}`);
+    setHash(hash ?? (t === "dashboard" ? "#/" : `#/${t}`));
   }
 
   function executeNav(t: AppShellTab, hash?: string) {
     setTab(t);
-    window.location.hash = hash ?? (t === "dashboard" ? "#/" : `#/${t}`);
+    setHash(hash ?? (t === "dashboard" ? "#/" : `#/${t}`));
   }
 
   const doWipe = useCallback(async () => {
@@ -409,7 +410,6 @@ export default function App() {
         {phase === "first-launch" && <FirstLaunch />}
         {phase === "locked" && <LockScreen />}
         {phase === "restore-recovery" && <RestoreFromRecovery />}
-        {phase === "user-management" && <UserManagement />}
         {phase === "keystore-error" && (
           <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-6 text-zinc-100">
             <div className="w-full max-w-md space-y-5 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-8 shadow-2xl backdrop-blur">
@@ -505,7 +505,7 @@ export default function App() {
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <SalesPage
                 user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-                onExit={() => (window.location.hash = "#/sales")}
+                onExit={() => (setHash("#/sales"))}
               />
             </div>
           </Suspense>
@@ -517,7 +517,7 @@ export default function App() {
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <ReturnPage
                 user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-                onBack={() => (window.location.hash = "#/sales/return")}
+                onBack={() => (setHash("#/sales/return"))}
               />
             </div>
           </Suspense>
@@ -526,10 +526,10 @@ export default function App() {
       {tab === "sales" && salesRoute === "return-list" ? (
         <ErrorBoundary context="Sales — return list">
           <Suspense fallback={<RouteFallback />}>
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
               <ReturnListPage
-                onCreate={() => (window.location.hash = "#/sales/return/new")}
-                onSelect={(id) => (window.location.hash = `#/sales/return/${id}`)}
+                onCreate={() => (setHash("#/sales/return/new"))}
+                onSelect={(id) => (setHash(`#/sales/return/${id}`))}
               />
             </div>
           </Suspense>
@@ -544,7 +544,7 @@ export default function App() {
               <div className="animate-in fade-in motion-reduce:animate-none duration-200">
                 <ReturnDetailPage
                   id={id}
-                  onBack={() => (window.location.hash = "#/sales/return")}
+                  onBack={() => (setHash("#/sales/return"))}
                 />
               </div>
             </Suspense>
@@ -554,8 +554,8 @@ export default function App() {
       {tab === "sales" && salesRoute === "list" ? (
         <ErrorBoundary context="Sales — list">
           <Suspense fallback={<RouteFallback />}>
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
-              <SalesListPage onCreate={() => (window.location.hash = "#/sales/new")} />
+            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
+              <SalesListPage onCreate={() => (setHash("#/sales/new"))} />
             </div>
           </Suspense>
         </ErrorBoundary>
@@ -569,14 +569,14 @@ export default function App() {
               <div className="animate-in fade-in motion-reduce:animate-none duration-200">
                 <SaleDetailPage
                   id={id}
-                  onBack={() => (window.location.hash = "#/sales")}
-                  onEdit={(sale) => (window.location.hash = `#/sales/edit/${sale.id}`)}
+                  onBack={() => (setHash("#/sales"))}
+                  onEdit={(sale) => (setHash(`#/sales/edit/${sale.id}`))}
                   onConvert={async (sale) => {
                     try {
                       const { convertToFbill } = await import("./pos/api");
                       const newId = await convertToFbill(sale.id);
                       toast.success("Converted to FBill");
-                      window.location.hash = `#/sales/edit/${newId}`;
+                      setHash(`#/sales/edit/${newId}`);
                     } catch (e) {
                       console.error(e);
                       toast.error("Failed to convert");
@@ -597,7 +597,7 @@ export default function App() {
               <div className="animate-in fade-in motion-reduce:animate-none duration-200">
                 <SalesPage
                   user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-                  onExit={() => (window.location.hash = "#/sales")}
+                  onExit={() => (setHash("#/sales"))}
                   editSaleId={id}
                 />
               </div>
@@ -611,7 +611,7 @@ export default function App() {
             <div className="animate-in fade-in motion-reduce:animate-none duration-200">
               <InwardPage
                 user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
-                onExit={() => (window.location.hash = "#/inward")}
+                onExit={() => (setHash("#/inward"))}
               />
             </div>
           </Suspense>
@@ -620,10 +620,10 @@ export default function App() {
       {tab === "inward" && inwardRoute === "list" ? (
         <ErrorBoundary context="Inward — list">
           <Suspense fallback={<RouteFallback />}>
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
               <InwardListPage
-                onCreate={() => (window.location.hash = "#/inward/new")}
-                onSelect={(id) => (window.location.hash = `#/inward/${id}`)}
+                onCreate={() => (setHash("#/inward/new"))}
+                onSelect={(id) => (setHash(`#/inward/${id}`))}
               />
             </div>
           </Suspense>
@@ -638,7 +638,7 @@ export default function App() {
               <div className="animate-in fade-in motion-reduce:animate-none duration-200">
                 <InwardDetailPage
                   id={id}
-                  onBack={() => (window.location.hash = "#/inward")}
+                  onBack={() => (setHash("#/inward"))}
                 />
               </div>
             </Suspense>
@@ -679,7 +679,7 @@ export default function App() {
         </RoleGuard>
       )}
       {tab === "items" && (
-        <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
+        <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col gap-3 duration-200">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Inventory</h2>
           <ErrorBoundary context="Inventory">
             <Suspense fallback={<RouteFallback />}>
@@ -707,7 +707,7 @@ export default function App() {
               <FormulaDetailsPage
                 id={id}
                 role={role}
-                onBack={() => (window.location.hash = "#/formulas")}
+                onBack={() => (setHash("#/formulas"))}
               />
             </Suspense>
           </ErrorBoundary>
@@ -726,7 +726,7 @@ export default function App() {
       {tab === "vendors" && (
         <ErrorBoundary context="Vendors">
           <Suspense fallback={<RouteFallback />}>
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
               <VendorList
                 role={role}
                 refreshKey={refreshKey}
@@ -741,7 +741,7 @@ export default function App() {
       {tab === "customers" && (
         <ErrorBoundary context="Customers">
           <Suspense fallback={<RouteFallback />}>
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
               <CustomerList
                 role={role}
                 refreshKey={refreshKey}

@@ -27,6 +27,9 @@ interface TopMetricsRowProps {
   metrics: TopMetric[];
   /** aria-label for the wrapping section */
   label?: string;
+  /** Tailwind class string applied to the grid wrapper. Override for layouts
+   *  other than the default 1/2/3/4-col responsive set. */
+  gridClassName?: string;
 }
 
 /**
@@ -36,10 +39,10 @@ interface TopMetricsRowProps {
  * INSIDE the Business tab — the inventory tab does not need them. Adding a
  * new metric = push to the array.
  */
-export function TopMetricsRow({ metrics, label = "Top metrics" }: TopMetricsRowProps) {
+export function TopMetricsRow({ metrics, label = "Top metrics", gridClassName }: TopMetricsRowProps) {
   return (
     <section aria-label={label} className="space-y-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className={gridClassName ?? "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}>
         {metrics.map((m) => (
           <MetricCard
             key={m.id}

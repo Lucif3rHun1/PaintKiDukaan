@@ -2,14 +2,16 @@
  * CustomerList — searchable list with flag indicator + role-gated actions.
  * Renders via <DataList> server source (cmd_list_customers_paged).
  */
-import { useMemo } from "react";
-import { Flag, Phone, UserPlus, Banknote } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { Archive, Flag, Phone, UserPlus, Banknote } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { Badge, Button, Card, DataList, EmptyState, Money } from '../../components/ui';
+import { ActionMenu, Badge, Button, Card, DataList, EmptyState, Money } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
+import { ConfirmDialog } from "../../shell/components/ConfirmDialog";
 import { toast } from "../../lib/feedback/toast";
-import { listCustomersPaged, listCustomerMetrics } from "./api";
+import { extractError } from "../../lib/extractError";
+import { listCustomersPaged, listCustomerMetrics, updateCustomer } from "./api";
 import type { Customer } from "../types";
 import { useShortcut } from "../../lib/shortcuts";
 import { toTitleCase } from "../../lib/format/titleCase";
@@ -34,11 +36,25 @@ export function CustomerList({
 }: Props) {
   const canCreate = onCreate && (role === "owner" || role === "cashier");
   const canPay = (role === "owner" || role === "cashier") && onRecordPayment;
+  const canEdit = role === "owner";
+  const queryClient = useQueryClient();
+  const [archiveConfirmCustomer, setArchiveConfirmCustomer] = useState<Customer | null>(null);
 
   const customerMetrics = useQuery({
     queryKey: ["list-metrics", "cmd_customer_metrics"],
     queryFn: listCustomerMetrics,
   });
+
+  const handleArchive = useCallback(async (customer: Customer) => {
+    try {
+      await updateCustomer(customer.id, { is_active: !customer.is_active });
+      toast.success(customer.is_active ? "Archived" : "Restored");
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      void customerMetrics.refetch();
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  }, [queryClient, customerMetrics]);
 
   const serverSource = useMemo(() => ({
     endpoint: "cmd_list_customers_paged",
@@ -60,10 +76,13 @@ export function CustomerList({
       {
         id: "name",
         header: "Name",
+        flex: true,
+        minWidth: "12rem",
+        maxWidth: "16rem",
         cell: (c) => (
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-medium text-foreground">{toTitleCase(c.name)}</span>
+              <span className="truncate font-medium text-foreground" title={toTitleCase(c.name)}>{toTitleCase(c.name)}</span>
               {c.is_flagged ? (
                 <Badge variant="warning" size="sm">
                   <Flag className="h-3 w-3" />
@@ -72,7 +91,7 @@ export function CustomerList({
               ) : null}
             </div>
             {c.email ? (
-              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+              <div className="mt-0.5 truncate text-xs text-muted-foreground" title={c.email}>
                 {c.email}
               </div>
             ) : null}
@@ -85,11 +104,12 @@ export function CustomerList({
       {
         id: "phone",
         header: "Phone",
+        width: "8rem",
         cell: (c) =>
           c.phone ? (
-            <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
-              <Phone className="h-3 w-3" />
-              {c.phone}
+            <span className="inline-flex items-center gap-1 truncate font-mono text-xs text-muted-foreground" title={c.phone}>
+              <Phone className="h-3 w-3 shrink-0" />
+              <span className="truncate">{c.phone}</span>
             </span>
           ) : (
             <span className="text-muted-foreground">—</span>
@@ -100,8 +120,9 @@ export function CustomerList({
       {
         id: "type",
         header: "Type",
+        width: "8rem",
         cell: (c) => (
-          <span className="text-muted-foreground">
+          <span className="truncate text-muted-foreground" title={c.type_name ?? ""}>
             {c.type_name ?? "—"}
           </span>
         ),
@@ -109,6 +130,7 @@ export function CustomerList({
       {
         id: "status",
         header: "Status",
+        width: "6rem",
         cell: (c) =>
           !c.is_active ? (
             <Badge variant="muted" size="sm">
@@ -123,6 +145,7 @@ export function CustomerList({
       {
         id: "credit",
         header: "Credit",
+        width: "7rem",
         align: "right",
         cell: (c) =>
           c.credit_limit != null ? (
@@ -134,6 +157,7 @@ export function CustomerList({
       {
         id: "opening",
         header: "Opening",
+        width: "8rem",
         align: "right",
         cell: (c) => <Money paise={c.opening_balance_paise} muted />,
         sortField: "opening_balance_paise",
@@ -141,10 +165,28 @@ export function CustomerList({
       },
     ];
 
+    if (canEdit) {
+      cols.push({
+        id: "actions",
+        header: "",
+        width: "3.5rem",
+        align: "right",
+        cell: (c) => (
+          <ActionMenu
+            label={`Actions for ${c.name}`}
+            items={[
+              { label: c.is_active ? "Archive" : "Restore", icon: Archive, danger: c.is_active, onSelect: () => setArchiveConfirmCustomer(c) },
+            ]}
+          />
+        ),
+      });
+    }
+
     if (canPay) {
       cols.push({
         id: "action",
-        header: "Action",
+        header: "",
+        width: "5rem",
         align: "right",
         cell: (c) => (
           <Button
@@ -161,7 +203,7 @@ export function CustomerList({
     }
 
     return cols;
-  }, [canPay]);
+  }, [canPay, canEdit]);
 
   const rowClassName = (c: Customer) => (c.is_active ? "" : "opacity-60");
 
@@ -246,7 +288,17 @@ export function CustomerList({
             </Button>
           ) : null
         }
-        height={400}
+        fill
+      />
+
+      <ConfirmDialog
+        open={archiveConfirmCustomer !== null}
+        title={archiveConfirmCustomer?.is_active ? "Archive this customer?" : "Restore this customer?"}
+        body={archiveConfirmCustomer?.is_active ? `${archiveConfirmCustomer.name} will be hidden from search. Existing records are kept.` : `${archiveConfirmCustomer?.name} will be visible again.`}
+        confirmLabel={archiveConfirmCustomer?.is_active ? "Archive" : "Restore"}
+        destructive={archiveConfirmCustomer?.is_active ?? false}
+        onConfirm={() => { if (archiveConfirmCustomer) { void handleArchive(archiveConfirmCustomer); setArchiveConfirmCustomer(null); } }}
+        onCancel={() => setArchiveConfirmCustomer(null)}
       />
     </div>
   );

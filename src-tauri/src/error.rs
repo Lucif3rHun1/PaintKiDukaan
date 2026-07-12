@@ -177,11 +177,18 @@ fn locked_out_message(until_unix_ms: u64) -> String {
 impl Serialize for AppError {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("AppError", 3)?;
+        let field_count = match self {
+            AppError::LockedOut { .. } => 4,
+            _ => 3,
+        };
+        let mut st = s.serialize_struct("AppError", field_count)?;
         st.serialize_field("code", self.code())?;
         st.serialize_field("message", &self.safe_message())?;
         // Human-friendly toast text. Frontend extractError() prefers this.
         st.serialize_field("user_message", &self.user_message())?;
+        if let AppError::LockedOut { until } = self {
+            st.serialize_field("locked_until", until)?;
+        }
         st.end()
     }
 }

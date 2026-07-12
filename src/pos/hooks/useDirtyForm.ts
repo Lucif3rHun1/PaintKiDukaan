@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// ── Module-level dirty state for cross-component nav guards ──
-let _anyDirty = false;
+// ── Module-level dirty counter for cross-component nav guards ──
+// ponytail: counter instead of boolean — multiple forms can be dirty simultaneously
+let _dirtyCount = 0;
 
 export function isAnyFormDirty(): boolean {
-  return _anyDirty;
+  return _dirtyCount > 0;
 }
 
 // ── Hook ──────────────────────────────────────────────────────
@@ -22,14 +23,16 @@ export function useDirtyForm(): UseDirtyFormReturn {
     if (!isDirty.current) {
       isDirty.current = true;
       setDirty(true);
-      _anyDirty = true;
+      _dirtyCount++;
     }
   }, []);
 
   const resetDirty = useCallback(() => {
-    isDirty.current = false;
-    setDirty(false);
-    _anyDirty = false;
+    if (isDirty.current) {
+      isDirty.current = false;
+      setDirty(false);
+      _dirtyCount = Math.max(0, _dirtyCount - 1);
+    }
   }, []);
 
   useEffect(() => {
@@ -42,9 +45,11 @@ export function useDirtyForm(): UseDirtyFormReturn {
     window.addEventListener("beforeunload", handler);
     return () => {
       window.removeEventListener("beforeunload", handler);
-      // Reset module-level singleton on unmount to prevent stale dirty state leaking to next form
-      isDirty.current = false;
-      _anyDirty = false;
+      // Decrement module-level counter on unmount
+      if (isDirty.current) {
+        isDirty.current = false;
+        _dirtyCount = Math.max(0, _dirtyCount - 1);
+      }
     };
   }, []);
 

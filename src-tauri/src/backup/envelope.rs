@@ -152,7 +152,7 @@ impl Pkb1Header {
         }
         // Prevent crafted envelopes from causing OOM (Argon2 m_cost) or panics
         // (manifest_len > chunk_size causes slice out-of-bounds in chunked decrypt).
-        const MAX_ARGON2_M_COST_KIB: u32 = 65536; // 64 MiB — generous ceiling
+        const MAX_ARGON2_M_COST_KIB: u32 = 524_288; // 512 MiB — must be >= writer's 256 MiB
         if argon2_m_cost_kib > MAX_ARGON2_M_COST_KIB {
             return Err(BackupError::InvalidEnvelope("argon2 m_cost exceeds maximum"));
         }

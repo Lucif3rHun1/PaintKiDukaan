@@ -345,7 +345,7 @@ pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap
 
     // ponytail: set db_path BEFORE keystore check so KeystoreError branch
     // still allows the "Try PIN Unlock" path to call unlock().
-    *state.db_path.lock().unwrap() = Some(db_path.clone());
+    *state.db_path.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(db_path.clone());
 
     if let Err(e) = read_keywrap_from_keystore(&db_path) {
         let is_empty_keystore =
@@ -366,13 +366,13 @@ pub fn app_bootstrap(app: AppHandle, state: State<AppState>) -> Result<Bootstrap
     // Load persisted lockout counter so it survives process restarts.
     match read_lockout_from_keystore(&db_path) {
         Ok(row) => {
-            *state.failed_attempts.lock().unwrap() = row.failed_attempts as u32;
+            *state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = row.failed_attempts as u32;
         }
         Err(AppError::Db(rusqlite::Error::QueryReturnedNoRows)) => {}
         Err(e) => return Err(e),
     }
 
-    let session = state.session.lock().unwrap();
+    let session = state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
     match session.as_ref() {
         None => Ok(Bootstrap::Locked),
         Some(s) => Ok(Bootstrap::Unlocked {
@@ -413,7 +413,13 @@ pub(crate) const DECEPTION_THRESHOLD: u32 = 3;
 
 /// Read the configured max-failed-attempts from settings (falls back to default).
 fn max_failed_attempts(state: &AppState) -> u32 {
-    let settings = state.settings.lock().unwrap();
+    let settings = match state.settings.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            log::warn!("max_failed_attempts: settings lock poisoned: {e}");
+            return DEFAULT_MAX_FAILED_ATTEMPTS;
+        }
+    };
     let raw = settings
         .get("failed_attempts_lockout")
         .and_then(|v| v.as_u64());
@@ -450,28 +456,28 @@ fn is_session_expired(state: &AppState) -> bool {
 
 /// Build the spec-shaped Session from AppState.
 /// Auto-locks if the session has been idle longer than `SESSION_TIMEOUT_SECS`.
-fn build_session(state: &AppState) -> Session {
+fn build_session(state: &AppState) -> Result<Session, AppError> {
     // Auto-lock on idle timeout: treat as if user called lock().
-    if is_session_expired(state) && state.session.lock().unwrap().is_some() {
+    if is_session_expired(state) && state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?.is_some() {
         log::info!("[AUTH] session idle timeout (>{SESSION_TIMEOUT_SECS}s), auto-locking");
-        *state.db.lock().unwrap() = None;
-        *state.session.lock().unwrap() = None;
-        *state.recovery_passphrase.lock().unwrap() = None;
+        *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
+        *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
+        *state.recovery_passphrase.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
         sync_session_to_static(state);
     }
-    let db_locked = state.db.lock().unwrap().is_none();
-    let user = state.session.lock().unwrap().clone();
-    Session {
+    let db_locked = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?.is_none();
+    let user = state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?.clone();
+    Ok(Session {
         user,
         locked: db_locked,
-    }
+    })
 }
 
 /// Unlock the database with the owner's PIN.
 #[tauri::command(rename_all = "snake_case")]
 pub fn unlock(state: State<AppState>, pin: String) -> Result<UnlockResult, AppError> {
     let db_path = {
-        let guard = state.db_path.lock().unwrap();
+        let guard = state.db_path.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
         guard.clone().ok_or(AppError::NoDb)?
     };
 
@@ -481,7 +487,7 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<UnlockResult, AppEr
         let now = now_unix();
         if now < locked_until_unix {
             return Err(AppError::LockedOut {
-                until: locked_until_unix,
+                until: locked_until_unix * 1000,
             });
         }
         clear_lockout(&db_path, &state)?;
@@ -492,7 +498,7 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<UnlockResult, AppEr
     }
 
     let (wipe_enabled, wipe_timeout) = {
-        let settings = state.settings.lock().unwrap();
+        let settings = state.settings.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
         let wipe_enabled = settings
             .get("security.wipe_on_duress")
             .and_then(|v| v.as_bool())
@@ -537,14 +543,14 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<UnlockResult, AppEr
                 })
             })?;
 
-            *state.db.lock().unwrap() = Some(db);
+            *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(db);
             crate::commands::settings::hydrate_settings_from_sql(
-                state.db.lock().unwrap().as_ref().unwrap(),
+                state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?.as_ref().ok_or(AppError::NotUnlocked)?,
                 &state.settings,
             );
-            *state.session.lock().unwrap() = Some(user.clone());
+            *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(user.clone());
             sync_session_to_static(&state);
-            *state.failed_attempts.lock().unwrap() = 0;
+            *state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = 0;
             clear_lockout(&db_path, &state)?;
             state
                 .last_activity
@@ -559,7 +565,7 @@ pub fn unlock(state: State<AppState>, pin: String) -> Result<UnlockResult, AppEr
         }
         Err(e) => {
             let attempts = {
-                let mut failed = state.failed_attempts.lock().unwrap();
+                let mut failed = state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
                 *failed += 1;
                 *failed
             };
@@ -639,12 +645,12 @@ pub(crate) fn unlock_into_decoy(
                     is_active: true,
                 });
 
-            *state.db.lock().unwrap() = Some(db);
+            *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(db);
             crate::commands::settings::hydrate_settings_from_sql(
-                state.db.lock().unwrap().as_ref().unwrap(),
+                state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?.as_ref().ok_or(AppError::NotUnlocked)?,
                 &state.settings,
             );
-            *state.session.lock().unwrap() = Some(user.clone());
+            *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(user.clone());
             sync_session_to_static(state);
             state
                 .last_activity
@@ -662,7 +668,7 @@ pub(crate) fn unlock_into_decoy(
     if let Ok(duress_row) = keywrap::read_by_role(&conn, PinRole::Duress) {
         if let Ok(dek) = keywrap::unwrap_with_pin(&duress_row, pin) {
             let (wipe_enabled, wipe_timeout) = {
-                let settings = state.settings.lock().unwrap();
+                let settings = state.settings.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
                 let wipe_enabled = settings
                     .get("security.wipe_on_duress")
                     .and_then(|v| v.as_bool())
@@ -710,12 +716,12 @@ pub(crate) fn unlock_into_decoy(
                     is_active: true,
                 });
 
-            *state.db.lock().unwrap() = Some(db);
+            *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(db);
             crate::commands::settings::hydrate_settings_from_sql(
-                state.db.lock().unwrap().as_ref().unwrap(),
+                state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?.as_ref().ok_or(AppError::NotUnlocked)?,
                 &state.settings,
             );
-            *state.session.lock().unwrap() = Some(user.clone());
+            *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(user.clone());
             sync_session_to_static(state);
             state
                 .last_activity
@@ -773,8 +779,8 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
     let locked_until_unix = locked_until_dt.timestamp();
 
     // Always zeroize the decrypted DB handle and session on lockout.
-    *state.db.lock().unwrap() = None;
-    *state.session.lock().unwrap() = None;
+    *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
+    *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
 
     match action.as_str() {
         "wipe" => {
@@ -787,8 +793,8 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
             }
             let _ = crate::security::anti_forensic::secure_delete(&db_path);
             let _ = crate::security::anti_forensic::secure_delete(&keystore);
-            *state.failed_attempts.lock().unwrap() = 0;
-            *state.db_path.lock().unwrap() = None;
+            *state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = 0;
+            *state.db_path.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
             Err(AppError::Wiped)
         }
         _ => {
@@ -803,7 +809,7 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
             };
             write_lockout_to_keystore(&db_path, &row)?;
             Err(AppError::LockedOut {
-                until: locked_until_unix as u64,
+                until: locked_until_unix as u64 * 1000,
             })
         }
     }
@@ -820,7 +826,7 @@ fn backup_before_wipe(state: &AppState, db_path: &Path) -> Result<(), AppError> 
     use tempfile::NamedTempFile;
 
     let passphrase = {
-        let guard = state.recovery_passphrase.lock().unwrap();
+        let guard = state.recovery_passphrase.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
         match guard.clone() {
             Some(p) if !p.is_empty() => p,
             _ => {
@@ -869,7 +875,7 @@ fn backup_before_wipe(state: &AppState, db_path: &Path) -> Result<(), AppError> 
                 metadata.envelope_path,
                 metadata.size_bytes
             );
-            *state.last_backup_unix_ms.lock().unwrap() = Some(metadata.created_at_unix_ms);
+            *state.last_backup_unix_ms.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(metadata.created_at_unix_ms);
         }
         Err(e) => {
             log::error!("backup-before-wipe: encrypt_snapshot failed: {e}");
@@ -894,7 +900,7 @@ fn current_lockout_until(db_path: &Path) -> Result<Option<u64>, AppError> {
 /// Also clears the deception flag — a successful owner unlock after
 /// exceeding the threshold means the owner is legitimately present.
 fn clear_lockout(db_path: &Path, state: &AppState) -> Result<(), AppError> {
-    *state.failed_attempts.lock().unwrap() = 0;
+    *state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = 0;
     set_deception_flag(db_path, false)?;
     clear_lockout_keystore(db_path)
 }
@@ -908,12 +914,12 @@ pub fn lock(state: State<AppState>) -> Result<(), AppError> {
         let guard = state.session.lock().map_err(|_| AppError::Internal("session mutex poisoned".into()))?;
         guard.as_ref().ok_or(AppError::Forbidden("no active session".into()))?;
     }
-    if let Some(ref p) = *state.db_path.lock().unwrap() {
+    if let Some(ref p) = *state.db_path.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? {
         let _ = set_deception_flag(p, false);
     }
-    *state.db.lock().unwrap() = None;
-    *state.session.lock().unwrap() = None;
-    *state.recovery_passphrase.lock().unwrap() = None;
+    *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
+    *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
+    *state.recovery_passphrase.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
     sync_session_to_static(&state);
     Ok(())
 }
@@ -924,7 +930,13 @@ pub fn lock(state: State<AppState>) -> Result<(), AppError> {
 /// because `unlock`/`login_user`/`lock` only write to `AppState`.
 pub(crate) fn sync_session_to_static(state: &AppState) {
     use crate::session::{set_current_user, Role, User as SessionUser};
-    let app_user = state.session.lock().unwrap().clone();
+    let app_user = match state.session.lock() {
+        Ok(guard) => guard.clone(),
+        Err(e) => {
+            log::error!("sync_session_to_static: session lock poisoned: {e}");
+            return;
+        }
+    };
     let session_user = app_user.as_ref().map(|u| SessionUser {
         id: u.id,
         name: u.name.clone(),
@@ -940,7 +952,7 @@ pub fn change_pin(
     old_pin: String,
     new_pin: String,
 ) -> Result<(), AppError> {
-    let session = state.session.lock().unwrap();
+    let session = state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
     let session_ref = session.as_ref().ok_or(AppError::NotUnlocked)?;
     if session_ref.role != "owner" {
         return Err(AppError::Unauthorized("owner role required".into()));
@@ -956,7 +968,7 @@ pub fn change_pin(
         .unwrap()
         .clone()
         .ok_or(AppError::NoDb)?;
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
 
     let dek = db.dek();
@@ -986,7 +998,7 @@ pub fn touch_activity(state: State<AppState>) -> Result<(), AppError> {
 /// Return the current session (spec-shaped: `{ user, locked }`).
 #[tauri::command(rename_all = "snake_case")]
 pub fn current_session(state: State<AppState>) -> Result<Session, AppError> {
-    Ok(build_session(&state))
+    build_session(&state)
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,7 +1015,7 @@ pub fn create_user(
 ) -> Result<User, AppError> {
     // Only the owner can create users.
     {
-        let session = state.session.lock().unwrap();
+        let session = state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
         let s = session.as_ref().ok_or(AppError::NotUnlocked)?;
         if s.role != "owner" {
             return Err(AppError::Unauthorized("owner role required".into()));
@@ -1025,7 +1037,7 @@ pub fn create_user(
         return Err(AppError::Crypto("user name cannot be empty".into()));
     }
 
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
 
     // Generate per-user PIN salt and verifier.
@@ -1072,14 +1084,14 @@ pub fn create_user(
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
     {
-        let session = state.session.lock().unwrap();
+        let session = state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
         let s = session.as_ref().ok_or(AppError::NotUnlocked)?;
         if s.role != "owner" {
             return Err(AppError::Unauthorized("owner role required".into()));
         }
     }
 
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
 
     let users = db.with_conn(|conn| {
@@ -1103,7 +1115,7 @@ pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
 #[tauri::command(rename_all = "snake_case")]
 pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError> {
     {
-        let session = state.session.lock().unwrap();
+        let session = state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
         let s = session.as_ref().ok_or(AppError::NotUnlocked)?;
         if s.role != "owner" {
             return Err(AppError::Unauthorized("owner role required".into()));
@@ -1115,7 +1127,7 @@ pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError>
         }
     }
 
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
 
     let affected = db
@@ -1160,13 +1172,13 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
         let now = now_unix();
         if now < locked_until_unix {
             return Err(AppError::LockedOut {
-                until: locked_until_unix,
+                until: locked_until_unix * 1000,
             });
         }
         clear_lockout(&db_path, &state)?;
     }
 
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
     let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
 
     // Look up user by name.
@@ -1210,7 +1222,7 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
     if derived_verifier.ct_eq(&verifier).unwrap_u8() == 0 {
         // Record failed attempt and enforce lockout (CWE custom #9).
         let attempts = {
-            let mut failed = state.failed_attempts.lock().unwrap();
+            let mut failed = state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
             *failed += 1;
             *failed
         };
@@ -1230,9 +1242,9 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
         role,
         is_active: true,
     };
-    *state.session.lock().unwrap() = Some(authenticated_user.clone());
+    *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(authenticated_user.clone());
     sync_session_to_static(&state);
-    *state.failed_attempts.lock().unwrap() = 0;
+    *state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = 0;
     clear_lockout(&db_path, &state)?;
 
     Ok(Session {
@@ -1266,7 +1278,7 @@ pub fn verify_owner_pin(state: &AppState, pin: &str) -> Result<(), AppError> {
         let now = now_unix();
         if now < locked_until_unix {
             return Err(AppError::LockedOut {
-                until: locked_until_unix,
+                until: locked_until_unix * 1000,
             });
         }
         clear_lockout(&db_path, state)?;
@@ -1276,14 +1288,14 @@ pub fn verify_owner_pin(state: &AppState, pin: &str) -> Result<(), AppError> {
     match keywrap::unwrap_with_pin(&row, pin) {
         Ok(_) => {
             // Success: reset failed attempts. (DEK from unwrap_with_pin not needed here)
-            *state.failed_attempts.lock().unwrap() = 0;
+            *state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = 0;
             clear_lockout(&db_path, state)?;
             Ok(())
         }
         Err(e) => {
             // Record failed attempt and enforce lockout / deception.
             let attempts = {
-                let mut failed = state.failed_attempts.lock().unwrap();
+                let mut failed = state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
                 *failed += 1;
                 *failed
             };
@@ -1305,7 +1317,7 @@ pub fn verify_owner_pin(state: &AppState, pin: &str) -> Result<(), AppError> {
 /// Slice B/C/D call this from axum middleware/extractors to enforce role gates.
 pub fn current_user(ctx: &tauri::AppHandle) -> Result<User, AppError> {
     let state = ctx.state::<AppState>();
-    let session = state.session.lock().unwrap();
+    let session = state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
     session.clone().ok_or(AppError::NotUnlocked)
 }
 
@@ -1358,7 +1370,7 @@ mod tests {
     #[test]
     fn test_build_session_locked_when_db_is_none() {
         let state = AppState::default();
-        let s = build_session(&state);
+        let s = build_session(&state).unwrap();
         assert!(s.locked);
         assert!(s.user.is_none());
     }

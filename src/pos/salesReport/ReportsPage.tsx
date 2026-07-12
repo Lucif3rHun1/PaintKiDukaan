@@ -18,6 +18,7 @@ import {
   Skeleton,
   ShortcutsHint,
   StockStatusBadge,
+  Tabs,
 } from "../../components/ui";
 import { PeriodDropdown } from "../../components/ui/PeriodDropdown";
 import type { ColumnDef } from "../../components/ui";
@@ -26,6 +27,9 @@ import { formatDateForDisplay, todayLocalYyyymmdd, shiftDaysLocal } from "../../
 import { listCustomers } from "../../domain/customers/api";
 import { listItems } from "../../domain/items/api";
 import type { Customer, Item } from "../../domain/types";
+import { setHash } from "../../lib/navigate";
+import { extractError } from "../../lib/extractError";
+import { toast } from "../../lib/feedback/toast";
 import { dailySales, stockReport, outstandingReport, listDayClose, listSales, comparisonMetrics } from "../api";
 import type {
   DailySalesRow,
@@ -56,21 +60,32 @@ function readSection(): ReportSection {
 
 const salesColumns: ColumnDef<DailySalesRow>[] = [
   {
+    id: "date",
     header: "Date",
+    width: "8rem",
     cell: (r) => (
-      <span className="text-foreground">{formatDateForDisplay(r.date)}</span>
+      <span className="whitespace-nowrap text-foreground">{formatDateForDisplay(r.date)}</span>
     ),
   },
   {
+    id: "bill_count",
     header: "Bills",
-    cell: (r) => <span className="text-foreground">{r.bill_count}</span>,
+    width: "5rem",
+    align: "right",
+    cell: (r) => <span className="tabular-nums text-foreground">{r.bill_count}</span>,
   },
   {
+    id: "total_discount",
     header: "Discount",
+    width: "8rem",
+    align: "right",
     cell: (r) => <Money paise={r.total_discount} />,
   },
   {
+    id: "grand_total",
     header: "Total",
+    width: "8rem",
+    align: "right",
     cell: (r) => <Money paise={r.grand_total} />,
   },
 ];
@@ -151,41 +166,21 @@ function OutstandingList({
 }
 
 function ReportSubNav({ active, onSelect }: { active: ReportSection; onSelect: (s: ReportSection) => void }) {
-  const tabs: { id: ReportSection; label: string; href: string }[] = [
-    { id: "sales", label: "Sales", href: "#/reports/sales" },
-    { id: "inventory", label: "Inventory", href: "#/reports/inventory" },
-    { id: "customers", label: "Outstanding", href: "#/reports/customers" },
+  const tabs: { id: ReportSection; label: string }[] = [
+    { id: "sales", label: "Sales" },
+    { id: "inventory", label: "Inventory" },
+    { id: "customers", label: "Outstanding" },
   ];
   return (
-    <div
-      role="tablist"
-      aria-label="Report sections"
-            className="flex gap-1 border-b border-border"
-    >
-      {tabs.map((t) => {
-        const isActive = active === t.id;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            aria-current={isActive ? "page" : undefined}
-            onClick={() => {
-              window.location.hash = t.href;
-              onSelect(t.id);
-            }}
-            className={`rounded-t-md border border-b-0 px-3 py-1.5 text-sm whitespace-nowrap outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-              isActive
-                ? "border-border bg-card font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:bg-card hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
+    <Tabs
+      items={tabs}
+      value={active}
+      onChange={(id) => {
+        setHash(`#/reports/${id}`);
+        onSelect(id);
+      }}
+      ariaLabel="Report sections"
+    />
   );
 }
 
@@ -212,34 +207,50 @@ export default function ReportsPage({ user }: Props) {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
+  // Non-date-dependent queries — fetch once per role
+  useEffect(() => {
+    if (!status) return;
+    const timer = setTimeout(() => setStatus(null), 4000);
+    return () => clearTimeout(timer);
+  }, [status]);
+
   useEffect(() => {
     if (user.role !== "owner") {
       setStatus("Reports are owner-only.");
       setLoading(false);
       return;
     }
-    setLoading(true);
     Promise.all([
-      dailySales(from, to),
       stockReport(),
       outstandingReport(),
       listDayClose(60),
-      listSales(from, to, 2000),
       listItems(),
       listCustomers(),
     ])
-      .then(([s, st, o, c, detail, itemRows, customerRows]) => {
-        setSales(s);
+      .then(([st, o, c, itemRows, customerRows]) => {
         setStock(st);
         setOut(o);
         setCloses(c ?? []);
-        setSalesDetail(detail ?? []);
         setItems(itemRows ?? []);
         setCustomersList(customerRows ?? []);
       })
-      .catch((e) => setStatus(`Failed: ${e}`))
-      .finally(() => setLoading(false));
+      .catch((e) => setStatus(`Failed: ${extractError(e)}`));
+  }, [user.role]);
 
+  // Date-dependent queries — refetch when from/to change
+  useEffect(() => {
+    if (user.role !== "owner") return;
+    setLoading(true);
+    Promise.all([
+      dailySales(from, to),
+      listSales(from, to, 2000),
+    ])
+      .then(([s, detail]) => {
+        setSales(s);
+        setSalesDetail(detail ?? []);
+      })
+      .catch((e) => setStatus(`Failed: ${extractError(e)}`))
+      .finally(() => setLoading(false));
   }, [user.role, from, to]);
 
   useEffect(() => {
@@ -249,7 +260,7 @@ export default function ReportsPage({ user }: Props) {
         .then(setComparison)
         .catch(() => setComparison(null));
     }
-  }, [user.role, activeSection]);
+  }, [user.role, activeSection, to]);
 
   // Day-close snapshots overlay live sales data when present for that date.
   const frozenByDay = useMemo(() => {
@@ -460,7 +471,16 @@ export default function ReportsPage({ user }: Props) {
           description="Daily sales summary for the selected period."
           action={
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
+              <PeriodDropdown value={{ from, to }} onChange={(f, t) => {
+                if (f > t) {
+                  toast.warning("Start date was after end date — swapped.");
+                  setFrom(t);
+                  setTo(f);
+                } else {
+                  setFrom(f);
+                  setTo(t);
+                }
+              }} allowCustom />
               <DownloadMenu
                 headers={salesHeaders}
                 rows={salesRows}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  AlertTriangle,
   ArrowDownToLine,
   Banknote,
   PackageOpen,
@@ -8,8 +9,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton } from "../../../components/ui";
-import { SkeletonRow } from "../../../components/ui/SkeletonRow";
+import { Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton, TopItemsCard, formatQtyValue, ConcernCard, DonutCard, Button } from "../../../components/ui";
+import { TopMetricsRow, type TopMetric } from "./TopMetricsRow";
 import {
   dailySales,
   deadStock,
@@ -23,7 +24,8 @@ import {
 import { listBrands, listItems } from "../../../domain/items/api";
 import { formatItemName } from "../../../domain/items/display";
 import { formatDateForDisplay, todayLocalYyyymmdd, shiftDaysLocal } from "../../../lib/date";
-import { Donut } from "./shared";
+import { useMediaQuery } from "../../../lib/hooks/useMediaQuery";
+
 
 const STAGGER_INVENTORY = 32_000;
 
@@ -47,7 +49,7 @@ export function InventoryTab() {
 
   const lowStock = useQuery({
     queryKey: ["dashboard", "lowStock"],
-    queryFn: () => listItems({ low_stock_only: true, limit: 10 }),
+    queryFn: () => listItems({ low_stock_only: true, limit: 8 }),
     refetchInterval: STAGGER_INVENTORY,
   });
 
@@ -98,6 +100,10 @@ export function InventoryTab() {
       )
     : 1;
 
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  const [showAll, setShowAll] = useState(false);
+  const condensed = isMobile && !showAll;
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -109,62 +115,70 @@ export function InventoryTab() {
           onChange={(f, t) => { setFromDate(f); setToDate(t); }}
         />
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          icon={PackageOpen}
-          label="Total Items (active)"
-          loading={stockHealth.isLoading}
-          tone="info"
-        >
-          <span className="text-2xl font-semibold tabular-nums">
-            {health?.total_active_items ?? 0}
-          </span>
-        </MetricCard>
-        <MetricCard
-          icon={Banknote}
-          label="Stock Value (retail)"
-          loading={stockHealth.isLoading}
-          tone="primary"
-        >
-          <Money paise={health?.retail_value_paise ?? 0} className="text-2xl font-semibold" />
-        </MetricCard>
-        <MetricCard
-          icon={TrendingUp}
-          label="Low Stock"
-          loading={stockHealth.isLoading}
-          tone="warning"
-        >
-          <span className="text-2xl font-semibold tabular-nums">
-            {health?.low_count ?? 0}
-          </span>
-        </MetricCard>
-        <MetricCard
-          icon={Receipt}
-          label="Zero Stock"
-          loading={stockHealth.isLoading}
-          tone="destructive"
-        >
-          <span className="text-2xl font-semibold tabular-nums">
-            {health?.zero_count ?? 0}
-          </span>
-        </MetricCard>
-        <MetricCard
-          icon={TrendingUp}
-          label="Stock Velocity"
-          loading={turnoverQuery.isLoading || periodSales.isLoading}
-          tone="primary"
-        >
-          <span className="text-2xl font-semibold tabular-nums">
-            {(() => {
-              const stockVal = turnoverQuery.data?.stock_value_paise ?? 0;
-              const salesVal = periodSales.data?.grand_total ?? 0;
-              return stockVal > 0 ? (salesVal / stockVal).toFixed(1) : "—";
-            })()}
-          </span>
-        </MetricCard>
-      </div>
+      <TopMetricsRow
+        label="Inventory metrics"
+        gridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        metrics={[
+          {
+            id: "inventory-total-items",
+            label: "Total Items (active)",
+            icon: PackageOpen,
+            tone: "info",
+            loading: stockHealth.isLoading,
+            value: <span className="text-xl font-semibold tabular-nums">{health?.total_active_items ?? 0}</span>,
+          },
+          {
+            id: "inventory-stock-value",
+            label: "Stock Value (retail)",
+            icon: Banknote,
+            tone: "primary",
+            loading: stockHealth.isLoading,
+            value: <Money paise={health?.retail_value_paise ?? 0} className="text-xl font-semibold" />,
+          },
+          {
+            id: "inventory-low-stock",
+            label: "Low Stock",
+            icon: AlertTriangle,
+            tone: "warning",
+            loading: stockHealth.isLoading,
+            value: <span className="text-xl font-semibold tabular-nums">{health?.low_count ?? 0}</span>,
+          },
+          {
+            id: "inventory-zero-stock",
+            label: "Zero Stock",
+            icon: Receipt,
+            tone: "destructive",
+            loading: stockHealth.isLoading,
+            value: <span className="text-xl font-semibold tabular-nums">{health?.zero_count ?? 0}</span>,
+          },
+          {
+            id: "inventory-stock-turnover",
+            label: "Stock Turnover",
+            icon: TrendingUp,
+            tone: "primary",
+            loading: turnoverQuery.isLoading || periodSales.isLoading,
+            value: (
+              <span className="text-xl font-semibold tabular-nums">
+                {(() => {
+                  const stockVal = turnoverQuery.data?.stock_value_paise ?? 0;
+                  const salesVal = periodSales.data?.grand_total ?? 0;
+                  return stockVal > 0 ? (salesVal / stockVal).toFixed(1) : "—";
+                })()}
+              </span>
+            ),
+          },
+        ] satisfies TopMetric[]}
+      />
 
-      <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      {isMobile && (
+        <div className="flex justify-center">
+          <Button variant="ghost" size="sm" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? "Show less" : "View full dashboard"}
+          </Button>
+        </div>
+      )}
+
+      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
         <Card>
           <Card.Header>
             <h3 className="text-sm font-semibold">Stock Health</h3>
@@ -173,104 +187,54 @@ export function InventoryTab() {
             {stockHealth.isLoading ? (
               <Skeleton className="h-24 w-full" />
             ) : (
-              <Donut
-                healthy={health?.healthy_count ?? 0}
-                low={health?.low_count ?? 0}
-                zero={health?.zero_count ?? 0}
-                negative={health?.negative_count ?? 0}
+              <DonutCard
+                segments={[
+                  { name: "Healthy", value: health?.healthy_count ?? 0, colorClass: "bg-success", fill: "hsl(var(--success))" },
+                  { name: "Low", value: health?.low_count ?? 0, colorClass: "bg-warning", fill: "hsl(var(--warning))" },
+                  { name: "Zero", value: health?.zero_count ?? 0, colorClass: "bg-destructive", fill: "hsl(var(--destructive))" },
+                  { name: "Negative", value: health?.negative_count ?? 0, colorClass: "bg-info", fill: "hsl(var(--info))" },
+                ]}
               />
             )}
           </Card.Body>
         </Card>
 
-        <Card>
-          <Card.Header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Low Stock &amp; Reorder Alerts</h3>
+        <ConcernCard
+          title="Low Stock & Reorder Alerts"
+          items={(lowStock.data ?? []).slice(0, 8).map((item) => ({
+            id: item.id,
+            name: formatItemName(item, brands.data ?? []),
+          }))}
+          loading={lowStock.isLoading}
+          statusFn={(item) => ((lowStock.data ?? []).find((x) => x.id === item.id)?.current_qty ?? 0) <= 0 ? "destructive" : "warning"}
+          renderStatus={(item) => {
+            const raw = (lowStock.data ?? []).find((x) => x.id === item.id);
+            if (!raw) return null;
+            if (raw.current_qty < 0) return `Negative stock (${raw.current_qty})`;
+            if (raw.current_qty === 0) return "Out of stock";
+            return `${raw.current_qty} / min ${raw.min_stock}`;
+          }}
+          headerAction={
             <a href="#/items" className="text-xs text-muted-foreground hover:text-foreground">
               View all
             </a>
-          </Card.Header>
-          <Card.Body className="p-0">
-            {lowStock.isLoading ? (
-              <div className="space-y-2 p-4">
-                <SkeletonRow count={3} />
-              </div>
-            ) : (lowStock.data ?? []).length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  icon={PackageOpen}
-                  title="All items are well-stocked."
-                  description="No items below their reorder threshold."
-                />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {(lowStock.data ?? []).slice(0, 8).map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                  >
-                    <span className="truncate font-medium">{formatItemName(item, brands.data ?? [])}</span>
-                    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${
-                      item.current_qty <= 0
-                        ? "bg-destructive/15 text-destructive"
-                        : "bg-warning/15 text-warning"
-                    }`}>
-                      {item.current_qty < 0
-                        ? `Negative stock (${item.current_qty})`
-                        : item.current_qty === 0
-                          ? "Out of stock"
-                          : `${item.current_qty} / min ${item.min_stock}`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card.Body>
-        </Card>
+          }
+          emptyState={{ icon: <PackageOpen />, title: "All items are well-stocked.", description: "No items below their reorder threshold." }}
+        />
       </section>
 
-      <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <Card>
-          <Card.Header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Top Moving Items</h3>
-
-          </Card.Header>
-          <Card.Body className="p-0">
-            {topSold.isLoading ? (
-              <div className="space-y-2 p-4">
-                <SkeletonRow count={3} />
-              </div>
-            ) : (topSold.data ?? []).length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  icon={ShoppingCart}
-                  title="No sales in this range"
-                  description="Top sellers will appear here."
-                />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {(topSold.data ?? []).slice(0, 5).map((r, i) => (
-                  <li
-                    key={r.item_id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                  >
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                        {i + 1}
-                      </span>
-                      <span className="truncate font-medium">{r.name}</span>
-                    </div>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {r.total_qty} × <Money paise={r.total_value} compact />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card.Body>
-        </Card>
+      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
+        <TopItemsCard
+          title="Top Moving Items"
+          items={(topSold.data ?? []).slice(0, 5).map((r) => ({
+            id: r.item_id,
+            name: r.name,
+            value: formatQtyValue(r.total_qty, r.total_value),
+          }))}
+          loading={topSold.isLoading}
+          badgeTone="primary"
+          emptyState={{ icon: <ShoppingCart />, title: "No sales in this range", description: "Top sellers will appear here." }}
+        />
 
         <Card>
           <Card.Header className="flex items-center justify-between">
@@ -344,46 +308,26 @@ export function InventoryTab() {
         </Card>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <Card>
-          <Card.Header>
-            <h3 className="text-sm font-semibold">Dead Stock (60+ days idle)</h3>
-          </Card.Header>
-          <Card.Body className="p-0">
-            {deadStockQuery.isLoading ? (
-              <div className="space-y-2 p-4">
-                <SkeletonRow count={3} />
-              </div>
-            ) : (deadStockQuery.data ?? []).length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  icon={TrendingUp}
-                  title="All stock is moving"
-                  description="No items without sales in the last 60 days."
-                />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {(deadStockQuery.data ?? []).slice(0, 8).map((r) => (
-                  <li
-                    key={r.item_id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                  >
-                    <span className="truncate font-medium">{r.name}</span>
-                    <div className="flex shrink-0 items-center gap-2 text-xs tabular-nums">
-                      <span className="text-muted-foreground">{r.current_qty} units</span>
-                      <span className="text-warning">
-                        {r.last_sale_ms
-                          ? formatDateForDisplay(new Date(r.last_sale_ms))
-                          : "never"}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card.Body>
-        </Card>
+      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
+        <ConcernCard
+          title="Dead Stock (60+ days idle)"
+          items={(deadStockQuery.data ?? []).slice(0, 8).map((r) => ({ id: r.item_id, name: r.name }))}
+          loading={deadStockQuery.isLoading}
+          statusFn={() => "warning"}
+          renderStatus={(item) => {
+            const raw = (deadStockQuery.data ?? []).find((x) => x.item_id === item.id);
+            if (!raw) return null;
+            return (
+              <>
+                <span className="text-foreground">{raw.current_qty} units</span>
+                <span className="opacity-75">
+                  {raw.last_sale_ms ? formatDateForDisplay(new Date(raw.last_sale_ms)) : "never"}
+                </span>
+              </>
+            );
+          }}
+          emptyState={{ icon: <TrendingUp />, title: "All stock is moving", description: "No items without sales in the last 60 days." }}
+        />
 
         <Card>
           <Card.Header>
@@ -432,48 +376,27 @@ export function InventoryTab() {
         </Card>
       </section>
 
-      <Card>
-        <Card.Header className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Top Purchased Items</h3>
+      <TopItemsCard
+        title="Top Purchased Items"
+        badgeTone="warning"
+        items={(topPurchased.data ?? []).slice(0, 5).map((r) => ({
+          id: r.item_id,
+          name: r.name,
+          value: formatQtyValue(r.total_qty, r.total_value),
+        }))}
+        loading={topPurchased.isLoading}
+        skeletonRows={3}
+        headerAction={
           <a href="#/inward" className="text-xs text-muted-foreground hover:text-foreground">
             View all
           </a>
-        </Card.Header>
-        <Card.Body className="p-0">
-          {topPurchased.isLoading ? (
-            <div className="space-y-2 p-4">
-              <SkeletonRow count={3} />
-            </div>
-          ) : (topPurchased.data ?? []).length === 0 ? (
-            <div className="p-6">
-              <EmptyState
-                icon={ArrowDownToLine}
-                title="No purchases in this range"
-                description="Top items purchased will appear here."
-              />
-            </div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {(topPurchased.data ?? []).slice(0, 5).map((r, i) => (
-                <li
-                  key={r.item_id}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-warning/10 text-xs font-medium text-warning">
-                      {i + 1}
-                    </span>
-                    <span className="truncate font-medium">{r.name}</span>
-                  </div>
-                  <span className="text-xs tabular-nums text-muted-foreground">
-                    {r.total_qty} × <Money paise={r.total_value} compact />
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card.Body>
-      </Card>
+        }
+        emptyState={{
+          icon: <ArrowDownToLine />,
+          title: "No purchases in this range",
+          description: "Top items purchased will appear here.",
+        }}
+      />
     </div>
   );
 }

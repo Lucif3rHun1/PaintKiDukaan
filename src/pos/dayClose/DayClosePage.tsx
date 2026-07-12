@@ -21,6 +21,7 @@ import {
   cashSalesFor,
   lastOpeningFor,
   triggerDayClose,
+  listDayClose,
   listDayClosePaged,
 } from "../api";
 import type { BackupGate, CashSalesSummary, DayClose } from "../types";
@@ -32,18 +33,22 @@ const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
 
 const recentClosesColumns: ColumnDef<DayClose>[] = [
   {
+    id: "day",
     header: "Date",
+    width: "8rem",
     cell: (d) => (
       <span className="text-foreground tabular-nums whitespace-nowrap">{formatDateForDisplay(d.day)}</span>
     ),
   },
-  { header: "Cash", align: "right", cell: (d) => <Money paise={d.cash_sales_paise} /> },
-  { header: "Card", align: "right", cell: (d) => <Money paise={d.card_sales_paise} /> },
-  { header: "UPI", align: "right", cell: (d) => <Money paise={d.upi_sales_paise} /> },
-  { header: "Expected", align: "right", cell: (d) => <Money paise={d.closing_cash_paise} /> },
-  { header: "Counted", align: "right", cell: (d) => <Money paise={d.actual_cash_paise} /> },
+  { id: "cash", header: "Cash", width: "6.5rem", align: "right", cell: (d) => <Money paise={d.cash_sales_paise} /> },
+  { id: "card", header: "Card", width: "6.5rem", align: "right", cell: (d) => <Money paise={d.card_sales_paise} /> },
+  { id: "upi", header: "UPI", width: "6.5rem", align: "right", cell: (d) => <Money paise={d.upi_sales_paise} /> },
+  { id: "expected", header: "Expected", width: "6.5rem", align: "right", cell: (d) => <Money paise={d.closing_cash_paise} /> },
+  { id: "counted", header: "Counted", width: "6.5rem", align: "right", cell: (d) => <Money paise={d.actual_cash_paise} /> },
   {
+    id: "variance",
     header: "Variance",
+    width: "6.5rem",
     align: "right",
     cell: (d) => (
       <span
@@ -106,6 +111,7 @@ export default function DayClosePage({ user }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
   const [lastClose, setLastClose] = useState<CloseResult | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [alreadyClosed, setAlreadyClosed] = useState(false);
 
   const dirty = useMemo(() => {
     if (view !== "form") return false;
@@ -138,11 +144,15 @@ export default function DayClosePage({ user }: Props) {
     if (view !== "form") return;
     let cancelled = false;
     setFormError(null);
+    setAlreadyClosed(false);
     Promise.allSettled([
       backupGateCheck().then((d) => { if (!cancelled) setGate(d ?? null); }),
       cashSalesFor(user.id, date).then((d) => { if (!cancelled) setSummary(d ?? null); }),
       lastOpeningFor(user.id, date).then((n) => {
         if (!cancelled) setOpeningRupees(String((n ?? 0) / 100));
+      }),
+      listDayClose(365).then((closes) => {
+        if (!cancelled) setAlreadyClosed(closes.some((c) => c.day === date));
       }),
     ]).then((results) => {
       if (cancelled) return;
@@ -179,7 +189,7 @@ export default function DayClosePage({ user }: Props) {
     (summary?.upi_sales_paise ?? 0);
 
   async function submit(decision: "fresh" | "skip" | "back_up") {
-    if (submitting) return;
+    if (submitting || alreadyClosed) return;
     setSubmitting(true);
     setFormError(null);
     try {
@@ -302,6 +312,12 @@ export default function DayClosePage({ user }: Props) {
         >
           ← Back
         </button>
+
+        {alreadyClosed && (
+          <div className="rounded-lg bg-muted border border-border px-4 py-3 text-sm text-muted-foreground" role="alert">
+            This date is already closed. Select a different date to close.
+          </div>
+        )}
 
         {gate?.needs_prompt && (
           <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-2 text-sm text-amber-800 dark:text-amber-200">
@@ -494,6 +510,7 @@ export default function DayClosePage({ user }: Props) {
             <Button
               variant="primary"
               onClick={() => setConfirming(true)}
+              disabled={alreadyClosed}
               className="mt-4 w-full"
               data-testid="close-day"
             >

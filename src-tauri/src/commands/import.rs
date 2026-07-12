@@ -722,7 +722,7 @@ pub fn cmd_import_inward_csv(
                 None => {
                     result.errors.push(ImportRowError {
                         row: row_num,
-                        message: format!("item '{}' not found", item_ref.unwrap()),
+                        message: format!("item '{}' not found", item_ref.unwrap_or_else(|| "unknown".into())),
                     });
                     result.skipped += 1;
                     continue;

@@ -30,6 +30,7 @@ import {
   shopNameSchema,
 } from "./pin";
 import { FirstLaunchRestore } from "./firstLaunchRestore";
+import { fieldError } from "../validation";
 import { PdeSetupWizard } from "./pdeSetup";
 import { type Role, type Session, type User, useSecurity } from "./state";
 import { Alert, Button } from "../../components/ui";
@@ -84,16 +85,6 @@ function normalizeSession(result: SetupResponse): Session {
   const id = result.user?.id ?? result.user_id ?? 0;
   const user: User | null = result.user === null ? null : { id, name, role };
   return { user, locked: result.locked ?? false, pinRole: "real" };
-}
-
-function fieldError(message?: string) {
-  if (!message) return null;
-  return (
-    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-destructive" role="alert">
-      <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      {message}
-    </p>
-  );
 }
 
 function StepIndicator({ current }: { current: number }) {

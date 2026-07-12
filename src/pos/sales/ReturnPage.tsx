@@ -215,7 +215,8 @@ export default function ReturnPage({ user, onBack }: Props) {
     setLines((current) =>
       current.map((line, i) => {
         if (i !== index) return line;
-        const maxQty = line.original_qty ?? Infinity;
+        // ponytail: 9999 cap for unscoped returns (no linked invoice). Upgrades to original_qty when scoped.
+        const maxQty = line.original_qty ?? 9999;
         return { ...line, qty: Math.min(Math.max(0, nextQty), maxQty) };
       }),
     );
@@ -279,10 +280,6 @@ export default function ReturnPage({ user, onBack }: Props) {
       }
 
     }
-    if (subtotal > 0 && refundAmount !== subtotal) {
-      setFormError(`Refund total must equal the return subtotal (${formatRupeesFromPaise(subtotal)}).`);
-      return;
-    }
     const saleIds = returnLines.map((l) => l.sale_id);
     const derivedSaleId = deriveSaleIdForReturn(saleIds);
     setSubmitting(true);
@@ -315,6 +312,7 @@ export default function ReturnPage({ user, onBack }: Props) {
       void queryClient.invalidateQueries({ queryKey: ["returns-list"] });
       void queryClient.invalidateQueries({ queryKey: ["sales-list"] });
       setStatus(`Return #${saved} saved`);
+      window.location.hash = `#/sales/return/${saved}`;
     } catch (e) {
       setStatus(`Error: ${extractError(e)}`);
     } finally {

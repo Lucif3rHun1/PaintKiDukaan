@@ -17,8 +17,12 @@
 //! }
 //! ```
 
-use crate::commands::auth::AppState;
+use crate::commands::auth::{AppState, now_unix};
 use crate::error::AppError;
+use std::sync::atomic::Ordering;
+use tauri::Manager;
+
+const SESSION_TIMEOUT_SECS: u64 = 1800;
 
 // ---------------------------------------------------------------------------
 // Role
@@ -243,10 +247,6 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Stocker,
     },
     CommandAcl {
-        name: "list_unit_conversions",
-        min_role: Role::Stocker,
-    },
-    CommandAcl {
         name: "list_customer_types",
         min_role: Role::Stocker,
     },
@@ -361,10 +361,6 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     // Units (write)
     CommandAcl {
         name: "create_unit",
-        min_role: Role::Cashier,
-    },
-    CommandAcl {
-        name: "create_unit_conversion",
         min_role: Role::Cashier,
     },
     CommandAcl {
@@ -927,6 +923,23 @@ pub fn authorize(cmd_name: &str, state: &AppState) -> Result<(), AppError> {
         return Ok(());
     }
 
+    // Idle timeout — clear session if idle too long.
+    let last = state.last_activity.load(Ordering::Relaxed);
+    let now = now_unix();
+    if last > 0 && now.saturating_sub(last) > SESSION_TIMEOUT_SECS {
+        log::warn!(
+            "authorize: session idle (>{SESSION_TIMEOUT_SECS}s), clearing"
+        );
+        let mut session = state
+            .session
+            .lock()
+            .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
+        *session = None;
+        return Err(AppError::Unauthorized(
+            "session expired due to inactivity".into(),
+        ));
+    }
+
     let session = state
         .session
         .lock()
@@ -983,12 +996,14 @@ pub fn install<R: tauri::Runtime>(
     builder: tauri::Builder<R>,
     _state: &AppState,
 ) -> tauri::Builder<R> {
-    // The ACL is static (COMMAND_ACL) and the session lives in AppState
-    // which is already managed by the builder. No additional state needed.
-    //
-    // Track C+F adds `ipc_auth::authorize(cmd_name, &state)?;` at the
-    // top of each command, or wraps invoke_handler with a closure.
-    builder
+    // Ponytail: touch last_activity on window focus so idle timeout resets.
+    // AppState is already registered by the builder; we read it from the window handle.
+    builder.on_window_event(|window, event| {
+        if let tauri::WindowEvent::Focused(true) = event {
+            let state = window.state::<AppState>();
+            state.last_activity.store(now_unix(), Ordering::Relaxed);
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1067,7 +1082,6 @@ mod tests {
             "list_brands",
             "get_brand",
             "list_units",
-            "list_unit_conversions",
             "list_label_prints",
             "list_customer_types",
             "list_locations",

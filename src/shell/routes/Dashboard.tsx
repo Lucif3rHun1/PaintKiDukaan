@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { Alert, PageHeader } from "../../components/ui";
+import { Alert, PageHeader, Tabs, type TabItem } from "../../components/ui";
 import { todayLocalYyyymmdd } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 import {
@@ -25,6 +25,11 @@ const STAGGER = {
 };
 
 type DashTab = "inventory" | "business";
+
+const DASH_TABS: ReadonlyArray<TabItem<DashTab>> = [
+  { id: "business", label: "Business" },
+  { id: "inventory", label: "Inventory" },
+];
 
 function startOfTodayIso(): string {
   return todayLocalYyyymmdd();
@@ -81,10 +86,10 @@ export function Dashboard() {
     refetchInterval: STAGGER.alerts,
   });
 
-  const anyError = weeklySales.error;
+  const anyError = weeklySales.error || dayClose.error || alerts.error;
 
   const errorMsg = anyError
-    ? [weeklySales.error]
+    ? [weeklySales.error, dayClose.error, alerts.error]
         .map((e) => extractError(e))
         .filter(Boolean)
         .join(" • ")
@@ -114,36 +119,12 @@ export function Dashboard() {
         description="A quick read on today’s sales, stock pressure, and operational alerts."
         accent="slate"
       >
-        <div
-          role="tablist"
-          aria-label="Dashboard sections"
-          className="flex border-b border-border"
-        >
-          {(
-            [
-              { id: "business", label: "Business" },
-              { id: "inventory", label: "Inventory" },
-            ] as const
-          ).map((t) => {
-            const active = dashTab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setDashTab(t.id)}
-                className={
-                  active
-                    ? "-mb-px border-b-2 border-primary bg-card px-4 py-2 text-sm font-medium text-foreground"
-                    : "px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-                }
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+        <Tabs
+          items={DASH_TABS}
+          value={dashTab}
+          onChange={setDashTab}
+          ariaLabel="Dashboard sections"
+        />
       </PageHeader>
 
       {errorMsg && (

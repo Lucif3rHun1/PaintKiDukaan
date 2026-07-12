@@ -14,6 +14,7 @@ import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import type { Purchase } from "../types";
 import type { Draft } from "../../domain/types";
+import { setHash } from "../../lib/navigate";
 
 interface Props {
   onCreate: () => void;
@@ -56,7 +57,9 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
       {
         id: "vendor",
         header: "Vendor",
-        width: "minmax(10rem, 1fr)",
+        flex: true,
+        minWidth: "8rem",
+        maxWidth: "12rem",
         cell: (p) => (
           <span className="truncate text-foreground" title={p.vendor_name ?? "—"}>
             {p.vendor_name ?? "—"}
@@ -66,12 +69,12 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
       {
         id: "no",
         header: "INW No",
-        width: "7rem",
+        width: "13rem",
         cell: (p) => (
           <a
             href={`#/inward/${p.id}`}
             onClick={(e) => e.stopPropagation()}
-            className="block max-w-full truncate font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded"
+            className="block max-w-full font-mono tabular-nums text-foreground underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded whitespace-nowrap"
             aria-label={`Open inward ${p.id}`}
             title={String(p.id)}
           >
@@ -105,7 +108,7 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
 
   const handleRowClick = (p: Purchase) => {
     if (onSelect) onSelect(p.id);
-    else window.location.hash = `#/inward/${p.id}`;
+    else setHash(`#/inward/${p.id}`);
   };
 
   const sm = summary.data;
@@ -167,7 +170,7 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
                 if (data.notes) label = String(data.notes);
               } catch { /* corrupt draft */ }
               return (
-                <button type="button" onClick={() => { window.location.hash = "#/inward/new?restore=1"; }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
+                <button type="button" onClick={() => { setHash("#/inward/new?restore=1"); }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
                   <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                   Open draft ({itemCount} item{itemCount !== 1 ? "s" : ""})
                 </button>

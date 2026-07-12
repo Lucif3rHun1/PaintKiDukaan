@@ -24,7 +24,7 @@ export function ShopInfoSettings() {
         setPhone(ph ?? "");
         setGstin(gst ?? "");
         setAddress(addr ?? "");
-      }).catch((err: unknown) => console.error("Silent catch replaced:", err))
+      }).catch((err: unknown) => toast.error("Failed to load settings", extractError(err)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -92,7 +92,7 @@ export function CurrencySettings() {
         setCode(c ?? "INR");
         setSymbol(s ?? "₹");
         setDecimals(d ?? "2");
-      }).catch((err: unknown) => console.error("Silent catch replaced:", err))
+      }).catch((err: unknown) => toast.error("Failed to load settings", extractError(err)))
       .finally(() => setLoading(false));
   }, []);
 

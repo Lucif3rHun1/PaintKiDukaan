@@ -109,7 +109,7 @@ export function UsersSettings() {
   function load() {
     ipc
       .listUsers()
-      .then((d) => setUsers(d ?? [])).catch((err: unknown) => console.error("Silent catch replaced:", err))
+      .then((d) => setUsers(d ?? [])).catch((err: unknown) => toast.error("Failed to load users", extractError(err)))
       .finally(() => setLoading(false));
   }
 
@@ -298,7 +298,7 @@ export function DevicesSettings() {
     setLoading(true);
     ipc
       .listDevices()
-      .then((d) => setDevices(d ?? [])).catch((err: unknown) => console.error("Silent catch replaced:", err))
+      .then((d) => setDevices(d ?? [])).catch((err: unknown) => toast.error("Failed to load devices", extractError(err)))
       .finally(() => setLoading(false));
   }
 

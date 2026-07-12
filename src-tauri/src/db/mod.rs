@@ -1053,7 +1053,8 @@ impl Db {
             .query_map([], |r| r.get(0))?
             .collect::<Result<Vec<_>, _>>()?;
         for tbl in tables {
-            conn.execute(&format!("DROP TABLE IF EXISTS \"{tbl}\""), [])?;
+            let safe = tbl.replace('"', "\"\"");
+            conn.execute(&format!("DROP TABLE IF EXISTS \"{safe}\""), [])?;
         }
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(())

@@ -215,12 +215,6 @@ pub fn run() {
                 }
             }
 
-            if cfg!(debug_assertions) {
-                if let Some(main) = app.get_webview_window("main") {
-                    let _ = main.show();
-                }
-            }
-
             log::info!("Setup complete");
             Ok(())
         })
@@ -293,9 +287,7 @@ pub fn run() {
             commands::label_log::list_label_prints,
             // Units (Slice B)
             commands::units::list_units,
-            commands::units::list_unit_conversions,
             commands::units::create_unit,
-            commands::units::create_unit_conversion,
             commands::units::update_unit,
             commands::units::deactivate_unit,
             // Sale/Purchase Units (Slice B)
@@ -457,9 +449,14 @@ pub fn run() {
             commands::updater::cmd_download_update,
             commands::updater::cmd_install_update,
             commands::updater::cmd_current_target,
+            // Session logs (Slice D)
+            session::cmd_read_session_logs,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building PaintKiDukaan");
+        .unwrap_or_else(|e| {
+            eprintln!("error while building PaintKiDukaan: {e}");
+            std::process::exit(1);
+        });
 
     app.run(|_app_handle, event| {
         if let tauri::RunEvent::WindowEvent {

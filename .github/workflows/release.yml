@@ -193,11 +193,11 @@ jobs:
           echo "=== Uploading to release: $tag ==="
           ls -la release-files/
           echo "--- Auth check ---"
-          gh auth status 2>&1 || echo "gh auth status failed (non-fatal)"
+          gh auth status 2>&1
           echo "--- Create release if missing ---"
           if ! gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag does not exist, creating via gh..."
-            gh release create "$tag" --title "$tag" --notes "Release $tag" --target master 2>&1 || echo "gh release create failed; falling back to API"
+            gh release create "$tag" --title "$tag" --notes "Release $tag" --target master 2>&1
             echo "After gh create, exit=$?"
           else
             echo "Release $tag already exists."
@@ -218,7 +218,7 @@ jobs:
             echo ""
           fi
           echo "--- Upload assets ---"
-          gh release upload "$tag" latest.json release-files/* --clobber 2>&1 || echo "gh release upload failed"
+          gh release upload "$tag" latest.json release-files/* --clobber 2>&1
           echo "=== Upload complete ==="
           echo "--- Final verification ---"
-          gh release view "$tag" 2>&1 | head -20 || echo "gh release view failed"
+          gh release view "$tag" 2>&1 | head -20

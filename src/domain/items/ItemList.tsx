@@ -45,7 +45,7 @@ import { formatRupeesFromPaise } from "../../lib/money";
 import { toast } from "../../lib/feedback/toast";
 import { invalidateList, invalidateListMetrics } from "../../lib/query";
 import { adjustStock, getSetting, listBrands, listItemsPaged, listStockHealthSummary, normalizeItemNames, updateItem } from "./api";
-import { formatItemName, brandDisplayName } from "./display";
+import { formatItemName } from "./display";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Brand, Item, SubLocation } from "../types";
 import { ItemForm } from "./ItemForm";
@@ -55,7 +55,9 @@ import { listLocations, listSubLocations } from "../locations/api";
 import type { Location } from "../types";
 import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
 import { extractError } from "../../lib/extractError";
+import { ConfirmDialog } from "../../shell/components/ConfirmDialog";
 import { useShortcut } from "../../lib/shortcuts";
+import { setHash } from "../../lib/navigate";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { createInward } from "../../pos/api";
 import type { NewPurchase } from "../../pos/types";
@@ -89,6 +91,7 @@ export function ItemList({ role }: Props) {
   const [stockAdjustDir, setStockAdjustDir] = useState<"add" | "reduce">("add");
   const [adjustBusy, setAdjustBusy] = useState(false);
   const [normalizeBusy, setNormalizeBusy] = useState(false);
+  const [archiveConfirmItem, setArchiveConfirmItem] = useState<Item | null>(null);
 
 
   const canEdit = role === "owner" || role === "stocker";
@@ -113,7 +116,24 @@ export function ItemList({ role }: Props) {
       include_inactive: activeFilter === "all",
       archived_only: activeFilter === "archived",
     },
-    initialSort: { field: sortFieldToServer(sortField), dir: sortDirection },
+    sortField: sortFieldToServer(sortField),
+    sortDir: sortDirection,
+    onSortChange: (field: string | null, dir: "asc" | "desc" | null) => {
+      if (!field || !dir) {
+        setSortField("name");
+        setSortDirection("asc");
+        return;
+      }
+      // ponytail: server uses snake_case sort fields, client uses camelCase enum.
+      // Reverse-map so column header click updates local state correctly.
+      const localField: ItemSortField =
+        field === "sku_code" ? "sku" :
+        field === "current_qty" ? "stock" :
+        field === "retail_price_paise" ? "retail" :
+        "name";
+      setSortField(localField);
+      setSortDirection(dir);
+    },
     clientFn: listItemsPaged,
   }), [lowStockOnly, activeFilter, sortField, sortDirection]);
 
@@ -200,18 +220,6 @@ export function ItemList({ role }: Props) {
       if (mode === "list" && canEdit) openCreate();
     },
   });
-  useShortcut({
-    key: "Escape",
-    allowInInputs: true,
-    preventDefault: true,
-    description: "Clear search",
-    onMatch: () => {
-      if (mode === "list") {
-        // Search is managed internally by DataList; nothing to clear here.
-      }
-    },
-  });
-
   const openCreate = useCallback(() => {
     setEditing(null);
     setMode("create");
@@ -305,7 +313,7 @@ export function ItemList({ role }: Props) {
     });
   }, []);
 
-  // ── Hierarchical select: select all / per-brand / per-category ──
+  // Select all / Deselect all for the current filtered view.
   const allFilteredSelected = exportRows.length > 0 && exportRows.every((item) => selectedIds.has(item.id));
 
   const toggleSelectAll = useCallback(() => {
@@ -314,44 +322,6 @@ export function ItemList({ role }: Props) {
       return new Set(exportRows.map((item) => item.id));
     });
   }, [allFilteredSelected, exportRows]);
-
-  const brandItemIds = useCallback((brand: string) => {
-    return exportRows.filter((item) => brandDisplayName(item, brands) === brand).map((item) => item.id);
-  }, [exportRows, brands]);
-
-  const isBrandSelected = useCallback((brand: string) => {
-    const ids = brandItemIds(brand);
-    return ids.length > 0 && ids.every((id) => selectedIds.has(id));
-  }, [brandItemIds, selectedIds]);
-
-  const toggleBrand = useCallback((brand: string) => {
-    const ids = brandItemIds(brand);
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (isBrandSelected(brand)) ids.forEach((id) => next.delete(id));
-      else ids.forEach((id) => next.add(id));
-      return next;
-    });
-  }, [brandItemIds, isBrandSelected]);
-
-  const isCategorySelected = useCallback((brand: string, category: string) => {
-    const ids = exportRows
-      .filter((item) => brandDisplayName(item, brands) === brand && (item.category?.trim() || "No category") === category)
-      .map((item) => item.id);
-    return ids.length > 0 && ids.every((id) => selectedIds.has(id));
-  }, [exportRows, brands, selectedIds]);
-
-  const toggleCategory = useCallback((brand: string, category: string) => {
-    const ids = exportRows
-      .filter((item) => brandDisplayName(item, brands) === brand && (item.category?.trim() || "No category") === category)
-      .map((item) => item.id);
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (isCategorySelected(brand, category)) ids.forEach((id) => next.delete(id));
-      else ids.forEach((id) => next.add(id));
-      return next;
-    });
-  }, [exportRows, brands, isCategorySelected]);
 
   const exportHeaders = [
     "SKU", "Barcode", "Name", "Brand", "Brand Prefix", "Category",
@@ -384,17 +354,23 @@ export function ItemList({ role }: Props) {
   const itemColumns: ColumnDef<Item>[] = useMemo(() => {
     const cols: ColumnDef<Item>[] = [
       {
+        id: "sku",
         header: "SKU",
-        cell: (i) => <span className="inline-block max-w-[10rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]" title={i.sku_code}>{i.sku_code}</span>,
+        width: "9rem",
+        cell: (i) => <span className="inline-block max-w-[8rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]" title={i.sku_code}>{i.sku_code}</span>,
         className: "px-3 py-2",
         sortField: "sku_code",
         sortable: true,
       },
       {
+        id: "name",
         header: "Name",
+        flex: true,
+        minWidth: "14rem",
+        maxWidth: "22rem",
         cell: (i) => (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium">{formatItemName(i, brands, { style: "prefix" })}</span>
+            <span className="truncate font-medium" title={formatItemName(i, brands, { style: "prefix" })}>{formatItemName(i, brands, { style: "prefix" })}</span>
             {!i.is_active ? <Badge variant="muted">Archived</Badge> : null}
           </div>
         ),
@@ -404,19 +380,25 @@ export function ItemList({ role }: Props) {
         searchable: true,
       },
       {
+        id: "unit",
         header: "Unit",
+        width: "5rem",
         cell: (i) => <Badge variant="muted">{i.sell_unit}</Badge>,
         className: "px-3 py-2",
       },
       {
+        id: "location",
         header: "Location",
-        cell: (i) => formatLocation(i),
+        width: "10rem",
+        cell: (i) => <span className="truncate text-xs" title={formatLocation(i)}>{formatLocation(i)}</span>,
         className: "px-3 py-2 text-xs",
       },
     ];
     if (role === "owner") {
       cols.push({
+        id: "cost",
         header: "Cost",
+        width: "6rem",
         cell: (i) => <Money paise={i.cost_paise} />,
         className: "px-3 py-2 text-right",
         align: "right",
@@ -426,7 +408,9 @@ export function ItemList({ role }: Props) {
     }
     cols.push(
       {
+        id: "retail",
         header: "Retail",
+        width: "6rem",
         cell: (i) => <Money paise={i.retail_price_paise} />,
         className: "px-3 py-2 text-right",
         align: "right",
@@ -434,13 +418,17 @@ export function ItemList({ role }: Props) {
         sortable: true,
       },
       {
+        id: "min_qty",
         header: "Min qty",
+        width: "5rem",
         cell: (i) => i.min_stock,
         className: "px-3 py-2 text-right text-xs",
         align: "right",
       },
       {
+        id: "stock",
         header: "Stock",
+        width: "5rem",
         cell: (i) => <StockDisplay currentQty={i.current_qty} minQty={i.min_stock} />,
         className: "px-3 py-2 text-right",
         align: "right",
@@ -448,7 +436,9 @@ export function ItemList({ role }: Props) {
         sortable: true,
       },
       {
-        header: "Actions",
+        id: "actions",
+        header: "",
+        width: "3.5rem",
         cell: (i) => (
           <ActionMenu
             label={`Actions for ${formatItemName(i, brands)}`}
@@ -456,9 +446,9 @@ export function ItemList({ role }: Props) {
               ...(canEdit ? [{ label: "Edit", icon: Edit3, onSelect: () => openEdit(i) }] : []),
               ...(role === "owner" ? [{ label: "Adjust Stock", icon: PackagePlus, onSelect: () => { setStockAdjustItem(i); setStockAdjustQty(""); } }] : []),
               { label: "Print Barcode", icon: Barcode, onSelect: () => void handlePrint(i), disabled: !i.barcode },
-              { label: "Add Inward", icon: ArrowDownToLine, onSelect: () => (window.location.hash = "#/inward") },
-              { label: "Record Outward", icon: ArrowUpFromLine, onSelect: () => (window.location.hash = "#/sales") },
-              ...(canEdit ? [{ label: i.is_active ? "Archive" : "Restore", icon: Archive, danger: i.is_active, onSelect: () => void handleArchive(i) }] : []),
+              { label: "Add Inward", icon: ArrowDownToLine, onSelect: () => (setHash("#/inward")) },
+              { label: "Record Outward", icon: ArrowUpFromLine, onSelect: () => (setHash("#/sales")) },
+              ...(canEdit ? [{ label: i.is_active ? "Archive" : "Restore", icon: Archive, danger: i.is_active, onSelect: () => setArchiveConfirmItem(i) }] : []),
             ]}
           />
         ),
@@ -518,7 +508,7 @@ export function ItemList({ role }: Props) {
           itemName,
         }];
         useLabelBatchSeed.getState().setSeed(rows, `Item ${stockAdjustItem.sku_code ?? stockAdjustItem.name}`);
-        window.location.hash = "#/barcodes";
+        setHash("#/barcodes");
         return;
       }
       setStockAdjustItem(null);
@@ -624,48 +614,6 @@ export function ItemList({ role }: Props) {
         </MetricCard>
       </div>
 
-      {/* ── Filter bar ── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="flex h-9 items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} className="h-3.5 w-3.5" />
-          Low stock
-        </label>
-        <Select value={activeFilter} onChange={(e) => { setActiveFilter(e.target.value as "active" | "archived" | "all"); }} className="w-auto" size="sm" aria-label="Filter by status" options={[{ value: "active", label: "Active" }, { value: "archived", label: "Archived" }, { value: "all", label: "All" }]} />
-        <Select value={`${sortField}:${sortDirection}`} onChange={(e) => { const [field, direction] = e.target.value.split(":"); setSortField(field as ItemSortField); setSortDirection(direction as SortDirection); }} className="w-auto" size="sm" aria-label="Sort inventory" options={[{ value: "name:asc", label: "Name A-Z" }, { value: "name:desc", label: "Name Z-A" }, { value: "sku:asc", label: "SKU A-Z" }, { value: "stock:asc", label: "Lowest stock" }, { value: "stock:desc", label: "Highest stock" }, { value: "retail:desc", label: "Highest retail" }, { value: "retail:asc", label: "Lowest retail" }]} />
-        <div className="h-5 w-px bg-border" />
-        {canEdit ? (
-          <>
-            <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} shortcut="F6" className="!text-xs">Add Item</Button>
-            <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">Import</Button>
-            {exportDataReady ? (
-              <DownloadMenu headers={exportHeaders} rows={computedExportRows} filename="items-export" title="Items Export" />
-            ) : (
-              <Button type="button" size="sm" variant="secondary" loading={exportBusy} onClick={() => void handleExport()} className="!text-xs">Prepare export</Button>
-            )}
-            {role === "owner" ? (
-              <Button type="button" size="sm" variant="secondary" icon={Sparkles} loading={normalizeBusy} onClick={async () => {
-                if (!confirm("Normalise all item names to title-case?")) return;
-                setNormalizeBusy(true);
-                try { const res = await normalizeItemNames(); toast.success(`Normalised ${res.updated} item name${res.updated === 1 ? "" : "s"}`); void stockHealth.refetch(); }
-                catch (e) { toast.error(extractError(e)); }
-                finally { setNormalizeBusy(false); }
-              }} className="!text-xs">Normalise Names</Button>
-            ) : null}
-          </>
-        ) : null}
-        <Button type="button" size="sm" variant="secondary" icon={ArrowDownToLine} onClick={() => (window.location.hash = "#/inward")} className="!text-xs">Inward</Button>
-        {exportDataReady ? (
-          allFilteredSelected ? (
-            <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Deselect all ({stockHealth.data?.total_active_items ?? exportRows.length})</Button>
-          ) : (
-            <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Select all ({stockHealth.data?.total_active_items ?? exportRows.length})</Button>
-          )
-        ) : null}
-        {selectedIds.size > 0 && canEdit ? (
-          <Button type="button" size="sm" variant="danger" icon={Archive} onClick={() => void handleBulkArchive()} className="!text-xs">Archive {selectedIds.size}</Button>
-        ) : null}
-      </div>
-
       {/* ── Status ── */}
       {stockHealth.error ? (
         <Alert title="Inventory failed to load">{stockHealth.error.message ?? "Unknown error"}</Alert>
@@ -683,11 +631,51 @@ export function ItemList({ role }: Props) {
         source={serverSource}
         columns={itemColumns}
         keyExtractor={(i) => String(i.id)}
-        height={400}
-        groupBy={[
-          { key: (i: Item) => brandDisplayName(i, brands), label: (k: string) => k, level: 1 as const },
-          { key: (i: Item) => i.category?.trim() || "No category", label: (k: string) => k, level: 2 as const },
-        ]}
+        fill
+        headerActions={
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex h-9 items-center gap-1.5 text-xs text-muted-foreground">
+              <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} className="h-3.5 w-3.5" />
+              Low stock
+            </label>
+            <Select value={activeFilter} onChange={(e) => { setActiveFilter(e.target.value as "active" | "archived" | "all"); }} className="w-auto" size="sm" aria-label="Filter by status" options={[{ value: "active", label: "Active" }, { value: "archived", label: "Archived" }, { value: "all", label: "All" }]} />
+          </div>
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <>
+                <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} shortcut="F6" className="!text-xs">Add Item</Button>
+                <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">Import</Button>
+                {exportDataReady ? (
+                  <DownloadMenu headers={exportHeaders} rows={computedExportRows} filename="items-export" title="Items Export" />
+                ) : (
+                  <Button type="button" size="sm" variant="secondary" loading={exportBusy} onClick={() => void handleExport()} className="!text-xs">Prepare export</Button>
+                )}
+                {role === "owner" ? (
+                  <Button type="button" size="sm" variant="secondary" icon={Sparkles} loading={normalizeBusy} onClick={async () => {
+                    if (!confirm("Normalise all item names to title-case?")) return;
+                    setNormalizeBusy(true);
+                    try { const res = await normalizeItemNames(); toast.success(`Normalised ${res.updated} item name${res.updated === 1 ? "" : "s"}`); void stockHealth.refetch(); }
+                    catch (e) { toast.error(extractError(e)); }
+                    finally { setNormalizeBusy(false); }
+                  }} className="!text-xs">Normalise Names</Button>
+                ) : null}
+              </>
+            ) : null}
+            <Button type="button" size="sm" variant="secondary" icon={ArrowDownToLine} onClick={() => (setHash("#/inward"))} className="!text-xs">Inward</Button>
+            {exportDataReady ? (
+              allFilteredSelected ? (
+                <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Deselect all ({stockHealth.data?.total_active_items ?? exportRows.length})</Button>
+              ) : (
+                <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Select all ({stockHealth.data?.total_active_items ?? exportRows.length})</Button>
+              )
+            ) : null}
+            {selectedIds.size > 0 && canEdit ? (
+              <Button type="button" size="sm" variant="danger" icon={Archive} onClick={() => void handleBulkArchive()} className="!text-xs">Archive {selectedIds.size}</Button>
+            ) : null}
+          </div>
+        }
         selection={{
           selected: selectedIds as Set<string | number>,
           onChange: (next) => {
@@ -729,6 +717,16 @@ export function ItemList({ role }: Props) {
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={archiveConfirmItem !== null}
+        title={archiveConfirmItem?.is_active ? "Archive this item?" : "Restore this item?"}
+        body={archiveConfirmItem?.is_active ? `${archiveConfirmItem.name} will be hidden from search and sales. Existing records are kept.` : `${archiveConfirmItem?.name} will be visible again.`}
+        confirmLabel={archiveConfirmItem?.is_active ? "Archive" : "Restore"}
+        destructive={archiveConfirmItem?.is_active ?? false}
+        onConfirm={() => { if (archiveConfirmItem) { void handleArchive(archiveConfirmItem); setArchiveConfirmItem(null); } }}
+        onCancel={() => setArchiveConfirmItem(null)}
+      />
     </div>
   );
 }

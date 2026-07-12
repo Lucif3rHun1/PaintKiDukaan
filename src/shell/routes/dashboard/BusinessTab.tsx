@@ -12,7 +12,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Badge, Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton } from "../../../components/ui";
+import { Badge, Button, Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton, TopItemsCard, TrendChartCard, formatQtyValue } from "../../../components/ui";
 import {
   comparisonMetrics,
   dailySales,
@@ -26,7 +26,9 @@ import {
   topItemsSold,
 } from "../../../pos/api";
 import { todayLocalYyyymmdd, shiftDaysLocal } from "../../../lib/date";
-import { Row, TwoLineTrend } from "./shared";
+import { useMediaQuery } from "../../../lib/hooks/useMediaQuery";
+import { Row } from "./shared";
+import { TopMetricsRow, type TopMetric } from "./TopMetricsRow";
 import { QuickActionsBar } from "./QuickActionsBar";
 
 const STAGGER_BUSINESS = 32_000;
@@ -172,6 +174,10 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
   const paidPaise = todayPayments.data?.paid_paise ?? 0;
   const netCashFlow = receivedPaise - paidPaise;
 
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  const [showAll, setShowAll] = useState(false);
+  const condensed = isMobile && !showAll;
+
   return (
     <div className="space-y-3">
       <QuickActionsBar dayCloseOverdue={dayCloseOverdue} />
@@ -184,100 +190,104 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
             onChange={(f, t) => { setOverviewFrom(f); setOverviewTo(t); }}
           />
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard
-            icon={Banknote}
-            label={isOverviewToday ? "Total Sales (today)" : "Total Sales"}
-            loading={overviewSales.isLoading}
-            tone="primary"
-            footer={
-              compMetrics.data?.sales && isOverviewToday ? (
-                <Badge variant={compMetrics.data.sales.change_pct >= 0 ? "success" : "danger"} size="sm">
-                  {compMetrics.data.sales.change_pct >= 0 ? "▲" : "▼"} {Math.abs(compMetrics.data.sales.change_pct)}% vs yesterday
+        <TopMetricsRow
+          label="Business metrics"
+          gridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          metrics={[
+            {
+              id: "business-total-sales",
+              label: isOverviewToday ? "Total Sales (today)" : "Total Sales",
+              icon: Banknote,
+              tone: "primary",
+              loading: overviewSales.isLoading,
+              value: <Money paise={totalSales} className="text-xl font-semibold" />,
+              footer:
+                compMetrics.data?.sales && isOverviewToday ? (
+                  <Badge variant={compMetrics.data.sales.change_pct >= 0 ? "success" : "danger"} size="sm">
+                    {compMetrics.data.sales.change_pct >= 0 ? "▲" : "▼"} {Math.abs(compMetrics.data.sales.change_pct)}% vs yesterday
+                  </Badge>
+                ) : undefined,
+            },
+            {
+              id: "business-total-purchase",
+              label: isOverviewToday ? "Total Purchase (today)" : "Total Purchase",
+              icon: ArrowDownToLine,
+              tone: "info",
+              loading: todayPurchase.isLoading,
+              value: <Money paise={totalPurchase} className="text-xl font-semibold" />,
+            },
+            {
+              id: "business-expenses",
+              label: isOverviewToday ? "Expenses (today)" : "Expenses",
+              icon: Receipt,
+              tone: "warning",
+              loading: todayExpense.isLoading,
+              value: <Money paise={totalExpense} className="text-xl font-semibold" />,
+            },
+            {
+              id: "business-net-profit",
+              label: "Net Operating Profit",
+              icon: CircleDollarSign,
+              tone: grossProfit >= 0 ? "success" : "destructive",
+              loading: overviewSales.isLoading || todayPurchase.isLoading || todayExpense.isLoading,
+              value: <Money paise={grossProfit} className="text-xl font-semibold" />,
+              footer: (
+                <Badge variant={grossMargin >= 0 ? "success" : "danger"} size="sm">
+                  {grossMargin}% margin
                 </Badge>
-              ) : undefined
-            }
-          >
-            <Money paise={totalSales} className="text-xl font-semibold" />
-          </MetricCard>
-          <MetricCard
-            icon={ArrowDownToLine}
-            label={isOverviewToday ? "Total Purchase (today)" : "Total Purchase"}
-            loading={todayPurchase.isLoading}
-            tone="info"
-          >
-            <Money paise={totalPurchase} className="text-xl font-semibold" />
-          </MetricCard>
-          <MetricCard
-            icon={Receipt}
-            label={isOverviewToday ? "Expenses (today)" : "Expenses"}
-            loading={todayExpense.isLoading}
-            tone="warning"
-          >
-            <Money paise={totalExpense} className="text-xl font-semibold" />
-          </MetricCard>
-          <MetricCard
-            icon={CircleDollarSign}
-            label="Net Operating Profit"
-            loading={overviewSales.isLoading || todayPurchase.isLoading || todayExpense.isLoading}
-            tone={grossProfit >= 0 ? "success" : "destructive"}
-            footer={
-              <Badge variant={grossMargin >= 0 ? "success" : "danger"} size="sm">
-                {grossMargin}% margin
-              </Badge>
-            }
-          >
-            <Money paise={grossProfit} className="text-xl font-semibold" />
-          </MetricCard>
-          <MetricCard
-            icon={Banknote}
-            label="Payment Received"
-            loading={todayPayments.isLoading}
-            tone="success"
-          >
-            <Money
-              paise={receivedPaise}
-              className="text-xl font-semibold"
-            />
-          </MetricCard>
-          <MetricCard
-            icon={ArrowUpRight}
-            label="Payment Paid"
-            loading={todayPayments.isLoading}
-            tone="destructive"
-          >
-            <Money
-              paise={paidPaise}
-              className="text-xl font-semibold"
-            />
-          </MetricCard>
-          <MetricCard
-            icon={Wallet}
-            label="Net Cash Flow"
-            loading={todayPayments.isLoading}
-            tone={netCashFlow >= 0 ? "success" : "destructive"}
-          >
-            <Money paise={netCashFlow} className="text-xl font-semibold" />
-          </MetricCard>
-          <MetricCard
-            icon={BarChart3}
-            label="Avg Transaction"
-            loading={overviewSales.isLoading}
-            tone="info"
-            footer={
-              compMetrics.data?.avg_bill_value && isOverviewToday ? (
-                <Badge variant={compMetrics.data.avg_bill_value.change_pct >= 0 ? "success" : "danger"} size="sm">
-                  {compMetrics.data.avg_bill_value.change_pct >= 0 ? "▲" : "▼"} {Math.abs(compMetrics.data.avg_bill_value.change_pct)}% vs yesterday
-                </Badge>
-              ) : undefined
-            }
-          >
-            <Money paise={avgTxnValue} className="text-xl font-semibold" />
-          </MetricCard>
-        </div>
+              ),
+            },
+            {
+              id: "business-payment-received",
+              label: "Payment Received",
+              icon: Banknote,
+              tone: "success",
+              loading: todayPayments.isLoading,
+              value: <Money paise={receivedPaise} className="text-xl font-semibold" />,
+            },
+            {
+              id: "business-payment-paid",
+              label: "Payment Paid",
+              icon: ArrowUpRight,
+              tone: "destructive",
+              loading: todayPayments.isLoading,
+              value: <Money paise={paidPaise} className="text-xl font-semibold" />,
+            },
+            {
+              id: "business-net-cash-flow",
+              label: "Net Cash Flow",
+              icon: Wallet,
+              tone: netCashFlow >= 0 ? "success" : "destructive",
+              loading: todayPayments.isLoading,
+              value: <Money paise={netCashFlow} className="text-xl font-semibold" />,
+            },
+            {
+              id: "business-avg-transaction",
+              label: "Avg Transaction",
+              icon: BarChart3,
+              tone: "info",
+              loading: overviewSales.isLoading,
+              value: <Money paise={avgTxnValue} className="text-xl font-semibold" />,
+              footer:
+                compMetrics.data?.avg_bill_value && isOverviewToday ? (
+                  <Badge variant={compMetrics.data.avg_bill_value.change_pct >= 0 ? "success" : "danger"} size="sm">
+                    {compMetrics.data.avg_bill_value.change_pct >= 0 ? "▲" : "▼"} {Math.abs(compMetrics.data.avg_bill_value.change_pct)}% vs yesterday
+                  </Badge>
+                ) : undefined,
+            },
+          ] satisfies TopMetric[]}
+        />
       </section>
 
-      <section className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      {isMobile && (
+        <div className="flex justify-center">
+          <Button variant="ghost" size="sm" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? "Show less" : "View full dashboard"}
+          </Button>
+        </div>
+      )}
+
+      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-3 ${condensed ? "hidden" : ""}`}>
         <Card className="self-start">
           <Card.Header className="flex items-center justify-between">
             <div>
@@ -297,155 +307,52 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
                 No sales or purchases in this range.
               </p>
             ) : (
-              <TwoLineTrend sales={salesByDay} purchases={purchasesByDay} labels={rangeDates} />
+              <TrendChartCard sales={salesByDay} purchases={purchasesByDay} labels={rangeDates} />
             )}
           </Card.Body>
         </Card>
 
-        <Card>
-          <Card.Header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Top 5 Items (Sales)</h3>
-            <PeriodDropdown
-              value={{ from: trendFrom, to: trendTo }}
-              onChange={(f, t) => { setTrendFrom(f); setTrendTo(t); }}
-            />
-          </Card.Header>
-          <Card.Body className="p-0">
-            {topSold.isLoading ? (
-              <div className="space-y-2 p-4">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-full" />
-              </div>
-            ) : (topSold.data ?? []).length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  icon={Receipt}
-                  title="No sales in this range"
-                  description="Top items by sales will appear here."
-                />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {(topSold.data ?? []).map((r, i) => (
-                  <li
-                    key={r.item_id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                  >
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                        {i + 1}
-                      </span>
-                      <span className="truncate font-medium">{r.name}</span>
-                    </div>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {r.total_qty} × <Money paise={r.total_value} compact />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card.Body>
-        </Card>
+        <TopItemsCard
+          title="Top 5 Items (Sales)"
+          items={(topSold.data ?? []).slice(0, 5).map((r) => ({
+            id: r.item_id,
+            name: r.name,
+            value: formatQtyValue(r.total_qty, r.total_value),
+          }))}
+          loading={topSold.isLoading}
+          badgeTone="primary"
+          emptyState={{ icon: <Receipt />, title: "No sales in this range", description: "Top items by sales will appear here." }}
+        />
 
-        <Card>
-          <Card.Header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Top 5 Customers</h3>
-            <PeriodDropdown
-              value={{ from: trendFrom, to: trendTo }}
-              onChange={(f, t) => { setTrendFrom(f); setTrendTo(t); }}
-            />
-          </Card.Header>
-          <Card.Body className="p-0">
-            {topCustomersQuery.isLoading ? (
-              <div className="space-y-2 p-4">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-full" />
-              </div>
-            ) : (topCustomersQuery.data ?? []).length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  icon={Users}
-                  title="No customer sales"
-                  description="Top customers by sales will appear here."
-                />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {(topCustomersQuery.data ?? []).map((c, i) => (
-                  <li
-                    key={c.customer_id ?? `walk-in-${i}`}
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                  >
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-info/10 text-xs font-medium text-info">
-                        {i + 1}
-                      </span>
-                      <span className="truncate font-medium">{c.name}</span>
-                    </div>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {c.bill_count} × <Money paise={c.total_value} compact />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card.Body>
-        </Card>
+        <TopItemsCard
+          title="Top 5 Customers"
+          items={(topCustomersQuery.data ?? []).slice(0, 5).map((c) => ({
+            id: c.customer_id ?? c.name,
+            name: c.name,
+            value: formatQtyValue(c.bill_count, c.total_value),
+          }))}
+          loading={topCustomersQuery.isLoading}
+          badgeTone="info"
+          emptyState={{ icon: <Users />, title: "No customer sales", description: "Top customers by sales will appear here." }}
+        />
       </section>
 
-      <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <Card>
-          <Card.Header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Top 5 Items (Purchase)</h3>
-            <PeriodDropdown
-              value={{ from: trendFrom, to: trendTo }}
-              onChange={(f, t) => { setTrendFrom(f); setTrendTo(t); }}
-            />
-          </Card.Header>
-          <Card.Body className="p-0">
-            {topPurchased.isLoading ? (
-              <div className="space-y-2 p-4">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-full" />
-              </div>
-            ) : (topPurchased.data ?? []).length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  icon={ArrowDownToLine}
-                  title="No purchases in this range"
-                  description="Top items purchased will appear here."
-                />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {(topPurchased.data ?? []).map((r, i) => (
-                  <li
-                    key={r.item_id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                  >
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-warning/10 text-xs font-medium text-warning">
-                        {i + 1}
-                      </span>
-                      <span className="truncate font-medium">{r.name}</span>
-                    </div>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {r.total_qty} × <Money paise={r.total_value} compact />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card.Body>
-        </Card>
+      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
+        <TopItemsCard
+          title="Top 5 Items (Purchase)"
+          items={(topPurchased.data ?? []).slice(0, 5).map((r) => ({
+            id: r.item_id,
+            name: r.name,
+            value: formatQtyValue(r.total_qty, r.total_value),
+          }))}
+          loading={topPurchased.isLoading}
+          badgeTone="warning"
+          emptyState={{ icon: <ArrowDownToLine />, title: "No purchases in this range", description: "Top items purchased will appear here." }}
+        />
 
         <Card>
           <Card.Header className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Business Overview</h3>
-            <PeriodDropdown
-              value={{ from: overviewFrom, to: overviewTo }}
-              onChange={(f, t) => { setOverviewFrom(f); setOverviewTo(t); }}
-            />
           </Card.Header>
           <Card.Body className="space-y-2 text-sm">
             <Row icon={Banknote} label="Total Sales" value={<Money paise={totalSales} compact />} />
@@ -478,7 +385,7 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
         </Card>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
         <Card>
           <Card.Header>
             <h3 className="text-sm font-semibold">Party Overview</h3>

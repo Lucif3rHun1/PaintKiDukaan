@@ -4,18 +4,17 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   Barcode,
-  Building2,
   ChevronDown,
   ClipboardCheck,
   Activity,
-  HardDrive,
+  HeartPulse,
   LayoutDashboard,
   Lock,
   LogOut,
   Package,
   Paintbrush,
-  Printer,
   RotateCcw,
+  ScrollText,
   Settings,
   ShoppingCart,
   Truck,
@@ -29,6 +28,7 @@ const LOGO_64 = logo64;
 import { Button, cn, Toaster } from "../components/ui";
 import { DraftBadge } from "../components/ui/DraftBadge";
 import { KbdHint } from "../components/ui/KbdHint";
+import { useMediaQuery } from "../lib/hooks/useMediaQuery";
 import { ShortcutOverlay, type ShortcutGroup } from "../components/ui/ShortcutOverlay";
 import { usePageBadge } from "../pos/hooks";
 import { useShortcut } from "../lib/shortcuts";
@@ -69,8 +69,6 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-export type SettingsCategoryId = "shop" | "catalog" | "printing" | "team" | "system";
-
 interface SidebarLink {
   id: string;
   label: string;
@@ -87,13 +85,7 @@ interface SidebarGroup {
   items: SidebarLink[];
 }
 
-export const SETTINGS_CATEGORIES: ReadonlyArray<{ id: SettingsCategoryId; label: string; icon: LucideIcon }> = [
-  { id: "shop", label: "Shop", icon: Building2 },
-  { id: "catalog", label: "Inventory", icon: Package },
-  { id: "printing", label: "Printing", icon: Printer },
-  { id: "team", label: "Team & Devices", icon: Users },
-  { id: "system", label: "System", icon: HardDrive },
-];
+import { SETTINGS_CATEGORIES, type SettingsCategoryId } from "./settingsCategories";
 
 const dashboardLink: SidebarLink = {
   id: "dashboard",
@@ -170,9 +162,18 @@ const groups: SidebarGroup[] = [
       category: category.id,
     })),
   },
+  {
+    id: "diagnostics",
+    label: "Diagnostics",
+    icon: Activity,
+    items: [
+      // ponytail: Health is in Settings > System > Master Health — no duplicate entry
+      { id: "logs", label: "Logs", icon: ScrollText, tab: "logs", hash: "#/logs" },
+    ],
+  },
 ];
 
-const sectionLabels = ["Main", "Transactions", "Inventory", "Parties", "Reports", "Settings"] as const;
+const sectionLabels = ["Main", "Transactions", "Inventory", "Parties", "Reports", "Settings", "Diagnostics"] as const;
 
 const SIDEBAR_SHORTCUTS: Record<string, string> = {
   dashboard: "Alt+1",
@@ -187,20 +188,6 @@ const SIDEBAR_SHORTCUTS: Record<string, string> = {
   "barcode-labels": "Alt+0",
 };
 
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return window.matchMedia(query).matches;
-  });
-  useEffect(() => {
-    const mql = window.matchMedia(query);
-    const handler = (event: MediaQueryListEvent) => setMatches(event.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, [query]);
-  return matches;
-}
-
 export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, onLogout, onSwitchUser, children }: AppShellProps) {
   const wide = useMediaQuery("(min-width: 1024px)");
   const collapsed = !wide;
@@ -211,6 +198,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
     parties: true,
     reports: true,
     settings: true,
+    diagnostics: true,
   });
   const [showShortcuts, setShowShortcuts] = useState(false);
   const contextPageBadge = usePageBadge();
@@ -225,18 +213,21 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
     return () => window.removeEventListener("paintkiduakan:page-badge", onPageBadge);
   }, []);
 
+  const role = user?.role ?? "stocker";
   const shopNameQuery = useQuery({
     queryKey: ["app", "shopName"],
     queryFn: () => ipc.getSetting("shop_name"),
     refetchInterval: 60_000,
+    enabled: role === "owner" || role === "cashier",
   });
   const backupQuery = useQuery({
     queryKey: ["app", "backup"],
     queryFn: () => ipc.backupStatus(),
     refetchInterval: 45_000,
+    enabled: role === "owner",
   });
   const shopName = shopNameQuery.data || "PaintKiDukaan";
-  const displayRole = toTitleCase(user?.role ?? "owner");
+  const displayRole = toTitleCase(user?.role ?? "stocker");
 
   useShortcut({ key: "1", alt: true, scope: "global", description: "Dashboard", onMatch: () => onNavigate("dashboard") });
   useShortcut({ key: "2", alt: true, scope: "global", description: "Sales", onMatch: () => onNavigate("sales", "#/sales") });
@@ -319,13 +310,18 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           <SidebarLinkButton link={dashboardLink} active={activeTab === "dashboard"} collapsed={collapsed} onNavigate={onNavigate} />
 
           {(() => {
+            const isStocker = user?.role === "stocker";
+            const OWNER_ONLY_IDS = new Set(["sales-report", "day-close", "settings-shop", "settings-catalog", "settings-printing", "settings-team", "settings-system"]);
+            const visibleGroups = isStocker
+              ? groups.map((g) => ({ ...g, items: g.items.filter((i) => !OWNER_ONLY_IDS.has(i.id)) })).filter((g) => g.items.length > 0)
+              : groups;
             // Flatten every sidebar link across all groups so isLinkActive can
             // detect cross-group yield (e.g. "Sales" at #/sales must yield to
             // "Returns" at #/sales/return even though they live in different
             // groups). Without this both entries would light up simultaneously
             // when the user is on a Returns sub-route.
-            const allLinks: SidebarLink[] = groups.flatMap((g) => g.items);
-            return groups.map((group, index) => {
+            const allLinks: SidebarLink[] = visibleGroups.flatMap((g) => g.items);
+            return visibleGroups.map((group, index) => {
             const singleItem = group.items.length === 1;
             if (singleItem && collapsed) {
               return (
@@ -342,7 +338,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
             if (singleItem && !collapsed) {
               return (
                 <div key={group.id} className="mt-2">
-                  <SidebarSectionLabel collapsed={collapsed}>{sectionLabels[index + 1]}</SidebarSectionLabel>
+                  <SidebarSectionLabel collapsed={collapsed}>{group.label}</SidebarSectionLabel>
                   <SidebarLinkButton
                     link={group.items[0]}
                     active={isLinkActive(group.items[0], activeTab)}
@@ -354,7 +350,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
             }
             return (
               <div key={group.id} className="mt-1">
-                <SidebarSectionLabel collapsed={collapsed}>{sectionLabels[index + 1]}</SidebarSectionLabel>
+                <SidebarSectionLabel collapsed={collapsed}>{group.label}</SidebarSectionLabel>
                 <button
                   type="button"
                   onClick={() => setExpanded((current) => ({ ...current, [group.id]: !current[group.id] }))}
@@ -393,7 +389,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           collapsed={collapsed}
           onLock={onLock}
           onLogout={onLogout ?? onLock}
-          onSwitchUser={onSwitchUser ?? onLock}
+          onSwitchUser={onSwitchUser}
         />
       </aside>
 
@@ -571,7 +567,7 @@ function BackupActivity({ backupAge }: { backupAge: number | null }) {
   );
 }
 
-function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser }: { user: AppShellUser | null; shopName?: string | null; collapsed: boolean; onLock: () => void; onLogout: () => void; onSwitchUser: () => void }) {
+function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser }: { user: AppShellUser | null; shopName?: string | null; collapsed: boolean; onLock: () => void; onLogout: () => void; onSwitchUser?: () => void }) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -601,7 +597,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
   }, [open]);
 
   const displayName = toTitleCase(user?.name ?? "Owner");
-  const displayRole = user?.role ?? "stocker";
+  const displayRole = toTitleCase(user?.role ?? "stocker");
 
   return (
     <div ref={wrapperRef} className="relative border-t border-sidebar-border pt-3">
@@ -651,7 +647,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
             <Lock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             Lock
           </button>
-          {hasOtherUsers ? (
+          {hasOtherUsers && onSwitchUser ? (
             <button
               type="button"
               onClick={() => { onSwitchUser(); setOpen(false); }}

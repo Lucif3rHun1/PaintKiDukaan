@@ -33,6 +33,7 @@ import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay } from "../../lib/date";
 import { ItemSearchInput } from "../sales/ItemSearchInput";
 import type { InwardLine, ItemSearchHit, NewPurchase, Purchase, PurchaseCreated } from "../types";
+import { setHash } from "../../lib/navigate";
 import { getPref, setPref } from "../../lib/storage";
 
 // ponytail: packaging APIs — import from shared module
@@ -167,6 +168,12 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   const [notes, setNotes] = useState("");
   const [recent, setRecent] = useState<Purchase[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!status) return;
+    const timer = setTimeout(() => setStatus(null), 4000);
+    return () => clearTimeout(timer);
+  }, [status]);
 
   const [items, setItems] = useState<Item[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -415,6 +422,14 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       toast.warning("Quantity must be positive");
       return;
     }
+    if (entry.cost_price <= 0) {
+      toast.warning("Cost price must be greater than zero");
+      return;
+    }
+    if (entry.retail_price <= 0) {
+      toast.warning("Retail price must be greater than zero");
+      return;
+    }
     if (editingIndex != null) {
       setDraft((p) => {
         const next = [...p];
@@ -494,13 +509,16 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           l.retail_price > 0 &&
           (l.last_retail == null || l.retail_price !== l.last_retail),
       );
-      await Promise.allSettled(
+      const results = await Promise.allSettled(
         overrides.map((l) =>
-          updateItem(l.item_id, { retail_price_paise: l.retail_price }).catch((e) => {
-            toast.error(`Failed to update retail price for item #${l.item_id}: ${extractError(e)}`);
-          }),
+          updateItem(l.item_id, { retail_price_paise: l.retail_price }),
         ),
       );
+      const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failures.length > 0) {
+        const msgs = failures.map((r) => extractError(r.reason)).join("; ");
+        toast.error(`Failed to update retail price for ${failures.length} item(s): ${msgs}`);
+      }
       setStatus(`Inward #${res.id} saved`);
       setPref("inward:lastVendor", vendorId);
       setPref("inward:lastLocation", defaultLocationId);
@@ -566,7 +584,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       return;
     }
     useLabelBatchSeed.getState().setSeed(seedRows, `Inward #${res.id}`);
-    window.location.hash = "#/barcodes";
+    setHash("#/barcodes");
   }
 
   useFormShortcuts({

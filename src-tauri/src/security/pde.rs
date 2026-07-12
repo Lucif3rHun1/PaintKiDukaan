@@ -180,7 +180,7 @@ pub fn migrate_single_to_pde(db_path: &Path) -> Result<(), AppError> {
 #[tauri::command]
 pub async fn disable_pde(state: State<'_, AppState>) -> Result<(), AppError> {
     ipc_auth::authorize("disable_pde", state.inner())?;
-    let db_path = state.db_path.lock().unwrap().clone().ok_or(AppError::NoDb)?;
+    let db_path = state.db_path.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?.clone().ok_or(AppError::NoDb)?;
     let keystore_path = db_path.with_extension("keystore");
     let conn = crate::commands::auth::open_keystore(&keystore_path)?;
     keywrap::delete_by_role(&conn, PinRole::Decoy)?;

@@ -141,21 +141,20 @@ fn process_report(data: &[u8], buffer: &Arc<Mutex<WedgeBuffer>>, app: &tauri::Ap
         return;
     }
 
-    let min_length = app_state
-        .settings
-        .lock()
-        .unwrap()
+    let settings = match app_state.settings.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let min_length = settings
         .get("scanner_min_length")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize)
         .unwrap_or(4);
-    let avg_ms_per_char = app_state
-        .settings
-        .lock()
-        .unwrap()
+    let avg_ms_per_char = settings
         .get("scanner_avg_ms_per_char")
         .and_then(|v| v.as_u64())
         .unwrap_or(25);
+    drop(settings);
 
     let mut buf = buffer.lock();
     let now = Instant::now();

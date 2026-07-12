@@ -128,7 +128,7 @@ pub(crate) fn do_backup<R: tauri::Runtime>(
     let mut passphrase = passphrase_override
         .filter(|p| !p.is_empty())
         .map(Zeroizing::new)
-        .or_else(|| state.recovery_passphrase.lock().unwrap().clone())
+        .or_else(|| state.recovery_passphrase.lock().ok()?.clone())
         .ok_or_else(|| "backup failed: no recovery passphrase on file. Re-run onboarding or use Settings → System to reset.".to_string())?;
 
     let result = (|| -> Result<BackupMetadata, String> {
@@ -181,10 +181,10 @@ pub fn backup_now<R: tauri::Runtime>(
     }
     let metadata = do_backup(state.inner(), &app, passphrase)?;
 
-    *state.last_backup_unix_ms.lock().unwrap() = Some(metadata.created_at_unix_ms);
+    *state.last_backup_unix_ms.lock().map_err(|e| format!("lock poisoned: {e}"))? = Some(metadata.created_at_unix_ms);
 
     // Persist to SQL so day_close backup gate (which reads from the DB) stays in sync.
-    if let Some(ref db) = *state.db.lock().unwrap() {
+    if let Some(ref db) = *state.db.lock().map_err(|e| format!("lock poisoned: {e}"))? {
         let _ = db.with_conn(|c| {
             c.execute(
                 "UPDATE settings SET last_backup_unix_ms = ?1 WHERE id = 1",
@@ -311,7 +311,7 @@ pub fn test_restore<R: tauri::Runtime>(
     passphrase.zeroize();
 
     if result.ok {
-        *state.last_test_restore_unix_ms.lock().unwrap() = Some(Utc::now().timestamp_millis());
+        *state.last_test_restore_unix_ms.lock().map_err(|e| format!("lock poisoned: {e}"))? = Some(Utc::now().timestamp_millis());
     }
 
     Ok(result)
@@ -322,8 +322,8 @@ pub fn test_restore<R: tauri::Runtime>(
 pub fn backup_status(state: State<'_, AppState>) -> Result<BackupStatus, String> {
     ipc_auth::authorize_err("backup_status", state.inner())?;
     let now = Utc::now().timestamp_millis();
-    let last_backup = *state.last_backup_unix_ms.lock().unwrap();
-    let last_test_restore = *state.last_test_restore_unix_ms.lock().unwrap();
+    let last_backup = *state.last_backup_unix_ms.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+    let last_test_restore = *state.last_test_restore_unix_ms.lock().map_err(|e| format!("lock poisoned: {e}"))?;
 
     let backup_age_hours = last_backup
         .map(|ts| ((now - ts) as f64) / 3_600_000.0)

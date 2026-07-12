@@ -92,13 +92,17 @@ where
     let where_suffix = if where_clauses.is_empty() {
         String::new()
     } else {
-        let mut parts = where_clauses.iter();
-        let first = parts.next().unwrap();
-        let mut s = format!(" WHERE {}", first);
-        for clause in parts {
-            s.push_str(&format!(" AND {}", clause));
+        let mut clauses = where_clauses.iter();
+        match clauses.next() {
+            Some(first) => {
+                let mut s = format!(" WHERE {}", first);
+                for clause in clauses {
+                    s.push_str(&format!(" AND {}", clause));
+                }
+                s
+            }
+            None => String::new(),
         }
-        s
     };
 
     let rows_sql = format!("{}{}{}", base_select, where_suffix, order_by_clause);

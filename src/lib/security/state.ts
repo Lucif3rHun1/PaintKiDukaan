@@ -27,7 +27,6 @@ export type AppPhase =
   | "locked"
   | "unlocked"
   | "restore-recovery"
-  | "user-management"
   | "keystore-error";
 
 interface SecurityState {

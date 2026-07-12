@@ -79,8 +79,8 @@ pub struct OpsHealth {
 #[tauri::command(rename_all = "snake_case")]
 pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, String> {
     ipc_auth::authorize_err("master_health", state.inner())?;
-    let last_backup_unix_ms = *state.last_backup_unix_ms.lock().unwrap();
-    let last_test_unix_ms = *state.last_test_restore_unix_ms.lock().unwrap();
+    let last_backup_unix_ms = *state.last_backup_unix_ms.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+    let last_test_unix_ms = *state.last_test_restore_unix_ms.lock().map_err(|e| format!("lock poisoned: {e}"))?;
     let now = now_unix_ms();
 
     let last_backup = match last_backup_unix_ms {
@@ -117,7 +117,7 @@ pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, 
             auto_lock_policy: "ok".to_string(),
         },
         data: {
-            let (db_integrity, rows_count) = match state.db.lock().unwrap().as_ref() {
+            let (db_integrity, rows_count) = match state.db.lock().map_err(|e| format!("lock poisoned: {e}"))?.as_ref() {
                 Some(db) => db.with_conn(|conn| {
                     let integrity: String = conn
                         .query_row("PRAGMA quick_check", [], |r| r.get(0))

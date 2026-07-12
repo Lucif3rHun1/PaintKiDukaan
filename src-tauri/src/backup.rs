@@ -324,9 +324,13 @@ pub fn decrypt_and_verify(
         return Err(BackupError::Integrity);
     }
 
-    let mut key = kdf::derive_backup_key(recovery_passphrase, &header.salt);
-
-    // The first encrypted chunk has plaintext size `chunk_size` (or the whole
+    let mut key = kdf::derive_backup_key_with_params(
+        recovery_passphrase,
+        &header.salt,
+        header.argon2_m_cost_kib,
+        header.argon2_t_cost,
+        header.argon2_p_cost,
+    );
     // body if it fits in a single chunk). The manifest lives at the start of
     // that first plaintext chunk, so we must decrypt the full chunk before we
     // can know how much DB/wrapper data follows.
@@ -404,6 +408,11 @@ pub fn decrypt_and_verify(
 /// Returns the path to the `.prev` file so callers can roll back on error.
 pub fn atomic_swap(live_db: &Path, new_db: &Path) -> BackupResult<std::path::PathBuf> {
     let prev_path = live_db.with_extension("prev");
+    // ponytail: remove stale .prev if present — rename fails if dest exists
+    if prev_path.exists() {
+        log::warn!("removing stale .prev: {}", prev_path.display());
+        fs::remove_file(&prev_path)?;
+    }
     fs::rename(live_db, &prev_path)?;
 
     // Prefer atomic rename; fall back to copy+delete so a cross-filesystem
@@ -449,7 +458,7 @@ pub fn test_restore(envelope: &Path, recovery_passphrase: &str) -> BackupResult<
 pub fn default_live_db_path() -> BackupResult<std::path::PathBuf> {
     let data_dir = dirs::data_local_dir()
         .ok_or_else(|| BackupError::Other("unable to resolve data local dir".into()))?;
-    Ok(data_dir.join("paintkiduakan").join("db.sqlite"))
+    Ok(data_dir.join("paintkiduakan").join("paintkiduakan.db"))
 }
 
 fn now_unix_ms() -> i64 {

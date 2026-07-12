@@ -15,14 +15,6 @@ pub struct Unit {
     pub is_active: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct UnitConversion {
-    pub id: i64,
-    pub from_unit_id: i64,
-    pub to_unit_id: i64,
-    pub factor: f64,
-}
-
 fn lock_db<'a>(
     state: &'a tauri::State<'_, AppState>,
 ) -> AppResult<std::sync::MutexGuard<'a, Option<db::Db>>> {
@@ -54,31 +46,6 @@ pub fn list_units(
                 label: r.get(2)?,
                 dimension: r.get(3)?,
                 is_active: r.get::<_, i64>(4)? != 0,
-            })
-        })?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row?);
-        }
-        Ok(out)
-    })
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn list_unit_conversions(state: tauri::State<'_, AppState>) -> AppResult<Vec<UnitConversion>> {
-    ipc_auth::authorize_err("list_unit_conversions", state.inner())?;
-    let db_guard = lock_db(&state)?;
-    let db = db_guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    db.with_conn(|conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, from_unit_id, to_unit_id, factor FROM unit_conversions ORDER BY from_unit_id",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok(UnitConversion {
-                id: r.get(0)?,
-                from_unit_id: r.get(1)?,
-                to_unit_id: r.get(2)?,
-                factor: r.get(3)?,
             })
         })?;
         let mut out = Vec::new();
@@ -124,41 +91,6 @@ pub fn create_unit(
             label,
             dimension,
             is_active: true,
-        })
-    })
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn create_unit_conversion(
-    state: tauri::State<'_, AppState>,
-    from_unit_id: i64,
-    to_unit_id: i64,
-    factor: f64,
-) -> AppResult<UnitConversion> {
-    ipc_auth::authorize_err("create_unit_conversion", state.inner())?;
-    if !(factor > 0.0) {
-        return Err(AppError::Validation(
-            "factor must be greater than zero".to_string(),
-        ));
-    }
-    if from_unit_id == to_unit_id {
-        return Err(AppError::Validation(
-            "from and to units must differ".to_string(),
-        ));
-    }
-    let db_guard = lock_db(&state)?;
-    let db = db_guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    db.with_conn(|conn| {
-        conn.execute(
-            "INSERT INTO unit_conversions (from_unit_id, to_unit_id, factor, created_at, updated_at) VALUES (?1, ?2, ?3, (unixepoch('now') * 1000), (unixepoch('now') * 1000))",
-            rusqlite::params![from_unit_id, to_unit_id, factor],
-        )?;
-        let id = conn.last_insert_rowid();
-        Ok(UnitConversion {
-            id,
-            from_unit_id,
-            to_unit_id,
-            factor,
         })
     })
 }

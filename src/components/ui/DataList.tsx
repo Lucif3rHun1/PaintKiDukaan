@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronsUpDown, X } from "lucide-react";
 
 import { cn } from "./cn";
 import { Button } from "./Button";
@@ -31,6 +31,20 @@ export interface ColumnDef<T> {
   cell: (row: T, index: number) => ReactNode;
   className?: string;
   width?: string;
+  /**
+   * If true, column flexes to fill remaining space (1fr equivalent).
+   * Mutually exclusive with `width`. Use for the primary text column.
+   */
+  flex?: boolean;
+  /**
+   * Minimum width when `flex` is true. Defaults to "0".
+   */
+  minWidth?: string;
+  /**
+   * Maximum width when `flex` is true. Caps growth so the column
+   * doesn't swallow all remaining space on wide screens.
+   */
+  maxWidth?: string;
   align?: "left" | "right" | "center";
   sortable?: boolean;
   sortField?: string;
@@ -107,6 +121,12 @@ export interface DataListProps<T> {
   rowClassName?: string | ((row: T, index: number) => string);
   caption?: string;
   height?: number | string;
+  /**
+   * When true, the scroller fills the parent's available height
+   * (`flex: 1 1 0; min-height: 0`) instead of the `height` prop value.
+   * Parent must be a flex column with a constrained height.
+   */
+  fill?: boolean;
   estimateRowHeight?: number;
   emptyMessage?: string;
   emptyCta?: ReactNode;
@@ -251,6 +271,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
     rowClassName,
     caption,
     height = 480,
+    fill = false,
     estimateRowHeight = 36,
     emptyMessage = "No data",
     emptyCta,
@@ -282,6 +303,24 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+
+  // ponytail: cellStyle = { width, minWidth, flex } computed from ColumnDef.
+  // Flex columns (1fr equivalent) need `flex: 1 1 0` with minWidth to fill space.
+  // Fixed columns need `width` + `minWidth` (same value) so they don't shrink.
+  function cellStyle(col: ColumnDef<T>): React.CSSProperties | undefined {
+    if (col.flex) {
+      return {
+        flex: "1 1 0",
+        minWidth: col.minWidth ?? "0",
+        width: col.minWidth ?? "0",
+        ...(col.maxWidth ? { maxWidth: col.maxWidth } : {}),
+      };
+    }
+    if (col.width) {
+      return { width: col.width, minWidth: col.width, flex: "0 0 auto" };
+    }
+    return { flex: "0 1 auto", minWidth: 0 };
+  }
 
   const flatItems = useMemo(() => flattenRows(rows, groupBy), [rows, groupBy]);
   const dataRowIndices = useMemo(
@@ -388,7 +427,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
   }
 
   return (
-    <div className={cn("flex flex-col gap-3", className)} data-testid={testId}>
+    <div className={cn("flex min-h-0 flex-col gap-3", fill && "min-h-[calc(100vh-22rem)] flex-1", className)} data-testid={testId}>
       {headerMetrics ? <div className="flex flex-wrap gap-3">{headerMetrics}</div> : null}
       {(toolbar || actions) ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -435,8 +474,12 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
         aria-rowcount={rows.length}
         aria-label={caption ?? "Data list"}
         onKeyDown={onKeyDown}
-        className="relative overflow-auto rounded border border-border bg-card [box-shadow:0_1px_2px_0_rgb(0_0_0_/_0.04),0_4px_12px_-2px_rgb(0_0_0_/_0.06)]"
-        style={{ height: typeof height === "number" ? `${height}px` : height }}
+        className="relative w-full overflow-auto rounded border border-border bg-card [box-shadow:0_1px_2px_0_rgb(0_0_0_/_0.04),0_4px_12px_-2px_rgb(0_0_0_/_0.06)]"
+        style={
+          fill
+            ? { flex: "1 1 0", minHeight: 0 }
+            : { height: typeof height === "number" ? `${height}px` : height }
+        }
       >
         {caption ? <div className="sr-only">{caption}</div> : null}
         <div className="sticky top-0 z-10 flex bg-card/95 [backdrop-filter:saturate(180%)_blur(8px)] [box-shadow:inset_0_-1px_0_0_theme(colors.border)] text-left text-xs uppercase text-muted-foreground" role="row">
@@ -444,8 +487,13 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
             <div
               key={col.id ?? (typeof col.header === "string" ? col.header : undefined) ?? `col-${colIdx}`}
               role="columnheader"
-              style={col.width ? { width: col.width, minWidth: col.width } : undefined}
-              className={cn("flex items-center px-3 py-2 font-medium", alignClass(col.align), col.className)}
+              style={cellStyle(col)}
+              className={cn(
+                "flex items-center px-3 py-2 font-medium transition-colors",
+                alignClass(col.align),
+                col.sortable && col.sortField && "cursor-pointer select-none hover:text-foreground hover:bg-muted/50",
+                col.className,
+              )}
               onClick={
                 col.sortable && col.sortField
                   ? () => {
@@ -460,7 +508,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
                   : undefined
               }
             >
-              <span className={cn("inline-flex items-center gap-1", col.sortable && "cursor-pointer select-none")}>
+              <span className="inline-flex items-center gap-1">
                 {col.header}
                 {col.sortable && col.sortField === sortField ? (
                   sortDir === "asc" ? (
@@ -470,6 +518,8 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
                   ) : (
                     <X className="h-3 w-3 opacity-30" />
                   )
+                ) : col.sortable && col.sortField ? (
+                  <ChevronsUpDown className="h-3 w-3 opacity-30" />
                 ) : null}
               </span>
             </div>
@@ -553,8 +603,8 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
                       key={col.id ?? (typeof col.header === "string" ? col.header : undefined) ?? `cell-${ci}`}
                       role="gridcell"
                       aria-colindex={ci + 1}
-                      style={col.width ? { width: col.width, minWidth: col.width } : undefined}
-                      className={cn("flex min-w-0 items-center px-3", alignClass(col.align), col.className)}
+                      style={cellStyle(col)}
+                      className={cn("flex items-center px-3", alignClass(col.align), col.className)}
                     >
                       {col.cell(row, realIndex)}
                     </div>

@@ -161,7 +161,7 @@ export const receivableAging = (): Promise<ReceivableAgingReport> =>
 
 export interface SalesPeriodSummary { count: number; total_paise: number; avg_paise: number; paid_paise: number }
 export interface PurchasePeriodSummary { count: number; total_paise: number; avg_paise: number }
-export interface ReturnsPeriodSummary { count: number; total_refund_paise: number; refunded_paise: number }
+export interface ReturnsPeriodSummary { count: number; total_refund_paise: number }
 
 export async function listSalesPaged(query: ListQuery): Promise<ListPage<Sale>> {
   return tauriInvoke<ListPage<Sale>>("cmd_list_sales_paged", { query });

@@ -719,7 +719,7 @@ export function ItemSearchInput({
                 }}
                 className="mt-2 text-xs text-primary hover:underline"
               >
-                More details
+                Add item
               </button>
             </div>
           ) : (

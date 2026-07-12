@@ -1102,8 +1102,9 @@ fn today() -> String {
 /// Falls back to now_epoch_ms() on parse failure.
 fn date_to_ms(date: &str) -> i64 {
     NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis())
-        .unwrap_or_else(|_| now_epoch_ms())
+        .ok()
+        .and_then(|d| d.and_hms_opt(0, 0, 0).map(|t| t.and_utc().timestamp_millis()))
+        .unwrap_or_else(now_epoch_ms)
 }
 
 fn now_epoch_ms() -> i64 {
@@ -1963,7 +1964,6 @@ pub fn cmd_sales_period_summary(
 pub struct SaleReturnsPeriodSummary {
     pub count: i64,
     pub total_refund_paise: i64,
-    pub refunded_paise: i64,
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -2006,7 +2006,6 @@ pub fn cmd_sale_returns_period_summary(
         Ok(SaleReturnsPeriodSummary {
             count,
             total_refund_paise: total_refund,
-            refunded_paise: total_refund,
         })
     })
 }

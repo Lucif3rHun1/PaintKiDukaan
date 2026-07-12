@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { Alert, Button, MoneyInput } from "../../components/ui";
+import { Alert, Button, Field, MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { extractError } from "../../lib/extractError";
@@ -231,32 +231,4 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
   );
 }
 
-function Field({
-  label,
-  required,
-  error,
-  hint,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">
-        {label}
-        {required ? <span className="text-destructive"> *</span> : null}
-      </span>
-      {children}
-      {hint && !error ? (
-        <span className="mt-1 block text-[10px] text-muted-foreground">{hint}</span>
-      ) : null}
-      {error ? (
-        <span className="mt-1 block text-[10px] text-destructive">{error}</span>
-      ) : null}
-    </label>
-  );
-}
+

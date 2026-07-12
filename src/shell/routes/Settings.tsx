@@ -16,8 +16,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { SETTINGS_CATEGORIES, type SettingsCategoryId } from "../AppShell";
+import { SETTINGS_CATEGORIES, type SettingsCategoryId } from "../settingsCategories";
 import { Button, PageHeader } from "../../components/ui";
+import { setHash } from "../../lib/navigate";
 import { CustomerTypesSettings, LocationsSettings, CatalogSettingsCombined } from "./settings/CatalogSettings";
 import { HardwareSettings } from "./settings/HardwareSettings";
 import { SettingsCategory } from "./settings/SettingsCategory";
@@ -95,7 +96,7 @@ function getServerHashSnapshot() {
   return "#/settings/shop";
 }
 
-export function parseSettingsHash(hash: string): ParsedSettingsRoute {
+function parseSettingsHash(hash: string): ParsedSettingsRoute {
   const path = hash.replace(/^#\/?/, "").split("?")[0];
   const parts = path.split("/").filter(Boolean);
 
@@ -133,7 +134,7 @@ export function Settings() {
 
   useEffect(() => {
     if (route.redirect && typeof window !== "undefined") {
-      window.location.hash = route.redirect;
+      setHash(route.redirect);
     }
   }, [route.redirect]);
 
@@ -178,7 +179,7 @@ function SettingsSubPageHeader({ categoryLabel, itemTitle, description, backHref
       accent="slate"
       actions={
         <Button type="button" variant="ghost" size="sm" onClick={() => {
-          window.location.hash = backHref;
+          setHash(backHref);
         }}>
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           Back to {categoryLabel}

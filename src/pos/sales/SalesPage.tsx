@@ -78,6 +78,7 @@ import type {
 } from "../types";
 import type { Customer, CustomerType, Formula, FormulaSearchHit, SaleUnit } from "../../domain/types";
 import { listSaleUnits } from "../../domain/units/api";
+import { setHash } from "../../lib/navigate";
 
 type Kind = "quotation" | "final" | "fbill";
 
@@ -215,7 +216,9 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
   const { isDirty, markDirty, resetDirty } = useDirtyForm();
   const { draft, loading: draftLoading, status: draftStatus, resetDraft } = useAutosave(`sale-${kind}`, draftData);
 
+  const restoringRef = useRef(false);
   useEffect(() => {
+    if (restoringRef.current) return;
     if (!draftLoading && draftData.lines.length > 0) markDirty();
   }, [draftData, draftLoading, markDirty]);
 
@@ -225,6 +228,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
     const inHash = window.location.hash;
     if (!inHash.includes("restore=1") || !draft || draftLoading || lines.length > 0) return;
     draftRestored.current = true;
+    restoringRef.current = true;
     window.history.replaceState(null, "", window.location.pathname + "#" + inHash.split("?")[0]);
     try {
       const data = JSON.parse(draft.data_json);
@@ -240,7 +244,9 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
           .then((c) => { if (c) setCustomer(c); })
           .catch(() => {});
       }
+      setTimeout(() => { restoringRef.current = false; }, 0);
     } catch {
+      restoringRef.current = false;
       void resetDraft();
     }
   }, [draft, draftLoading]);
@@ -331,6 +337,10 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
   const handleItemPick = useCallback(
     (hit: ItemSearchHit | FormulaSearchHit) => {
       if ("kind" in hit && hit.kind === "formula") {
+        if (kind === "fbill" && hit.retail_price_paise <= 0) {
+          toast.warning("Price must be greater than zero");
+          return;
+        }
         const formulaLabel = hit.name
           ? `${hit.id_code} — ${hit.name}`
           : hit.id_code;
@@ -350,6 +360,10 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         return;
       }
       const item = hit as ItemSearchHit;
+      if (kind === "fbill" && item.retail_price_paise <= 0) {
+        toast.warning("Price must be greater than zero");
+        return;
+      }
       setLines((prev) => {
         const existing = prev.findIndex(
           (l) => l.kind === "item" && l.item_id === item.id,
@@ -378,7 +392,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         ];
       });
     },
-    [],
+    [kind],
   );
 
   // ---- Draft reset (Esc / post-save) ----
@@ -464,8 +478,12 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
     if (isFlagged(customer) && !ackFlag) return false;
     // Walk-in final bills must be paid in full — no credit allowed.
     if (walkInUnpaid) return false;
+    // FBill lines must have a positive price.
+    if (kind === "fbill" && lines.some((l) => l.price <= 0)) return false;
+    // Bill total must be positive.
+    if (total <= 0) return false;
     return true;
-  }, [lines, customer, ackFlag, walkInUnpaid]);
+  }, [lines, customer, ackFlag, walkInUnpaid, kind, total]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -540,7 +558,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
             void tryPrintReceipt(id);
           }
           // Navigate to detail page so the saved sale is visible
-          window.location.hash = `#/sales/${id}`;
+          setHash(`#/sales/${id}`);
           return kind === "final" ? `Bill #${id} saved` : kind === "fbill" ? `FBill #${id} saved` : `Quotation #${id} saved`;
         },
         error: (e: unknown) => extractError(e),
@@ -1159,7 +1177,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                       <li key={s.id}>
                         <button
                           type="button"
-                          onClick={() => (window.location.hash = `#/sales/${s.id}`)}
+                          onClick={() => (setHash(`#/sales/${s.id}`))}
                           className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                           aria-label={`Open ${s.status === "fbill" ? "fbill" : s.status === "final" ? "invoice" : "quotation"} ${s.no}`}
                         >

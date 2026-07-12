@@ -1,18 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { RefreshCw } from "lucide-react";
 
 import type { MasterHealth } from "../lib/ipc";
 import { fetchMasterHealth } from "./api";
 import { SkeletonRow } from "../../components/ui/SkeletonRow";
+import { Button } from "../../components/ui/Button";
 import { extractError } from "../../lib/extractError";
 
 export function MasterHealthPage() {
   const [data, setData] = useState<MasterHealth | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
+    setError(null);
     fetchMasterHealth()
       .then((d) => setData(d ?? null))
-      .catch((e: unknown) => setError(extractError(e)));
+      .catch((e: unknown) => setError(extractError(e)))
+      .finally(() => setRefreshing(false));
+  }, [refreshKey]);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    setRefreshKey((k) => k + 1);
   }, []);
 
   if (error) {
@@ -28,14 +39,25 @@ export function MasterHealthPage() {
     <div className="space-y-4 text-sm">
       <header className="flex items-center justify-between">
         <h3 className="text-base font-semibold">Master health</h3>
-        <span
-          className={
-            "rounded px-2 py-0.5 text-xs font-medium " +
-            badge(data.overall)
-          }
-        >
-          {data.overall}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={
+              "rounded px-2 py-0.5 text-xs font-medium " +
+              badge(data.overall)
+            }
+          >
+            {data.overall}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            aria-label="Refresh health data"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
       </header>
 
       <Section title="App">

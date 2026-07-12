@@ -7,7 +7,7 @@
 
 use crate::error::{AppError, AppResult};
 use crate::obs;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -172,6 +172,116 @@ pub fn on_lock_scrub_and_rotate() {
     }
     if let Err(e) = rotate_log() {
         log::warn!("rotate_log failed: {e}");
+    }
+}
+
+/// A single parsed log line returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: String,
+    pub message: String,
+}
+
+/// Read the current session log and return the last `limit` lines (default 500).
+/// Owner-only in production; the frontend gate already enforces this.
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_read_session_logs(limit: Option<usize>) -> Result<Vec<LogEntry>, String> {
+    let path = log_path();
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => return Err(format!("cannot read log: {e}")),
+    };
+    let max = limit.unwrap_or(500);
+    let all_lines: Vec<&str> = content.lines().collect();
+    let start = all_lines.len().saturating_sub(max);
+    let entries: Vec<LogEntry> = all_lines[start..].iter().map(|l| parse_log_line(l)).collect();
+    Ok(entries)
+}
+
+/// Parse a log line. Handles two formats:
+/// - Old: `2025-01-15T10:30:45.123Z [INFO] some message`
+/// - New: `[2026-07-06][19:40:57][tauri_runtime_wry][DEBUG] web content process terminated`
+fn parse_log_line(line: &str) -> LogEntry {
+    let trimmed = line.trim();
+
+    let mut last_bs = None;
+    let mut last_be = None;
+    let mut pos = 0;
+    while pos < trimmed.len() {
+        if let Some(bs) = trimmed[pos..].find('[') {
+            let abs_bs = pos + bs;
+            if let Some(be) = trimmed[abs_bs + 1..].find(']') {
+                let abs_be = abs_bs + 1 + be;
+                last_bs = Some(abs_bs);
+                last_be = Some(abs_be);
+                pos = abs_be + 1;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    let (bs, be) = match (last_bs, last_be) {
+        (Some(s), Some(e)) => (s, e),
+        _ => {
+            return LogEntry {
+                timestamp: String::new(),
+                level: "info".into(),
+                message: trimmed.to_string(),
+            }
+        }
+    };
+
+    let prefix = &trimmed[..bs];
+    let level = trimmed[bs + 1..be].trim().to_string();
+    let message = trimmed[be + 1..].trim().to_string();
+    let timestamp = extract_timestamp(prefix);
+
+    LogEntry {
+        timestamp,
+        level,
+        message,
+    }
+}
+
+/// Reconstruct a display timestamp from the text before the level bracket.
+/// Old format: the prefix IS the timestamp (e.g. "2025-01-15T10:30:45Z").
+/// New format: `[DATE][TIME][LOGGER]` — join the first two bracket contents.
+fn extract_timestamp(prefix: &str) -> String {
+    let p = prefix.trim();
+    if p.is_empty() {
+        return String::new();
+    }
+    // Old format: plain text before bracket
+    if !p.starts_with('[') {
+        return p.to_string();
+    }
+    // New format: collect bracket contents
+    let mut parts: Vec<String> = Vec::new();
+    let mut pos = 0;
+    while pos < p.len() {
+        if let Some(bs) = p[pos..].find('[') {
+            let abs_bs = pos + bs;
+            if let Some(be) = p[abs_bs + 1..].find(']') {
+                parts.push(p[abs_bs + 1..abs_bs + 1 + be].trim().to_string());
+                pos = abs_bs + 1 + be + 1;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    // First two bracket contents are date and time
+    if parts.len() >= 2 {
+        format!("{} {}", parts[0], parts[1])
+    } else if !parts.is_empty() {
+        parts[0].clone()
+    } else {
+        String::new()
     }
 }
 
