@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { Alert, PageHeader, Tabs, type TabItem } from "../../components/ui";
+import { Alert, PageHeader, TabsLegacy, type TabItem } from "../../components/ui";
 import { todayLocalYyyymmdd } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 import {
@@ -17,6 +17,7 @@ import {
 } from "../../domain/alerts";
 import { InventoryTab } from "./dashboard/InventoryTab";
 import { BusinessTab } from "./dashboard/BusinessTab";
+import { Skeleton } from "boneyard-js/react";
 
 const STAGGER = {
   sales: 30_000,
@@ -113,13 +114,14 @@ export function Dashboard() {
   };
 
   return (
+  <Skeleton name="dashboard" loading={weeklySales.isLoading || dayClose.isLoading} select="viewport">
     <div className="space-y-3">
       <PageHeader
         title="Dashboard"
         description="A quick read on today’s sales, stock pressure, and operational alerts."
         accent="slate"
       >
-        <Tabs
+        <TabsLegacy
           items={DASH_TABS}
           value={dashTab}
           onChange={setDashTab}
@@ -156,5 +158,6 @@ export function Dashboard() {
         <InventoryTab />
       )}
     </div>
+  </Skeleton>
   );
 }

@@ -4,6 +4,7 @@ import { RefreshCw, FileText } from "lucide-react";
 import { DataTable, Button, EmptyState, Select, type ColumnDef } from "../../components/ui";
 import { ipc, type LogEntry } from "../lib/ipc";
 import { extractError } from "../../lib/extractError";
+import { Skeleton } from "boneyard-js/react";
 
 const LEVEL_OPTIONS = [
   { value: "all", label: "All levels" },
@@ -53,6 +54,7 @@ export function AdminLogs() {
   );
 
   return (
+  <Skeleton name="admin-logs" loading={isLoading} select="viewport">
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Admin logs</h2>
@@ -98,6 +100,7 @@ export function AdminLogs() {
         />
       )}
     </div>
+  </Skeleton>
   );
 }
 

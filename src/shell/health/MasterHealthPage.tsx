@@ -6,6 +6,7 @@ import { fetchMasterHealth } from "./api";
 import { SkeletonRow } from "../../components/ui/SkeletonRow";
 import { Button } from "../../components/ui/Button";
 import { extractError } from "../../lib/extractError";
+import { Skeleton } from "boneyard-js/react";
 
 export function MasterHealthPage() {
   const [data, setData] = useState<MasterHealth | null>(null);
@@ -36,6 +37,7 @@ export function MasterHealthPage() {
   if (!data) return <SkeletonRow count={6} />;
 
   return (
+  <Skeleton name="health" loading={!data} select="viewport">
     <div className="space-y-4 text-sm">
       <header className="flex items-center justify-between">
         <h3 className="text-base font-semibold">Master health</h3>
@@ -106,6 +108,7 @@ export function MasterHealthPage() {
         checked at {data.checked_at}
       </div>
     </div>
+  </Skeleton>
   );
 }
 
