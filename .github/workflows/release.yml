@@ -19,12 +19,12 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             openssl_triplet: x64-windows-static
-            asset_glob: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            asset_glob: target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             artifact_name: windows-x86_64
           - os: windows-latest
             target: aarch64-pc-windows-msvc
             openssl_triplet: arm64-windows-static
-            asset_glob: src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+            asset_glob: target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
             artifact_name: windows-aarch64
           - os: macos-latest
             target: aarch64-apple-darwin
@@ -104,13 +104,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-output
-          app_path="$(find src-tauri/target -path '*/release/bundle/macos/*.app' -type d | sort | head -n 1)"
+          echo "=== Tauri bundle output tree ==="
+          find target -maxdepth 6 \( -name '*.app' -o -name '*.dmg' -o -name 'bundle' \) -print 2>/dev/null || echo "(no bundle output found)"
+          app_path="$(find target -path '*/release/bundle/macos/*.app' -type d | sort | head -n 1)"
           if [[ -z "$app_path" ]]; then
-            echo "No .app bundle found under src-tauri/target" >&2
-            find src-tauri/target -maxdepth 5 -type d -name bundle -print >&2 || true
+            echo "ERROR: No .app bundle found under target/*/release/bundle/macos/" >&2
+            echo "Listing all bundle directories:" >&2
+            find target -maxdepth 6 -type d -name 'bundle' -exec ls -la {} \; 2>/dev/null || true
             exit 1
           fi
+          echo "=== Packing: $app_path ==="
           tar -C "$(dirname "$app_path")" -czf "release-output/$(basename "$app_path").tar.gz" "$(basename "$app_path")"
+          echo "=== Packed ==="
+          ls -la release-output/
 
       - uses: actions/upload-artifact@v4
         with:
