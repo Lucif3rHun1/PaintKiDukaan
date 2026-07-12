@@ -215,6 +215,58 @@ pub fn run() {
                 }
             }
 
+            use std::sync::mpsc;
+            let (tx, rx) = mpsc::channel::<String>();
+            app.manage(commands::updater::RetryChannel(tx));
+
+            #[cfg(not(debug_assertions))]
+            {
+                use tauri::WebviewUrl;
+                use tauri::WebviewWindowBuilder;
+
+                let splash_label = "splash";
+                let _splash = WebviewWindowBuilder::new(
+                    app,
+                    splash_label,
+                    WebviewUrl::App("splash.html".into()),
+                )
+                .title("PaintKiDukaan")
+                .inner_size(480.0, 320.0)
+                .decorations(false)
+                .always_on_top(true)
+                .resizable(false)
+                .skip_taskbar(true)
+                .build()?;
+
+                let version = env!("CARGO_PKG_VERSION");
+                if let Some(splash) = app.get_webview_window(splash_label) {
+                    let _ = splash.eval(&format!("window.__setVersion('{version}')"));
+                }
+
+                let handle_clone = handle.clone();
+                let splash_label_owned = splash_label.to_string();
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async {
+                        commands::updater::run_update_gate(
+                            handle_clone,
+                            splash_label_owned,
+                            rx,
+                        )
+                        .await;
+                    });
+                });
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                drop(rx);
+                if let Some(main) = app.get_webview_window("main") {
+                    let _ = main.show();
+                    let _ = main.set_focus();
+                }
+            }
+
             log::info!("Setup complete");
             Ok(())
         })
@@ -449,6 +501,8 @@ pub fn run() {
             commands::updater::cmd_download_update,
             commands::updater::cmd_install_update,
             commands::updater::cmd_current_target,
+            commands::updater::cmd_retry_update,
+            commands::updater::cmd_quit_app,
             // Session logs (Slice D)
             session::cmd_read_session_logs,
         ])
