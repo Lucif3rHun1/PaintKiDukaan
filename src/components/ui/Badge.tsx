@@ -1,36 +1,77 @@
-import { cn } from "./cn";
+import { mergeProps } from "@base-ui/react/merge-props"
+import { useRender } from "@base-ui/react/use-render"
+import { cva, type VariantProps } from "class-variance-authority"
 
-interface Props {
-  children: React.ReactNode;
-  variant?: "default" | "success" | "warning" | "danger" | "muted" | "info" | "neutral";
-  size?: "sm" | "md";
-  className?: string;
-  onClick?: () => void;
+import { cn } from "./cn"
+
+const badgeVariants = cva(
+  "group/badge inline-flex shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        secondary:
+          "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
+        destructive:
+          "bg-destructive/10 text-destructive focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
+        outline:
+          "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
+        ghost:
+          "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
+        link: "text-primary underline-offset-4 hover:underline",
+        success:
+          "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+        warning:
+          "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
+        danger:
+          "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300",
+        muted:
+          "border-transparent bg-muted text-muted-foreground",
+        info: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300",
+        neutral:
+          "border-transparent bg-secondary text-secondary-foreground",
+      },
+      size: {
+        sm: "h-5 px-1.5 text-[0.7rem]",
+        md: "h-5 px-2 text-xs",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "md",
+    },
+  }
+)
+
+interface BadgeProps extends useRender.ComponentProps<"span">, VariantProps<typeof badgeVariants> {
+  onClick?: () => void
 }
 
-const variants = {
-  default: "bg-muted text-muted-foreground",
-  success: "bg-success/25 text-success ring-1 ring-inset ring-success/40",
-  warning: "bg-warning/25 text-warning ring-1 ring-inset ring-warning/40",
-  danger: "bg-destructive/20 text-destructive ring-1 ring-inset ring-destructive/40 font-semibold",
-  muted: "bg-muted text-muted-foreground",
-  info: "bg-info/25 text-info ring-1 ring-inset ring-info/40",
-  neutral: "bg-muted text-muted-foreground",
-};
-
-export function Badge({ children, variant = "default", size = "md", className, onClick }: Props) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full font-medium",
-        size === "sm" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-xs",
-        variants[variant],
-        onClick && "cursor-pointer",
-        className,
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </span>
-  );
+function Badge({
+  className,
+  variant = "default",
+  size = "md",
+  render,
+  onClick,
+  ...props
+}: BadgeProps) {
+  return useRender({
+    defaultTagName: "span",
+    props: mergeProps<"span">(
+      {
+        className: cn(badgeVariants({ variant, size }), className),
+        onClick,
+        role: onClick ? "button" : undefined,
+        tabIndex: onClick ? 0 : undefined,
+      },
+      props
+    ),
+    render,
+    state: {
+      slot: "badge",
+      variant,
+    },
+  })
 }
+
+export { Badge, badgeVariants, type BadgeProps }
