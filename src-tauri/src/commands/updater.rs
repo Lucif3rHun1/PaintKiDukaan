@@ -1,20 +1,20 @@
-// Custom updater with SHA-256 verification.
+// Custom updater with SHA-256 hash verification (not minisign).
 //
-// Replaces tauri-plugin-updater which uses minisign signature verification.
-// minisign required exact keypair synchronisation between CI secret and committed
-// pubkey — that ceremony kept failing. For an internal paint-shop POS we accept
-// TLS-protected downloads + SHA-256 hash comparison instead.
+// Flow: fetch latest.json → compare versions → download installer from GitHub
+// Releases → compute SHA-256 → compare to precomputed hash in latest.json →
+// install if match. Hash mismatch is a hard error (Retry / Quit on splash).
 //
-// Threat model: TLS protects the channel; SHA-256 protects against CDN tampering
-// (GitHub Releases + any future mirror). Costs zero key management.
+// Legacy note: previously used tauri-plugin-updater + minisign (updater.key /
+// TAURI_SIGNING_PRIVATE_KEY). That keypair ceremony kept failing; dropped in
+// favor of TLS + SHA-256. No signing keys required.
+//
+// Threat model: TLS protects the channel; SHA-256 protects against CDN
+// tampering (GitHub Releases + any future mirror). Zero key management.
 
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-
-fn is_trusted_update_url(url: &str) -> bool {
-    url.starts_with(ALLOWED_UPDATE_PREFIX)
-}
+use tauri::Manager;
 
 const LATEST_JSON_URL: &str =
     "https://github.com/Lucif3rHun1/PaintKiDukaan/releases/latest/download/latest.json";
@@ -22,6 +22,10 @@ const LATEST_JSON_URL: &str =
 /// Only allow downloads from our own GitHub Releases page.
 const ALLOWED_UPDATE_PREFIX: &str =
     "https://github.com/Lucif3rHun1/PaintKiDukaan/releases/download/";
+
+fn is_trusted_update_url(url: &str) -> bool {
+    url.starts_with(ALLOWED_UPDATE_PREFIX)
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateInfo {
@@ -48,7 +52,7 @@ pub struct DownloadResult {
     pub sha256: String,
 }
 
-fn current_target() -> &'static str {
+pub fn current_target() -> &'static str {
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     return "windows-x86_64";
     #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
@@ -75,8 +79,11 @@ fn is_newer(latest: &str, current: &str) -> bool {
     l.cmp(&c) == std::cmp::Ordering::Greater
 }
 
-#[tauri::command]
-pub async fn cmd_check_update() -> Result<UpdateInfo, String> {
+// ── Shared async functions (used by both gate and cmd wrappers) ──────────
+
+/// Fetch `latest.json` from GitHub Releases and compare versions.
+/// Each platform entry includes `url` + precomputed `sha256` (no minisign `.sig`).
+pub async fn check_update() -> Result<UpdateInfo, String> {
     let resp = reqwest::get(LATEST_JSON_URL)
         .await
         .map_err(|e| format!("fetch latest.json: {}", e))?;
@@ -115,16 +122,17 @@ pub async fn cmd_check_update() -> Result<UpdateInfo, String> {
     })
 }
 
-#[tauri::command]
-pub async fn cmd_download_update(url: String, expected_sha256: String) -> Result<DownloadResult, String> {
+/// Download installer from a trusted GitHub Releases URL, hash with SHA-256,
+/// and reject on mismatch. `expected_sha256` is the 64-char hex from `latest.json`.
+pub async fn download_update(url: &str, expected_sha256: &str) -> Result<DownloadResult, String> {
     if expected_sha256.len() != 64 || !expected_sha256.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("expected_sha256 must be 64-char hex".into());
     }
-    if !is_trusted_update_url(&url) {
+    if !is_trusted_update_url(url) {
         log::warn!("updater: rejected untrusted download URL: {url}");
         return Err("download URL not from trusted source".into());
     }
-    let resp = reqwest::get(&url)
+    let resp = reqwest::get(url)
         .await
         .map_err(|e| format!("download: {}", e))?;
     if !resp.status().is_success() {
@@ -154,8 +162,9 @@ pub async fn cmd_download_update(url: String, expected_sha256: String) -> Result
     })
 }
 
-#[tauri::command]
-pub async fn cmd_install_update(path: PathBuf, _app: tauri::AppHandle) -> Result<(), String> {
+/// Install a previously SHA-256-verified update from a temp path.
+/// Windows: spawn NSIS `/S`, then exit. macOS: extract `.app.tar.gz`, open, exit.
+pub fn install_update(path: &PathBuf) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("file not found: {}", path.display()));
     }
@@ -169,25 +178,21 @@ pub async fn cmd_install_update(path: PathBuf, _app: tauri::AppHandle) -> Result
     }
     #[cfg(target_os = "windows")]
     {
-        // NSIS installer: /S = silent install. Run detached so this command returns.
-        std::process::Command::new(&path)
+        std::process::Command::new(path)
             .args(["/S"])
             .spawn()
             .map_err(|e| format!("spawn installer: {}", e))?;
-        // Exit so the installer can replace our files.
         std::process::exit(0);
     }
     #[cfg(target_os = "macos")]
     {
-        // The CI bundles a .app.tar.gz. Extract it to /Applications/ then open
-        // the .app so Launch Services registers it.
         if path.extension().and_then(|s| s.to_str()) == Some("gz")
             && path.to_str().map(|s| s.ends_with(".app.tar.gz")).unwrap_or(false)
         {
             let app_dir = std::path::PathBuf::from("/Applications");
             let status = std::process::Command::new("tar")
                 .args(["-xzf"])
-                .arg(&path)
+                .arg(path)
                 .arg("-C")
                 .arg(&app_dir)
                 .status()
@@ -195,7 +200,6 @@ pub async fn cmd_install_update(path: PathBuf, _app: tauri::AppHandle) -> Result
             if !status.success() {
                 return Err(format!("tar extract failed: {:?}", status.code()));
             }
-            // Find the .app inside /Applications matching the bundle name.
             let stem = path
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -214,11 +218,11 @@ pub async fn cmd_install_update(path: PathBuf, _app: tauri::AppHandle) -> Result
                 .map_err(|e| format!("open: {}", e))?;
         } else {
             std::process::Command::new("open")
-                .arg(&path)
+                .arg(path)
                 .spawn()
                 .map_err(|e| format!("open: {}", e))?;
         }
-        Ok(())
+        std::process::exit(0);
     }
     #[cfg(target_os = "linux")]
     {
@@ -226,7 +230,227 @@ pub async fn cmd_install_update(path: PathBuf, _app: tauri::AppHandle) -> Result
     }
 }
 
+// ── Splash gate support ─────────────────────────────────────────────────
+
+/// Channel for splash Retry/Quit buttons → gate thread.
+pub struct RetryChannel(pub std::sync::mpsc::Sender<String>);
+
+#[tauri::command]
+pub fn cmd_retry_update(state: tauri::State<RetryChannel>) -> Result<(), String> {
+    state
+        .0
+        .send("retry".into())
+        .map_err(|e| format!("channel send: {e}"))
+}
+
+#[tauri::command]
+pub fn cmd_quit_app(app: tauri::AppHandle, state: tauri::State<RetryChannel>) -> Result<(), String> {
+    let _ = state.0.send("quit".into());
+    app.exit(0);
+    Ok(())
+}
+
+fn show_main(app: &tauri::AppHandle, splash_label: &str) {
+    if let Some(splash) = app.get_webview_window(splash_label) {
+        let _ = splash.close();
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+}
+
+/// Release-build splash gate: check → download+SHA-256 verify → install.
+/// Loops on Retry; soft-continues to main on download timeout; hard-errors on hash mismatch.
+pub async fn run_update_gate(
+    app: tauri::AppHandle,
+    splash_label: String,
+    rx: std::sync::mpsc::Receiver<String>,
+) {
+    loop {
+        // ── Checking ──────────────────────────────────────────────
+        if let Some(splash) = app.get_webview_window(&splash_label) {
+            let _ = splash.eval("window.__showChecking()");
+        }
+
+        let check = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            check_update(),
+        )
+        .await;
+
+        let update_info = match check {
+            Ok(Ok(info)) => info,
+            Ok(Err(e)) => {
+                let msg = e.replace('\'', "\\'");
+                if let Some(splash) = app.get_webview_window(&splash_label) {
+                    let _ = splash.eval(&format!("window.__showError('{msg}')"));
+                }
+                match rx.recv() {
+                    Ok(m) if m == "retry" => continue,
+                    _ => { show_main(&app, &splash_label); return; }
+                }
+            }
+            Err(_) => {
+                if let Some(splash) = app.get_webview_window(&splash_label) {
+                    let _ = splash.eval("window.__showError('Update check timed out')");
+                }
+                match rx.recv() {
+                    Ok(m) if m == "retry" => continue,
+                    _ => { show_main(&app, &splash_label); return; }
+                }
+            }
+        };
+
+        if !update_info.available {
+            log::info!("updater: no update ({})", update_info.current_version);
+            show_main(&app, &splash_label);
+            return;
+        }
+
+        log::info!(
+            "updater: {} → {}",
+            update_info.current_version,
+            update_info.latest_version
+        );
+
+        // ── Downloading ───────────────────────────────────────────
+        if let Some(splash) = app.get_webview_window(&splash_label) {
+            let _ = splash.eval("window.__showDownloading()");
+        }
+
+        let target = current_target();
+        let platform = match update_info.platforms.iter().find(|p| p.key == target) {
+            Some(p) => p,
+            None => {
+                if let Some(splash) = app.get_webview_window(&splash_label) {
+                    let _ = splash.eval(&format!(
+                        "window.__showError('No update for {target}')"
+                    ));
+                }
+                show_main(&app, &splash_label);
+                return;
+            }
+        };
+
+        let dl = tokio::time::timeout(
+            std::time::Duration::from_secs(300),
+            download_update(&platform.url, &platform.sha256),
+        )
+        .await;
+
+        let download = match dl {
+            Ok(Ok(d)) => d,
+            Ok(Err(e)) => {
+                let msg = e.replace('\'', "\\'");
+                if let Some(splash) = app.get_webview_window(&splash_label) {
+                    let _ = splash.eval(&format!("window.__showError('{msg}')"));
+                }
+                // Download failure: soft-continue (show main)
+                show_main(&app, &splash_label);
+                return;
+            }
+            Err(_) => {
+                if let Some(splash) = app.get_webview_window(&splash_label) {
+                    let _ = splash.eval("window.__showError('Download timed out (5 min)')");
+                }
+                show_main(&app, &splash_label);
+                return;
+            }
+        };
+
+        // ── Installing ────────────────────────────────────────────
+        if let Some(splash) = app.get_webview_window(&splash_label) {
+            let _ = splash.eval("window.__showInstalling()");
+        }
+
+        match install_update(&download.path) {
+            Ok(()) => {
+                // install_update calls process::exit on success — never reached
+                log::info!("updater: install complete");
+                show_main(&app, &splash_label);
+                return;
+            }
+            Err(e) => {
+                let msg = e.replace('\'', "\\'");
+                if let Some(splash) = app.get_webview_window(&splash_label) {
+                    let _ = splash.eval(&format!("window.__showError('{msg}')"));
+                }
+                match rx.recv() {
+                    Ok(m) if m == "retry" => continue,
+                    _ => { show_main(&app, &splash_label); return; }
+                }
+            }
+        }
+    }
+}
+
+// ── Thin command wrappers (IPC surface) ─────────────────────────────────
+
+#[tauri::command]
+pub async fn cmd_check_update() -> Result<UpdateInfo, String> {
+    check_update().await
+}
+
+#[tauri::command]
+pub async fn cmd_download_update(url: String, expected_sha256: String) -> Result<DownloadResult, String> {
+    download_update(&url, &expected_sha256).await
+}
+
+#[tauri::command]
+pub async fn cmd_install_update(path: PathBuf, _app: tauri::AppHandle) -> Result<(), String> {
+    install_update(&path)
+}
+
 #[tauri::command]
 pub fn cmd_current_target() -> &'static str {
     current_target()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_newer_compares_semver() {
+        assert!(is_newer("0.1.24", "0.1.23"));
+        assert!(!is_newer("0.1.23", "0.1.23"));
+        assert!(!is_newer("0.1.22", "0.1.23"));
+        assert!(is_newer("0.2.0", "0.1.23"));
+        assert!(is_newer("1.0.0", "0.99.99"));
+    }
+
+    #[test]
+    fn is_newer_handles_v_prefix() {
+        assert!(is_newer("v0.1.24", "0.1.23"));
+        assert!(!is_newer("v0.1.23", "0.1.23"));
+    }
+
+    #[test]
+    fn is_trusted_url_valid() {
+        assert!(is_trusted_update_url(
+            "https://github.com/Lucif3rHun1/PaintKiDukaan/releases/download/v0.1.24/app.exe"
+        ));
+    }
+
+    #[test]
+    fn is_trusted_url_rejects_unknown_host() {
+        assert!(!is_trusted_update_url(
+            "https://evil.com/Lucif3rHun1/PaintKiDukaan/releases/download/v0.1.24/app.exe"
+        ));
+    }
+
+    #[test]
+    fn is_trusted_url_rejects_http() {
+        assert!(!is_trusted_update_url(
+            "http://github.com/Lucif3rHun1/PaintKiDukaan/releases/download/v0.1.24/app.exe"
+        ));
+    }
+
+    #[test]
+    fn current_target_returns_non_empty() {
+        let target = current_target();
+        assert!(!target.is_empty());
+        assert!(target.contains("-"));
+    }
 }
