@@ -18,6 +18,9 @@ pub use error::AppError;
 
 pub mod obs;
 
+// Updater Ed25519 public key (embedded at build time; private key in CI secret).
+pub mod updater_key;
+
 #[cfg(target_os = "windows")]
 pub static JOB_OBJECT: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
 
