@@ -13,6 +13,7 @@
 
 use std::path::{Path, PathBuf};
 use base64::Engine;
+use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::Manager;
@@ -55,7 +56,7 @@ pub fn verify_payload_signature(payload: &[u8], sig_b64: &str) -> Result<(), Str
 fn verify_payload_signature_with_key(
     payload: &[u8],
     sig_b64: &str,
-    key: &ed25519_dalek::VerifyingKey,
+    key: &VerifyingKey,
 ) -> Result<(), String> {
     use ed25519_dalek::{Signature, Verifier};
 
@@ -77,6 +78,126 @@ fn verify_payload_signature_with_key(
 
     key.verify(payload, &sig)
         .map_err(|_| "signature does not match payload under public key".to_string())
+}
+
+/// Pending-update marker written by stage_update and consumed by
+/// apply_pending_update on next launch. `signature_verified` is a defensive
+/// double-check — apply_pending_update refuses to install unless this field
+/// is true in the on-disk JSON, even if the staging files look intact.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PendingUpdate {
+    pub version: String,
+    pub staging_path: PathBuf,
+    pub sha256: String,
+    pub signature_verified: bool,
+    pub staged_at_unix: i64,
+}
+
+/// Download `bundle_url` from a trusted GitHub Releases URL, verify SHA-256
+/// against `expected_sha256_hex`, verify Ed25519 signature against the embedded
+/// production public key, and stage the validated payload under
+/// `staging_root/<version>/app.zip`. Writes a `pending_update.json` marker that
+/// apply_pending_update reads on next launch.
+///
+/// Hard-rejects on any check failure; no staged payload, no marker, no install.
+/// The temp `.tmp` file is removed on every failure path to keep the staging
+/// dir clean for retries.
+pub async fn stage_update(
+    target_version: &str,
+    bundle_url: &str,
+    expected_sha256_hex: &str,
+    sig_b64: &str,
+    staging_root: &Path,
+) -> Result<PathBuf, String> {
+    if !is_trusted_update_url(bundle_url) {
+        return Err("download URL not from trusted source".into());
+    }
+    if expected_sha256_hex.len() != 64 || !expected_sha256_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("expected_sha256 must be 64-char hex".into());
+    }
+    let resp = reqwest::get(bundle_url)
+        .await
+        .map_err(|e| format!("download: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("download HTTP {}", resp.status()));
+    }
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("read body: {}", e))?;
+
+    stage_update_with_key(
+        target_version,
+        &bytes,
+        expected_sha256_hex,
+        sig_b64,
+        staging_root,
+        &updater_key::verifying_key(),
+    )
+    .await
+}
+
+/// Inner stage_update that takes pre-fetched bytes + an injected VerifyingKey,
+/// so unit tests can sign with a throwaway keypair and assert the SHA-256 /
+/// Ed25519 / staging-dir / marker behaviour end-to-end without standing up an
+/// HTTP server.
+pub(crate) async fn stage_update_with_key(
+    target_version: &str,
+    payload: &[u8],
+    expected_sha256_hex: &str,
+    sig_b64: &str,
+    staging_root: &Path,
+    key: &VerifyingKey,
+) -> Result<PathBuf, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let version_dir = staging_root.join(target_version);
+    std::fs::create_dir_all(&version_dir)
+        .map_err(|e| format!("create staging dir: {}", e))?;
+
+    let tmp_path = version_dir.join("app.zip.tmp");
+    std::fs::write(&tmp_path, payload).map_err(|e| format!("write tmp: {}", e))?;
+
+    // SHA-256 check
+    let mut hasher = Sha256::new();
+    hasher.update(payload);
+    let actual_sha256 = hex::encode(hasher.finalize());
+    if actual_sha256.to_lowercase() != expected_sha256_hex.to_lowercase() {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(format!(
+            "SHA-256 mismatch\n  expected: {}\n  actual:   {}",
+            expected_sha256_hex, actual_sha256
+        ));
+    }
+
+    // Ed25519 check — uses the inner helper so tests can inject a key.
+    if let Err(e) = verify_payload_signature_with_key(payload, sig_b64, key) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(format!("signature verification failed: {}", e));
+    }
+
+    let final_path = version_dir.join("app.zip");
+    std::fs::rename(&tmp_path, &final_path).map_err(|e| format!("rename tmp → final: {}", e))?;
+
+    let staged_at_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let marker = PendingUpdate {
+        version: target_version.to_string(),
+        staging_path: final_path.clone(),
+        sha256: actual_sha256,
+        signature_verified: true,
+        staged_at_unix,
+    };
+
+    let marker_path = staging_root.join("pending_update.json");
+    let json = serde_json::to_string_pretty(&marker)
+        .map_err(|e| format!("serialize marker: {}", e))?;
+    std::fs::write(&marker_path, json).map_err(|e| format!("write marker: {}", e))?;
+
+    Ok(final_path)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -555,6 +676,19 @@ mod tests {
         SigningKey::generate(&mut csprng)
     }
 
+    fn sha256_hex(bytes: &[u8]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        hex::encode(hasher.finalize())
+    }
+
+    fn tokio_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build test runtime")
+    }
+
     #[test]
     fn verify_valid_signature_passes() {
         // Sign with a throwaway keypair, verify through the inner helper
@@ -631,5 +765,191 @@ mod tests {
             result.is_err(),
             "production key must reject signatures from a different private seed"
         );
+    }
+
+    #[test]
+    fn stage_succeeds_with_valid_inputs() {
+        let runtime = tokio_runtime();
+        runtime.block_on(async {
+            let staging = tempfile::tempdir().unwrap();
+            let staging_root = staging.path();
+
+            let signing = fresh_keypair();
+            let payload = b"PK fake app bundle v0.1.35\n".repeat(64);
+            let sha = sha256_hex(&payload);
+            let sig = signing.sign(&payload);
+            let sig_b64 = b64(&sig.to_bytes());
+
+            let final_path = stage_update_with_key(
+                "0.1.35",
+                &payload,
+                &sha,
+                &sig_b64,
+                staging_root,
+                &signing.verifying_key(),
+            )
+            .await
+            .expect("valid signed payload must stage cleanly");
+
+            assert!(final_path.exists(), "app.zip must exist on success");
+            assert!(
+                final_path.ends_with("app.zip"),
+                "final path must end with app.zip"
+            );
+            assert_eq!(
+                std::fs::read(&final_path).unwrap(),
+                payload,
+                "staged bytes must match input bytes"
+            );
+
+            let marker_path = staging_root.join("pending_update.json");
+            assert!(marker_path.exists(), "marker must be written");
+            let marker_text = std::fs::read_to_string(&marker_path).unwrap();
+            let marker: PendingUpdate =
+                serde_json::from_str(&marker_text).expect("marker must parse as PendingUpdate");
+            assert_eq!(marker.version, "0.1.35");
+            assert_eq!(marker.sha256, sha);
+            assert!(
+                marker.signature_verified,
+                "marker must record signature_verified=true"
+            );
+            assert!(marker.staged_at_unix > 0, "staged_at_unix must be set");
+            assert_eq!(marker.staging_path, final_path);
+        });
+    }
+
+    #[test]
+    fn stage_fails_on_sha256_mismatch() {
+        let runtime = tokio_runtime();
+        runtime.block_on(async {
+            let staging = tempfile::tempdir().unwrap();
+            let staging_root = staging.path();
+
+            let signing = fresh_keypair();
+            let payload = b"payload that will not match claimed hash";
+            let wrong_sha = "0".repeat(64);
+            let sig = signing.sign(payload);
+            let sig_b64 = b64(&sig.to_bytes());
+
+            let result = stage_update_with_key(
+                "0.1.35",
+                payload,
+                &wrong_sha,
+                &sig_b64,
+                staging_root,
+                &signing.verifying_key(),
+            )
+            .await;
+
+            assert!(result.is_err(), "sha256 mismatch must fail");
+            assert!(
+                result.unwrap_err().contains("SHA-256"),
+                "error must mention SHA-256"
+            );
+
+            let version_dir = staging_root.join("0.1.35");
+            assert!(
+                !version_dir.join("app.zip.tmp").exists(),
+                "tmp file must be removed on failure"
+            );
+            assert!(
+                !staging_root.join("pending_update.json").exists(),
+                "no marker must be written on failure"
+            );
+        });
+    }
+
+    #[test]
+    fn stage_fails_on_sig_mismatch() {
+        let runtime = tokio_runtime();
+        runtime.block_on(async {
+            let staging = tempfile::tempdir().unwrap();
+            let staging_root = staging.path();
+
+            let legitimate = fresh_keypair();
+            let attacker = fresh_keypair();
+
+            let payload = b"payload signed by attacker, not by production CI";
+            let sha = sha256_hex(payload);
+            let bad_sig = attacker.sign(payload);
+            let bad_sig_b64 = b64(&bad_sig.to_bytes());
+
+            let result = stage_update_with_key(
+                "0.1.35",
+                payload,
+                &sha,
+                &bad_sig_b64,
+                staging_root,
+                &legitimate.verifying_key(),
+            )
+            .await;
+
+            assert!(result.is_err(), "foreign-key signature must fail");
+            assert!(
+                result.unwrap_err().contains("signature"),
+                "error must mention signature"
+            );
+
+            let version_dir = staging_root.join("0.1.35");
+            assert!(!version_dir.join("app.zip.tmp").exists());
+            assert!(!staging_root.join("pending_update.json").exists());
+        });
+    }
+
+    #[test]
+    fn stage_cleans_up_on_retry() {
+        let runtime = tokio_runtime();
+        runtime.block_on(async {
+            let staging = tempfile::tempdir().unwrap();
+            let staging_root = staging.path();
+
+            let signing = fresh_keypair();
+
+            let payload_v1 = b"first version".to_vec();
+            let sha_v1 = sha256_hex(&payload_v1);
+            let sig_v1 = signing.sign(&payload_v1);
+            let sig_v1_b64 = b64(&sig_v1.to_bytes());
+            stage_update_with_key(
+                "0.1.35",
+                &payload_v1,
+                &sha_v1,
+                &sig_v1_b64,
+                staging_root,
+                &signing.verifying_key(),
+            )
+            .await
+            .expect("first stage must succeed");
+
+            let final_v1 = staging_root.join("0.1.35").join("app.zip");
+            assert!(final_v1.exists());
+
+            let payload_v2 = b"second version with more bytes".repeat(8);
+            let sha_v2 = sha256_hex(&payload_v2);
+            let sig_v2 = signing.sign(&payload_v2);
+            let sig_v2_b64 = b64(&sig_v2.to_bytes());
+            let final_v2 = stage_update_with_key(
+                "0.1.35",
+                &payload_v2,
+                &sha_v2,
+                &sig_v2_b64,
+                staging_root,
+                &signing.verifying_key(),
+            )
+            .await
+            .expect("second stage must succeed");
+
+            assert_eq!(
+                std::fs::read(&final_v2).unwrap(),
+                payload_v2,
+                "second stage must overwrite first"
+            );
+            assert!(!staging_root.join("0.1.35").join("app.zip.tmp").exists());
+
+            let marker: PendingUpdate = serde_json::from_str(
+                &std::fs::read_to_string(staging_root.join("pending_update.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(marker.sha256, sha_v2);
+        });
     }
 }
