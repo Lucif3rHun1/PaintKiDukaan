@@ -28,6 +28,14 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: https://ipc.localhost https://github.com https://*.githubusercontent.com; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "${TAURI_UPDATER_PUBKEY}",
+      "endpoints": [
+        "https://github.com/Lucif3rHun1/PaintKiDukaan/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg", "app"],
