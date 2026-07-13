@@ -11,7 +11,7 @@
 // Threat model: TLS protects the channel; SHA-256 protects against CDN
 // tampering (GitHub Releases + any future mirror). Zero key management.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::Manager;
@@ -162,20 +162,22 @@ pub async fn download_update(url: &str, expected_sha256: &str) -> Result<Downloa
     })
 }
 
+fn ensure_path_in_temp_dir(path: &Path) -> Result<(), String> {
+    let temp_dir = std::env::temp_dir();
+    if !path.starts_with(&temp_dir) {
+        log::warn!("updater: rejected install path outside temp_dir: {}", path.display());
+        return Err("install path must be in system temp directory".into());
+    }
+    Ok(())
+}
+
 /// Install a previously SHA-256-verified update from a temp path.
 /// Windows: spawn NSIS `/S`, then exit. macOS: extract `.app.tar.gz`, open, exit.
 pub fn install_update(path: &PathBuf) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("file not found: {}", path.display()));
     }
-    let temp_dir = std::env::temp_dir();
-    match path.canonicalize().and_then(|p| Ok(p.starts_with(&temp_dir))) {
-        Ok(true) => {}
-        _ => {
-            log::warn!("updater: rejected install path outside temp_dir: {}", path.display());
-            return Err("install path must be in system temp directory".into());
-        }
-    }
+    ensure_path_in_temp_dir(path)?;
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new(path)
@@ -453,4 +455,28 @@ mod tests {
         assert!(!target.is_empty());
         assert!(target.contains("-"));
     }
+
+    #[test]
+    fn ensure_path_in_temp_dir_accepts_path_under_temp_dir() {
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_path_buf();
+        assert!(
+            ensure_path_in_temp_dir(&path).is_ok(),
+            "a freshly-created tempfile lives under std::env::temp_dir() and must pass the check"
+        );
+    }
+
+    #[test]
+    fn ensure_path_in_temp_dir_rejects_path_outside_temp_dir() {
+        let path = PathBuf::from(if cfg!(target_os = "windows") {
+            r"C:\Windows\System32\drivers\etc\hosts"
+        } else {
+            "/etc/hosts"
+        });
+        assert!(
+            ensure_path_in_temp_dir(&path).is_err(),
+            "a path outside std::env::temp_dir() must be rejected"
+        );
+    }
+
 }
