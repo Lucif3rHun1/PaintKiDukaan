@@ -63,6 +63,22 @@ fn log_frontend(level: String, message: String) -> Result<(), String> {
 }
 
 pub fn run() {
+    // ── Self-update: apply pending staged update before anything else ──
+    // If apply_pending_update succeeds, the new version has been spawned
+    // detached and we must exit immediately so the old process doesn't keep
+    // running. If no pending update exists, fall through to normal startup.
+    match commands::updater::apply_pending_update_for_running_process() {
+        commands::updater::ApplyOutcome::Applied => {
+            log::info!("updater: applied staged update; exiting old process");
+            std::process::exit(0);
+        }
+        commands::updater::ApplyOutcome::Failed(reason) => {
+            log::warn!("updater: apply_pending_update failed: {reason}");
+            // Continue with old version — don't strand the user.
+        }
+        commands::updater::ApplyOutcome::NoPending => {}
+    }
+
     #[cfg(target_os = "windows")]
     unsafe {
         use windows::Win32::Foundation::HANDLE;
@@ -552,6 +568,7 @@ pub fn run() {
             commands::updater::cmd_current_target,
             commands::updater::cmd_retry_update,
             commands::updater::cmd_quit_app,
+            commands::updater::cmd_quit_after_update,
             // Session logs (Slice D)
             session::cmd_read_session_logs,
         ])

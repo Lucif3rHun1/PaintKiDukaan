@@ -347,6 +347,36 @@ fn extract_zip(zip_path: &Path, dest_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Default staging root: `<data_local_dir>/in.paintkiduakan.master/staging/`.
+/// Matches the project's existing app-data-dir convention used by lib.rs.
+pub fn default_staging_root() -> Option<PathBuf> {
+    dirs::data_local_dir().map(|d| d.join(crate::obs!("in.paintkiduakan.master")).join("staging"))
+}
+
+/// Run apply_pending_update against the running process's install dir and the
+/// default staging root. Convenience for lib.rs startup wiring — avoids
+/// re-implementing `current_exe().parent()` + `default_staging_root()` at every
+/// call site.
+pub fn apply_pending_update_for_running_process() -> ApplyOutcome {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => return ApplyOutcome::Failed(format!("current_exe: {}", e)),
+    };
+    let install_dir = match exe.parent() {
+        Some(p) => p.to_path_buf(),
+        None => return ApplyOutcome::Failed("current_exe has no parent".into()),
+    };
+    let current_exe_name = match exe.file_name() {
+        Some(n) => n.to_string_lossy().into_owned(),
+        None => return ApplyOutcome::Failed("current_exe has no file_name".into()),
+    };
+    let staging_root = match default_staging_root() {
+        Some(p) => p,
+        None => return ApplyOutcome::Failed("could not resolve data_local_dir".into()),
+    };
+    apply_pending_update(&install_dir, &current_exe_name, &staging_root)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateInfo {
     pub available: bool,
@@ -576,6 +606,25 @@ pub fn cmd_quit_app(app: tauri::AppHandle, state: tauri::State<RetryChannel>) ->
     let _ = state.0.send("quit".into());
     app.exit(0);
     Ok(())
+}
+
+/// User-initiated "Restart to apply" command. Calls apply_pending_update and,
+/// if a staged update was successfully applied, exits the old process so the
+/// newly-spawned detached process takes over. Returns the outcome as a string
+/// for the frontend to display.
+#[tauri::command]
+pub fn cmd_quit_after_update(app: tauri::AppHandle) -> Result<String, String> {
+    match apply_pending_update_for_running_process() {
+        ApplyOutcome::Applied => {
+            log::info!("updater: cmd_quit_after_update applied; exiting");
+            // Brief sleep lets the IPC reply reach the frontend before exit.
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            app.exit(0);
+            Ok("applied".into())
+        }
+        ApplyOutcome::NoPending => Ok("no_pending".into()),
+        ApplyOutcome::Failed(reason) => Err(reason),
+    }
 }
 
 fn show_main(app: &tauri::AppHandle, splash_label: &str) {
