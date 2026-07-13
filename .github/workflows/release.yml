@@ -98,6 +98,47 @@ jobs:
       - name: Build Tauri app
         run: pnpm tauri build --target ${{ matrix.target }}
 
+      # Self-update: produce a signed bare-app zip alongside the NSIS installer.
+      # The signed zip is what existing users receive via in-app self-update
+      # (no NSIS spawn → no SmartScreen → no error 4551).
+      - name: Pack bare app bundle for self-update
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-output
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            release_dir="target/${{ matrix.target }}/release"
+            exe_name="$(ls "$release_dir"/*.exe | grep -v -i installer | head -n 1 | xargs -n 1 basename)"
+            cd "$release_dir"
+            zip -r "../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip" \
+              "$exe_name" assets 2>/dev/null || \
+              zip -r "../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip" \
+              "$exe_name"
+          else
+            app_path="$(find target -path '*/release/bundle/macos/*.app' -type d | sort | head -n 1)"
+            cd "$(dirname "$app_path")"
+            zip -r "../../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip" \
+              "$(basename "$app_path")"
+          fi
+          echo "=== Self-update bundles ==="
+          ls -la release-output/*.zip 2>/dev/null || echo "no zip produced"
+
+      - name: Sign self-update bundles with Ed25519
+        if: env.UPDATER_SIGNING_KEY != ''
+        shell: bash
+        env:
+          UPDATER_SIGNING_KEY: ${{ secrets.UPDATER_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          for zip in release-output/*.zip; do
+            [ -e "$zip" ] || continue
+            sig="$(python3 scripts/sign-ed25519.py "$UPDATER_SIGNING_KEY" "$zip")"
+            echo "${sig}" > "${zip}.sig"
+            echo "signed: $zip ($(wc -c < "$zip") bytes, sig ${#sig} chars)"
+          done
+          echo "=== Signed bundles ==="
+          ls -la release-output/
+
       - name: Pack macOS app bundle
         if: runner.os == 'macOS'
         shell: bash
@@ -202,6 +243,37 @@ jobs:
             }
           }
           EOF
+
+          # Add self-update signed-bundle fields if a zip + .sig exists for this
+          # platform. JSON Merge Patch via python (no jq dependency).
+          for key in macos-aarch64 macos-x86_64 windows-x86_64 windows-aarch64; do
+            zip_name="PaintKiDukaan_${version}_${key}.zip"
+            zip_path="release-artifacts/${key}/${zip_name}"
+            if [[ ! -f "$zip_path" ]]; then
+              for d in release-artifacts/*/; do
+                if [[ -f "${d}${zip_name}" ]]; then
+                  zip_path="${d}${zip_name}"
+                  break
+                fi
+              done
+            fi
+            if [[ -f "$zip_path" && -f "${zip_path}.sig" ]]; then
+              bundle_sha="$(sha256 "$zip_path")"
+              bundle_sig="$(cat "${zip_path}.sig")"
+              python3 - <<PYEOF
+          import json
+          with open("latest.json") as f:
+              data = json.load(f)
+          data["platforms"]["${key}"]["bundle_url"] = "${release_url}/${zip_name}"
+          data["platforms"]["${key}"]["bundle_sha256"] = "${bundle_sha}"
+          data["platforms"]["${key}"]["ed25519_sig"] = "${bundle_sig}"
+          with open("latest.json", "w") as f:
+              json.dump(data, f, indent=2)
+          PYEOF
+            fi
+          done
+
+          cat latest.json
 
       - name: Upload release assets
         env:
