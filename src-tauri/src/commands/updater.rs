@@ -1386,4 +1386,53 @@ mod tests {
         assert!(parsed.ed25519_sig.is_none(), "legacy has no ed25519_sig");
         assert!(parsed.bundle_sha256.is_none(), "legacy has no bundle_sha256");
     }
+
+    // --- E2E integration test (US-009) ---
+    // Tie stage_update + apply_pending_update together: stage a real signed
+    // zip, then apply it to a fake install dir, verify the new payload lands.
+
+    #[test]
+    fn e2e_stage_then_apply_replaces_install() {
+        let runtime = tokio_runtime();
+        runtime.block_on(async {
+            let install = tempfile::tempdir().unwrap();
+            let staging = tempfile::tempdir().unwrap();
+
+            std::fs::write(install.path().join("app.exe"), b"OLD VERSION").unwrap();
+
+            let new_payload = b"NEW VERSION INSTALLED VIA SELF-UPDATE";
+            let zip_path = staging.path().join("0.1.35").join("app.zip");
+            std::fs::create_dir_all(zip_path.parent().unwrap()).unwrap();
+            make_test_zip(&zip_path, &[("app.exe", new_payload)]);
+            let zip_bytes = std::fs::read(&zip_path).unwrap();
+
+            let signing = fresh_keypair();
+            let sha = sha256_hex(&zip_bytes);
+            let sig = signing.sign(&zip_bytes);
+            let sig_b64 = b64(&sig.to_bytes());
+
+            let staged = stage_update_with_key(
+                "0.1.35",
+                &zip_bytes,
+                &sha,
+                &sig_b64,
+                staging.path(),
+                &signing.verifying_key(),
+            )
+            .await
+            .expect("stage must succeed");
+
+            assert!(staged.exists());
+            assert_eq!(staged, zip_path, "staged path must match the pre-built zip");
+
+            let outcome = apply_pending_update(install.path(), "app.exe", staging.path());
+            assert_eq!(outcome, ApplyOutcome::Applied);
+
+            let installed = std::fs::read(install.path().join("app.exe")).unwrap();
+            assert_eq!(
+                installed, new_payload,
+                "applied payload must match the entry inside the staged zip"
+            );
+        });
+    }
 }
