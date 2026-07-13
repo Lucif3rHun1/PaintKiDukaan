@@ -6,7 +6,7 @@ use crate::commands::auth::AppState;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
-use crate::session::{current_user, require_role, Role};
+use crate::session::{current_user, require_auth, require_role, Role};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Category {
@@ -17,13 +17,12 @@ pub struct Category {
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_categories(state: State<'_, AppState>) -> AppResult<Vec<Category>> {
-    ipc_auth::authorize("list_categories", state.inner())?;
+    let _ = require_auth("list_categories", state.inner())?;
     let guard = state
         .db
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
             "SELECT id, name, is_active FROM categories WHERE is_active = 1 ORDER BY name COLLATE NOCASE",
@@ -124,13 +123,12 @@ pub fn cmd_list_categories_paged(
     state: State<'_, AppState>,
     query: ListQuery,
 ) -> AppResult<ListPage<Category>> {
-    ipc_auth::authorize("cmd_list_categories_paged", state.inner())?;
+    let _ = require_auth("cmd_list_categories_paged", state.inner())?;
     let guard = state
         .db
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
     let limit = query.limit.unwrap_or(25).clamp(1, 100);
     let offset = query.offset.unwrap_or(0).max(0);
     let sort_field = sanitize_sort(query.sort_field.as_deref(), CATEGORIES_SORT_WHITELIST, "name");

@@ -89,7 +89,7 @@ interface Props {
 }
 
 function lineTotal(line: CartLine): number {
-  return Math.max(0, line.qty * line.price - line.line_discount);
+  return Math.max(0, Math.round(line.qty * line.price) - line.line_discount);
 }
 
 function isFlagged(c: Customer | null): boolean {
@@ -193,7 +193,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
             setCustomer(c);
             setWalkIn(false);
           }
-        }).catch(() => {});
+        }).catch(() => { /* customer fetch failed; non-critical on detail */ });
       }
     }).catch((e: unknown) => {
       if (cancelled) return;
@@ -242,7 +242,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         setWalkIn(false);
         getCustomer(data.customerId)
           .then((c) => { if (c) setCustomer(c); })
-          .catch(() => {});
+          .catch(() => { /* customer fetch failed; non-critical on restore */ });
       }
       setTimeout(() => { restoringRef.current = false; }, 0);
     } catch {
@@ -264,7 +264,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
 
   // ---- Computed totals ----
   const subtotal = useMemo(
-    () => lines.reduce((s, l) => s + l.qty * l.price, 0),
+    () => lines.reduce((s, l) => s + Math.round(l.qty * l.price), 0),
     [lines],
   );
   const lineDiscountTotal = useMemo(
@@ -551,6 +551,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
           setAckFlag(false);
           void refreshRecent();
           void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+          void queryClient.invalidateQueries({ queryKey: ["sales-list"] });
           void resetDraft();
           resetDirty();
           if (shouldPrintAfterSaveRef.current) {

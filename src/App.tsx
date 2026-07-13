@@ -11,8 +11,9 @@ import { z } from "zod";
 import { FirstLaunch } from "./lib/security/firstLaunch";
 import { LockScreen } from "./lib/security/lockScreen";
 import { RestoreFromRecovery } from "./lib/security/restoreFromRecovery";
-import { type Bootstrap, useSecurity } from "./lib/security/state";
+import { type Bootstrap, type User, useSecurity } from "./lib/security/state";
 import { RoleGuard } from "./lib/security/roleGuard";
+import { queryClient } from "./lib/query/queryClient";
 
 /* ── Domain UI (Slice B) ─────────────────────────────────── */
 import { CustomerForm } from "./domain/customers/CustomerForm";
@@ -202,6 +203,7 @@ export default function App() {
   const session = useSecurity((s) => s.session);
   const setPhase = useSecurity((s) => s.setPhase);
   const setSession = useSecurity((s) => s.setSession);
+  const setLoginUsers = useSecurity((s) => s.setLoginUsers);
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [keystoreErrorReason, setKeystoreErrorReason] = useState<string | null>(null);
@@ -367,6 +369,17 @@ export default function App() {
   /* ── Lock action ───────────────────────────────────────── */
   async function lockNow() {
     try { await invoke("lock"); } finally {
+      queryClient.clear();
+      setSession(LOCKED_SESSION);
+      setPhase("locked");
+    }
+  }
+
+  async function logoutForSwitch() {
+    try {
+      setLoginUsers(await invoke<User[]>("logout_for_switch"));
+    } finally {
+      queryClient.clear();
       setSession(LOCKED_SESSION);
       setPhase("locked");
     }
@@ -488,7 +501,7 @@ export default function App() {
       bootstrapError={bootstrapError}
       onNavigate={navigate}
       onLock={lockNow}
-      onLogout={lockNow}
+      onLogout={logoutForSwitch}
     >
       {tab === "dashboard" && (
         <ErrorBoundary context="Dashboard">
@@ -499,6 +512,8 @@ export default function App() {
           </Suspense>
         </ErrorBoundary>
       )}
+      {tab === "sales" && (
+        <RoleGuard minRole="cashier">
       {tab === "sales" && salesRoute === "new" ? (
         <ErrorBoundary context="Sales — new">
           <Suspense fallback={<RouteFallback />}>
@@ -605,6 +620,10 @@ export default function App() {
           </ErrorBoundary>
         );
       })() : null}
+        </RoleGuard>
+      )}
+      {tab === "inward" && (
+        <RoleGuard minRole="cashier">
       {tab === "inward" && inwardRoute === "new" ? (
         <ErrorBoundary context="Inward — new">
           <Suspense fallback={<RouteFallback />}>
@@ -645,6 +664,8 @@ export default function App() {
           </ErrorBoundary>
         );
       })() : null}
+        </RoleGuard>
+      )}
       {tab === "sales-report" && (
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Reports">
@@ -668,7 +689,7 @@ export default function App() {
         </RoleGuard>
       )}
       {tab === "day-close" && (
-        <RoleGuard minRole="stocker">
+        <RoleGuard minRole="owner">
           <ErrorBoundary context="Close Day">
             <Suspense fallback={<RouteFallback />}>
               <div className="animate-in fade-in motion-reduce:animate-none duration-200">
@@ -724,34 +745,38 @@ export default function App() {
         </div>
       )}
       {tab === "vendors" && (
-        <ErrorBoundary context="Vendors">
-          <Suspense fallback={<RouteFallback />}>
-            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
-              <VendorList
-                role={role}
-                refreshKey={refreshKey}
-                onCreate={() => setVendorCreateOpen(true)}
-                onSelect={(v) => setVendorDetailTarget(v)}
-                onRecordPayment={(v) => setVendorPaymentTarget(v)}
-              />
-            </div>
-          </Suspense>
-        </ErrorBoundary>
+        <RoleGuard minRole="cashier">
+          <ErrorBoundary context="Vendors">
+            <Suspense fallback={<RouteFallback />}>
+              <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
+                <VendorList
+                  role={role}
+                  refreshKey={refreshKey}
+                  onCreate={() => setVendorCreateOpen(true)}
+                  onSelect={(v) => setVendorDetailTarget(v)}
+                  onRecordPayment={(v) => setVendorPaymentTarget(v)}
+                />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
+        </RoleGuard>
       )}
       {tab === "customers" && (
-        <ErrorBoundary context="Customers">
-          <Suspense fallback={<RouteFallback />}>
-            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
-              <CustomerList
-                role={role}
-                refreshKey={refreshKey}
-                onCreate={() => setCustomerCreateOpen(true)}
-                onSelect={(c) => setCustomerDetailTarget(c)}
-                onRecordPayment={(c) => setCustomerPaymentTarget(c)}
-              />
-            </div>
-          </Suspense>
-        </ErrorBoundary>
+        <RoleGuard minRole="cashier">
+          <ErrorBoundary context="Customers">
+            <Suspense fallback={<RouteFallback />}>
+              <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
+                <CustomerList
+                  role={role}
+                  refreshKey={refreshKey}
+                  onCreate={() => setCustomerCreateOpen(true)}
+                  onSelect={(c) => setCustomerDetailTarget(c)}
+                  onRecordPayment={(c) => setCustomerPaymentTarget(c)}
+                />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
+        </RoleGuard>
       )}
       {tab === "settings" && (
         <RoleGuard minRole="owner">

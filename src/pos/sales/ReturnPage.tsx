@@ -155,7 +155,7 @@ export default function ReturnPage({ user, onBack }: Props) {
   }, [markDirty]);
 
   const subtotal = useMemo(
-    () => lines.reduce((sum, line) => sum + Math.max(0, line.qty * line.price), 0),
+    () => lines.reduce((sum, line) => sum + Math.max(0, Math.round(line.qty * line.price)), 0),
     [lines],
   );
   const refundAmount = useMemo(
@@ -470,7 +470,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                           />
                         </td>
                         <td className="py-2 text-right font-medium">
-                          <Money paise={Math.max(0, line.qty * line.price)} />
+                          <Money paise={Math.max(0, Math.round(line.qty * line.price))} />
                         </td>
                         <td className="py-2 text-right">
                           <button

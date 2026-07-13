@@ -202,7 +202,7 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   for (const it of spec.sale.items) {
     itemIdx++;
     const qtyStr = `${it.qty}${it.unit_type ? " " + it.unit_type : ""}`;
-    const lineValue = Math.max(0, it.qty * it.price - it.line_discount);
+    const lineValue = Math.max(0, Math.round(it.qty * it.price) - it.line_discount);
     const nameLines: string[] = doc.splitTextToSize(it.display_name, nameColW);
     const skuLine = it.sku_code ? 1 : 0;
     const rowH = (nameLines.length + skuLine) * 4;
@@ -475,7 +475,7 @@ export function buildReturnReceiptPdf(spec: ReturnReceiptSpec): jsPDF {
       doc.text(nameLines[i], tableX + 2, y + i * 4);
     }
     doc.text(String(line.qty), colQty, y, { align: "right" });
-    doc.text(paiseToPdfRupees(line.qty * line.refund_paise), colAmt, y, { align: "right" });
+    doc.text(paiseToPdfRupees(Math.round(line.qty * line.refund_paise)), colAmt, y, { align: "right" });
     y += rowH;
   }
   y += 2;

@@ -5,8 +5,10 @@
 //! local `OnceCell`. In production (after A merges) `current_user` will be
 //! re-exported from Slice A's `auth` module and these tests will be replaced.
 
+use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
 use crate::obs;
+use crate::security::ipc_auth;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -99,6 +101,13 @@ pub fn require_role(user: &User, allowed: &[Role]) -> AppResult<()> {
     }
 }
 
+/// Combines ACL authorization + session check. Returns authenticated User.
+/// Every command that currently calls only `current_user()` should switch to this.
+pub fn require_auth(cmd_name: &str, state: &AppState) -> AppResult<User> {
+    ipc_auth::authorize_err(cmd_name, state)?;
+    current_user()
+}
+
 fn log_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_default()
@@ -186,7 +195,11 @@ pub struct LogEntry {
 /// Read the current session log and return the last `limit` lines (default 500).
 /// Owner-only in production; the frontend gate already enforces this.
 #[tauri::command(rename_all = "snake_case")]
-pub fn cmd_read_session_logs(limit: Option<usize>) -> Result<Vec<LogEntry>, String> {
+pub fn cmd_read_session_logs(
+    state: tauri::State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<LogEntry>, String> {
+    let _user = require_auth("cmd_read_session_logs", state.inner()).map_err(|e| e.to_string())?;
     let path = log_path();
     let content = match std::fs::read_to_string(&path) {
         Ok(c) => c,

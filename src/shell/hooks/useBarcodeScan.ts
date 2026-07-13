@@ -50,9 +50,7 @@ export function useBarcodeScan({ onScan, enabled = true }: UseBarcodeScanOptions
     });
     return () => {
       cancelled = true;
-      void unlistenPromise.then((fn) => {
-        if (!cancelled) fn();
-      });
+      void unlistenPromise.then((fn) => fn());
     };
   }, [enabled]);
 }

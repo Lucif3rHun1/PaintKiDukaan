@@ -1632,12 +1632,19 @@ pub fn list_returns(
             bound.push(Box::new(cid));
         }
         if let Some(d) = from_date {
-            sql.push_str(&format!(" AND sr.created_at >= ?{}", bound.len() + 1));
-            bound.push(Box::new(date_to_ms(d)));
+            if !d.is_empty() {
+                sql.push_str(&format!(" AND sr.created_at >= ?{}", bound.len() + 1));
+                bound.push(Box::new(date_to_ms(d)));
+            }
         }
         if let Some(d) = to_date {
-            sql.push_str(&format!(" AND sr.created_at <= ?{}", bound.len() + 1));
-            bound.push(Box::new(date_to_ms(d)));
+            if !d.is_empty() {
+                sql.push_str(&format!(
+                    " AND sr.created_at < ?{}",
+                    bound.len() + 1
+                ));
+                bound.push(Box::new(date_to_ms(d) + 86_400_000));
+            }
         }
         sql.push_str(&format!(" ORDER BY sr.id DESC LIMIT ?{}", bound.len() + 1));
         bound.push(Box::new(limit));
@@ -1762,17 +1769,21 @@ pub fn cmd_list_sales_paged(
             params.push(Box::new(cid));
         }
         if let Some(d) = query.filters.get("from_date").and_then(|v| v.as_str()) {
-            wheres.push("date >= ?".to_string());
-            params.push(Box::new(d.to_string()));
+            if !d.is_empty() {
+                wheres.push("date >= ?".to_string());
+                params.push(Box::new(d.to_string()));
+            }
         }
         if let Some(d) = query.filters.get("to_date").and_then(|v| v.as_str()) {
-            let upper = NaiveDate::parse_from_str(d, "%Y-%m-%d")
-                .ok()
-                .and_then(|nd| nd.succ_opt())
-                .map(|nd| nd.format("%Y-%m-%d").to_string())
-                .unwrap_or_else(|| d.to_string());
-            wheres.push("date < ?".to_string());
-            params.push(Box::new(upper));
+            if !d.is_empty() {
+                let upper = NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                    .ok()
+                    .and_then(|nd| nd.succ_opt())
+                    .map(|nd| nd.format("%Y-%m-%d").to_string())
+                    .unwrap_or_else(|| d.to_string());
+                wheres.push("date < ?".to_string());
+                params.push(Box::new(upper));
+            }
         }
 
         let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
@@ -1853,12 +1864,16 @@ pub fn cmd_list_sale_returns_paged(
             params.push(Box::new(cid));
         }
         if let Some(d) = query.filters.get("from_date").and_then(|v| v.as_str()) {
-            wheres.push("sr.created_at >= ?".to_string());
-            params.push(Box::new(date_to_ms(d)));
+            if !d.is_empty() {
+                wheres.push("sr.created_at >= ?".to_string());
+                params.push(Box::new(date_to_ms(d)));
+            }
         }
         if let Some(d) = query.filters.get("to_date").and_then(|v| v.as_str()) {
-            wheres.push("sr.created_at <= ?".to_string());
-            params.push(Box::new(date_to_ms(d)));
+            if !d.is_empty() {
+                wheres.push("sr.created_at < ?".to_string());
+                params.push(Box::new(date_to_ms(d) + 86_400_000));
+            }
         }
 
         let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
@@ -1933,12 +1948,16 @@ pub fn cmd_sales_period_summary(
         let mut params: Vec<Box<dyn rusqlite::ToSql>> =
             vec![Box::new(status_filter.to_string())];
         if let Some(d) = from_date.as_deref() {
-            wheres.push("date >= ?".to_string());
-            params.push(Box::new(d.to_string()));
+            if !d.is_empty() {
+                wheres.push("date >= ?".to_string());
+                params.push(Box::new(d.to_string()));
+            }
         }
         if let Some(d) = to_date.as_deref() {
-            wheres.push("date <= ?".to_string());
-            params.push(Box::new(d.to_string()));
+            if !d.is_empty() {
+                wheres.push("date <= ?".to_string());
+                params.push(Box::new(d.to_string()));
+            }
         }
         let where_suffix = format!(" WHERE {}", wheres.join(" AND "));
         let sql = format!(
@@ -1982,12 +2001,16 @@ pub fn cmd_sale_returns_period_summary(
         let mut wheres: Vec<String> = Vec::new();
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if let Some(d) = from_date.as_deref() {
-            wheres.push("created_at >= ?".to_string());
-            params.push(Box::new(date_to_ms(d)));
+            if !d.is_empty() {
+                wheres.push("created_at >= ?".to_string());
+                params.push(Box::new(date_to_ms(d)));
+            }
         }
         if let Some(d) = to_date.as_deref() {
-            wheres.push("created_at <= ?".to_string());
-            params.push(Box::new(date_to_ms(d)));
+            if !d.is_empty() {
+                wheres.push("created_at < ?".to_string());
+                params.push(Box::new(date_to_ms(d) + 86_400_000));
+            }
         }
         let where_suffix = if wheres.is_empty() {
             String::new()

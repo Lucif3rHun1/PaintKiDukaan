@@ -4,7 +4,7 @@ use crate::commands::auth::AppState;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
-use crate::session::{current_user, require_role, Role};
+use crate::session::{require_auth, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -81,8 +81,11 @@ pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResul
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("create_vendor", state.inner())?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
+    if payload.opening_balance.unwrap_or(0) != 0 {
+        require_role(&user, &[Role::Owner])?;
+    }
     if payload.name.trim().is_empty() {
         return Err(AppError::Validation("name is required".into()));
     }
@@ -132,7 +135,8 @@ pub fn list_vendors(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let user = require_auth("list_vendors", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     db.with_raw(|c| {
         let mut sql = String::from("SELECT id, name, phone, opening_balance_paise, is_active, created_at, updated_at, notes FROM vendors WHERE 1=1");
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -167,7 +171,8 @@ pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let user = require_auth("get_vendor", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
             "SELECT id, name, phone, opening_balance_paise, is_active, created_at, updated_at, notes FROM vendors WHERE id = ?1",
@@ -201,7 +206,7 @@ pub fn update_vendor(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("update_vendor", state.inner())?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     if let Some(Some(ref phone)) = &patch.phone {
         validate_phone(phone)?;
@@ -219,6 +224,9 @@ pub fn update_vendor(
         if let Some(v) = &patch.name { add!("name =", v.clone()) }
         if let Some(v) = &patch.phone { add!("phone =", v.clone()) }
         if let Some(v) = &patch.notes { add!("notes =", v.clone()) }
+        if patch.opening_balance.is_some() {
+            require_role(&user, &[Role::Owner])?;
+        }
         if let Some(v) = patch.opening_balance { add!("opening_balance_paise =", v) }
         if let Some(v) = patch.is_active { add!("is_active =", if v { 1_i64 } else { 0_i64 }) }
         if sets.is_empty() {
@@ -264,7 +272,7 @@ pub fn record_vendor_payment(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("record_vendor_payment", state.inner())?;
     require_role(&user, &[Role::Owner])?;
     if payload.amount <= 0 {
         return Err(AppError::Validation("amount must be > 0".into()));
@@ -310,7 +318,8 @@ pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<Vend
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let user = require_auth("vendor_outstanding", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     db.with_raw(|c| {
         let opening_balance: i64 = c.query_row(
             "SELECT COALESCE(opening_balance_paise, 0) FROM vendors WHERE id = ?1",
@@ -476,7 +485,8 @@ pub fn cmd_list_vendors_paged(
     state: State<'_, AppState>,
     query: ListQuery,
 ) -> AppResult<ListPage<Vendor>> {
-    let _ = current_user()?;
+    let user = require_auth("cmd_list_vendors_paged", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     let guard = state
         .db
         .lock()
@@ -551,7 +561,8 @@ pub struct VendorMetrics {
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn cmd_vendor_metrics(state: State<'_, AppState>) -> AppResult<VendorMetrics> {
-    let _ = current_user()?;
+    let user = require_auth("cmd_vendor_metrics", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     let guard = state
         .db
         .lock()

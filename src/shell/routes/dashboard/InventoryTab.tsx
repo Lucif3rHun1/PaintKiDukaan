@@ -25,13 +25,16 @@ import { listBrands, listItems } from "../../../domain/items/api";
 import { formatItemName } from "../../../domain/items/display";
 import { formatDateForDisplay, todayLocalYyyymmdd, shiftDaysLocal } from "../../../lib/date";
 import { useMediaQuery } from "../../../lib/hooks/useMediaQuery";
+import { useSecurity } from "../../../lib/security/state";
 
 
 const STAGGER_INVENTORY = 32_000;
 
 export function InventoryTab() {
   const brands = useQuery({ queryKey: ["brands"], queryFn: listBrands });
-  const [byCategoryMode, setByCategoryMode] = useState<"value" | "qty">("value");
+  const role = useSecurity((s) => s.session.user?.role);
+  const isStocker = role === "stocker";
+  const [byCategoryMode, setByCategoryMode] = useState<"value" | "qty">(isStocker ? "qty" : "value");
   const [fromDate, setFromDate] = useState(() => shiftDaysLocal(6));
   const [toDate, setToDate] = useState(() => todayLocalYyyymmdd());
 
@@ -45,6 +48,7 @@ export function InventoryTab() {
     queryKey: ["dashboard", "stockReport"],
     queryFn: () => stockReport(),
     refetchInterval: STAGGER_INVENTORY,
+    enabled: !isStocker,
   });
 
   const lowStock = useQuery({
@@ -69,23 +73,27 @@ export function InventoryTab() {
     queryKey: ["dashboard", "inventoryTurnover"],
     queryFn: () => inventoryTurnover(),
     refetchInterval: STAGGER_INVENTORY,
+    enabled: !isStocker,
   });
 
   const periodSales = useQuery({
     queryKey: ["dashboard", "sales", "period", fromDate, toDate],
     queryFn: () => dailySales(fromDate, toDate),
     refetchInterval: STAGGER_INVENTORY,
+    enabled: !isStocker,
   });
 
   const topSold = useQuery({
     queryKey: ["dashboard", "topItemsSold", fromDate, toDate],
     queryFn: () => topItemsSold(fromDate || undefined, toDate || undefined, 5),
     refetchInterval: STAGGER_INVENTORY,
+    enabled: !isStocker,
   });
   const topPurchased = useQuery({
     queryKey: ["dashboard", "topItemsPurchased", fromDate, toDate],
     queryFn: () => topItemsPurchased(fromDate || undefined, toDate || undefined, 5),
     refetchInterval: STAGGER_INVENTORY,
+    enabled: !isStocker,
   });
 
   const health = stockHealth.data;
@@ -118,7 +126,7 @@ export function InventoryTab() {
       <TopMetricsRow
         label="Inventory metrics"
         gridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-        metrics={[
+        metrics={([
           {
             id: "inventory-total-items",
             label: "Total Items (active)",
@@ -127,14 +135,16 @@ export function InventoryTab() {
             loading: stockHealth.isLoading,
             value: <span className="text-xl font-semibold tabular-nums">{health?.total_active_items ?? 0}</span>,
           },
-          {
-            id: "inventory-stock-value",
-            label: "Stock Value (retail)",
-            icon: Banknote,
-            tone: "primary",
-            loading: stockHealth.isLoading,
-            value: <Money paise={health?.retail_value_paise ?? 0} className="text-xl font-semibold" />,
-          },
+          ...(!isStocker
+            ? [{
+                id: "inventory-stock-value",
+                label: "Stock Value (retail)",
+                icon: Banknote,
+                tone: "primary",
+                loading: stockHealth.isLoading,
+                value: <Money paise={health?.retail_value_paise ?? 0} className="text-xl font-semibold" />,
+              }]
+            : []),
           {
             id: "inventory-low-stock",
             label: "Low Stock",
@@ -151,23 +161,25 @@ export function InventoryTab() {
             loading: stockHealth.isLoading,
             value: <span className="text-xl font-semibold tabular-nums">{health?.zero_count ?? 0}</span>,
           },
-          {
-            id: "inventory-stock-turnover",
-            label: "Stock Turnover",
-            icon: TrendingUp,
-            tone: "primary",
-            loading: turnoverQuery.isLoading || periodSales.isLoading,
-            value: (
-              <span className="text-xl font-semibold tabular-nums">
-                {(() => {
-                  const stockVal = turnoverQuery.data?.stock_value_paise ?? 0;
-                  const salesVal = periodSales.data?.grand_total ?? 0;
-                  return stockVal > 0 ? (salesVal / stockVal).toFixed(1) : "—";
-                })()}
-              </span>
-            ),
-          },
-        ] satisfies TopMetric[]}
+          ...(!isStocker
+            ? [{
+                id: "inventory-stock-turnover",
+                label: "Stock Turnover",
+                icon: TrendingUp,
+                tone: "primary",
+                loading: turnoverQuery.isLoading || periodSales.isLoading,
+                value: (
+                  <span className="text-xl font-semibold tabular-nums">
+                    {(() => {
+                      const stockVal = turnoverQuery.data?.stock_value_paise ?? 0;
+                      const salesVal = periodSales.data?.grand_total ?? 0;
+                      return stockVal > 0 ? (salesVal / stockVal).toFixed(1) : "—";
+                    })()}
+                  </span>
+                ),
+              }]
+            : []),
+        ] as TopMetric[])}
       />
 
       {isMobile && (
@@ -239,32 +251,34 @@ export function InventoryTab() {
         <Card>
           <Card.Header className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Stock by Category</h3>
-            <div className="flex gap-1 rounded-md border border-border bg-card p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setByCategoryMode("value")}
-                aria-pressed={byCategoryMode === "value"}
-                className={
-                  byCategoryMode === "value"
-                    ? "rounded bg-primary px-2 py-0.5 text-primary-foreground"
-                    : "rounded px-2 py-0.5 text-muted-foreground hover:text-foreground"
-                }
-              >
-                Value
-              </button>
-              <button
-                type="button"
-                onClick={() => setByCategoryMode("qty")}
-                aria-pressed={byCategoryMode === "qty"}
-                className={
-                  byCategoryMode === "qty"
-                    ? "rounded bg-primary px-2 py-0.5 text-primary-foreground"
-                    : "rounded px-2 py-0.5 text-muted-foreground hover:text-foreground"
-                }
-              >
-                Qty
-              </button>
-            </div>
+            {!isStocker && (
+              <div className="flex gap-1 rounded-md border border-border bg-card p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setByCategoryMode("value")}
+                  aria-pressed={byCategoryMode === "value"}
+                  className={
+                    byCategoryMode === "value"
+                      ? "rounded bg-primary px-2 py-0.5 text-primary-foreground"
+                      : "rounded px-2 py-0.5 text-muted-foreground hover:text-foreground"
+                  }
+                >
+                  Value
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setByCategoryMode("qty")}
+                  aria-pressed={byCategoryMode === "qty"}
+                  className={
+                    byCategoryMode === "qty"
+                      ? "rounded bg-primary px-2 py-0.5 text-primary-foreground"
+                      : "rounded px-2 py-0.5 text-muted-foreground hover:text-foreground"
+                  }
+                >
+                  Qty
+                </button>
+              </div>
+            )}
           </Card.Header>
           <Card.Body>
             {stockReportQuery.isLoading ? (

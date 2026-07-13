@@ -13,6 +13,7 @@ use crate::commands::auth::AppState;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
+use crate::session::require_auth;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Brand {
@@ -49,7 +50,7 @@ pub fn list_brands(state: State<'_, AppState>) -> AppResult<Vec<Brand>> {
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = crate::session::current_user()?;
+    let _ = require_auth("list_brands", state.inner())?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
             "SELECT b.id, b.name, b.prefix, COALESCE(s.next_seq, 1) \
@@ -72,7 +73,7 @@ pub fn get_brand(state: State<'_, AppState>, id: i64) -> AppResult<Brand> {
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = crate::session::current_user()?;
+    let _ = require_auth("get_brand", state.inner())?;
     db.with_raw(|conn| fetch_brand(conn, id))
 }
 
@@ -194,7 +195,7 @@ pub fn preview_next_barcode(
     brand_id: Option<i64>,
     item_name: String,
 ) -> AppResult<String> {
-    let _user = crate::session::current_user()?;
+    let _ = require_auth("preview_next_barcode", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -264,7 +265,7 @@ pub fn cmd_list_brands_paged(
     state: State<'_, AppState>,
     query: ListQuery,
 ) -> AppResult<ListPage<Brand>> {
-    let _ = crate::session::current_user()?;
+    let _ = require_auth("cmd_list_brands_paged", state.inner())?;
     let guard = state
         .db
         .lock()

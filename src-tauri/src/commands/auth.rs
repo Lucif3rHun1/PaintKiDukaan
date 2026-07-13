@@ -1111,6 +1111,37 @@ pub fn list_users(state: State<AppState>) -> Result<Vec<User>, AppError> {
     Ok(users)
 }
 
+#[tauri::command(rename_all = "snake_case")]
+pub fn logout_for_switch(state: State<AppState>) -> Result<Vec<User>, AppError> {
+    {
+        let session = state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
+        session.as_ref().ok_or(AppError::NotUnlocked)?;
+    }
+
+    let users = {
+        let db = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
+        let db = db.as_ref().ok_or(AppError::NotUnlocked)?;
+        db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, role, is_active FROM users WHERE is_active = 1 ORDER BY role, name",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok(User {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    role: r.get(2)?,
+                    is_active: r.get::<_, i64>(3)? != 0,
+                })
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()
+        })?
+    };
+
+    *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
+    sync_session_to_static(&state);
+    Ok(users)
+}
+
 /// Deactivate a user. Owner-only. Cannot deactivate yourself.
 #[tauri::command(rename_all = "snake_case")]
 pub fn delete_user(state: State<AppState>, user_id: i64) -> Result<(), AppError> {

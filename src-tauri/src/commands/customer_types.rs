@@ -4,7 +4,7 @@
 use crate::commands::auth::AppState;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
-use crate::session::{current_user, require_role, Role};
+use crate::session::{require_auth, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -42,7 +42,7 @@ pub fn list_customer_types(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?; // any signed-in user
+    let _ = require_auth("list_customer_types", state.inner())?; // any signed-in user
     let sql = if include_inactive {
         "SELECT id, name, is_active, created_at, updated_at FROM customer_types ORDER BY name COLLATE NOCASE"
     } else {
@@ -73,7 +73,7 @@ pub fn add_customer_type(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("add_customer_type", state.inner())?;
     require_role(&user, &[Role::Owner])?;
     let name = payload.name.trim().to_string();
     if name.is_empty() {
@@ -111,7 +111,7 @@ pub fn rename_customer_type(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("rename_customer_type", state.inner())?;
     require_role(&user, &[Role::Owner])?;
     let name = new_name.trim().to_string();
     if name.is_empty() {
@@ -148,7 +148,7 @@ pub fn deactivate_customer_type(state: State<'_, AppState>, id: i64) -> AppResul
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("deactivate_customer_type", state.inner())?;
     require_role(&user, &[Role::Owner])?;
     db.with_tx(|tx| {
         // Refuse if any active customer still references this type.
@@ -180,7 +180,7 @@ pub fn cmd_list_customer_types_paged(
     state: State<'_, AppState>,
     query: ListQuery,
 ) -> AppResult<ListPage<CustomerType>> {
-    let _ = current_user()?;
+    let _ = require_auth("cmd_list_customer_types_paged", state.inner())?;
     let guard = state
         .db
         .lock()

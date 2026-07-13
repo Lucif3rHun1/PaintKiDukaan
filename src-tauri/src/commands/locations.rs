@@ -3,7 +3,7 @@
 
 use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
-use crate::session::{current_user, require_role, Role};
+use crate::session::{require_auth, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -33,7 +33,7 @@ pub fn list_locations(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let _ = require_auth("list_locations", state.inner())?;
     let show_all = include_inactive.unwrap_or(false);
     let sql = if show_all {
         "SELECT id, name, zone, is_active, created_at FROM locations ORDER BY name COLLATE NOCASE"
@@ -62,7 +62,7 @@ pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppR
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("create_location", state.inner())?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     let name = payload.name.trim().to_string();
     if name.is_empty() {
@@ -100,7 +100,7 @@ pub fn rename_location(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("rename_location", state.inner())?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     let name = new_name.trim().to_string();
     if name.is_empty() {
@@ -139,7 +139,7 @@ pub fn deactivate_location(state: State<'_, AppState>, id: i64) -> AppResult<()>
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("deactivate_location", state.inner())?;
     require_role(&user, &[Role::Owner])?;
     db.with_tx(|tx| {
         // Warn but allow if items still reference this location textually.

@@ -282,6 +282,7 @@ pub fn run() {
             commands::auth::create_user,
             commands::auth::list_users,
             commands::auth::delete_user,
+            commands::auth::logout_for_switch,
             commands::auth::login_user,
             commands::auth::wipe_and_reset,
             commands::recovery::first_launch_setup,

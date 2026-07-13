@@ -96,6 +96,7 @@ export function ItemList({ role }: Props) {
 
 
   const canEdit = role === "owner" || role === "stocker";
+  const isStocker = role === "stocker";
 
   const stockHealth = useQuery({
     queryKey: ["list-metrics", "stock_health_summary"],
@@ -327,7 +328,9 @@ export function ItemList({ role }: Props) {
   const exportHeaders = [
     "SKU", "Barcode", "Name", "Brand", "Brand Prefix", "Category",
     "Sell Unit", "Units/Pack",
-    "Retail (₹)", "Cost (₹)", "Promo (₹)", "Min Stock",
+    "Retail (₹)",
+    ...(role === "owner" ? ["Cost (₹)"] : []),
+    "Promo (₹)", "Min Stock",
     "Location", "Sub Location", "Position",
     "Stock", "Active",
   ];
@@ -447,8 +450,8 @@ export function ItemList({ role }: Props) {
               ...(canEdit ? [{ label: "Edit", icon: Edit3, onSelect: () => openEdit(i) }] : []),
               ...(role === "owner" ? [{ label: "Adjust Stock", icon: PackagePlus, onSelect: () => { setStockAdjustItem(i); setStockAdjustQty(""); } }] : []),
               { label: "Print Barcode", icon: Barcode, onSelect: () => void handlePrint(i), disabled: !i.barcode },
-              { label: "Add Inward", icon: ArrowDownToLine, onSelect: () => (setHash("#/inward")) },
-              { label: "Record Outward", icon: ArrowUpFromLine, onSelect: () => (setHash("#/sales")) },
+              ...(!isStocker ? [{ label: "Add Inward", icon: ArrowDownToLine, onSelect: () => (setHash("#/inward")) }] : []),
+              ...(!isStocker ? [{ label: "Record Outward", icon: ArrowUpFromLine, onSelect: () => (setHash("#/sales")) }] : []),
               ...(canEdit ? [{ label: i.is_active ? "Archive" : "Restore", icon: Archive, danger: i.is_active, onSelect: () => setArchiveConfirmItem(i) }] : []),
             ]}
           />
@@ -564,7 +567,7 @@ export function ItemList({ role }: Props) {
         item.sell_unit ?? "",
         item.units_per_pack ?? 1,
         (item.retail_price_paise / 100).toFixed(2),
-        (item.cost_paise / 100).toFixed(2),
+        ...(role === "owner" ? [(item.cost_paise / 100).toFixed(2)] : []),
         item.promo_price_paise != null ? (item.promo_price_paise / 100).toFixed(2) : "",
         item.min_stock,
         item.primary_location_id != null ? (locationNameById.get(item.primary_location_id) ?? "") : "",

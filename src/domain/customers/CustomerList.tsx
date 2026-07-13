@@ -50,7 +50,7 @@ export function CustomerList({
     try {
       await updateCustomer(customer.id, { is_active: !customer.is_active });
       toast.success(customer.is_active ? "Archived" : "Restored");
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["list", "cmd_list_customers_paged"] });
       void customerMetrics.refetch();
     } catch (e) {
       toast.error(extractError(e));

@@ -42,6 +42,7 @@ export function SplitPayment({ total, splits, onChange, balanceTenderAvailable }
   const pendingFocusIndex = useRef<number | null>(null);
   const initializedDefaultSplit = useRef(false);
 
+  const prevTotal = useRef(total);
   useEffect(() => {
     if (!initializedDefaultSplit.current) {
       initializedDefaultSplit.current = true;
@@ -49,16 +50,14 @@ export function SplitPayment({ total, splits, onChange, balanceTenderAvailable }
         const savedMode = getPref<QuickPaymentMode>("sale:lastPaymentMode", "cash");
         onChange([{ mode: savedMode, amount: total }]);
       }
-      return;
-    }
-
-    if (
+    } else if (
+      prevTotal.current !== total &&
       splits.length === 1 &&
-      splits[0]?.mode === "cash" &&
-      splits[0].amount !== total
+      splits[0]?.mode === "cash"
     ) {
       onChange([{ ...splits[0], amount: total }]);
     }
+    prevTotal.current = total;
   }, [onChange, splits, total]);
 
   useEffect(() => {

@@ -50,7 +50,7 @@ export function VendorList({
     try {
       await updateVendor(vendor.id, { is_active: !vendor.is_active });
       toast.success(vendor.is_active ? "Archived" : "Restored");
-      queryClient.invalidateQueries({ queryKey: ["vendors"] });
+      void queryClient.invalidateQueries({ queryKey: ["list", "cmd_list_vendors_paged"] });
       void vendorMetrics.refetch();
     } catch (e) {
       toast.error(extractError(e));

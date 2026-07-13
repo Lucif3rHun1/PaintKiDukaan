@@ -45,18 +45,25 @@ export function UserManagement() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const setPhase = useSecurity((state) => state.setPhase);
+  const setLoginUsers = useSecurity((state) => state.setLoginUsers);
+  const currentRole = useSecurity((s) => s.session.user?.role ?? "stocker");
 
   const loadUsers = useCallback(async () => {
+    if (currentRole !== "owner") {
+      setLoading(false);
+      return;
+    }
     try {
       const result = await invoke<ListedUser[]>("list_users");
       setUsers(result);
+      setLoginUsers(result);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentRole, setLoginUsers]);
 
   useEffect(() => {
     loadUsers();

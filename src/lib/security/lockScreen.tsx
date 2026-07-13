@@ -10,7 +10,7 @@ import { isAppError } from "../../domain/types";
 import { extractError } from "../../lib/extractError";
 import { type UnlockInput, unlockSchema } from "./pin";
 import { type Role, type Session, type User, useSecurity } from "./state";
-import { Alert, Button } from "../../components/ui";
+import { Alert, Button, Select } from "../../components/ui";
 
 interface UnlockResponse {
   user?: { id?: number; name?: string; role?: Role } | null;
@@ -48,6 +48,8 @@ export function LockScreen() {
   const [isWiped, setIsWiped] = useState(false);
   const setPhase = useSecurity((state) => state.setPhase);
   const lastUser = useSecurity((state) => state.session?.user);
+  const loginUsers = useSecurity((state) => state.loginUsers);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
 
   const {
     register,
@@ -62,6 +64,7 @@ export function LockScreen() {
 
   const pin = useWatch({ control, name: "pin" });
   const canSubmit = unlockSchema.safeParse({ pin }).success && !lockedUntil;
+  const selectedUser = loginUsers.find((user) => user.id === selectedUserId) ?? loginUsers[0] ?? lastUser ?? null;
 
   const timeDisplay = useMemo(() => {
     if (!lockedUntil) return null;
@@ -80,10 +83,19 @@ export function LockScreen() {
     return () => clearInterval(interval);
   }, [lockedUntil]);
 
+  useEffect(() => {
+    if (selectedUserId === null && loginUsers.length > 0) {
+      setSelectedUserId(loginUsers[0].id);
+    }
+  }, [loginUsers, selectedUserId]);
+
   async function onSubmit(input: UnlockInput) {
     setBackendError(null);
     try {
-      const session = normalizeSession(await invoke<UnlockResponse>("unlock", input));
+      const response = selectedUser && selectedUser.role !== "owner"
+        ? await invoke<UnlockResponse>("login_user", { name: selectedUser.name, pin: input.pin })
+        : await invoke<UnlockResponse>("unlock", input);
+      const session = normalizeSession(response);
       const security = useSecurity.getState();
       security.setSession(session);
       security.setPhase("unlocked");
@@ -169,13 +181,13 @@ export function LockScreen() {
 
           {/* Welcome */}
           <div>
-            {lastUser ? (
+            {selectedUser ? (
               <>
                 <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-                  Welcome back, {lastUser.name}
+                  Welcome back, {selectedUser.name}
                 </h2>
                 <div className="mt-2 inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary ring-1 ring-primary/20">
-                  {lastUser.role}
+                  {selectedUser.role}
                 </div>
               </>
             ) : (
@@ -207,10 +219,29 @@ export function LockScreen() {
             </div>
           ) : null}
 
+          {loginUsers.length > 1 ? (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="login-user">
+                Account
+              </label>
+              <Select
+                id="login-user"
+                value={String(selectedUser?.id ?? "")}
+                onChange={(event) => setSelectedUserId(Number(event.currentTarget.value))}
+                options={loginUsers.map((user) => ({
+                  value: String(user.id),
+                  label: `${user.name} — ${user.role}`,
+                }))}
+                size="md"
+                className="h-12 w-full rounded-xl border-2 border-border bg-background px-4 text-sm text-foreground outline-none transition-[colors,box-shadow] duration-150 focus:border-primary focus:ring-4 focus:ring-primary/20"
+              />
+            </div>
+          ) : null}
+
           {/* PIN input */}
           <div>
             <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="pin">
-              Owner PIN
+              {selectedUser ? `${selectedUser.name} PIN` : "Owner PIN"}
             </label>
             <div className="relative">
               <input

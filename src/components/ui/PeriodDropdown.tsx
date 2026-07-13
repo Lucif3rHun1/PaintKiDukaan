@@ -13,17 +13,20 @@ const ALL_END = "";
 
 const PRESETS: { label: string; from: string; to: string }[] = [
   { label: "Today", get from() { return todayLocalYyyymmdd(); }, get to() { return todayLocalYyyymmdd(); } },
-  { label: "Last 7 Days", from: shiftDaysLocal(6), to: todayLocalYyyymmdd() },
+  { label: "Last 7 Days", get from() { return shiftDaysLocal(6); }, get to() { return todayLocalYyyymmdd(); } },
+  { label: "This Month", get from() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  }, get to() { return todayLocalYyyymmdd(); } },
   { label: "Last Month", get from() {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
   }, get to() {
     const d = new Date();
-    d.setDate(0); // last day of previous month
+    d.setDate(0);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   } },
-  { label: "Last 30 Days", from: shiftDaysLocal(29), to: todayLocalYyyymmdd() },
   { label: "All Time", from: ALL_START, to: ALL_END },
 ];
 

@@ -214,6 +214,8 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
   }, []);
 
   const role = user?.role ?? "stocker";
+  const isOwner = role === "owner";
+  const isStocker = role === "stocker";
   const shopNameQuery = useQuery({
     queryKey: ["app", "shopName"],
     queryFn: () => ipc.getSetting("shop_name"),
@@ -228,16 +230,18 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
   });
   const shopName = shopNameQuery.data || "PaintKiDukaan";
   const displayRole = toTitleCase(user?.role ?? "stocker");
+  const OWNER_ONLY_IDS = new Set(["sales-report", "day-close", "settings-shop", "settings-catalog", "settings-printing", "settings-team", "settings-system", "logs"]);
+  const STOCKER_HIDDEN_IDS = new Set(["sales", "customers", "vendors", "inward"]);
 
   useShortcut({ key: "1", alt: true, scope: "global", description: "Dashboard", onMatch: () => onNavigate("dashboard") });
-  useShortcut({ key: "2", alt: true, scope: "global", description: "Sales", onMatch: () => onNavigate("sales", "#/sales") });
-  useShortcut({ key: "3", alt: true, scope: "global", description: "Inward", onMatch: () => onNavigate("inward", "#/inward") });
-  useShortcut({ key: "4", alt: true, scope: "global", description: "Customers", onMatch: () => onNavigate("customers", "#/customers") });
-  useShortcut({ key: "5", alt: true, scope: "global", description: "Sales Report", onMatch: () => onNavigate("sales-report", "#/reports/sales") });
-  useShortcut({ key: "6", alt: true, scope: "global", description: "Settings (Shop)", onMatch: () => onNavigate("settings", "#/settings/shop") });
+  useShortcut({ key: "2", alt: true, scope: "global", description: "Sales", onMatch: () => !isStocker && onNavigate("sales", "#/sales") });
+  useShortcut({ key: "3", alt: true, scope: "global", description: "Inward", onMatch: () => { if (!isStocker) onNavigate("inward", "#/inward"); } });
+  useShortcut({ key: "4", alt: true, scope: "global", description: "Customers", onMatch: () => !isStocker && onNavigate("customers", "#/customers") });
+  useShortcut({ key: "5", alt: true, scope: "global", description: "Sales Report", onMatch: () => isOwner && onNavigate("sales-report", "#/reports/sales") });
+  useShortcut({ key: "6", alt: true, scope: "global", description: "Settings (Shop)", onMatch: () => isOwner && onNavigate("settings", "#/settings/shop") });
   useShortcut({ key: "7", alt: true, scope: "global", description: "Items", onMatch: () => onNavigate("items", "#/items") });
-  useShortcut({ key: "8", alt: true, scope: "global", description: "Vendors", onMatch: () => onNavigate("vendors", "#/vendors") });
-  useShortcut({ key: "9", alt: true, scope: "global", description: "Returns", onMatch: () => onNavigate("sales", "#/sales/return") });
+  useShortcut({ key: "8", alt: true, scope: "global", description: "Vendors", onMatch: () => !isStocker && onNavigate("vendors", "#/vendors") });
+  useShortcut({ key: "9", alt: true, scope: "global", description: "Returns", onMatch: () => !isStocker && onNavigate("sales", "#/sales/return") });
   useShortcut({ key: "0", alt: true, scope: "global", description: "Barcodes", onMatch: () => onNavigate("barcodes", "#/barcodes") });
 
   useGlobalShortcuts({ onHelp: () => setShowShortcuts((v) => !v) });
@@ -247,14 +251,14 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
       title: "Global Navigation",
       items: [
         { key: "1", alt: true, label: "Dashboard" },
-        { key: "2", alt: true, label: "Sales" },
-        { key: "3", alt: true, label: "Inward" },
-        { key: "4", alt: true, label: "Customers" },
-        { key: "5", alt: true, label: "Sales Report" },
-        { key: "6", alt: true, label: "Settings" },
+        ...(!isStocker ? [{ key: "2", alt: true, label: "Sales" }] : []),
+        ...(!isStocker ? [{ key: "3", alt: true, label: "Inward" }] : []),
+        ...(!isStocker ? [{ key: "4", alt: true, label: "Customers" }] : []),
+        ...(isOwner ? [{ key: "5", alt: true, label: "Sales Report" }] : []),
+        ...(isOwner ? [{ key: "6", alt: true, label: "Settings" }] : []),
         { key: "7", alt: true, label: "Items" },
-        { key: "8", alt: true, label: "Vendors" },
-        { key: "9", alt: true, label: "Returns" },
+        ...(!isStocker ? [{ key: "8", alt: true, label: "Vendors" }] : []),
+        ...(!isStocker ? [{ key: "9", alt: true, label: "Returns" }] : []),
         { key: "0", alt: true, label: "Barcodes" },
       ],
     },
@@ -310,11 +314,9 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           <SidebarLinkButton link={dashboardLink} active={activeTab === "dashboard"} collapsed={collapsed} onNavigate={onNavigate} />
 
           {(() => {
-            const isStocker = user?.role === "stocker";
-            const OWNER_ONLY_IDS = new Set(["sales-report", "day-close", "settings-shop", "settings-catalog", "settings-printing", "settings-team", "settings-system"]);
-            const visibleGroups = isStocker
-              ? groups.map((g) => ({ ...g, items: g.items.filter((i) => !OWNER_ONLY_IDS.has(i.id)) })).filter((g) => g.items.length > 0)
-              : groups;
+            const visibleGroups = groups
+              .map((g) => ({ ...g, items: g.items.filter((i) => !OWNER_ONLY_IDS.has(i.id) && !(isStocker && STOCKER_HIDDEN_IDS.has(i.id))) }))
+              .filter((g) => g.items.length > 0);
             // Flatten every sidebar link across all groups so isLinkActive can
             // detect cross-group yield (e.g. "Sales" at #/sales must yield to
             // "Returns" at #/sales/return even though they live in different
@@ -442,10 +444,18 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
         </header>
 
         <nav className="flex overflow-x-auto border-b border-border bg-muted px-2 py-1 md:hidden">
-          {mobileLinks.slice(0, 7).map((item) => (
-            <SidebarLinkButton key={item.id} link={item} active={isLinkActive(item, activeTab)} collapsed={false} onNavigate={onNavigate} mobile />
-          ))}
-          <MobileMoreMenu links={mobileLinks.slice(7)} activeTab={activeTab} onNavigate={onNavigate} />
+          {mobileLinks
+            .filter((item) => role === "owner" || !OWNER_ONLY_IDS.has(item.id))
+            .filter((item) => !(isStocker && STOCKER_HIDDEN_IDS.has(item.id)))
+            .slice(0, 7)
+            .map((item) => (
+              <SidebarLinkButton key={item.id} link={item} active={isLinkActive(item, activeTab)} collapsed={false} onNavigate={onNavigate} mobile />
+            ))}
+          <MobileMoreMenu
+            links={mobileLinks.filter((item) => role === "owner" || !OWNER_ONLY_IDS.has(item.id)).filter((item) => !(isStocker && STOCKER_HIDDEN_IDS.has(item.id))).slice(7)}
+            activeTab={activeTab}
+            onNavigate={onNavigate}
+          />
         </nav>
 
         <main className="flex-1 overflow-y-auto bg-background px-4 pt-3 pb-4 text-foreground sm:px-6 sm:pt-4 sm:pb-6">

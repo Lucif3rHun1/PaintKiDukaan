@@ -7,7 +7,7 @@
 use crate::commands::auth::AppState;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
-use crate::session::{current_user, require_role, Role};
+use crate::session::{require_auth, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -41,6 +41,24 @@ pub struct Item {
     pub created_at: String,
     pub updated_at: String,
     pub brand_id: Option<i64>,
+}
+
+impl Item {
+    /// Zero out role-sensitive fields server-side.
+    /// - Owner: full access (no stripping)
+    /// - Cashier: no cost_paise (keeps current_qty for stock status display)
+    /// - Stocker: no cost_paise, keeps current_qty (needs exact qty for inventory)
+    pub fn strip_sensitive_for_role(&mut self, role: &Role) {
+        match role {
+            Role::Owner => {}
+            Role::Cashier => {
+                self.cost_paise = 0;
+            }
+            Role::Stocker => {
+                self.cost_paise = 0;
+            }
+        }
+    }
 }
 
 /// Minimal projection for the role-aware `lookup_item`.
@@ -293,7 +311,7 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("create_item", state.inner())?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     if payload.name.trim().is_empty() {
         return Err(AppError::Validation("name is required".into()));
@@ -301,6 +319,12 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
     let normalized_name = to_title_case(&payload.name);
     if payload.retail_price_paise < 0 || payload.cost_paise < 0 {
         return Err(AppError::Validation("prices must be >= 0".into()));
+    }
+    if payload.cost_paise > 0 {
+        require_role(&user, &[Role::Owner])?;
+    }
+    if payload.retail_price_paise != 0 || payload.promo_price_paise.is_some() {
+        require_role(&user, &[Role::Owner])?;
     }
     if payload.primary_location_id <= 0 {
         return Err(AppError::Validation("primary location is required".into()));
@@ -412,7 +436,7 @@ pub fn create_item(state: State<'_, AppState>, payload: NewItem) -> AppResult<It
             ],
         )?;
         let id = tx.last_insert_rowid();
-        fetch_item_tx(tx, id)
+        fetch_item_stripped(tx, id, &user.role)
     })
 }
 
@@ -423,8 +447,17 @@ pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> Ap
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("update_item", state.inner())?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
+    if patch.cost_paise.is_some() {
+        require_role(&user, &[Role::Owner])?;
+    }
+    if patch.retail_price_paise.is_some() || patch.promo_price_paise.is_some() {
+        require_role(&user, &[Role::Owner])?;
+    }
+    if patch.is_active.is_some() {
+        require_role(&user, &[Role::Owner])?;
+    }
     db.with_tx(|tx| {
         // Build a dynamic SET clause from the non-None fields.
         let mut sets: Vec<&'static str> = Vec::new();
@@ -509,7 +542,7 @@ pub fn update_item(state: State<'_, AppState>, id: i64, patch: ItemUpdate) -> Ap
         if n == 0 {
             return Err(AppError::NotFound(format!("item {id}")));
         }
-        fetch_item_tx(tx, id)
+        fetch_item_stripped(tx, id, &user.role)
     })
 }
 
@@ -520,7 +553,7 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let user = require_auth("list_items", state.inner())?;
     let mut sql = String::from("SELECT i.id, i.sku_code, i.barcode, i.name, COALESCE(b.name, i.brand) AS brand, i.category, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN brands b ON b.id = i.brand_id LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE 1=1");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if filter.archived_only {
@@ -554,7 +587,11 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
         let dyn_args: Vec<&dyn rusqlite::ToSql> =
             args.iter().map(|b| &**b as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(dyn_args.as_slice(), row_to_item)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let mut items: Vec<Item> = rows.collect::<Result<Vec<_>, _>>()?;
+        for item in &mut items {
+            item.strip_sensitive_for_role(&user.role);
+        }
+        Ok(items)
     })
 }
 
@@ -568,7 +605,7 @@ pub fn cmd_list_items_paged(
     state: State<'_, AppState>,
     query: ListQuery,
 ) -> AppResult<ListPage<Item>> {
-    let _ = current_user()?;
+    let user = require_auth("cmd_list_items_paged", state.inner())?;
     let guard = state
         .db
         .lock()
@@ -577,6 +614,12 @@ pub fn cmd_list_items_paged(
     let limit = query.limit.unwrap_or(25).clamp(1, 100);
     let offset = query.offset.unwrap_or(0).max(0);
     let sort_field = sanitize_sort(query.sort_field.as_deref(), ITEMS_SORT_WHITELIST, "name");
+    // Non-owners cannot sort by sensitive fields (C1 leak)
+    let sort_field = if user.role != Role::Owner && (sort_field == "cost_paise" || sort_field == "current_qty") {
+        "name".to_string()
+    } else {
+        sort_field
+    };
     let sort_dir = sanitize_dir(query.sort_dir.as_deref());
 
     db.with_raw(|c| {
@@ -665,6 +708,13 @@ pub fn cmd_list_items_paged(
             &params,
             row_to_item,
         )?;
+        let rows: Vec<Item> = rows
+            .into_iter()
+            .map(|mut item| {
+                item.strip_sensitive_for_role(&user.role);
+                item
+            })
+            .collect();
         Ok(ListPage { rows, total })
     })
 }
@@ -676,15 +726,19 @@ pub fn get_item(state: State<'_, AppState>, id: i64) -> AppResult<Item> {
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let user = require_auth("get_item", state.inner())?;
     db.with_raw(|c| {
         let mut stmt = c.prepare(
             "SELECT i.id, i.sku_code, i.barcode, i.name, COALESCE(b.name, i.brand) AS brand, i.category, i.unit_code, i.unit_label, i.unit, i.units_per_pack, i.sell_unit, i.sell_unit_id, i.retail_price_paise, i.cost_paise, i.promo_price_paise, i.label_line1, i.label_line2, i.primary_location_id, i.sub_location_id, i.position, i.min_stock, i.barcode_format, i.is_active, i.created_at, i.updated_at, COALESCE(sb.qty, 0) AS current_qty, i.brand_id FROM items i LEFT JOIN brands b ON b.id = i.brand_id LEFT JOIN (SELECT item_id, SUM(qty) AS qty FROM stock_balances GROUP BY item_id) sb ON sb.item_id = i.id WHERE i.id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], row_to_item)?;
-        rows.next()
-            .ok_or_else(|| AppError::NotFound(format!("item {id}")))?
-            .map_err(Into::into)
+        let mut item = match rows.next() {
+            Some(Ok(i)) => i,
+            Some(Err(e)) => return Err(e.into()),
+            None => return Err(AppError::NotFound(format!("item {id}"))),
+        };
+        item.strip_sensitive_for_role(&user.role);
+        Ok(item)
     })
 }
 
@@ -695,7 +749,7 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("lookup_item", state.inner())?;
     // Search by barcode OR sku_code OR name match (best-effort).
     db.with_raw(|c| {
         let mut stmt = c.prepare(
@@ -760,7 +814,7 @@ pub fn box_unit_conversion(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let _ = require_auth("box_unit_conversion", state.inner())?;
     db.with_raw(|c| {
         let (sell_unit, units_per_pack): (String, Option<f64>) = c.query_row(
             "SELECT sell_unit, units_per_pack FROM items WHERE id = ?1",
@@ -800,8 +854,8 @@ pub fn normalize_item_names(state: State<'_, AppState>) -> AppResult<NormalizeRe
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _user = current_user()?;
-    require_role(&_user, &[Role::Owner])?;
+    let user = require_auth("normalize_item_names", state.inner())?;
+    require_role(&user, &[Role::Owner])?;
 
     db.with_raw(|c| {
         let mut stmt = c.prepare(
@@ -868,6 +922,12 @@ fn fetch_item_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Item> {
     rows.next()
         .ok_or_else(|| AppError::NotFound(format!("item {id}")))?
         .map_err(Into::into)
+}
+
+pub(crate) fn fetch_item_stripped(tx: &rusqlite::Connection, id: i64, role: &Role) -> AppResult<Item> {
+    let mut item = fetch_item_tx(tx, id)?;
+    item.strip_sensitive_for_role(role);
+    Ok(item)
 }
 
 #[cfg(test)]

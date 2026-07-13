@@ -155,7 +155,7 @@ function emptyEntry(locationId: number): DraftLine {
 
 /** Line total in paise = qty (purchase units) × qty_per_purchase_unit × cost_price (per base unit). */
 function lineTotalPaise(l: DraftLine): number {
-  return l.qty * l.qty_per_purchase_unit * l.cost_price;
+  return Math.round(l.qty * l.qty_per_purchase_unit * l.cost_price);
 }
 
 export default function InwardPage({ user: _user, onExit }: Props) {
@@ -329,7 +329,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   }, [entry.item_id, itemPackagingMap, purchaseUnits]);
 
   // Derived: line total for the entry pad
-  const entryAmountPaise = entry.qty * entry.qty_per_purchase_unit * entry.cost_price;
+  const entryAmountPaise = Math.round(entry.qty * entry.qty_per_purchase_unit * entry.cost_price);
 
   function pkgLabelForLine(l: DraftLine): string {
     if (l.purchase_unit_id) {
@@ -453,7 +453,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     if (line.item_id > 0 && !itemPackagingMap.has(line.item_id)) {
       void getItemPackaging(line.item_id)
         .then((pkgs) => setItemPackagingMap((prev) => new Map(prev).set(line.item_id, pkgs)))
-        .catch(() => {});
+        .catch(() => { /* packaging fetch failed; non-critical */ });
     }
   }
 
@@ -531,6 +531,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       void queryClient.invalidateQueries({ queryKey: ["inward-list"] });
       void queryClient.invalidateQueries({ queryKey: ["items"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      setHash('#/inward');
       return res;
     } catch (e) {
       setStatus(`Error: ${extractError(e)}`);
@@ -906,7 +907,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                   }}
                   onBlur={() => {
                     if (entry.item_id > 0 && entry.purchase_unit_id) {
-                      void setItemPackaging(entry.item_id, entry.purchase_unit_id, entry.qty_per_purchase_unit).catch(() => {});
+                      void setItemPackaging(entry.item_id, entry.purchase_unit_id, entry.qty_per_purchase_unit).catch(() => { /* packaging save failed; non-critical */ });
                     }
                   }}
                   className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums"

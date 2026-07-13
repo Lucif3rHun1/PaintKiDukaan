@@ -20,7 +20,7 @@ use serde::Serialize;
 use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
-use crate::session::{current_user, require_role, Role};
+use crate::session::{require_auth, require_role, Role};
 
 // ── Public result types ────────────────────────────────────────────────────
 
@@ -175,8 +175,8 @@ pub fn cmd_import_items_csv(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
-    require_role(&user, &[Role::Owner, Role::Stocker])?;
+    let user = require_auth("cmd_import_items_csv", state.inner())?;
+    require_role(&user, &[Role::Owner])?;
 
     let (headers, rows) = parse_csv(&csv_data);
     if headers.is_empty() {
@@ -635,8 +635,8 @@ pub fn cmd_import_inward_csv(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
-    require_role(&user, &[Role::Owner, Role::Stocker])?;
+    let user = require_auth("cmd_import_inward_csv", state.inner())?;
+    require_role(&user, &[Role::Owner])?;
 
     let (headers, rows) = parse_csv(&csv_text);
     if headers.is_empty() {

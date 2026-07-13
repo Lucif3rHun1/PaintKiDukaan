@@ -65,7 +65,7 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (198 total).
+/// Complete ACL table for every command registered in `invoke_handler` (197 total).
 ///
 /// Classification:
 /// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.
@@ -102,7 +102,7 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "restore_from_recovery",
         min_role: Role::Public,
     },
-    // ── Owner-only (23) ────────────────────────────────────────────────
+    // ── Auth & owner-only management ───────────────────────────────────
     // Auth & user management
     CommandAcl {
         name: "unlock",
@@ -123,6 +123,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     CommandAcl {
         name: "delete_user",
         min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "logout_for_switch",
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "wipe_and_reset",
@@ -287,50 +291,50 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     // Customer types (write)
     CommandAcl {
         name: "add_customer_type",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "rename_customer_type",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "deactivate_customer_type",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     // Locations (write)
     CommandAcl {
         name: "create_location",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "rename_location",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "deactivate_location",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     // Sub-locations (write)
     CommandAcl {
         name: "create_sub_location",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "update_sub_location",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "deactivate_sub_location",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     // Items (write)
     CommandAcl {
         name: "create_item",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "update_item",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "normalize_item_names",
@@ -339,37 +343,37 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     // Brands (write)
     CommandAcl {
         name: "create_brand",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "deactivate_brand",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "update_brand_code_prefix",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "preview_next_barcode",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     // Label log (write)
     CommandAcl {
         name: "record_label_print",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     // Units (write)
     CommandAcl {
         name: "create_unit",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "update_unit",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "deactivate_unit",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     // Sale/Purchase Units (write)
     CommandAcl {
@@ -378,15 +382,15 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "create_sale_unit",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "update_sale_unit",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "deactivate_sale_unit",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "list_purchase_units",
@@ -394,11 +398,11 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "create_purchase_unit",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "update_purchase_unit",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "get_item_packaging",
@@ -406,7 +410,7 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "set_item_packaging",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     // Customers
     CommandAcl {
@@ -468,7 +472,7 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     // Vendors
     CommandAcl {
         name: "create_vendor",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "list_vendors",
@@ -488,11 +492,11 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "update_vendor",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "record_vendor_payment",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "vendor_outstanding",
@@ -574,7 +578,7 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_last_cost",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "cmd_last_retail",
@@ -606,40 +610,40 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_adjust_stock",
-        min_role: Role::Cashier,
+        min_role: Role::Stocker,
     },
     // Day close
     CommandAcl {
         name: "cmd_cash_sales_for",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "cmd_last_opening_for",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "cmd_backup_gate_check",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "cmd_trigger_day_close",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "cmd_lock_state",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "cmd_list_day_close",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "cmd_list_day_close_paged",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "cmd_get_day_close",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     // Reports
     CommandAcl {
@@ -838,11 +842,11 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     // ── Categories (S-15) ──────────────────────────────────────────────
     CommandAcl {
         name: "list_categories",
-        min_role: Role::Owner,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "cmd_list_categories_paged",
-        min_role: Role::Owner,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "create_category",
@@ -887,11 +891,40 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "cmd_inventory_turnover",
-        min_role: Role::Cashier,
+        min_role: Role::Owner,
     },
     CommandAcl {
         name: "cmd_receivable_aging",
         min_role: Role::Cashier,
+    },
+    // Updater / splash (intentionally no session — splash runs pre-login)
+    CommandAcl {
+        name: "cmd_check_update",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_download_update",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_install_update",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_current_target",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_retry_update",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_quit_app",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "cmd_read_session_logs",
+        min_role: Role::Owner,
     },
 ];
 
@@ -935,6 +968,7 @@ pub fn authorize(cmd_name: &str, state: &AppState) -> Result<(), AppError> {
             .lock()
             .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
         *session = None;
+        crate::session::set_current_user(None);
         return Err(AppError::Unauthorized(
             "session expired due to inactivity".into(),
         ));
@@ -1045,8 +1079,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            198,
-            "ACL has {} entries, expected 198",
+            204,
+            "ACL has {} entries, expected 204",
             COMMAND_ACL.len()
         );
     }
@@ -1102,6 +1136,19 @@ mod tests {
     }
 
     #[test]
+    fn stocker_can_logout_for_switch() {
+        let state = make_state(Some("stocker"));
+        assert!(authorize("logout_for_switch", &state).is_ok());
+    }
+
+    #[test]
+    fn stocker_can_access_categories() {
+        let state = make_state(Some("stocker"));
+        assert!(authorize("list_categories", &state).is_ok());
+        assert!(authorize("cmd_list_categories_paged", &state).is_ok());
+    }
+
+    #[test]
     fn stocker_cannot_unlock() {
         let state = make_state(Some("stocker"));
         assert!(authorize("unlock", &state).is_err());
@@ -1115,7 +1162,6 @@ mod tests {
         let cmds = [
             "cmd_create_sale",
             "cmd_create_inward",
-            "cmd_trigger_day_close",
             "create_customer",
             "create_vendor",
             "create_item",
@@ -1129,6 +1175,27 @@ mod tests {
             assert!(
                 authorize(name, &state).is_ok(),
                 "cashier should access '{name}'"
+            );
+        }
+    }
+
+    #[test]
+    fn cashier_cannot_trigger_day_close() {
+        let state = make_state(Some("cashier"));
+        let cmds = [
+            "cmd_trigger_day_close",
+            "cmd_list_day_close",
+            "cmd_list_day_close_paged",
+            "cmd_get_day_close",
+            "cmd_cash_sales_for",
+            "cmd_last_opening_for",
+            "cmd_backup_gate_check",
+            "cmd_lock_state",
+        ];
+        for name in &cmds {
+            assert!(
+                authorize(name, &state).is_err(),
+                "cashier should NOT access '{name}'"
             );
         }
     }
@@ -1194,6 +1261,24 @@ mod tests {
         let state = make_state(Some("owner"));
         assert!(authorize("cmd_create_sale", &state).is_ok());
         assert!(authorize("list_items", &state).is_ok());
+    }
+
+    #[test]
+    fn owner_can_access_day_close_helpers() {
+        let state = make_state(Some("owner"));
+        let cmds = [
+            "cmd_cash_sales_for",
+            "cmd_last_opening_for",
+            "cmd_backup_gate_check",
+            "cmd_lock_state",
+            "cmd_trigger_day_close",
+        ];
+        for name in &cmds {
+            assert!(
+                authorize(name, &state).is_ok(),
+                "owner should access '{name}'"
+            );
+        }
     }
 
     // -- Default-deny for unknown commands ---------------------------------

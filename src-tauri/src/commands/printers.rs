@@ -5,7 +5,7 @@ use tauri::State;
 use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
-use crate::session::{current_user, require_role, Role};
+use crate::session::{require_auth, require_role, Role};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Printer {
@@ -123,7 +123,7 @@ pub fn cmd_list_printers(
     use_case: Option<String>,
 ) -> AppResult<Vec<Printer>> {
     ipc_auth::authorize("cmd_list_printers", state.inner())?;
-    let user = current_user()?;
+    let user = require_auth("cmd_list_printers", state.inner())?;
     require_role(&user, &[Role::Owner, Role::Cashier, Role::Stocker])?;
     let guard = state
         .db
@@ -156,7 +156,7 @@ pub fn cmd_list_printers(
 #[tauri::command(rename_all = "snake_case")]
 pub fn cmd_create_printer(state: State<'_, AppState>, input: NewPrinter) -> AppResult<Printer> {
     ipc_auth::authorize("cmd_create_printer", state.inner())?;
-    let user = current_user()?;
+    let user = require_auth("cmd_create_printer", state.inner())?;
     require_role(&user, &[Role::Owner])?;
     validate(&input)?;
     let guard = state
@@ -216,7 +216,7 @@ pub fn cmd_update_printer(
     input: NewPrinter,
 ) -> AppResult<Printer> {
     ipc_auth::authorize("cmd_update_printer", state.inner())?;
-    let user = current_user()?;
+    let user = require_auth("cmd_update_printer", state.inner())?;
     require_role(&user, &[Role::Owner])?;
     validate(&input)?;
     let guard = state
@@ -279,7 +279,7 @@ pub fn cmd_update_printer(
 #[tauri::command(rename_all = "snake_case")]
 pub fn cmd_delete_printer(state: State<'_, AppState>, id: i64) -> AppResult<()> {
     ipc_auth::authorize("cmd_delete_printer", state.inner())?;
-    let user = current_user()?;
+    let user = require_auth("cmd_delete_printer", state.inner())?;
     require_role(&user, &[Role::Owner])?;
     let guard = state
         .db
@@ -298,7 +298,7 @@ pub fn cmd_delete_printer(state: State<'_, AppState>, id: i64) -> AppResult<()> 
 #[tauri::command(rename_all = "snake_case")]
 pub fn cmd_set_default_printer(state: State<'_, AppState>, id: i64) -> AppResult<()> {
     ipc_auth::authorize("cmd_set_default_printer", state.inner())?;
-    let user = current_user()?;
+    let user = require_auth("cmd_set_default_printer", state.inner())?;
     require_role(&user, &[Role::Owner])?;
     let guard = state
         .db
@@ -333,7 +333,7 @@ pub fn cmd_get_default_printer(
     use_case: String,
 ) -> AppResult<Option<Printer>> {
     ipc_auth::authorize("cmd_get_default_printer", state.inner())?;
-    let _ = current_user()?;
+    let _ = require_auth("cmd_get_default_printer", state.inner())?;
     let uc = use_case.to_lowercase();
     if !ALLOWED_USE_CASES.contains(&uc.as_str()) {
         return Err(AppError::Validation(format!(

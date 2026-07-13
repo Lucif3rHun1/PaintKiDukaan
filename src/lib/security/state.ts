@@ -32,8 +32,10 @@ export type AppPhase =
 interface SecurityState {
   phase: AppPhase;
   session: Session;
+  loginUsers: User[];
   setPhase(p: AppPhase): void;
   setSession(s: Session): void;
+  setLoginUsers(users: User[]): void;
   reset(): void;
   isUnlocked(): boolean;
   isOwner(): boolean;
@@ -47,9 +49,11 @@ export const useSecurity: UseBoundStore<StoreApi<SecurityState>> = create<Securi
   (set, get) => ({
     phase: "loading",
     session: emptySession,
+    loginUsers: [],
     setPhase: (phase) => set({ phase }),
     setSession: (session) => set({ session }),
-    reset: () => set({ phase: "loading", session: emptySession }),
+    setLoginUsers: (loginUsers) => set({ loginUsers }),
+    reset: () => set({ phase: "loading", session: emptySession, loginUsers: [] }),
     isUnlocked: () => get().phase === "unlocked" && get().session.user !== null,
     isOwner: () => get().session.user?.role === "owner",
     isDecoy: () => get().session.pinRole === "decoy",

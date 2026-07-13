@@ -9,7 +9,7 @@ import { Alert, Button, Field, Money, MoneyInput, Section, Select } from "../../
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
-import { createItem, getSetting, listBrands, listItems, updateItem, previewNextBarcode } from "./api";
+import { adjustStock, createItem, getSetting, listBrands, listItems, updateItem, previewNextBarcode } from "./api";
 import { listLocations, listSubLocations } from "../locations/api";
 import { createInward } from "../../pos/api";
 import type { NewPurchase } from "../../pos/types";
@@ -18,6 +18,7 @@ import { loadString } from "../../shell/routes/settings/components/SettingsField
 import { toTitleCase } from "../../lib/format/titleCase";
 import { formatItemName } from "./display";
 import { useLabelBatchSeed, type SeedRow } from "../../barcodes/seed";
+import { useSecurity } from "../../lib/security/state";
 import type { BatchLabel } from "../../pos/print";
 import { BarcodeThumb } from "../../components/ui/BarcodeThumb";
 import { setHash } from "../../lib/navigate";
@@ -45,6 +46,7 @@ interface Props {
 }
 
 export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
+  const role = useSecurity((s) => s.session.user?.role ?? "stocker");
   const [name, setName] = useState(initial?.name ?? "");
   const [brandId, setBrandId] = useState<number | null>(
     initial?.brand_id ?? getPref<number | null>("itemForm:lastBrand", null),
@@ -187,9 +189,10 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         category: category || null,
         sell_unit: sellUnitCode,
         sell_unit_id: sellUnitId,
-        retail_price_paise: retailPricePaise,
-        cost_paise: costPaise,
-        promo_price_paise: promoPricePaise,
+        // ponytail: stocker edit omits price fields (backend owner-gates cost/retail/promo). Create mode sends safe defaults.
+        retail_price_paise: role === "owner" ? retailPricePaise : (initial ? undefined : 0),
+        cost_paise: role === "owner" ? costPaise : (initial ? undefined : 0),
+        promo_price_paise: role === "owner" ? promoPricePaise : (initial ? undefined : undefined),
         primary_location_id: primaryLocationId,
         sub_location_id: subLocationId,
         position: position || null,
@@ -205,17 +208,28 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
         });
         const openingQty = Number(openingStock) || 0;
         if (openingQty > 0 && item.primary_location_id) {
-          const req: NewPurchase = {
-            vendor_id: null,
-            lines: [{
-              item_id: item.id,
+          if (role === "owner") {
+            // Owner: use inward (creates purchase record)
+            const req: NewPurchase = {
+              vendor_id: null,
+              lines: [{
+                item_id: item.id,
+                qty: openingQty,
+                unit_type: item.sell_unit || "unit",
+                unit_price_paise: item.cost_paise,
+                location_id: item.primary_location_id,
+              }],
+            };
+            await createInward(req);
+          } else {
+            // Stocker: use adjust_stock (no cost, no purchase record)
+            await adjustStock({
+              itemId: item.id,
               qty: openingQty,
-              unit_type: item.sell_unit || "unit",
-              unit_price_paise: item.cost_paise,
-              location_id: item.primary_location_id,
-            }],
-          };
-          await createInward(req);
+              locationId: item.primary_location_id,
+              notes: "Opening stock",
+            });
+          }
         }
         setPref("itemForm:lastBrand", brandId);
         setPref("itemForm:lastCategory", category);
@@ -446,36 +460,42 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           </Field>
         </div>
         <div className="grid grid-cols-3 gap-4">
-          <Field
-            label="Retail price (₹)"
-            required
-            error={fieldErrors.retail_price_paise}
-          >
-            <MoneyInput
-              value={retailPricePaise}
-              min={0}
-              onChange={setRetailPricePaise}
-              required
-            />
-          </Field>
-          <Field
-            label="Cost price (₹)"
-            error={fieldErrors.cost_paise}
-            hint={costPaise > 0 && retailPricePaise < costPaise ? "Retail is below cost — selling at a loss" : undefined}
-          >
-            <MoneyInput
-              value={costPaise}
-              min={0}
-              onChange={setCostPaise}
-            />
-          </Field>
-          <Field label="Promo price (₹)">
-            <MoneyInput
-              value={promoPricePaise ?? 0}
-              min={0}
-              onChange={(paise) => setPromoPricePaise(paise === 0 ? null : paise)}
-            />
-          </Field>
+          {(role === "owner" || !initial) && (
+            <>
+              <Field
+                label="Retail price (₹)"
+                required
+                error={fieldErrors.retail_price_paise}
+              >
+                <MoneyInput
+                  value={retailPricePaise}
+                  min={0}
+                  onChange={setRetailPricePaise}
+                  required
+                />
+              </Field>
+              <Field label="Promo price (₹)">
+                <MoneyInput
+                  value={promoPricePaise ?? 0}
+                  min={0}
+                  onChange={(paise) => setPromoPricePaise(paise === 0 ? null : paise)}
+                />
+              </Field>
+            </>
+          )}
+          {role === "owner" && (
+            <Field
+              label="Cost price (₹)"
+              error={fieldErrors.cost_paise}
+              hint={costPaise > 0 && retailPricePaise < costPaise ? "Retail is below cost — selling at a loss" : undefined}
+            >
+              <MoneyInput
+                value={costPaise}
+                min={0}
+                onChange={setCostPaise}
+              />
+            </Field>
+          )}
         </div>
       </Section>
 

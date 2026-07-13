@@ -10,7 +10,7 @@ use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQu
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
-use crate::session::{current_user, require_role, Role};
+use crate::session::{current_user, require_auth, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -96,7 +96,7 @@ pub fn create_customer(state: State<'_, AppState>, payload: NewCustomer) -> AppR
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("create_customer", state.inner())?;
     create_customer_impl(db, &user, payload)
 }
 
@@ -125,6 +125,9 @@ fn create_customer_impl(
     payload: NewCustomer,
 ) -> AppResult<Customer> {
     require_role(user, &[Role::Owner, Role::Cashier])?;
+    if payload.opening_balance_paise.unwrap_or(0) != 0 {
+        require_role(user, &[Role::Owner])?;
+    }
     validate_phone(&payload.phone)?;
 
     // is_flagged is owner-only.
@@ -201,7 +204,7 @@ pub fn update_customer(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = require_auth("update_customer", state.inner())?;
     update_customer_impl(db, &user, id, patch)
 }
 
@@ -217,7 +220,7 @@ fn update_customer_impl(
     }
     // Owner-only update fields. Cashier attempting to send any of these is
     // rejected before we touch the DB.
-    if patch.is_flagged.is_some() || patch.opening_balance_paise.is_some() {
+    if patch.is_flagged.is_some() || patch.opening_balance_paise.is_some() || patch.is_active.is_some() {
         require_role(user, &[Role::Owner])?;
     }
     db.with_tx(|tx| {
@@ -290,7 +293,8 @@ pub fn list_customers(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let user = require_auth("list_customers", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     db.with_raw(|c| {
         let mut sql = String::from(
             "SELECT c.id, c.name, c.phone, c.customer_type_id, t.name, c.is_flagged, c.opening_balance_paise, c.notes, c.is_active, c.created_at, c.updated_at \
@@ -331,7 +335,8 @@ pub fn lookup_customer(state: State<'_, AppState>, phone: String) -> AppResult<O
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let user = require_auth("lookup_customer", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     // Master plan §7.4: search by 4-10 digit phone substring.
     let q = phone.trim();
     if q.len() < 4 || q.len() > 10 || !q.chars().all(|c| c.is_ascii_digit()) {
@@ -411,7 +416,8 @@ pub fn customer_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<Cu
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let user = require_auth("customer_outstanding", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     customer_outstanding_impl(db, id)
 }
 
@@ -457,7 +463,8 @@ pub fn list_customer_bills(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let user = require_auth("list_customer_bills", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     list_customer_bills_impl(db, customer_id)
 }
 
@@ -497,7 +504,8 @@ pub fn get_by_id(c: &rusqlite::Connection, id: i64) -> AppResult<Option<Customer
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_customer(state: State<'_, AppState>, id: i64) -> AppResult<Option<Customer>> {
-    let _ = current_user()?;
+    let user = require_auth("get_customer", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     let guard = state
         .db
         .lock()
@@ -678,10 +686,10 @@ mod tests {
     }
 
     #[test]
-    fn cashier_can_set_opening_balance_on_create() {
+    fn cashier_cannot_set_opening_balance_on_create() {
         set_current_user(Some(cashier()));
         let db = Db::open_in_memory().unwrap();
-        let c = create_customer_impl(
+        let res = create_customer_impl(
             &db,
             &cashier(),
             NewCustomer {
@@ -692,9 +700,8 @@ mod tests {
                 opening_balance_paise: Some(2500),
                 notes: None,
             },
-        )
-        .unwrap();
-        assert_eq!(c.opening_balance_paise, 2500);
+        );
+        assert!(matches!(res, Err(AppError::Forbidden(_))));
     }
 
     #[test]
@@ -776,7 +783,7 @@ mod tests {
                 phone: "9876543210".into(),
                 customer_type_id: None,
                 is_flagged: None,
-                opening_balance_paise: Some(100),
+                opening_balance_paise: None,
                 notes: None,
             },
         )
@@ -802,7 +809,7 @@ mod tests {
         assert_eq!(c.name, "New");
         assert_eq!(c.phone, "8765432109");
         assert_eq!(c.notes.as_deref(), Some("updated"));
-        assert_eq!(c.opening_balance_paise, 100);
+        assert_eq!(c.opening_balance_paise, 0);
     }
 
     #[test]
@@ -988,7 +995,8 @@ pub fn cmd_list_customers_paged(
     state: State<'_, AppState>,
     query: ListQuery,
 ) -> AppResult<ListPage<Customer>> {
-    let _ = current_user()?;
+    let user = require_auth("cmd_list_customers_paged", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     let guard = state
         .db
         .lock()
@@ -1078,7 +1086,8 @@ pub struct CustomerMetrics {
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn cmd_customer_metrics(state: State<'_, AppState>) -> AppResult<CustomerMetrics> {
-    let _ = current_user()?;
+    let user = require_auth("cmd_customer_metrics", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
     let guard = state
         .db
         .lock()

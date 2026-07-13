@@ -194,7 +194,7 @@ export function InwardDetailPage({ id, onBack }: Props) {
                       <Money paise={line.unit_price_paise} />
                     </td>
                     <td className="py-2 text-right font-medium">
-                      <Money paise={line.qty * line.unit_price_paise} />
+                      <Money paise={Math.round(line.qty * line.unit_price_paise)} />
                     </td>
                   </tr>
                 ))}
