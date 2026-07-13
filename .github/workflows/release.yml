@@ -107,17 +107,23 @@ jobs:
           set -euo pipefail
           mkdir -p release-output
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            # GitHub windows-latest runners do not ship `zip`. Use PowerShell's
+            # built-in Compress-Archive instead. The relative output path
+            # `../../../release-output/` is correct: cwd is target/<triple>/release,
+            # 3 levels up is repo root.
             release_dir="target/${{ matrix.target }}/release"
             exe_name="$(ls "$release_dir"/*.exe | grep -v -i installer | head -n 1 | xargs -n 1 basename)"
             cd "$release_dir"
-            zip -r "../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip" \
-              "$exe_name" assets 2>/dev/null || \
-              zip -r "../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip" \
-              "$exe_name"
+            pwsh -NoProfile -Command "
+              Compress-Archive -Path '$exe_name' -DestinationPath '../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip' -Force
+            "
           else
+            # From target/<triple>/release/bundle/macos/, repo root is 5 levels up:
+            # macos -> bundle -> release -> <triple> -> target -> repo. The path
+            # `../../../../../release-output/` lands at repo-root/release-output/.
             app_path="$(find target -path '*/release/bundle/macos/*.app' -type d | sort | head -n 1)"
             cd "$(dirname "$app_path")"
-            zip -r "../../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip" \
+            zip -r "../../../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip" \
               "$(basename "$app_path")"
           fi
           echo "=== Self-update bundles ==="
@@ -132,7 +138,9 @@ jobs:
           set -euo pipefail
           for zip in release-output/*.zip; do
             [ -e "$zip" ] || continue
-            sig="$(python3 scripts/sign-ed25519.py "$UPDATER_SIGNING_KEY" "$zip")"
+            # Seed is read from UPDATER_SIGNING_KEY env (set above) — never argv
+            # so the secret doesn't appear in `ps aux` during the run.
+            sig="$(python3 scripts/sign-ed25519.py "$zip")"
             echo "${sig}" > "${zip}.sig"
             echo "signed: $zip ($(wc -c < "$zip") bytes, sig ${#sig} chars)"
           done

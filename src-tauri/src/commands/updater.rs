@@ -216,21 +216,45 @@ pub enum ApplyOutcome {
 }
 
 /// Apply a pending self-update staged by `stage_update`.
-/// 1. Crash recovery: if `<exe>.bak` exists AND `<exe>` is missing, restore.
+/// 1. Acquire advisory `O_EXCL` lock on `<staging_root>.apply.lock` to
+///    serialize concurrent applies (parallel instances racing on install_dir).
+/// 2. Crash recovery: if `<exe>.bak` exists AND `<exe>` is missing, restore.
 ///    (If both exist we don't touch — likely a leftover from a successful
 ///    install; the next successful install will overwrite both.)
-/// 2. Read `pending_update.json` from `staging_root`.
-/// 3. Validate: `signature_verified == true`, staging zip still present.
-/// 4. Rename `<exe>` → `<exe>.bak`.
-/// 5. Extract the staged zip into `install_dir`.
-/// 6. On extract failure: restore .bak → `<exe>`, return Failed.
-/// 7. On success: delete .bak (if not held by running process), delete marker,
+/// 3. Read `pending_update.json` from `staging_root`.
+/// 4. Validate: `signature_verified == true`, staging zip still present.
+/// 5. Rename `<exe>` → `<exe>.bak`.
+/// 6. Extract the staged zip into `install_dir`.
+/// 7. On extract failure: restore .bak → `<exe>`, return Failed.
+/// 8. On success: delete .bak (if not held by running process), delete marker,
 ///    delete staging dir, spawn new `<exe>` detached, return Applied.
 pub fn apply_pending_update(
     install_dir: &Path,
     current_exe_name: &str,
     staging_root: &Path,
 ) -> ApplyOutcome {
+    // Ponytail advisory lock: O_EXCL on a sentinel file inside staging_root.
+    // If a parallel instance holds the lock, fail loud rather than corrupting
+    // the install dir. Lock auto-releases when the file handle drops.
+    let _ = std::fs::create_dir_all(staging_root);
+    let lock_path = staging_root.join(".apply.lock");
+    let _lock = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+    {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return ApplyOutcome::Failed(format!(
+                "another instance is applying (lock held: {})",
+                lock_path.display()
+            ));
+        }
+        Err(e) => {
+            return ApplyOutcome::Failed(format!("acquire apply lock: {}", e));
+        }
+    };
+
     let exe_path = install_dir.join(current_exe_name);
     let bak_path = install_dir.join(format!("{}.bak", current_exe_name));
 
@@ -279,12 +303,18 @@ pub fn apply_pending_update(
         return ApplyOutcome::NoPending;
     }
     if !marker.staging_path.exists() {
+        // Staging payload vanished after marker was written — disk corruption
+        // or external interference. Surface as Failed (not NoPending) so the
+        // caller knows an update disappeared mid-flight and can prompt retry.
         let _ = std::fs::remove_file(&marker_path);
         log::warn!(
             "updater: marker references missing staging payload at {}",
             marker.staging_path.display()
         );
-        return ApplyOutcome::NoPending;
+        return ApplyOutcome::Failed(format!(
+            "staging payload missing: {}",
+            marker.staging_path.display()
+        ));
     }
 
     if exe_path.exists() {
@@ -1351,6 +1381,24 @@ mod tests {
             b"OLD KNOWN-GOOD PAYLOAD"
         );
         assert!(!bak.exists(), "after restore, .bak must be gone");
+    }
+
+    #[test]
+    fn apply_lock_blocks_concurrent_apply() {
+        // Simulate a parallel instance that already holds the .apply.lock file.
+        // apply_pending_update must return Failed (not NoPending, not Applied).
+        let install = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir().unwrap();
+
+        let lock_path = staging.path().join(".apply.lock");
+        std::fs::write(&lock_path, b"held-by-other-instance").unwrap();
+
+        let outcome = apply_pending_update(install.path(), "app.exe", staging.path());
+        assert!(
+            matches!(outcome, ApplyOutcome::Failed(ref reason) if reason.contains("another instance")),
+            "concurrent apply must fail with 'another instance is applying'; got: {:?}",
+            outcome
+        );
     }
 
     #[test]
