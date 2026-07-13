@@ -65,7 +65,7 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (197 total).
+/// Complete ACL table for every command registered in `invoke_handler` (198 total).
 ///
 /// Classification:
 /// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.
@@ -897,31 +897,6 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "cmd_receivable_aging",
         min_role: Role::Cashier,
     },
-    // Updater / splash (intentionally no session — splash runs pre-login)
-    CommandAcl {
-        name: "cmd_check_update",
-        min_role: Role::Stocker,
-    },
-    CommandAcl {
-        name: "cmd_download_update",
-        min_role: Role::Stocker,
-    },
-    CommandAcl {
-        name: "cmd_install_update",
-        min_role: Role::Stocker,
-    },
-    CommandAcl {
-        name: "cmd_current_target",
-        min_role: Role::Stocker,
-    },
-    CommandAcl {
-        name: "cmd_retry_update",
-        min_role: Role::Stocker,
-    },
-    CommandAcl {
-        name: "cmd_quit_app",
-        min_role: Role::Stocker,
-    },
     CommandAcl {
         name: "cmd_read_session_logs",
         min_role: Role::Owner,
@@ -1079,8 +1054,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            204,
-            "ACL has {} entries, expected 204",
+            198,
+            "ACL has {} entries, expected 198",
             COMMAND_ACL.len()
         );
     }

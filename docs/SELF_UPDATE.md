@@ -2,168 +2,266 @@
 
 ## Why
 
-Before v0.1.35, every update spawned an unsigned NSIS installer. Windows
-SmartScreen / WDAC rejected unsigned NSIS installers with `os error 4551`
-(STATUS_BLOCKED_BY_POLICY). First-install had no friction, but every
-subsequent update required user-clicked "more info → run anyway" — bad UX.
+Before v0.1.38, self-update used a hand-rolled Ed25519 signature verifier +
+TLS-protected SHA-256 path that packed bare app directories into a zip,
+verified them against a hardcoded public key, staged them on disk, and
+atomically swapped them into the install dir on the next launch. The
+mechanism worked but every CI signing run was a 20-minute cycle of
+"generate raw Ed25519 seed → base64-encode → publish v0.1.x" with no
+escape hatch.
 
-v0.1.35 replaces the NSIS-spawn path with an in-app binary-swap. The
-app downloads a signed zip bundle, verifies its Ed25519 signature, stages
-it on disk, and on the next launch atomically swaps it into the install
-directory. **No installer process, no SmartScreen interaction, no error
-4551.**
+v0.1.38 replaces the hand-rolled updater with `tauri-plugin-updater`. The
+plugin owns:
 
-First-install still uses the NSIS installer downloaded manually from
-GitHub Releases (zero friction for new users; one-time per machine).
+- HTTP fetch of `latest.json`
+- Minisign signature verification (Ed25519 under the hood; Minisign box
+  format on the wire)
+- Download progress events
+- Install (NSIS `/S` on Windows, `tauri_current_app` swap on macOS, in-process
+  rename on Linux AppImage)
+- Cross-platform atomic-swap-or-rollback policy
+
+We retain the same end-to-end security guarantees (Minisign signature is
+Ed25519, just packaged in the Minisign keybox format) but lose nothing in
+the swap — the plugin is the supported path.
+
+The first v0.1.38 release drops support for the v0.1.37 raw-Ed25519
+verifier. Users on v0.1.37 must download the v0.1.38 installer from
+GitHub Releases manually (one-time per machine). From v0.1.38 onwards,
+all updates flow through the plugin.
 
 ## Architecture
 
 ```
-v0.1.34 (running)                        v0.1.35 (running)
-┌─────────────────────┐                  ┌──────────────────────────┐
-│ check latest.json   │                  │ apply_pending_update     │
-│ if newer: download  │                  │   1. crash recovery      │
-│   ├── verify sha256 │                  │   2. read marker         │
-│   └── verify ed25519│                  │   3. <exe> → <exe>.bak   │
-│ write pending.json  │                  │   4. extract zip         │
-│ show splash:        │                  │   5. delete .bak         │
-│   "Restart to apply"│ ─────►           │   6. spawn new detached  │
-│ on restart:         │                  │   7. old process exits   │
-│   atomic file swap  │                  │                          │
-│   relaunch          │                  │                          │
-└─────────────────────┘                  └──────────────────────────┘
+                    Tauri CLI build (CI)
+                    ┌────────────────────────────┐
+                    │ pnpm tauri build --target X│
+                    │ env: TAURI_SIGNING_PRIVATE_│
+                    │      KEY                   │
+                    └──────────┬─────────────────┘
+                               │
+                               │ writes <bundle>.sig next to each bundle
+                               ▼
+                    ┌────────────────────────────┐
+                    │ Tauri CLI bundle outputs   │
+                    │  nsis/*.exe + .sig         │
+                    │  macos/*.app.tar.gz + .sig │
+                    │  appimage/*.AppImage + .sig│
+                    └──────────┬─────────────────┘
+                               │
+                               │ upload-artifact (per platform)
+                               ▼
+                    ┌────────────────────────────┐
+                    │ latest-json job            │
+                    │ reads <bundle>.sig content │
+                    │ builds latest.json         │
+                    │  { platform: { url, sig } }│
+                    └──────────┬─────────────────┘
+                               │
+                               │ gh release upload
+                               ▼
+                    ┌────────────────────────────┐
+                    │ GitHub Release tag vX.Y.Z  │
+                    │ latest.json + 4 bundles    │
+                    │ + 4 .sig files             │
+                    └──────────┬─────────────────┘
+                               │
+                               │ Plugin runs check() on next launch
+                               ▼
+                    ┌────────────────────────────┐
+                    │ Client: tauri-plugin-updater
+                    │  check() → fetch latest.json│
+                    │  verify Minisign signature │
+                    │    against embedded pubkey  │
+                    │  download() → bundle bytes │
+                    │  install() → platform swap │
+                    └────────────────────────────┘
 ```
 
 ## Keypair Ceremony
 
-The Ed25519 keypair is split:
-
-- **Public key** (`PROD_PUBLIC_KEY_BYTES` in `src-tauri/src/updater_key.rs`)
-  is embedded in every shipped binary. Anyone can read it; it's *public*.
-- **Private seed** is held **only** in the GitHub Actions secret
-  `$UPDATER_SIGNING_KEY` (base64 of 32 bytes). CI uses it to sign each
-  release's `*.zip` payload. It is never committed.
+The release pipeline uses a **Minisign** keypair. Minisign wraps a 32-byte
+Ed25519 seed in a keybox file (similar to PGP keyring format) with a
+trusted-comment header. The same keypair signs every release artifact.
 
 ### First-time setup
 
-1. Generate a fresh Ed25519 keypair:
+1. Install the `minisign` CLI:
    ```bash
-   openssl genpkey -algorithm ed25519 -out priv.pem
-   openssl pkey -in priv.pem -text -noout
+   brew install minisign   # macOS
+   apt install minisign    # Debian/Ubuntu
    ```
-2. The output has `priv:` and `pub:` sections. The `priv:` bytes are the
-   32-byte seed. Encode as base64:
+2. Generate the keypair with a non-empty password (Tauri CLI requires it):
    ```bash
-   cat priv.pem | openssl pkey -text -noout | \
-     awk '/priv:/{flag=1; next} /pub:/{flag=0} flag' | \
-     tr -d ' :\n' | base64
+   minisign -G -p minisign.pub -s minisign.key -W
    ```
-   Or use the simpler one-shot:
-   ```bash
-   python3 -c "
-   from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-   import os, base64
-   seed = os.urandom(32)
-   sk = Ed25519PrivateKey.from_private_bytes(seed)
-   print('SEED_B64:', base64.b64encode(seed).decode())
-   print('PUB_HEX:', sk.public_key().public_bytes_raw().hex())
-   "
-   ```
-3. Set the base64 seed as the GitHub repo secret `$UPDATER_SIGNING_KEY`.
-4. Paste the pubkey hex into `PROD_PUBLIC_KEY_BYTES` in
-   `src-tauri/src/updater_key.rs`. Rebuild + ship a release.
+   `minisign.key` is the encrypted private key (base64 + comment header);
+   `minisign.pub` is the public key (also base64 + comment header).
+3. Set two GitHub repository secrets (Settings → Secrets and variables → Actions):
+   - `TAURI_SIGNING_PRIVATE_KEY` — contents of `minisign.key` (the entire
+     keybox file, not just the base64 payload).
+   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — the password you typed at
+     the `-W` prompt.
+4. Embed the **public key** in the binary via the build script:
+   `src-tauri/build.rs` reads `TAURI_UPDATER_PUBKEY` from the
+   environment (or `.cargo/config.toml`) and emits
+   `cargo:rustc-env=TAURI_UPDATER_PUBKEY=...`. `src-tauri/src/lib.rs`
+   references it via `env!("TAURI_UPDATER_PUBKEY")` when wiring
+   `tauri_plugin_updater::Builder`.
+5. Confirm locally with `scripts/dev-setup-minisign.sh`, which mints a
+   test-only keypair under `src-tauri/tests/keypair/` and exports
+   `TAURI_UPDATER_PUBKEY` to the current shell.
 
 ### Rotation
 
 When rotating (suspected compromise, periodic hygiene):
 
-1. Generate a new keypair with the procedure above.
-2. Set the new seed as `$UPDATER_SIGNING_KEY`.
-3. Replace `PROD_PUBLIC_KEY_BYTES` with the new pubkey hex.
-4. Ship a release. **Every existing user** receives the new release as
-   an update — the embedded key rotates automatically. No data loss;
-   no user action required.
+1. Generate a new keypair with `minisign -G` as above.
+2. Update `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+   in GitHub Actions secrets.
+3. Update `TAURI_UPDATER_PUBKEY` for local builds (e.g. via
+   `.cargo/config.toml`).
+4. Ship a release. Every existing user receives the new release as an
+   update — the embedded pubkey rotates automatically. **You MUST also
+   bump the release version** because the plugin won't downgrade.
+
+### Backup
+
+Store `minisign.key` in your enterprise secrets manager (1Password /
+Vault / AWS Secrets Manager) outside Git. The CI secret is the only
+production copy; losing it means you cannot ship further updates.
 
 ## CI Signing
 
-`.github/workflows/release.yml` signs every `release-output/*.zip` after
-the Tauri build via `scripts/sign-ed25519.py`:
+`.github/workflows/release.yml` does NOT call `minisign` directly. Tauri CLI
+detects `TAURI_SIGNING_PRIVATE_KEY` (and its password env var) at build
+time and signs every bundle artifact automatically, writing a `.sig`
+file next to each:
 
 ```yaml
-- name: Sign self-update bundles with Ed25519
-  if: env.UPDATER_SIGNING_KEY != ''
+- name: Build Tauri app
   env:
-    UPDATER_SIGNING_KEY: ${{ secrets.UPDATER_SIGNING_KEY }}
-  run: |
-    for zip in release-output/*.zip; do
-      sig="$(python3 scripts/sign-ed25519.py "$UPDATER_SIGNING_KEY" "$zip")"
-      echo "${sig}" > "${zip}.sig"
-    done
+    TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+  run: pnpm tauri build --target ${{ matrix.target }}
 ```
 
-The signing step is **skipped** when the secret is empty (`if: env.UPDATER_SIGNING_KEY != ''`)
-so installer-only releases still work before the first self-update ships.
+The `latest-json` job downloads all four platform artifacts, reads each
+`<bundle>.sig` file, and embeds the raw Minisign signature box content as
+the `signature` field per platform:
 
-`latest.json` generation appends `bundle_url`, `bundle_sha256`, and
-`ed25519_sig` per platform when a signed zip exists. Legacy latest.json
-files (without these fields) parse cleanly via `#[serde(default)]`.
+```json
+{
+  "version": "0.1.38",
+  "notes": "Release 0.1.38",
+  "pub_date": "2026-...",
+  "platforms": {
+    "darwin-aarch64":   { "url": "https://.../PaintKiDukaan.app.tar.gz",   "signature": "<minisign box>" },
+    "darwin-x86_64":    { "url": "https://.../PaintKiDukaan.app.tar.gz",   "signature": "<minisign box>" },
+    "windows-x86_64":   { "url": "https://.../PaintKiDukaan_0.1.38_x64-setup.exe", "signature": "<minisign box>" },
+    "windows-aarch64":  { "url": "https://.../PaintKiDukaan_0.1.38_arm64-setup.exe", "signature": "<minisign box>" }
+  }
+}
+```
+
+The `signature` field must be the **raw Minisign box** (multi-line,
+including the trusted/untrusted comment headers), NOT a base64 of raw
+Ed25519. This is the format that `minisign_verify::Signature::from_base64`
+on the plugin side expects.
 
 ## Update Flow (in-app)
 
-1. **App launches.** `apply_pending_update_for_running_process` runs FIRST
-   (before Job Object creation — the spawned new process must NOT inherit
-   `KILL_ON_JOB_CLOSE`). If a pending update is applied, the old process
-   exits immediately and the new detached process takes over.
-2. **Splash + gate.** If no pending update, `run_update_gate` fetches
-   `latest.json` and compares versions.
-3. **Self-update path.** When the platform entry has `bundle_url` +
-   `ed25519_sig` + `bundle_sha256`, the gate calls `stage_update(...)`
-   which downloads the signed zip, verifies SHA-256, verifies Ed25519,
-   and writes a `pending_update.json` marker.
-4. **User prompt.** Splash shows "v0.1.35 ready — Restart to apply?" with
-   a green [Restart Now] button. Clicking it calls `cmd_quit_after_update`,
-   which calls `apply_pending_update` synchronously and exits.
-5. **Atomic swap.** On the next launch (or immediately via Restart Now),
-   `<exe>` is renamed `<exe>.bak`, the staged zip is extracted, `.bak` is
-   deleted, and the new `<exe>` is spawned detached.
-6. **Crash recovery.** If a crash occurs mid-swap (after rename, before
-   extract), the next launch detects the orphaned `<exe>.bak` with a
-   missing `<exe>` and restores it.
+1. **App launches.** `tauri_plugin_updater::Builder::build()` runs in
+   `lib.rs::run()` setup. The plugin reads `latest.json` at the URL
+   declared in `tauri.conf.json` and decides whether to update.
+2. **Plugin events.** Frontend subscribes to `tauri://update-available`,
+   `tauri://update-download-progress`, and `tauri://update-downloaded`
+   via `window.__TAURI__.event.listen`. A simple progress overlay in
+   `public/splash.html` reflects these events.
+3. **Download + verify.** Plugin downloads the bundle, verifies the
+   Minisign signature against the embedded pubkey. If either fails, the
+   plugin surfaces an error and aborts.
+4. **Install.** On the next plugin `install()` call (called from
+   `cmd_install_update` after the user confirms), the plugin:
+   - **Windows:** extracts the zip and runs the NSIS installer with `/S`
+     flags; rollback is delegated to NSIS.
+   - **macOS:** moves the current `.app` to a temp backup
+     (`tauri_current_app`), then moves the new `.app` into place.
+   - **Linux AppImage:** in-process `std::fs::rename` to a `tmp_app_image`
+     path; restores on extract error.
+5. **Process exit + relaunch.** After install, the plugin calls
+   `app.exit(0)`. The OS or installer relaunches the new binary.
+
+There is **no custom splash, no "Restart to apply?" prompt, no atomic
+`.bak` swap**. The plugin's auto-install path is the only update path.
+Customers who want to defer updates can disable them in app settings
+(this is a future UI affordance — for v0.1.38 the plugin auto-installs
+on launch).
 
 ## First-Install Flow (NSIS)
 
-New users download `PaintKiDukaan_*_setup.exe` from GitHub Releases and run
-it. NSIS is unsigned, so Windows shows the SmartScreen prompt. Users click
-**More info → Run anyway**. Acceptable one-time friction.
+New users download `PaintKiDukaan_*_setup.exe` from GitHub Releases and
+run it. NSIS is unsigned, so Windows shows the SmartScreen prompt.
+Users click **More info → Run anyway**. Acceptable one-time friction.
 
 For long-term zero-friction first-install, apply for [SignPath.io OSS
 program](https://signpath.io/) (free EV cert, ~2 weeks review) and
-re-enable signing in the NSIS bundle config.
+re-enable Authenticode signing in the NSIS bundle config.
+
+## 0.1.37 → 0.1.38 Upgrade
+
+The v0.1.37 raw-Ed25519 verifier has been removed in v0.1.38. v0.1.37
+binaries will refuse to install v0.1.38 because the v0.1.38 latest.json
+uses Minisign-format signatures, not raw-Ed25519 signatures.
+
+Users on v0.1.37 must:
+
+1. Open https://github.com/tinyhumansai/paintkiduakan/releases/tag/v0.1.38
+2. Download `PaintKiDukaan_0.1.38_<arch>-setup.exe` (Windows) or
+   `PaintKiDukaan.app.tar.gz` (macOS) manually.
+3. Run the installer (Windows SmartScreen one-time prompt) or extract +
+   drag `.app` to Applications (macOS).
+4. From v0.1.38 onwards, in-app updates flow through the plugin
+   automatically.
+
+Document this prominently in the v0.1.38 release notes.
 
 ## Threat Model
 
-| Threat                            | Mitigation                                           |
-| --------------------------------- | ---------------------------------------------------- |
-| Tampered `latest.json` (MITM)     | TLS + GitHub Releases domain check (`is_trusted_update_url`) |
-| Tampered zip payload              | Ed25519 signature verified against embedded pubkey   |
-| Replayed old release              | Version comparison (semver `is_newer`)               |
-| Stale staging dir on disk         | `pending_update.json` marker; cleanup on next apply  |
-| Crash mid-swap                    | Crash recovery in `apply_pending_update`             |
-| SmartScreen (os error 4551)       | **Bypassed entirely** — no installer spawn           |
+| Threat                            | Mitigation                                              |
+| --------------------------------- | ------------------------------------------------------- |
+| Tampered `latest.json` (MITM)     | TLS + GitHub Releases domain check (`is_trusted_update_url` is now plugin-internal) |
+| Tampered bundle payload           | Minisign signature verified against embedded pubkey      |
+| Replayed old release              | Plugin version comparison (`version_comparator` config) |
+| Crash mid-install                 | Plugin's per-platform recovery (NSIS rollback / tempfile swap / in-process rename) |
+| SmartScreen (os error 4551)       | **Bypassed for updates** (in-app install); one-time NSIS friction for first install |
 
 ## Troubleshooting
 
-- **"signature verification failed"** — `UPDATER_SIGNING_KEY` rotated
-  without updating the embedded pubkey, or vice versa. Verify both match.
-- **"SHA-256 mismatch"** — CI re-built the zip without bumping the hash.
-  Re-run the release.
-- **App refuses to update, stays on old version** — `apply_pending_update`
-  returned `Failed`. Check the session log for the reason.
-- **`.bak` leftover in install dir** — Crash recovery skips restoration
-  when `<exe>` exists, so a leftover `.bak` is harmless. Next successful
-  install overwrites both.
+- **"signature verification failed"** — `TAURI_SIGNING_PRIVATE_KEY` rotated
+  without updating the embedded pubkey, or vice versa. Verify both come
+  from the same `minisign -G` invocation.
+- **"no update found"** — Plugin's version_comparator returned false.
+  Check `latest.json` version field matches a semver newer than
+  `CARGO_PKG_VERSION`.
+- **"checksum mismatch" / "extracting failed"** — Plugin can't extract the
+  bundle. On Windows, NSIS bundle's central directory is corrupt or the
+  file isn't a real NSIS installer. Re-run `pnpm tauri build` and confirm
+  `target/<triple>/release/bundle/nsis/*.exe` is non-empty.
+- **App refuses to update, stays on old version** — Plugin's `check()`
+  hit an error. Check the session log + the network tab for HTTP errors.
+- **dev_verify_update fails locally** — Run `scripts/dev-setup-minisign.sh`
+  to mint a fresh test keypair, then re-export `TAURI_UPDATER_PUBKEY`.
+  Confirm `src-tauri/tests/fixtures/tauri.conf.json` exists and
+  `src-tauri/tests/fixtures/dist/` is non-empty.
 
 ## Key Rotation Log
 
-- v0.1.35 — initial keypair generated for development. **Must be rotated
-  before first production release using self-update.**
+- v0.1.35 — initial raw-Ed25519 keypair generated for development.
+  Used by `sign-ed25519.py` + `commands/updater.rs` verifier.
+  **Retired at v0.1.38.**
+- v0.1.38 — fresh Minisign keypair generated via
+  `minisign -G -p minisign.pub -s minisign.key -W`. Public key embedded
+  via `src-tauri/build.rs`; private key held only as
+  `$TAURI_SIGNING_PRIVATE_KEY` + `$TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+  GitHub Actions secrets.

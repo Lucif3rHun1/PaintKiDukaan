@@ -60,3 +60,10 @@ vite.config.js
 src-tauri/bundle/**
 src-tauri/updater.key
 src-tauri/*.bak
+tests/keypair/
+src-tauri/tests/keypair/
+
+# v0.1.38 plugin-updater migration
+src-tauri/installer/                    # NSIS hook templates extracted by Tauri CLI during build
+minisign.key                            # production Minisign private key (NEVER commit)
+minisign.pub                            # production Minisign public key (embedded via build.rs)

@@ -1,6 +1,6 @@
 [package]
 name = "paintkiduakan-master"
-version = "0.1.37"
+version = "0.1.38"
 description = "PaintKiDukaan Master — paint shop inventory + billing system"
 authors = ["PaintKiDukaan"]
 edition = "2021"
@@ -31,6 +31,7 @@ tauri-plugin-log = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 # tauri-plugin-global-shortcut — removed (unused, CWE-1104)
 # tauri-plugin-oauth — removed (unused, CWE-1104)
 # tauri-plugin-keyring-store — removed (unused, CWE-1104)
@@ -59,11 +60,7 @@ subtle = "2"
 # HMAC-SHA256 for backup envelope integrity (R-11)
 hmac = "0.12"
 
-# Updater signing (Ed25519 — replaces NSIS install path to bypass SmartScreen 4551)
-ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
 
-# Updater payload extraction (zip bundle produced by CI; replaced NSIS installer)
-zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -140,6 +137,7 @@ core-foundation = "0.10"
 libc = "0.2"
 
 [dev-dependencies]
+tiny_http = "0.12"
 
 [features]
 default = ["custom-protocol"]

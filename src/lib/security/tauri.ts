@@ -10,7 +10,7 @@
  * is NOT enabled on any command), so this is a non-breaking additive change.
  */
 
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen as tauriListen, type Event, type UnlistenFn } from "@tauri-apps/api/event";
 import { useSecurity } from "./state";
 
 let cidCounter = 0;
@@ -70,9 +70,21 @@ export { generateCorrelationId };
  * action as the in-app lock button.
  */
 export function listenTrayLock(): Promise<UnlistenFn> {
-  return listen("tray:lock", () => {
+  return tauriListen("tray:lock", () => {
     useSecurity.getState().setPhase("locked");
   });
+}
+
+/**
+ * Typed wrapper around the Tauri event listener. The payload type is inferred
+ * from the event name at the call site so plugin events (DownloadProgress,
+ * UpdateAvailable, etc.) are consumed with the correct shape.
+ */
+export function listen<T>(
+  eventName: string,
+  handler: (payload: T) => void,
+): Promise<UnlistenFn> {
+  return tauriListen(eventName, (event: Event<T>) => handler(event.payload));
 }
 
 if (typeof window !== "undefined") {

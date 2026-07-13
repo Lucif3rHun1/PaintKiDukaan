@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub mod commands;
 pub mod crypto;
@@ -18,8 +18,7 @@ pub use error::AppError;
 
 pub mod obs;
 
-// Updater Ed25519 public key (embedded at build time; private key in CI secret).
-pub mod updater_key;
+
 
 #[cfg(target_os = "windows")]
 pub static JOB_OBJECT: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
@@ -63,21 +62,14 @@ fn log_frontend(level: String, message: String) -> Result<(), String> {
 }
 
 pub fn run() {
-    // ── Self-update: apply pending staged update before anything else ──
-    // If apply_pending_update succeeds, the new version has been spawned
-    // detached and we must exit immediately so the old process doesn't keep
-    // running. If no pending update exists, fall through to normal startup.
-    match commands::updater::apply_pending_update_for_running_process() {
-        commands::updater::ApplyOutcome::Applied => {
-            log::info!("updater: applied staged update; exiting old process");
-            std::process::exit(0);
-        }
-        commands::updater::ApplyOutcome::Failed(reason) => {
-            log::warn!("updater: apply_pending_update failed: {reason}");
-            // Continue with old version — don't strand the user.
-        }
-        commands::updater::ApplyOutcome::NoPending => {}
+    // Ponytail: if this process was launched purely to carry --graceful-quit (because the
+    // running instance that should have received it via single_instance is absent), just exit
+    // fast. NSIS's ExecWait sees an immediate code-0 return.
+    if std::env::args().any(|a| a == "--graceful-quit") {
+        std::process::exit(0);
     }
+
+    
 
     #[cfg(target_os = "windows")]
     unsafe {
@@ -156,7 +148,20 @@ pub fn run() {
                 )
                 .build(),
         )
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // Ponytail: NSIS installer forwards --graceful-quit to a running instance.
+            // We emit a quit-request event so the frontend can persist any dirty form state
+            // via cmd_save_draft, then ACK by exiting. If the frontend doesn't ACK within 3s
+            // (locked/hung), we still exit — the bounded wait is by design.
+            if argv.iter().any(|a| a == "--graceful-quit") {
+                let handle = app.clone();
+                std::thread::spawn(move || {
+                    let _ = handle.emit("app://graceful-quit-requested", ());
+                    std::thread::sleep(std::time::Duration::from_millis(3000));
+                    crate::graceful_shutdown(&handle);
+                });
+                return;
+            }
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_focus();
             }
@@ -166,6 +171,11 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_process::init())
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .pubkey(env!("TAURI_UPDATER_PUBKEY"))
+                .build(),
+        )
         .manage(commands::auth::AppState::default())
         .setup(move |app| {
             log::info!("=== PKB session started ===");
@@ -279,56 +289,9 @@ pub fn run() {
                 }
             }
 
-            use std::sync::mpsc;
-            let (tx, rx) = mpsc::channel::<String>();
-            app.manage(commands::updater::RetryChannel(tx));
-
-            #[cfg(not(debug_assertions))]
-            {
-                use tauri::WebviewUrl;
-                use tauri::WebviewWindowBuilder;
-
-                let splash_label = "splash";
-                let _splash = WebviewWindowBuilder::new(
-                    app,
-                    splash_label,
-                    WebviewUrl::App("splash.html".into()),
-                )
-                .title("PaintKiDukaan")
-                .inner_size(480.0, 320.0)
-                .decorations(false)
-                .always_on_top(true)
-                .resizable(false)
-                .skip_taskbar(true)
-                .build()?;
-
-                let version = env!("CARGO_PKG_VERSION");
-                if let Some(splash) = app.get_webview_window(splash_label) {
-                    let _ = splash.eval(&format!("window.__setVersion('{version}')"));
-                }
-
-                let handle_clone = handle.clone();
-                let splash_label_owned = splash_label.to_string();
-                std::thread::spawn(move || {
-                    let rt = tokio::runtime::Runtime::new().unwrap();
-                    rt.block_on(async {
-                        commands::updater::run_update_gate(
-                            handle_clone,
-                            splash_label_owned,
-                            rx,
-                        )
-                        .await;
-                    });
-                });
-            }
-
-            #[cfg(debug_assertions)]
-            {
-                drop(rx);
-                if let Some(main) = app.get_webview_window("main") {
-                    let _ = main.show();
-                    let _ = main.set_focus();
-                }
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.show();
+                let _ = main.set_focus();
             }
 
             log::info!("Setup complete");
@@ -561,7 +524,7 @@ pub fn run() {
             // Scanner (Slice D)
             scan::set_scan_target,
             scan::scan_target,
-            // Custom SHA-256 updater (replaces tauri-plugin-updater runtime)
+            // Tauri plugin updater shims
             commands::updater::cmd_check_update,
             commands::updater::cmd_download_update,
             commands::updater::cmd_install_update,
@@ -586,9 +549,29 @@ pub fn run() {
         } = &event
         {
             let _ = label;
-            app_handle.exit(0);
+            crate::graceful_shutdown(app_handle);
         }
     });
+}
+
+/// Ponytail: single choke-point for every quit path (CloseRequested, tray Quit,
+/// cmd_quit_app, cmd_quit_after_update, --graceful-quit single-instance branch).
+///
+/// Best-effort: signals `scan::SHUTDOWN` so rdev's hook thread has a chance to
+/// unwind (its `if SHUTDOWN.load { return }` gate fires on the next keystroke).
+///
+/// Hard guarantee: `std::process::exit(0)` after a 300ms grace. Bypasses any
+/// non-daemon thread (rdev 0.5.3 on Windows uses a blocking `GetMessage` loop
+/// on a non-daemon thread; we cannot wait for it to return — but
+/// `std::process::exit` calls `_exit` immediately and the OS unhooks
+/// `WH_KEYBOARD_LL` on process death).
+///
+/// Do NOT use `app.exit(0)` from any quit trigger; route here instead so the
+/// hook-thread-leak fix applies uniformly.
+pub fn graceful_shutdown<R: tauri::Runtime>(_app_handle: &tauri::AppHandle<R>) -> ! {
+    scan::request_shutdown();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    std::process::exit(0);
 }
 
 #[cfg(test)]

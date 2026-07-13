@@ -28,6 +28,7 @@ import {
   type FormulaSaleRow,
 } from "./types";
 import type { Sale } from "../pos/types";
+import { check, Update, type DownloadEvent } from "@tauri-apps/plugin-updater";
 
 export async function invoke<T>(
   cmd: string,
@@ -200,3 +201,21 @@ export async function listFormulaSales(
 ): Promise<FormulaSaleRow[]> {
   return invoke<FormulaSaleRow[]>("cmd_list_formula_sales", { formula_id: id, ...opts });
 }
+
+export async function checkUpdate(): Promise<Update | null> {
+  return check();
+}
+
+export async function downloadUpdate(
+  update: Update,
+  onEvent?: (progress: DownloadEvent) => void,
+): Promise<void> {
+  await update.download(onEvent);
+}
+
+export async function installUpdate(update: Update): Promise<void> {
+  await update.install();
+}
+
+export type { DownloadEvent };
+export { Update };

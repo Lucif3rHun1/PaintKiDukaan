@@ -35,7 +35,7 @@ pub fn init<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Erro
             "show" => show_main_window(app),
             "hide" => hide_main_window(app),
             "lock" => lock_workstation(app),
-            "quit" => app.exit(0),
+            "quit" => crate::graceful_shutdown(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

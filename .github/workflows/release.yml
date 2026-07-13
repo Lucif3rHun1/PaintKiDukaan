@@ -19,20 +19,20 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             openssl_triplet: x64-windows-static
-            asset_glob: target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            asset_glob: "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe*"
             artifact_name: windows-x86_64
           - os: windows-latest
             target: aarch64-pc-windows-msvc
             openssl_triplet: arm64-windows-static
-            asset_glob: target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+            asset_glob: "target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe*"
             artifact_name: windows-aarch64
           - os: macos-latest
             target: aarch64-apple-darwin
-            asset_glob: release-output/*.app.tar.gz
+            asset_glob: "target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz*"
             artifact_name: macos-aarch64
           - os: macos-latest
             target: x86_64-apple-darwin
-            asset_glob: release-output/*.app.tar.gz
+            asset_glob: "target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz*"
             artifact_name: macos-x86_64
 
     steps:
@@ -96,76 +96,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build Tauri app
-        run: pnpm tauri build --target ${{ matrix.target }}
-
-      # Self-update: produce a signed bare-app zip alongside the NSIS installer.
-      # The signed zip is what existing users receive via in-app self-update
-      # (no NSIS spawn → no SmartScreen → no error 4551).
-      - name: Pack bare app bundle for self-update
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-output
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            # GitHub windows-latest runners do not ship `zip`. Use PowerShell's
-            # built-in Compress-Archive instead. The relative output path
-            # `../../../release-output/` is correct: cwd is target/<triple>/release,
-            # 3 levels up is repo root.
-            release_dir="target/${{ matrix.target }}/release"
-            exe_name="$(ls "$release_dir"/*.exe | grep -v -i installer | head -n 1 | xargs -n 1 basename)"
-            cd "$release_dir"
-            pwsh -NoProfile -Command "
-              Compress-Archive -Path '$exe_name' -DestinationPath '../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip' -Force
-            "
-          else
-            # From target/<triple>/release/bundle/macos/, repo root is 5 levels up:
-            # macos -> bundle -> release -> <triple> -> target -> repo. The path
-            # `../../../../../release-output/` lands at repo-root/release-output/.
-            app_path="$(find target -path '*/release/bundle/macos/*.app' -type d | sort | head -n 1)"
-            cd "$(dirname "$app_path")"
-            zip -r "../../../../../release-output/PaintKiDukaan_${GITHUB_REF_NAME#v}_${{ matrix.artifact_name }}.zip" \
-              "$(basename "$app_path")"
-          fi
-          echo "=== Self-update bundles ==="
-          ls -la release-output/*.zip 2>/dev/null || echo "no zip produced"
-
-      - name: Sign self-update bundles with Ed25519
-        if: env.UPDATER_SIGNING_KEY != ''
-        shell: bash
         env:
-          UPDATER_SIGNING_KEY: ${{ secrets.UPDATER_SIGNING_KEY }}
-        run: |
-          set -euo pipefail
-          for zip in release-output/*.zip; do
-            [ -e "$zip" ] || continue
-            # Seed is read from UPDATER_SIGNING_KEY env (set above) — never argv
-            # so the secret doesn't appear in `ps aux` during the run.
-            sig="$(python3 scripts/sign-ed25519.py "$zip")"
-            echo "${sig}" > "${zip}.sig"
-            echo "signed: $zip ($(wc -c < "$zip") bytes, sig ${#sig} chars)"
-          done
-          echo "=== Signed bundles ==="
-          ls -la release-output/
-
-      - name: Pack macOS app bundle
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-output
-          echo "=== Tauri bundle output tree ==="
-          find target -maxdepth 6 \( -name '*.app' -o -name '*.dmg' -o -name 'bundle' \) -print 2>/dev/null || echo "(no bundle output found)"
-          app_path="$(find target -path '*/release/bundle/macos/*.app' -type d | sort | head -n 1)"
-          if [[ -z "$app_path" ]]; then
-            echo "ERROR: No .app bundle found under target/*/release/bundle/macos/" >&2
-            echo "Listing all bundle directories:" >&2
-            find target -maxdepth 6 -type d -name 'bundle' -exec ls -la {} \; 2>/dev/null || true
-            exit 1
-          fi
-          echo "=== Packing: $app_path ==="
-          tar -C "$(dirname "$app_path")" -czf "release-output/$(basename "$app_path").tar.gz" "$(basename "$app_path")"
-          echo "=== Packed ==="
-          ls -la release-output/
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --target ${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -173,8 +107,9 @@ jobs:
           if-no-files-found: error
           path: ${{ matrix.asset_glob }}
 
-  # Ponytail: app uses a custom SHA-256 verified updater (commands::updater).
-  # No minisign keypair ceremony. Release artifacts are the bundle outputs only.
+  # Plugin-based updater (tauri-plugin-updater). Tauri CLI signs each bundle with
+  # Minisign during build via $TAURI_SIGNING_PRIVATE_KEY; .sig files land next to each
+  # bundle in release-artifacts/<plat>/ and are embedded in latest.json per platform.
   latest-json:
     name: publish latest.json
     runs-on: ubuntu-latest
@@ -187,7 +122,7 @@ jobs:
         with:
           path: release-artifacts
 
-      - name: Generate latest.json (SHA-256 verified)
+      - name: Generate latest.json (Minisign-signed, Tauri 2 plugin format)
         shell: bash
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
@@ -196,14 +131,14 @@ jobs:
           set -euo pipefail
 
           version="${GITHUB_REF_NAME#v}"
-          notes='Release notes here'
+          notes="Release ${version}"
           pub_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           release_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
 
           pick() {
             local dir="$1" glob="$2"
             local f
-            f="$(find "release-artifacts/$dir" -type f -name "$glob" | sort | head -n 1)"
+            f="$(find "release-artifacts/$dir" -type f -name "$glob" ! -name '*.sig' | sort | head -n 1)"
             if [[ -z "$f" ]]; then
               echo "ERROR: no '$glob' under release-artifacts/$dir" >&2
               find "release-artifacts/$dir" -type f >&2 || true
@@ -212,74 +147,50 @@ jobs:
             printf '%s' "$f"
           }
 
-          declare -A asset
-          asset[macos-aarch64]="$(pick macos-aarch64 '*.app.tar.gz')"
-          asset[macos-x86_64]="$(pick macos-x86_64 '*.app.tar.gz')"
-          asset[windows-x86_64]="$(pick windows-x86_64 '*.exe')"
-          asset[windows-aarch64]="$(pick windows-aarch64 '*.exe')"
+          pick_sig() {
+            local bundle="$1"
+            if [[ ! -f "${bundle}.sig" ]]; then
+              echo "ERROR: missing .sig for ${bundle}" >&2
+              exit 1
+            fi
+            cat "${bundle}.sig"
+          }
+
+          declare -A bundle sig
+          bundle[macos-aarch64]="$(pick macos-aarch64 '*.app.tar.gz')"
+          sig[macos-aarch64]="$(pick_sig "${bundle[macos-aarch64]}")"
+          bundle[macos-x86_64]="$(pick macos-x86_64 '*.app.tar.gz')"
+          sig[macos-x86_64]="$(pick_sig "${bundle[macos-x86_64]}")"
+          bundle[windows-x86_64]="$(pick windows-x86_64 '*.exe')"
+          sig[windows-x86_64]="$(pick_sig "${bundle[windows-x86_64]}")"
+          bundle[windows-aarch64]="$(pick windows-aarch64 '*.exe')"
+          sig[windows-aarch64]="$(pick_sig "${bundle[windows-aarch64]}")"
 
           mkdir -p release-files
-          for key in "${!asset[@]}"; do
-            cp "${asset[$key]}" "release-files/$(basename "${asset[$key]}")"
+          for key in "${!bundle[@]}"; do
+            cp "${bundle[$key]}" "release-files/$(basename "${bundle[$key]}")"
+            cp "${bundle[$key]}.sig" "release-files/$(basename "${bundle[$key]}").sig"
           done
 
-          sha256() { sha256sum "$1" | awk '{print $1}'; }
-
-          macos_aarch64_name="$(basename "${asset[macos-aarch64]}")"
-          macos_aarch64_sha="$(sha256 "${asset[macos-aarch64]}")"
-          macos_aarch64_size="$(stat -c%s "${asset[macos-aarch64]}" 2>/dev/null || stat -f%z "${asset[macos-aarch64]}")"
-          macos_x86_64_name="$(basename "${asset[macos-x86_64]}")"
-          macos_x86_64_sha="$(sha256 "${asset[macos-x86_64]}")"
-          macos_x86_64_size="$(stat -c%s "${asset[macos-x86_64]}" 2>/dev/null || stat -f%z "${asset[macos-x86_64]}")"
-          windows_x86_64_name="$(basename "${asset[windows-x86_64]}")"
-          windows_x86_64_sha="$(sha256 "${asset[windows-x86_64]}")"
-          windows_x86_64_size="$(stat -c%s "${asset[windows-x86_64]}" 2>/dev/null || stat -f%z "${asset[windows-x86_64]}")"
-          windows_aarch64_name="$(basename "${asset[windows-aarch64]}")"
-          windows_aarch64_sha="$(sha256 "${asset[windows-aarch64]}")"
-          windows_aarch64_size="$(stat -c%s "${asset[windows-aarch64]}" 2>/dev/null || stat -f%z "${asset[windows-aarch64]}")"
-
-          cat > latest.json <<EOF
-          {
-            "version": "${version}",
-            "notes": "${notes}",
-            "pub_date": "${pub_date}",
-            "platforms": {
-              "darwin-aarch64":  { "url": "${release_url}/${macos_aarch64_name}",   "sha256": "${macos_aarch64_sha}",   "size": ${macos_aarch64_size} },
-              "darwin-x86_64":   { "url": "${release_url}/${macos_x86_64_name}",    "sha256": "${macos_x86_64_sha}",    "size": ${macos_x86_64_size} },
-              "windows-x86_64":  { "url": "${release_url}/${windows_x86_64_name}",  "sha256": "${windows_x86_64_sha}",  "size": ${windows_x86_64_size} },
-              "windows-aarch64": { "url": "${release_url}/${windows_aarch64_name}", "sha256": "${windows_aarch64_sha}", "size": ${windows_aarch64_size} }
-            }
-          }
-          EOF
-
-          # Add self-update signed-bundle fields if a zip + .sig exists for this
-          # platform. JSON Merge Patch via python (no jq dependency).
-          for key in macos-aarch64 macos-x86_64 windows-x86_64 windows-aarch64; do
-            zip_name="PaintKiDukaan_${version}_${key}.zip"
-            zip_path="release-artifacts/${key}/${zip_name}"
-            if [[ ! -f "$zip_path" ]]; then
-              for d in release-artifacts/*/; do
-                if [[ -f "${d}${zip_name}" ]]; then
-                  zip_path="${d}${zip_name}"
-                  break
-                fi
-              done
-            fi
-            if [[ -f "$zip_path" && -f "${zip_path}.sig" ]]; then
-              bundle_sha="$(sha256 "$zip_path")"
-              bundle_sig="$(cat "${zip_path}.sig")"
-              python3 - <<PYEOF
-          import json
-          with open("latest.json") as f:
-              data = json.load(f)
-          data["platforms"]["${key}"]["bundle_url"] = "${release_url}/${zip_name}"
-          data["platforms"]["${key}"]["bundle_sha256"] = "${bundle_sha}"
-          data["platforms"]["${key}"]["ed25519_sig"] = "${bundle_sig}"
-          with open("latest.json", "w") as f:
-              json.dump(data, f, indent=2)
-          PYEOF
-            fi
-          done
+          jq -n \
+            --arg version "$version" \
+            --arg notes "$notes" \
+            --arg pub_date "$pub_date" \
+            --arg ma_url "${release_url}/$(basename "${bundle[macos-aarch64]}")" --arg ma_sig "${sig[macos-aarch64]}" \
+            --arg mx_url "${release_url}/$(basename "${bundle[macos-x86_64]}")" --arg mx_sig "${sig[macos-x86_64]}" \
+            --arg wx_url "${release_url}/$(basename "${bundle[windows-x86_64]}")" --arg wx_sig "${sig[windows-x86_64]}" \
+            --arg wa_url "${release_url}/$(basename "${bundle[windows-aarch64]}")" --arg wa_sig "${sig[windows-aarch64]}" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64":   {url: $ma_url, signature: $ma_sig},
+                "darwin-x86_64":    {url: $mx_url, signature: $mx_sig},
+                "windows-x86_64":   {url: $wx_url, signature: $wx_sig},
+                "windows-aarch64":  {url: $wa_url, signature: $wa_sig}
+              }
+            }' > latest.json
 
           cat latest.json
 
