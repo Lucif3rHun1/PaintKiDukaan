@@ -169,33 +169,30 @@ fn log_ntdll_signals(ntdll: &ntdll_integrity::NtdllReport) {
 // Require at least one other signal (score > 0) before adding the +30 penalty.
 #[cfg(target_os = "windows")]
 fn amsi_check_with_log(score: &mut u8) -> u8 {
-    let bump = match super::amsi_check::init_amsi("PaintKiDukaan") {
-        Ok(ctx) if ctx.initialized => {
-            let verdict = super::amsi_check::self_scan_eicar(&ctx);
-            log::debug!(
-                "hostile_env/amsi: initialized=true  raw_result={}  detected={}  explanation='{}'",
-                verdict.raw_result, verdict.detected, verdict.explanation,
-            );
-            if verdict.detected {
-                log::debug!("hostile_env/amsi: EICAR detected — pipeline intact (+0 pts)");
-                0
-            } else {
-                log::debug!("hostile_env/amsi: EICAR not detected — bypass confirmed (+30 pts)");
-                30
+    let (initialized, detected, init_failed) =
+        match super::amsi_check::init_amsi("PaintKiDukaan") {
+            Ok(ctx) if ctx.initialized => {
+                let verdict = super::amsi_check::self_scan_eicar(&ctx);
+                log::debug!(
+                    "hostile_env/amsi: initialized=true  raw_result={}  detected={}  explanation='{}'",
+                    verdict.raw_result, verdict.detected, verdict.explanation,
+                );
+                (true, verdict.detected, false)
             }
-        }
-        Ok(_ctx) => {
-            log::debug!(
-                "hostile_env/amsi: AmsiInitialize returned non-null but context not initialized \
-                 (AV may be blocking AMSI load) → treating as bypassed (+30 pts)"
-            );
-            30
-        }
-        Err(e) => {
-            log::debug!("hostile_env/amsi: init failed — {e} → treating as bypassed (+30 pts)");
-            30
-        }
-    };
+            Ok(ctx) => {
+                log::info!(
+                    "hostile_env/amsi: no_provider reason='AmsiInitialize returned non-null but no AV provider registered' app='{}' initialized=false (+0 pts)",
+                    ctx.app_name,
+                );
+                (false, false, false)
+            }
+            Err(e) => {
+                log::debug!("hostile_env/amsi: init failed — {e} → treating as bypassed (+30 pts)");
+                (false, false, true)
+            }
+        };
+
+    let bump = amsi_bump_for(initialized, detected, init_failed);
 
     if bump == 0 {
         return 0;
@@ -209,6 +206,20 @@ fn amsi_check_with_log(score: &mut u8) -> u8 {
 
     *score = score.saturating_add(bump);
     bump
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn amsi_bump_for(initialized: bool, detected: bool, init_failed: bool) -> u8 {
+    if init_failed {
+        return 30;
+    }
+    if !initialized {
+        return 0;
+    }
+    if !detected {
+        return 30;
+    }
+    0
 }
 
 pub fn respond(report: &HostileEnvReport, action: HostileResponse) -> ResponseAction {
@@ -303,9 +314,6 @@ fn compute_sniff_score(report: &SniffReport) -> u8 {
         score = score.saturating_add(30);
     }
     if report.proxy_env {
-        score = score.saturating_add(15);
-    }
-    if report.loopback_listener {
         score = score.saturating_add(15);
     }
     score.min(100)
@@ -451,6 +459,34 @@ mod tests {
     }
 
     #[test]
+    fn score_sniff_loopback_listener_is_zero() {
+        let score = compute_sniff_score(&SniffReport {
+            loopback_listener: true,
+            ..Default::default()
+        });
+        assert_eq!(score, 0, "loopback_listener signal must not contribute to sniff score");
+    }
+
+    #[test]
+    fn score_sniff_other_signals_still_score() {
+        let pcap = compute_sniff_score(&SniffReport {
+            pcap_driver: true,
+            ..Default::default()
+        });
+        let analyzer = compute_sniff_score(&SniffReport {
+            analyzer_process: true,
+            ..Default::default()
+        });
+        let proxy = compute_sniff_score(&SniffReport {
+            proxy_env: true,
+            ..Default::default()
+        });
+        assert!(pcap > 0);
+        assert!(analyzer > 0);
+        assert!(proxy > 0);
+    }
+
+    #[test]
     fn score_all_flags_max() {
         let debug = DebugReport {
             debugger_present: true,
@@ -553,5 +589,45 @@ mod tests {
         assert!(json.contains("vm"));
         assert!(json.contains("sniff"));
         assert!(json.contains("ntdll"));
+    }
+
+    #[test]
+    fn amsi_no_provider_zero() {
+        assert_eq!(amsi_bump_for(false, false, false), 0);
+    }
+
+    #[test]
+    fn amsi_init_failed_thirty() {
+        assert_eq!(amsi_bump_for(false, false, true), 30);
+    }
+
+    #[test]
+    fn amsi_bypass_confirmed_thirty() {
+        assert_eq!(amsi_bump_for(true, false, false), 30);
+    }
+
+    #[test]
+    fn amsi_eicar_detected_zero() {
+        assert_eq!(amsi_bump_for(true, true, false), 0);
+    }
+
+    #[test]
+    fn clean_win11_minimal_state_under_lock() {
+        let debug = DebugReport::default();
+        let vm = VmReport { hypervisor_cpu: true, ..Default::default() };
+        let sniff = SniffReport::default();
+        let ntdll = NtdllReport { text_hash_match: true, ..Default::default() };
+        let total = compute_score(&debug, &vm, &sniff, &ntdll);
+        assert!(total < 25, "clean Win11 minimal must score < 25, got {}", total);
+    }
+
+    #[test]
+    fn clean_win11_with_loopback_listener_still_under_lock() {
+        let debug = DebugReport::default();
+        let vm = VmReport { hypervisor_cpu: true, ..Default::default() };
+        let sniff = SniffReport { loopback_listener: true, ..Default::default() };
+        let ntdll = NtdllReport { text_hash_match: true, ..Default::default() };
+        let total = compute_score(&debug, &vm, &sniff, &ntdll);
+        assert!(total < 25, "loopback_listener FP must not push past lock, got {}", total);
     }
 }
