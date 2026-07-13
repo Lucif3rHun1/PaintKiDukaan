@@ -12,9 +12,12 @@
 // tampering (GitHub Releases + any future mirror). Zero key management.
 
 use std::path::{Path, PathBuf};
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::Manager;
+
+use crate::updater_key;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -32,6 +35,48 @@ const ALLOWED_UPDATE_PREFIX: &str =
 
 fn is_trusted_update_url(url: &str) -> bool {
     url.starts_with(ALLOWED_UPDATE_PREFIX)
+}
+
+/// Verify an Ed25519 signature over `payload` against the embedded production
+/// public key. The signature is the base64 of the raw 64-byte Ed25519 signature
+/// produced by CI from `$UPDATER_SIGNING_KEY`.
+///
+/// Returns Err with a human-readable reason on any failure: bad base64, wrong
+/// length, malformed signature bytes, key mismatch, or payload mismatch. The
+/// caller (stage_update) treats every Err as a hard reject — no staged payload,
+/// no install.
+pub fn verify_payload_signature(payload: &[u8], sig_b64: &str) -> Result<(), String> {
+    verify_payload_signature_with_key(payload, sig_b64, &updater_key::verifying_key())
+}
+
+/// Inner verifier with an injected key. Lets tests sign with a throwaway
+/// keypair and verify the happy path; production callers use the wrapper that
+/// hardcodes the embedded public key.
+fn verify_payload_signature_with_key(
+    payload: &[u8],
+    sig_b64: &str,
+    key: &ed25519_dalek::VerifyingKey,
+) -> Result<(), String> {
+    use ed25519_dalek::{Signature, Verifier};
+
+    let sig_bytes = base64::engine::general_purpose::STANDARD
+        .decode(sig_b64)
+        .map_err(|e| format!("signature is not valid base64: {}", e))?;
+
+    if sig_bytes.len() != 64 {
+        return Err(format!(
+            "signature must decode to 64 bytes, got {}",
+            sig_bytes.len()
+        ));
+    }
+
+    let sig_array: [u8; 64] = sig_bytes
+        .try_into()
+        .expect("length checked above; cannot fail here");
+    let sig = Signature::from_bytes(&sig_array);
+
+    key.verify(payload, &sig)
+        .map_err(|_| "signature does not match payload under public key".to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -479,7 +524,7 @@ mod tests {
         );
     }
 
-    #[test]
+#[test]
     fn ensure_path_in_temp_dir_rejects_path_outside_temp_dir() {
         let path = PathBuf::from(if cfg!(target_os = "windows") {
             r"C:\Windows\System32\drivers\etc\hosts"
@@ -492,4 +537,99 @@ mod tests {
         );
     }
 
+    // --- verify_payload_signature tests (US-002) ---
+    // Use a throwaway keypair (separate from the production key embedded in
+    // updater_key.rs) so these tests cannot pass by accident if production
+    // signing/verification wiring breaks.
+
+    use base64::Engine;
+    use ed25519_dalek::{Signer, SigningKey, Verifier};
+    use rand::rngs::OsRng;
+
+    fn b64(bytes: &[u8]) -> String {
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    fn fresh_keypair() -> SigningKey {
+        let mut csprng = OsRng;
+        SigningKey::generate(&mut csprng)
+    }
+
+    #[test]
+    fn verify_valid_signature_passes() {
+        // Sign with a throwaway keypair, verify through the inner helper
+        // (which the public wrapper delegates to). The production wrapper is
+        // hardcoded to the embedded key; full happy-path with the production
+        // seed is covered by stage_update's end-to-end test in US-003.
+        let signing = fresh_keypair();
+        let payload = b"paintkiduakan self-update payload v0.1.35\nsha256=abc123";
+        let sig = signing.sign(payload);
+        let sig_b64 = b64(&sig.to_bytes());
+
+        let result = verify_payload_signature_with_key(payload, &sig_b64, &signing.verifying_key());
+        assert!(
+            result.is_ok(),
+            "valid signature over known payload must verify; got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn verify_malformed_base64_fails() {
+        let payload = b"any payload";
+        let result = verify_payload_signature(payload, "!!!not-base64!!!");
+        assert!(result.is_err(), "non-base64 input must be rejected");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("base64") || err.contains("Signature"),
+            "error must explain the failure; got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn verify_wrong_length_signature_fails() {
+        // Valid base64, but decodes to 32 bytes (half an Ed25519 signature).
+        let too_short = b64(&[0u8; 32]);
+        let result = verify_payload_signature(b"any payload", &too_short);
+        assert!(result.is_err(), "32-byte input must be rejected");
+        assert!(
+            result.unwrap_err().contains("64 bytes"),
+            "error must mention the expected length"
+        );
+    }
+
+    #[test]
+    fn verify_tampered_signature_fails() {
+        // Sign a payload with a throwaway key, flip one bit in the signature,
+        // confirm verify_payload_signature rejects it.
+        let signing = fresh_keypair();
+        let payload = b"paintkiduakan self-update payload v0.1.35";
+        let sig = signing.sign(payload);
+        let mut sig_bytes = sig.to_bytes();
+        sig_bytes[10] ^= 0x01;
+        let tampered_b64 = b64(&sig_bytes);
+
+        let result = verify_payload_signature(payload, &tampered_b64);
+        assert!(
+            result.is_err(),
+            "signature with a flipped bit must be rejected"
+        );
+    }
+
+    #[test]
+    fn verify_foreign_signature_against_production_key_fails() {
+        // An attacker who controls a different signing key cannot forge a
+        // signature that the embedded production key will accept.
+        let foreign = fresh_keypair();
+        let payload = b"forged payload claiming to be v0.1.35 official release";
+        let sig = foreign.sign(payload);
+        let sig_b64 = b64(&sig.to_bytes());
+
+        let result = verify_payload_signature(payload, &sig_b64);
+        assert!(
+            result.is_err(),
+            "production key must reject signatures from a different private seed"
+        );
+    }
 }
