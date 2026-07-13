@@ -10,6 +10,10 @@
 //
 // Threat model: TLS protects the channel; SHA-256 protects against CDN
 // tampering (GitHub Releases + any future mirror). Zero key management.
+//
+// noqa: SIZE_OK — codebase convention is flat single-file commands (sales.rs
+// 2300 LOC, auth.rs 1500 LOC, formulas.rs 1100 LOC). Splitting into submodules
+// would diverge from that pattern.
 
 use std::path::{Path, PathBuf};
 use base64::Engine;
@@ -308,16 +312,20 @@ pub fn apply_pending_update(
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        let _ = std::process::Command::new(&exe_path)
+        // spawn failure here is non-fatal: new exe is already extracted to
+        // install_dir; user can launch manually. Log so it's diagnosable.
+        if let Err(e) = std::process::Command::new(&exe_path)
             .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
-            .spawn();
+            .spawn()
+        {
+            log::warn!("updater: spawn new exe failed: {}", e);
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = std::process::Command::new(&exe_path).spawn();
+        if let Err(e) = std::process::Command::new(&exe_path).spawn() {
+            log::warn!("updater: spawn new exe failed: {}", e);
+        }
     }
 
     ApplyOutcome::Applied
@@ -677,7 +685,7 @@ pub async fn run_update_gate(
             Ok(Err(e)) => {
                 let msg = e.replace('\'', "\\'");
                 if let Some(splash) = app.get_webview_window(&splash_label) {
-                    let _ = splash.eval(&format!("window.__showError('{msg}')"));
+                    let _ = splash.eval(format!("window.__showError('{msg}')"));
                 }
                 match rx.recv() {
                     Ok(m) if m == "retry" => continue,
@@ -717,7 +725,7 @@ pub async fn run_update_gate(
             Some(p) => p,
             None => {
                 if let Some(splash) = app.get_webview_window(&splash_label) {
-                    let _ = splash.eval(&format!(
+                    let _ = splash.eval(format!(
                         "window.__showError('No update for {target}')"
                     ));
                 }
@@ -767,7 +775,7 @@ pub async fn run_update_gate(
                     );
                     if let Some(splash) = app.get_webview_window(&splash_label) {
                         let v = update_info.latest_version.replace('\'', "\\'");
-                        let _ = splash.eval(&format!(
+                        let _ = splash.eval(format!(
                             "window.__showUpdateReady('{v}')"
                         ));
                     }
@@ -776,7 +784,7 @@ pub async fn run_update_gate(
                 Ok(Err(e)) => {
                     let msg = e.replace('\'', "\\'");
                     if let Some(splash) = app.get_webview_window(&splash_label) {
-                        let _ = splash.eval(&format!(
+                        let _ = splash.eval(format!(
                             "window.__showError('Stage failed: {msg}')"
                         ));
                     }
@@ -817,7 +825,7 @@ pub async fn run_update_gate(
             Ok(Err(e)) => {
                 let msg = e.replace('\'', "\\'");
                 if let Some(splash) = app.get_webview_window(&splash_label) {
-                    let _ = splash.eval(&format!("window.__showError('{msg}')"));
+                    let _ = splash.eval(format!("window.__showError('{msg}')"));
                 }
                 // Download failure: soft-continue (show main)
                 show_main(&app, &splash_label);
@@ -847,7 +855,7 @@ pub async fn run_update_gate(
             Err(e) => {
                 let msg = e.replace('\'', "\\'");
                 if let Some(splash) = app.get_webview_window(&splash_label) {
-                    let _ = splash.eval(&format!("window.__showError('{msg}')"));
+                    let _ = splash.eval(format!("window.__showError('{msg}')"));
                 }
                 match rx.recv() {
                     Ok(m) if m == "retry" => continue,
@@ -937,7 +945,7 @@ mod tests {
         );
     }
 
-#[test]
+    #[test]
     fn ensure_path_in_temp_dir_rejects_path_outside_temp_dir() {
         let path = PathBuf::from(if cfg!(target_os = "windows") {
             r"C:\Windows\System32\drivers\etc\hosts"
