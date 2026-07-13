@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
@@ -47,6 +47,108 @@ pub struct UnlockResult {
     pub wipe_triggered: bool,
 }
 
+const SETTINGS_LRU_CAP: usize = 1024;
+
+/// Bounded in-memory settings cache with naive insertion-order eviction.
+// ponytail: VecDeque FIFO is enough; real settings are <100 keys.
+#[derive(Debug)]
+pub struct BoundedSettings {
+    map: Mutex<HashMap<String, Value>>,
+    order: Mutex<VecDeque<String>>,
+}
+
+pub struct BoundedSettingsGuard<'a> {
+    guard: std::sync::MutexGuard<'a, HashMap<String, Value>>,
+    parent: &'a BoundedSettings,
+}
+
+impl BoundedSettings {
+    pub fn new() -> Self {
+        Self {
+            map: Mutex::new(HashMap::new()),
+            order: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    pub fn lock(&self) -> std::sync::LockResult<BoundedSettingsGuard<'_>> {
+        match self.map.lock() {
+            Ok(g) => Ok(BoundedSettingsGuard {
+                guard: g,
+                parent: self,
+            }),
+            Err(e) => {
+                let inner = e.into_inner();
+                let guard = BoundedSettingsGuard {
+                    guard: inner,
+                    parent: self,
+                };
+                Err(std::sync::PoisonError::new(guard))
+            }
+        }
+    }
+}
+
+impl Default for BoundedSettings {
+    fn default() -> Self {
+        let s = Self::new();
+        {
+            let mut guard = s.lock().unwrap();
+            guard.insert("scanner_min_length".into(), Value::Number(4.into()));
+            guard.insert("scanner_avg_ms_per_char".into(), Value::Number(25.into()));
+            guard.insert("scanner_terminator".into(), Value::String("enter".into()));
+            guard.insert("scanner_timeout_ms".into(), Value::Number(200.into()));
+            guard.insert(
+                "scanner_max_sd_ms".into(),
+                Value::Number(serde_json::Number::from_f64(8.0).unwrap()),
+            );
+        }
+        s
+    }
+}
+
+impl std::ops::Deref for BoundedSettings {
+    type Target = Mutex<HashMap<String, Value>>;
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+impl std::ops::Deref for BoundedSettingsGuard<'_> {
+    type Target = HashMap<String, Value>;
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl std::ops::DerefMut for BoundedSettingsGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
+impl Drop for BoundedSettingsGuard<'_> {
+    fn drop(&mut self) {
+        let Ok(mut order) = self.parent.order.lock() else {
+            return;
+        };
+        // ponytail: O(n) reconcile; cap is tiny.
+        let keys: Vec<String> = self.guard.keys().cloned().collect();
+        for key in keys {
+            if !order.contains(&key) {
+                order.push_back(key);
+            }
+        }
+        while self.guard.len() > SETTINGS_LRU_CAP {
+            let Some(key) = order.pop_front() else {
+                break;
+            };
+            if self.guard.remove(&key).is_some() {
+                crate::obs::audit_event("AUDIT", &format!("[settings] LRU evicted key={key}"));
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct AppState {
     pub db: Mutex<Option<db::Db>>,
@@ -55,7 +157,7 @@ pub struct AppState {
     pub db_path: Mutex<Option<PathBuf>>,
     pub failed_attempts: Mutex<u32>,
     /// Runtime settings (scanner params, theme, etc.).
-    pub settings: Mutex<HashMap<String, Value>>,
+    pub settings: BoundedSettings,
     /// Current barcode scan routing target.
     pub scan_target: parking_lot::RwLock<String>,
     /// Timestamp of last successful backup (unix ms).
@@ -67,22 +169,13 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let mut settings = HashMap::new();
-        settings.insert("scanner_min_length".into(), Value::Number(4.into()));
-        settings.insert("scanner_avg_ms_per_char".into(), Value::Number(25.into()));
-        settings.insert("scanner_terminator".into(), Value::String("enter".into()));
-        settings.insert("scanner_timeout_ms".into(), Value::Number(200.into()));
-        settings.insert(
-            "scanner_max_sd_ms".into(),
-            Value::Number(serde_json::Number::from_f64(8.0).unwrap()),
-        );
         Self {
             db: Mutex::new(None),
             session: Mutex::new(None),
             last_activity: Arc::new(std::sync::atomic::AtomicU64::new(now_unix())),
             db_path: Mutex::new(None),
             failed_attempts: Mutex::new(0),
-            settings: Mutex::new(settings),
+            settings: BoundedSettings::default(),
             scan_target: parking_lot::RwLock::new(String::new()),
             last_backup_unix_ms: Mutex::new(None),
             last_test_restore_unix_ms: Mutex::new(None),
@@ -919,7 +1012,7 @@ pub fn lock(state: State<AppState>) -> Result<(), AppError> {
     }
     *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
     *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
-    *state.recovery_passphrase.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
+    *state.recovery_passphrase.lock().unwrap() = None;
     sync_session_to_static(&state);
     Ok(())
 }

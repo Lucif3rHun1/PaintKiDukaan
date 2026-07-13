@@ -16,6 +16,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::Manager;
 
+#[cfg(target_os = "windows")]
+use windows::Win32::System::JobObjects::AssignProcessToJobObject;
+
 const LATEST_JSON_URL: &str =
     "https://github.com/Lucif3rHun1/PaintKiDukaan/releases/latest/download/latest.json";
 
@@ -180,10 +183,19 @@ pub fn install_update(path: &PathBuf) -> Result<(), String> {
     ensure_path_in_temp_dir(path)?;
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new(path)
+        let child = std::process::Command::new(path)
             .args(["/S"])
             .spawn()
             .map_err(|e| format!("spawn installer: {}", e))?;
+
+        unsafe {
+            use std::os::windows::io::AsRawHandle;
+            let _ = AssignProcessToJobObject(
+                crate::JOB_OBJECT.get().copied().unwrap_or(0) as _,
+                child.as_raw_handle() as _,
+            );
+        }
+
         std::process::exit(0);
     }
     #[cfg(target_os = "macos")]

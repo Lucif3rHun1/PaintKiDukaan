@@ -10,6 +10,9 @@
  * is NOT enabled on any command), so this is a non-breaking additive change.
  */
 
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useSecurity } from "./state";
+
 let cidCounter = 0;
 
 function generateCorrelationId(): string {
@@ -59,3 +62,19 @@ export async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>
 }
 
 export { generateCorrelationId };
+
+/**
+ * Subscribe to the backend tray "lock now" event. When the tray icon's
+ * "Lock now" is activated (or the workstation is locked on Windows), the
+ * frontend transitions to the locked security phase using the same store
+ * action as the in-app lock button.
+ */
+export function listenTrayLock(): Promise<UnlistenFn> {
+  return listen("tray:lock", () => {
+    useSecurity.getState().setPhase("locked");
+  });
+}
+
+if (typeof window !== "undefined") {
+  listenTrayLock().catch(() => {});
+}

@@ -8,6 +8,7 @@
 //! Settings are re-read on every keystroke so the user can tune them at
 //! runtime from Settings → Scanner.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -31,6 +32,12 @@ pub struct WedgeBuffer {
     pub chars: String,
     pub started: Option<Instant>,
     pub last_keypress: Option<Instant>,
+}
+
+static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
+pub fn request_shutdown() {
+    SHUTDOWN.store(true, Ordering::SeqCst);
 }
 
 pub fn clear_hook_buffer<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
@@ -87,82 +94,87 @@ fn is_our_process_foreground() -> bool {
 }
 
 fn run_hook<R: tauri::Runtime>(buffer: Arc<Mutex<WedgeBuffer>>, app: tauri::AppHandle<R>) {
-    let callback = move |event: Event| match event.event_type {
-        EventType::KeyPress(Key::ShiftLeft | Key::ShiftRight) => {}
-        EventType::KeyPress(key) => {
-            // On Windows, only capture keystrokes when our process owns the
-            // foreground window — prevents logging keys from other apps.
-            #[cfg(target_os = "windows")]
-            if !is_our_process_foreground() {
-                return;
-            }
+    let callback = move |event: Event| {
+        if SHUTDOWN.load(Ordering::SeqCst) {
+            return;
+        }
+        match event.event_type {
+            EventType::KeyPress(Key::ShiftLeft | Key::ShiftRight) => {}
+            EventType::KeyPress(key) => {
+                // On Windows, only capture keystrokes when our process owns the
+                // foreground window — prevents logging keys from other apps.
+                #[cfg(target_os = "windows")]
+                if !is_our_process_foreground() {
+                    return;
+                }
 
-            let app_state = app.state::<crate::commands::auth::AppState>();
-            let target = app_state.scan_target.read().clone();
-            if target.is_empty() {
-                return;
-            }
+                let app_state = app.state::<crate::commands::auth::AppState>();
+                let target = app_state.scan_target.read().clone();
+                if target.is_empty() {
+                    return;
+                }
 
-            let settings = app_state.settings.lock().unwrap();
-            let min_length = settings
-                .get("scanner_min_length")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(4);
-            let avg_ms_per_char = settings
-                .get("scanner_avg_ms_per_char")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(25);
-            drop(settings);
+                let settings = app_state.settings.lock().unwrap();
+                let min_length = settings
+                    .get("scanner_min_length")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(4);
+                let avg_ms_per_char = settings
+                    .get("scanner_avg_ms_per_char")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(25);
+                drop(settings);
 
-            if let Some(c) = key_to_char(key) {
-                let mut buf = buffer.lock();
-                let now = Instant::now();
+                if let Some(c) = key_to_char(key) {
+                    let mut buf = buffer.lock();
+                    let now = Instant::now();
 
-                // Inter-scan pause: >500ms gap = fresh start. Prevents a
-                // slow scanner run-on from merging with the next scan.
-                if let Some(last) = buf.last_keypress {
-                    if now.duration_since(last) > Duration::from_millis(500) {
-                        buf.chars.clear();
+                    // Inter-scan pause: >500ms gap = fresh start. Prevents a
+                    // slow scanner run-on from merging with the next scan.
+                    if let Some(last) = buf.last_keypress {
+                        if now.duration_since(last) > Duration::from_millis(500) {
+                            buf.chars.clear();
+                            buf.started = Some(now);
+                        }
+                    }
+                    if buf.started.is_none() {
                         buf.started = Some(now);
                     }
+                    buf.last_keypress = Some(now);
+                    // Ponytail: 1024-char cap prevents memory DoS from stuck/slow scanners.
+                    if buf.chars.len() < 1024 {
+                        buf.chars.push(c);
+                    }
                 }
-                if buf.started.is_none() {
-                    buf.started = Some(now);
-                }
-                buf.last_keypress = Some(now);
-                // Ponytail: 1024-char cap prevents memory DoS from stuck/slow scanners.
-                if buf.chars.len() < 1024 {
-                    buf.chars.push(c);
-                }
-            }
 
-            // Terminator check (Enter or Tab) — must be OUTSIDE the
-            // key_to_char guard because key_to_char returns None for
-            // Return/Tab, making the terminator unreachable inside it.
-            if matches!(key, Key::Return | Key::Tab) {
-                let mut buf = buffer.lock();
-                let now = Instant::now();
-                let len = buf.chars.len();
-                if len >= min_length {
-                    let Some(started) = buf.started else { return };
-                    let total = now.duration_since(started).as_millis() as u64;
-                    if len as u64 * avg_ms_per_char >= total.max(150) {
-                        let barcode = std::mem::take(&mut buf.chars);
-                        let _ = app.emit(
-                            "barcode:scan",
-                            &ScanEvent {
-                                barcode,
-                                ts: now_unix_ms(),
-                            },
-                        );
-                        buf.started = None;
-                        buf.last_keypress = None;
+                // Terminator check (Enter or Tab) — must be OUTSIDE the
+                // key_to_char guard because key_to_char returns None for
+                // Return/Tab, making the terminator unreachable inside it.
+                if matches!(key, Key::Return | Key::Tab) {
+                    let mut buf = buffer.lock();
+                    let now = Instant::now();
+                    let len = buf.chars.len();
+                    if len >= min_length {
+                        let Some(started) = buf.started else { return };
+                        let total = now.duration_since(started).as_millis() as u64;
+                        if len as u64 * avg_ms_per_char >= total.max(150) {
+                            let barcode = std::mem::take(&mut buf.chars);
+                            let _ = app.emit(
+                                "barcode:scan",
+                                &ScanEvent {
+                                    barcode,
+                                    ts: now_unix_ms(),
+                                },
+                            );
+                            buf.started = None;
+                            buf.last_keypress = None;
+                        }
                     }
                 }
             }
+            _ => {}
         }
-        _ => {}
     };
 
     if let Err(e) = rdev::listen(callback) {

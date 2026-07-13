@@ -18,6 +18,9 @@ pub use error::AppError;
 
 pub mod obs;
 
+#[cfg(target_os = "windows")]
+pub static JOB_OBJECT: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+
 const ALLOWED_LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 const MAX_LOG_MSG_LEN: usize = 4096;
 
@@ -41,6 +44,9 @@ fn sanitize_log_input(level: &str, message: &str) -> Result<String, String> {
 
 #[tauri::command(rename_all = "snake_case")]
 fn log_frontend(level: String, message: String) -> Result<(), String> {
+    if !cfg!(debug_assertions) && !matches!(level.as_str(), "error" | "warn") {
+        return Ok(());
+    }
     let sanitized = sanitize_log_input(&level, &message)?;
     match level.as_str() {
         "error" => log::error!("{}", sanitized),
@@ -54,6 +60,30 @@ fn log_frontend(level: String, message: String) -> Result<(), String> {
 }
 
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicLimitInformation,
+            JOBOBJECT_BASIC_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            SetInformationJobObject,
+        };
+
+        if let Ok(job) = CreateJobObjectW(None, None) {
+            let mut info = JOBOBJECT_BASIC_LIMIT_INFORMATION::default();
+            info.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let _ = SetInformationJobObject(
+                job,
+                JobObjectBasicLimitInformation,
+                &info as *const JOBOBJECT_BASIC_LIMIT_INFORMATION as *const core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_BASIC_LIMIT_INFORMATION>() as u32,
+            );
+            let current = HANDLE(-1isize as *mut _);
+            let _ = AssignProcessToJobObject(job, current);
+            let _ = JOB_OBJECT.set(job.0 as isize);
+        }
+    }
+
     // ── Session log setup ────────────────────────────────────────────
     // Compute the app data directory using `dirs` (available before Tauri builder).
     // On macOS: ~/Library/Application Support/in.paintkiduakan.master/
@@ -86,7 +116,11 @@ pub fn run() {
                         file_name: Some(log_name.clone()),
                     },
                 ))
-                .level(log::LevelFilter::Trace)
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Trace
+                } else {
+                    log::LevelFilter::Warn
+                })
                 .level_for("keyring", log::LevelFilter::Warn)
                 .level_for("tao", log::LevelFilter::Warn)
                 .level_for(
@@ -129,14 +163,25 @@ pub fn run() {
             // Install panic hook that writes to the log before crashing.
             let default_hook = std::panic::take_hook();
             std::panic::set_hook(Box::new(move |info| {
-                log::error!("PANIC: {}", info);
-                if let Some(s) = info.payload().downcast_ref::<&str>() {
-                    log::error!("  payload: {}", s);
+                let message = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                    s.to_string()
                 } else if let Some(s) = info.payload().downcast_ref::<String>() {
-                    log::error!("  payload: {}", s);
-                }
-                if let Some(loc) = info.location() {
-                    log::error!("  at {}:{}:{}", loc.file(), loc.line(), loc.column());
+                    s.clone()
+                } else {
+                    "unknown panic payload".to_string()
+                };
+                let sanitized: String = message
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(MAX_LOG_MSG_LEN)
+                    .collect();
+                let current = std::thread::current();
+                let thread_name = current.name().unwrap_or("unnamed");
+                log::error!("PANIC: kind=panic thread={} message={}", thread_name, sanitized);
+                if cfg!(debug_assertions) {
+                    if let Some(loc) = info.location() {
+                        log::error!("  at {}:{}:{}", loc.file(), loc.line(), loc.column());
+                    }
                 }
                 default_hook(info);
             }));
@@ -513,20 +558,15 @@ pub fn run() {
             std::process::exit(1);
         });
 
-    app.run(|_app_handle, event| {
+    app.run(|app_handle, event| {
         if let tauri::RunEvent::WindowEvent {
             label,
             event: tauri::WindowEvent::CloseRequested { .. },
             ..
         } = &event
         {
-            // ponytail: WAL/SHM secure_delete removed — same bug class as
-            // EBWebView. SQLCipher owns these files while the connection is
-            // open; overwriting them corrupts the content (random data in
-            // WAL pages) and rename+delete fails with ERROR_SHARING_VIOLATION,
-            // leaving orphaned random-named files. SQLite cleans up WAL/SHM
-            // automatically when the connection closes properly.
             let _ = label;
+            app_handle.exit(0);
         }
     });
 }

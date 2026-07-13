@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::{Mutex, OnceLock};
 
 use parking_lot::RwLock;
@@ -175,7 +177,10 @@ fn write_sql_setting(db: &Db, col: &str, value: &Value) -> rusqlite::Result<()> 
         )?;
         Ok(())
     })?;
-    log::info!("[settings] sql write col={col} value={value_for_log}");
+    let mut hasher = DefaultHasher::new();
+    value_for_log.hash(&mut hasher);
+    let value_hash = hasher.finish();
+    log::info!("[settings] sql write col={col} value_hash={value_hash:016x}");
     Ok(())
 }
 

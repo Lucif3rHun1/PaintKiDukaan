@@ -15,6 +15,8 @@
 use std::cell::RefCell;
 use std::time::Instant;
 
+use parking_lot::Mutex;
+
 use crate::error::AppError;
 
 // ─── Correlation IDs ──────────────────────────────────────────────────────
@@ -145,15 +147,13 @@ impl Drop for ObsGuard {
 
 /// Global SecureLog instance for security audit events.
 /// Initialized once during app setup; accessed via [`audit_log`].
-static AUDIT_LOG: std::sync::Mutex<Option<super::security::secure_log::SecureLog>> =
-    std::sync::Mutex::new(None);
+static AUDIT_LOG: Mutex<Option<super::security::secure_log::SecureLog>> =
+    Mutex::new(None);
 
 /// Initialize the audit log with the given path and AES key.
 /// Called once during app setup. Returns an error if already initialized.
 pub fn init_audit_log(path: std::path::PathBuf, key: [u8; 32]) -> Result<(), AppError> {
-    let mut guard = AUDIT_LOG
-        .lock()
-        .map_err(|e| AppError::Internal(format!("audit log mutex: {e}")))?;
+    let mut guard = AUDIT_LOG.lock();
     if guard.is_some() {
         return Err(AppError::Internal("audit log already initialized".into()));
     }
@@ -187,31 +187,27 @@ pub fn audit_event(level: &str, event: &str) {
     }
 
     // Write to the encrypted audit log if initialized.
-    if let Ok(mut guard) = AUDIT_LOG.lock() {
-        if let Some(ref mut log) = *guard {
-            if let Err(e) = log.append(level, &msg) {
-                log::error!("[OBS] audit_event failed: {e}");
-            }
+    let mut guard = AUDIT_LOG.lock();
+    if let Some(ref mut log) = *guard {
+        if let Err(e) = log.append(level, &msg) {
+            log::error!("[OBS] audit_event failed: {e}");
         }
     }
 }
 
 /// Flush the audit log to disk (call before exit or on a timer).
 pub fn flush_audit_log() {
-    if let Ok(mut guard) = AUDIT_LOG.lock() {
-        if let Some(ref mut log) = *guard {
-            if let Err(e) = log.flush() {
-                log::error!("[OBS] audit flush failed: {e}");
-            }
+    let mut guard = AUDIT_LOG.lock();
+    if let Some(ref mut log) = *guard {
+        if let Err(e) = log.flush() {
+            log::error!("[OBS] audit flush failed: {e}");
         }
     }
 }
 
 /// Verify the audit log chain integrity (for health checks).
 pub fn verify_audit_chain() -> Result<bool, AppError> {
-    let guard = AUDIT_LOG
-        .lock()
-        .map_err(|e| AppError::Internal(format!("audit log mutex: {e}")))?;
+    let guard = AUDIT_LOG.lock();
     match guard.as_ref() {
         Some(log) => log.verify_chain(),
         None => Ok(true), // No log = trivially valid.
