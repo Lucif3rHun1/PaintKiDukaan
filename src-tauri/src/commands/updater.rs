@@ -390,9 +390,22 @@ pub struct UpdateInfo {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlatformUpdate {
     pub key: String,
+    /// First-install NSIS installer URL + SHA-256 (legacy path; used by users
+    /// who haven't installed yet). Existing field — backward-compatible.
     pub url: String,
     pub sha256: String,
     pub size_bytes: u64,
+    /// Self-update signed-bundle URL (signed zip produced by CI). Optional so
+    /// legacy releases without a published bundle still parse cleanly.
+    #[serde(default)]
+    pub bundle_url: Option<String>,
+    /// Ed25519 signature over the bundle zip, base64. Required when
+    /// bundle_url is set; stage_update rejects bundles without it.
+    #[serde(default)]
+    pub ed25519_sig: Option<String>,
+    /// SHA-256 of the bundle zip. Required when bundle_url is set.
+    #[serde(default)]
+    pub bundle_sha256: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -458,6 +471,9 @@ pub async fn check_update() -> Result<UpdateInfo, String> {
                 url: val["url"].as_str().unwrap_or("").to_string(),
                 sha256: val["sha256"].as_str().unwrap_or("").to_string(),
                 size_bytes: val["size"].as_u64().unwrap_or(0),
+                bundle_url: val["bundle_url"].as_str().map(|s| s.to_string()),
+                ed25519_sig: val["ed25519_sig"].as_str().map(|s| s.to_string()),
+                bundle_sha256: val["bundle_sha256"].as_str().map(|s| s.to_string()),
             });
         }
     }
@@ -1247,5 +1263,47 @@ mod tests {
             b"OLD KNOWN-GOOD PAYLOAD"
         );
         assert!(!bak.exists(), "after restore, .bak must be gone");
+    }
+
+    #[test]
+    fn platform_update_parses_with_bundle_fields() {
+        let json = serde_json::json!({
+            "key": "windows-x86_64",
+            "url": "https://github.com/.../PaintKiDukaan_0.1.35_x64-setup.exe",
+            "sha256": "aaaa",
+            "size_bytes": 5_000_000u64,
+            "bundle_url": "https://github.com/.../PaintKiDukaan_0.1.35_x64.zip",
+            "ed25519_sig": "base64sig==",
+            "bundle_sha256": "bbbb",
+        });
+        let parsed: PlatformUpdate =
+            serde_json::from_value(json).expect("schema with bundle fields must parse");
+        assert_eq!(parsed.key, "windows-x86_64");
+        assert_eq!(parsed.url, "https://github.com/.../PaintKiDukaan_0.1.35_x64-setup.exe");
+        assert_eq!(parsed.sha256, "aaaa");
+        assert_eq!(parsed.size_bytes, 5_000_000);
+        assert_eq!(
+            parsed.bundle_url.as_deref(),
+            Some("https://github.com/.../PaintKiDukaan_0.1.35_x64.zip")
+        );
+        assert_eq!(parsed.ed25519_sig.as_deref(), Some("base64sig=="));
+        assert_eq!(parsed.bundle_sha256.as_deref(), Some("bbbb"));
+    }
+
+    #[test]
+    fn platform_update_parses_legacy_without_bundle_fields() {
+        let json = serde_json::json!({
+            "key": "darwin-aarch64",
+            "url": "https://github.com/.../PaintKiDukaan_0.1.34_aarch64.dmg",
+            "sha256": "cccc",
+            "size_bytes": 6_000_000u64,
+        });
+        let parsed: PlatformUpdate =
+            serde_json::from_value(json).expect("legacy schema must still parse");
+        assert_eq!(parsed.key, "darwin-aarch64");
+        assert_eq!(parsed.url, "https://github.com/.../PaintKiDukaan_0.1.34_aarch64.dmg");
+        assert!(parsed.bundle_url.is_none(), "legacy has no bundle_url");
+        assert!(parsed.ed25519_sig.is_none(), "legacy has no ed25519_sig");
+        assert!(parsed.bundle_sha256.is_none(), "legacy has no bundle_sha256");
     }
 }
