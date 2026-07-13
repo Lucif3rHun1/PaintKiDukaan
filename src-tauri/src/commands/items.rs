@@ -803,42 +803,6 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
     })
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub fn box_unit_conversion(
-    state: State<'_, AppState>,
-    item_id: i64,
-    qty: f64,
-) -> AppResult<ConversionResult> {
-    let guard = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
-    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = require_auth("box_unit_conversion", state.inner())?;
-    db.with_raw(|c| {
-        let (sell_unit, units_per_pack): (String, Option<f64>) = c.query_row(
-            "SELECT sell_unit, units_per_pack FROM items WHERE id = ?1",
-            params![item_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        let base = to_base_units(qty, &sell_unit, units_per_pack);
-        Ok(ConversionResult {
-            qty,
-            sell_unit,
-            units_per_pack,
-            qty_in_base_units: base,
-        })
-    })
-}
-
-#[derive(Debug, Serialize)]
-pub struct ConversionResult {
-    pub qty: f64,
-    pub sell_unit: String,
-    pub units_per_pack: Option<f64>,
-    pub qty_in_base_units: f64,
-}
-
 // ---- Bulk normalisation ----
 
 #[derive(Debug, Serialize)]
