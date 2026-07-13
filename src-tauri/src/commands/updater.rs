@@ -200,6 +200,153 @@ pub(crate) async fn stage_update_with_key(
     Ok(final_path)
 }
 
+/// Outcome of apply_pending_update. The caller (lib.rs startup wiring)
+/// interprets `Applied` as "exit the old process — the new version has been
+/// spawned"; `NoPending` as "continue normal startup"; `Failed` as "log + show
+/// splash error + retry".
+#[derive(Debug, PartialEq, Eq)]
+pub enum ApplyOutcome {
+    Applied,
+    NoPending,
+    Failed(String),
+}
+
+/// Apply a pending self-update staged by `stage_update`.
+/// 1. Crash recovery: if `<exe>.bak` exists AND `<exe>` is missing, restore.
+///    (If both exist we don't touch — likely a leftover from a successful
+///    install; the next successful install will overwrite both.)
+/// 2. Read `pending_update.json` from `staging_root`.
+/// 3. Validate: `signature_verified == true`, staging zip still present.
+/// 4. Rename `<exe>` → `<exe>.bak`.
+/// 5. Extract the staged zip into `install_dir`.
+/// 6. On extract failure: restore .bak → `<exe>`, return Failed.
+/// 7. On success: delete .bak (if not held by running process), delete marker,
+///    delete staging dir, spawn new `<exe>` detached, return Applied.
+pub fn apply_pending_update(
+    install_dir: &Path,
+    current_exe_name: &str,
+    staging_root: &Path,
+) -> ApplyOutcome {
+    let exe_path = install_dir.join(current_exe_name);
+    let bak_path = install_dir.join(format!("{}.bak", current_exe_name));
+
+    if bak_path.exists() && !exe_path.exists() {
+        match std::fs::rename(&bak_path, &exe_path) {
+            Ok(_) => log::info!(
+                "updater: crash-recovery restored {} from .bak",
+                exe_path.display()
+            ),
+            Err(e) => {
+                return ApplyOutcome::Failed(format!(
+                    "crash recovery: rename .bak → {}: {}",
+                    exe_path.display(),
+                    e
+                ));
+            }
+        }
+    }
+
+    let marker_path = staging_root.join("pending_update.json");
+    if !marker_path.exists() {
+        return ApplyOutcome::NoPending;
+    }
+
+    let marker_text = match std::fs::read_to_string(&marker_path) {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = std::fs::remove_file(&marker_path);
+            return ApplyOutcome::Failed(format!("read marker: {}", e));
+        }
+    };
+    let marker: PendingUpdate = match serde_json::from_str(&marker_text) {
+        Ok(m) => m,
+        Err(e) => {
+            let _ = std::fs::remove_file(&marker_path);
+            log::warn!(
+                "updater: corrupt pending_update.json removed: {}",
+                e
+            );
+            return ApplyOutcome::NoPending;
+        }
+    };
+
+    if !marker.signature_verified {
+        let _ = std::fs::remove_file(&marker_path);
+        return ApplyOutcome::NoPending;
+    }
+    if !marker.staging_path.exists() {
+        let _ = std::fs::remove_file(&marker_path);
+        log::warn!(
+            "updater: marker references missing staging payload at {}",
+            marker.staging_path.display()
+        );
+        return ApplyOutcome::NoPending;
+    }
+
+    if exe_path.exists() {
+        if let Err(e) = std::fs::rename(&exe_path, &bak_path) {
+            return ApplyOutcome::Failed(format!(
+                "rename {} → .bak: {}",
+                exe_path.display(),
+                e
+            ));
+        }
+    }
+
+    if let Err(e) = extract_zip(&marker.staging_path, install_dir) {
+        if bak_path.exists() {
+            let _ = std::fs::rename(&bak_path, &exe_path);
+        }
+        return ApplyOutcome::Failed(format!("extract staged payload: {}", e));
+    }
+
+    let _ = std::fs::remove_file(&bak_path);
+    let _ = std::fs::remove_file(&marker_path);
+    if let Some(parent) = marker.staging_path.parent() {
+        let _ = std::fs::remove_dir_all(parent);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        let _ = std::process::Command::new(&exe_path)
+            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
+            .spawn();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new(&exe_path).spawn();
+    }
+
+    ApplyOutcome::Applied
+}
+
+fn extract_zip(zip_path: &Path, dest_dir: &Path) -> Result<(), String> {
+    let file = std::fs::File::open(zip_path).map_err(|e| format!("open zip: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("read zip: {}", e))?;
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("zip entry {}: {}", i, e))?;
+        let outpath = match entry.enclosed_name() {
+            Some(p) => dest_dir.join(p),
+            None => continue,
+        };
+        if entry.is_dir() {
+            std::fs::create_dir_all(&outpath).map_err(|e| format!("mkdir: {}", e))?;
+            continue;
+        }
+        if let Some(parent) = outpath.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("mkdir parent: {}", e))?;
+        }
+        let mut out = std::fs::File::create(&outpath).map_err(|e| format!("create file: {}", e))?;
+        std::io::copy(&mut entry, &mut out).map_err(|e| format!("write file: {}", e))?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateInfo {
     pub available: bool,
@@ -951,5 +1098,105 @@ mod tests {
             .unwrap();
             assert_eq!(marker.sha256, sha_v2);
         });
+    }
+
+    // --- apply_pending_update tests (US-004) ---
+
+    use std::io::Write;
+
+    fn make_test_zip(dest_zip: &Path, entries: &[(&str, &[u8])]) {
+        let file = std::fs::File::create(dest_zip).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions =
+            zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, data) in entries {
+            zip.start_file(*name, opts).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    fn write_marker(staging_root: &Path, marker: &PendingUpdate) {
+        std::fs::write(
+            staging_root.join("pending_update.json"),
+            serde_json::to_string(marker).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn apply_no_pending() {
+        let install = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir().unwrap();
+        let outcome = apply_pending_update(install.path(), "app.exe", staging.path());
+        assert_eq!(outcome, ApplyOutcome::NoPending);
+    }
+
+    #[test]
+    fn apply_corrupt_marker() {
+        let install = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir().unwrap();
+        std::fs::write(staging.path().join("pending_update.json"), b"{ not json").unwrap();
+
+        let outcome = apply_pending_update(install.path(), "app.exe", staging.path());
+        assert_eq!(outcome, ApplyOutcome::NoPending);
+        assert!(
+            !staging.path().join("pending_update.json").exists(),
+            "corrupt marker must be deleted"
+        );
+    }
+
+    #[test]
+    fn apply_atomic_swap_succeeds() {
+        let install = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir().unwrap();
+
+        let current_exe = install.path().join("app.exe");
+        std::fs::write(&current_exe, b"OLD VERSION PAYLOAD").unwrap();
+
+        let version_dir = staging.path().join("0.1.35");
+        std::fs::create_dir_all(&version_dir).unwrap();
+        let zip_path = version_dir.join("app.zip");
+        make_test_zip(&zip_path, &[("app.exe", b"NEW VERSION PAYLOAD")]);
+
+        let marker = PendingUpdate {
+            version: "0.1.35".into(),
+            staging_path: zip_path,
+            sha256: "deadbeef".into(),
+            signature_verified: true,
+            staged_at_unix: 1234567890,
+        };
+        write_marker(staging.path(), &marker);
+
+        let outcome = apply_pending_update(install.path(), "app.exe", staging.path());
+        assert_eq!(outcome, ApplyOutcome::Applied);
+
+        let installed = std::fs::read(&current_exe).unwrap();
+        assert_eq!(installed, b"NEW VERSION PAYLOAD");
+        // On Windows the running exe may hold a handle to .bak; we accept either
+        // .bak gone or .bak still present — next launch's crash-recovery skips
+        // it because app.exe exists.
+        assert!(!staging.path().join("pending_update.json").exists());
+    }
+
+    #[test]
+    fn apply_crash_recovery_restores_bak() {
+        let install = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir().unwrap();
+
+        let bak = install.path().join("app.exe.bak");
+        std::fs::write(&bak, b"OLD KNOWN-GOOD PAYLOAD").unwrap();
+
+        let outcome = apply_pending_update(install.path(), "app.exe", staging.path());
+        assert_eq!(outcome, ApplyOutcome::NoPending);
+        assert!(
+            install.path().join("app.exe").exists(),
+            "crash recovery must restore .bak → app.exe"
+        );
+        assert_eq!(
+            std::fs::read(install.path().join("app.exe")).unwrap(),
+            b"OLD KNOWN-GOOD PAYLOAD"
+        );
+        assert!(!bak.exists(), "after restore, .bak must be gone");
     }
 }
