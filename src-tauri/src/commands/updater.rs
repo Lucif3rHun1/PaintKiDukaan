@@ -190,10 +190,10 @@ pub fn install_update(path: &PathBuf) -> Result<(), String> {
 
         unsafe {
             use std::os::windows::io::AsRawHandle;
-            let _ = AssignProcessToJobObject(
-                crate::JOB_OBJECT.get().copied().unwrap_or(0) as _,
-                child.as_raw_handle() as _,
-            );
+            use windows::Win32::Foundation::HANDLE;
+            let job = HANDLE(crate::JOB_OBJECT.get().copied().unwrap_or(0) as *mut _);
+            let proc = HANDLE(child.as_raw_handle() as *mut _);
+            let _ = AssignProcessToJobObject(job, proc);
         }
 
         std::process::exit(0);
