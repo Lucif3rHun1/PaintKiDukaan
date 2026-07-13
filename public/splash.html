@@ -141,9 +141,15 @@
             document.getElementById('error').style.display = 'flex';
             document.getElementById('error-text').textContent = msg;
         };
-        // These will be wired by Rust to Tauri commands
-        window.__retry = () => {};
-        window.__quit = () => {};
+        // Wire splash buttons to Tauri commands (RetryChannel managed in lib.rs).
+        window.__retry = async () => {
+            try { await window.__TAURI_INTERNALS__.invoke('cmd_retry_update'); }
+            catch (e) { console.error('retry failed:', e); }
+        };
+        window.__quit = async () => {
+            try { await window.__TAURI_INTERNALS__.invoke('cmd_quit_app'); }
+            catch (e) { console.error('quit failed:', e); }
+        };
     </script>
 </body>
 </html>
