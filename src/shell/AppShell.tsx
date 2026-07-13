@@ -35,6 +35,7 @@ import { useShortcut } from "../lib/shortcuts";
 import { toTitleCase } from "../lib/format/titleCase";
 import { AlertBell } from "./components/AlertBell";
 import type { Role } from "../lib/security/state";
+import { useSecurity } from "../lib/security/state";
 import { ipc } from "./lib/ipc";
 import { useGlobalShortcuts } from "../lib/shortcuts/useGlobalShortcuts";
 
@@ -582,10 +583,12 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const [hasOtherUsers, setHasOtherUsers] = useState(false);
+  const phase = useSecurity((s) => s.phase);
 
   useEffect(() => {
+    if (phase !== "unlocked") return;
     ipc.listUsers().then((users) => setHasOtherUsers(users.length > 1)).catch(() => setHasOtherUsers(false));
-  }, []);
+  }, [phase]);
 
   useEffect(() => {
     if (!open) return;

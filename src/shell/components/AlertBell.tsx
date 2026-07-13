@@ -12,7 +12,7 @@ import {
   type Alert,
 } from "../../domain/alerts";
 import { Badge, cn, EmptyState } from "../../components/ui";
-import type { Role } from "../../lib/security/state";
+import { useSecurity, type Role } from "../../lib/security/state";
 import { SkeletonRow } from "../../components/ui/SkeletonRow";
 
 const severityClasses: Record<Severity, string> = {
@@ -61,6 +61,7 @@ export function AlertBell({ currentRole }: AlertBellProps) {
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
     staleTime: 15_000,
+    enabled: useSecurity.getState().phase === "unlocked",
   });
 
   const alerts = data?.alerts ?? [];

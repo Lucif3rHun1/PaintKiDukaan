@@ -17,7 +17,11 @@ use sha2::{Digest, Sha256};
 use tauri::Manager;
 
 #[cfg(target_os = "windows")]
-use windows::Win32::System::JobObjects::AssignProcessToJobObject;
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+#[cfg(target_os = "windows")]
+const DETACHED_PROCESS: u32 = 0x0000_0008;
 
 const LATEST_JSON_URL: &str =
     "https://github.com/Lucif3rHun1/PaintKiDukaan/releases/latest/download/latest.json";
@@ -183,18 +187,15 @@ pub fn install_update(path: &PathBuf) -> Result<(), String> {
     ensure_path_in_temp_dir(path)?;
     #[cfg(target_os = "windows")]
     {
-        let child = std::process::Command::new(path)
+        // ponytail: NSIS child must NOT inherit our JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        // (lib.rs joins our process into a kill-on-close job). Detach via
+        // CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS so the installer runs in its own
+        // console / process group and survives our exit(0).
+        std::process::Command::new(path)
             .args(["/S"])
+            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
             .spawn()
             .map_err(|e| format!("spawn installer: {}", e))?;
-
-        unsafe {
-            use std::os::windows::io::AsRawHandle;
-            use windows::Win32::Foundation::HANDLE;
-            let job = HANDLE(crate::JOB_OBJECT.get().copied().unwrap_or(0) as *mut _);
-            let proc = HANDLE(child.as_raw_handle() as *mut _);
-            let _ = AssignProcessToJobObject(job, proc);
-        }
 
         std::process::exit(0);
     }

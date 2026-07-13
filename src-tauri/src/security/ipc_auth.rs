@@ -1047,7 +1047,7 @@ pub fn install<R: tauri::Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::auth::User;
+    use crate::commands::auth::{BoundedSettings, User};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
@@ -1065,7 +1065,7 @@ mod tests {
             last_activity: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             db_path: Mutex::new(None),
             failed_attempts: Mutex::new(0),
-            settings: Mutex::new(HashMap::new()),
+            settings: BoundedSettings::new(),
             scan_target: parking_lot::RwLock::new(String::new()),
             last_backup_unix_ms: Mutex::new(None),
             recovery_passphrase: Mutex::new(None),
