@@ -1,40 +1,35 @@
 //! Updater public key for Ed25519 self-update signature verification.
 //!
-//! The matching private key is held only in CI as `$UPDATER_SIGNING_KEY`
-//! (base64 of a 32-byte seed) and is used to sign each release's payload
-//! before upload. The public key below is embedded in the binary at build
-//! time; if an attacker tampers with `latest.json` or the staged payload,
-//! `verify_payload_signature` (updater.rs) refuses to install.
+//! The matching private seed is held only in CI as `$UPDATER_SIGNING_KEY`
+//! (base64 of 32 bytes) and signs each release's payload before upload. The
+//! public key below is embedded at build time; if an attacker tampers with
+//! `latest.json` or the staged payload, `verify_payload_signature` (updater.rs)
+//! refuses to install.
 //!
-//! To rotate: generate a new seed via `openssl rand 32 | base64`, set it as
-//! the new `$UPDATER_SIGNING_KEY` GitHub secret, recompute the 32-byte public
-//! key with `ed25519-dalek`'s `SigningKey::from_bytes(&seed).verifying_key()`,
-//! and replace `PROD_PUBLIC_KEY_BYTES` below.
+//! Rotation: regenerate via
+//!     openssl genpkey -algorithm ed25519 -out priv.pem
+//!     openssl pkey -in priv.pem -text -noout
+//! paste the `pub:` 32 bytes into `PROD_PUBLIC_KEY_BYTES` and base64 the `priv:`
+//! bytes into `$UPDATER_SIGNING_KEY`. Rotate BOTH or the next release's signed
+//! payload is rejected.
+//!
+//! Current key: development/test keypair. The matching seed is held at
+//! `.omc/updater_seed.b64` (gitignored — `.omc/` is in .gitignore). For
+//! production releases, generate a fresh keypair and replace both the constant
+//! below and the CI secret.
 
-use ed25519_dalek::{VerifyingKey, PUBLIC_KEY_LENGTH};
+use ed25519_dalek::VerifyingKey;
 
-/// Production public key (32 bytes).
-///
-/// Generated from the matching private seed held in `$UPDATER_SIGNING_KEY`.
-/// DO NOT rotate without coordinating with release pipeline (CI signs with
-/// the matching private seed; rotating the public key here without rotating
-/// the CI secret breaks every future update).
-const PROD_PUBLIC_KEY_BYTES: [u8; PUBLIC_KEY_LENGTH] = [
-    // Placeholder — regenerated at first release that ships self-update.
-    // Tests use their own randomly-generated keypairs and never touch this.
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+/// Production Ed25519 public key (32 bytes) for self-update signature verification.
+const PROD_PUBLIC_KEY_BYTES: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] = [
+    0xa2, 0x3e, 0x25, 0x56, 0x97, 0xb7, 0x4d, 0x0e, 0x2c, 0xd8, 0x33, 0xa5, 0x9b, 0xb7, 0xd8, 0x67,
+    0x29, 0x3d, 0x2e, 0x42, 0x2d, 0x99, 0x7f, 0x3e, 0x0f, 0xaf, 0x26, 0xf4, 0x4c, 0x09, 0x26, 0x89,
 ];
 
 /// Return the production Ed25519 public key used to verify self-update payloads.
 pub fn verifying_key() -> VerifyingKey {
-    // SAFETY: PROD_PUBLIC_KEY_BYTES is a 32-byte constant. ed25519-dalek parses
-    // it into a y-coordinate and clamps; if the constant is malformed the build
-    // would panic at startup. Until the real key is rotated in, this is a
-    // well-known all-zero key — `verify` always fails against it, which is the
-    // correct safe-default behaviour for an unreleased updater.
     VerifyingKey::from_bytes(&PROD_PUBLIC_KEY_BYTES)
-        .expect("PROD_PUBLIC_KEY_BYTES is malformed; regenerate via ed25519-dalek")
+        .expect("PROD_PUBLIC_KEY_BYTES is malformed; regenerate via openssl/ed25519")
 }
 
 #[cfg(test)]
@@ -45,22 +40,36 @@ mod tests {
 
     #[test]
     fn verifying_key_is_well_formed() {
-        // Smoke: from_bytes on a valid 32-byte array never panics on input
-        // (it only fails on out-of-range scalars, which 32 zero bytes are not).
         let _ = verifying_key();
     }
 
     #[test]
-    fn verifying_key_matches_constant_bytes() {
-        let key = verifying_key();
-        assert_eq!(key.to_bytes(), PROD_PUBLIC_KEY_BYTES);
+    fn public_key_is_nonzero() {
+        // Regression guard: an all-zero key would silently accept nothing,
+        // breaking every future update. Force a deliberate rotation.
+        assert!(
+            PROD_PUBLIC_KEY_BYTES.iter().any(|b| *b != 0),
+            "PROD_PUBLIC_KEY_BYTES is all-zero — key was reset; rotate to a real keypair"
+        );
+    }
+
+    #[test]
+    fn public_key_matches_known_vector() {
+        // Pin the embedded key against the bytes we know it represents. Any
+        // accidental edit to PROD_PUBLIC_KEY_BYTES (e.g. fat-finger during
+        // rotation) fails this test loud.
+        assert_eq!(
+            PROD_PUBLIC_KEY_BYTES,
+            [
+                0xa2, 0x3e, 0x25, 0x56, 0x97, 0xb7, 0x4d, 0x0e, 0x2c, 0xd8, 0x33, 0xa5, 0x9b, 0xb7,
+                0xd8, 0x67, 0x29, 0x3d, 0x2e, 0x42, 0x2d, 0x99, 0x7f, 0x3e, 0x0f, 0xaf, 0x26, 0xf4,
+                0x4c, 0x09, 0x26, 0x89,
+            ]
+        );
     }
 
     #[test]
     fn roundtrip_sign_verify_with_fresh_keypair() {
-        // Generate a throwaway keypair, sign a payload, verify. Confirms the
-        // crate wiring (ed25519-dalek v2 API) works as expected before we
-        // attach the production key.
         let mut csprng = OsRng;
         let signing = SigningKey::generate(&mut csprng);
         let verifying = signing.verifying_key();
@@ -68,16 +77,11 @@ mod tests {
         let msg = b"paintkiduakan self-update payload v0.1.35";
         let sig = signing.sign(msg);
 
-        assert!(
-            verifying.verify(msg, &sig).is_ok(),
-            "fresh keypair must verify its own signature"
-        );
+        assert!(verifying.verify(msg, &sig).is_ok());
     }
 
     #[test]
     fn tamper_detected() {
-        // Confirm that flipping a single bit in the payload invalidates the
-        // signature — the whole point of moving from SHA-256 to Ed25519.
         let mut csprng = OsRng;
         let signing = SigningKey::generate(&mut csprng);
         let verifying = signing.verifying_key();
@@ -85,10 +89,24 @@ mod tests {
         let mut msg = b"paintkiduakan self-update payload v0.1.35".to_vec();
         let sig = signing.sign(&msg);
 
-        msg[10] ^= 0x01; // flip one bit
+        msg[10] ^= 0x01;
+        assert!(verifying.verify(&msg, &sig).is_err());
+    }
+
+    #[test]
+    fn production_key_rejects_foreign_signature() {
+        // An attacker with a different signing key cannot forge a valid
+        // signature for the production key.
+        let mut csprng = OsRng;
+        let foreign = SigningKey::generate(&mut csprng);
+
+        let msg = b"forged payload claiming to be v0.1.35 official release";
+        let sig = foreign.sign(msg);
+
+        let prod = verifying_key();
         assert!(
-            verifying.verify(&msg, &sig).is_err(),
-            "any byte flip must invalidate the signature"
+            prod.verify(msg, &sig).is_err(),
+            "production key must reject signatures from a different private seed"
         );
     }
 }

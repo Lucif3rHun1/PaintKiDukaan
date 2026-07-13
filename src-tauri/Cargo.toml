@@ -60,7 +60,7 @@ subtle = "2"
 hmac = "0.12"
 
 # Updater signing (Ed25519 — replaces NSIS install path to bypass SmartScreen 4551)
-ed25519-dalek = { version = "2", default-features = false, features = ["rand_core"] }
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
