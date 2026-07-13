@@ -103,6 +103,34 @@
             color: #71717a;
         }
         .btn-quit:hover { color: #a1a1aa; }
+        .update-ready {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+        .update-ready-version {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fafafa;
+        }
+        .update-ready-text {
+            font-size: 13px;
+            color: #a1a1aa;
+        }
+        .btn-restart {
+            background: #22c55e;
+            color: #052e16;
+            font-weight: 600;
+            padding: 10px 28px;
+            margin-top: 4px;
+        }
+        .btn-restart:hover { background: #16a34a; }
+        .btn-later {
+            background: transparent;
+            color: #71717a;
+        }
+        .btn-later:hover { color: #a1a1aa; }
     </style>
 </head>
 <body>
@@ -119,6 +147,14 @@
             <div class="buttons">
                 <button class="btn-retry" onclick="window.__retry()">Retry</button>
                 <button class="btn-quit" onclick="window.__quit()">Quit</button>
+            </div>
+        </div>
+        <div class="update-ready" id="update-ready">
+            <div class="update-ready-version" id="update-ready-version"></div>
+            <div class="update-ready-text">Restart to apply</div>
+            <div class="buttons">
+                <button class="btn-restart" onclick="window.__applyAndQuit()">Restart Now</button>
+                <button class="btn-later" onclick="window.__quit()">Later</button>
             </div>
         </div>
     </div>
@@ -139,7 +175,14 @@
         window.__showError = (msg) => {
             document.getElementById('status').style.display = 'none';
             document.getElementById('error').style.display = 'flex';
+            document.getElementById('update-ready').style.display = 'none';
             document.getElementById('error-text').textContent = msg;
+        };
+        window.__showUpdateReady = (version) => {
+            document.getElementById('status').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('update-ready').style.display = 'flex';
+            document.getElementById('update-ready-version').textContent = 'v' + version + ' ready';
         };
         // Wire splash buttons to Tauri commands (RetryChannel managed in lib.rs).
         window.__retry = async () => {
@@ -149,6 +192,10 @@
         window.__quit = async () => {
             try { await window.__TAURI_INTERNALS__.invoke('cmd_quit_app'); }
             catch (e) { console.error('quit failed:', e); }
+        };
+        window.__applyAndQuit = async () => {
+            try { await window.__TAURI_INTERNALS__.invoke('cmd_quit_after_update'); }
+            catch (e) { console.error('apply failed:', e); }
         };
     </script>
 </body>

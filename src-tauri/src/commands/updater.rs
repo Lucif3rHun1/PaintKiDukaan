@@ -726,6 +726,86 @@ pub async fn run_update_gate(
             }
         };
 
+        // ── Self-update path: stage signed bundle ────────────────────
+        // If the platform entry has a signed bundle_url + ed25519_sig +
+        // bundle_sha256, use the new self-update flow (download + Ed25519
+        // verify + stage). Otherwise fall back to the legacy NSIS install.
+        if let (Some(bundle_url), Some(bundle_sig), Some(bundle_sha)) = (
+            platform.bundle_url.as_deref(),
+            platform.ed25519_sig.as_deref(),
+            platform.bundle_sha256.as_deref(),
+        ) {
+            let staging_root = match default_staging_root() {
+                Some(p) => p,
+                None => {
+                    if let Some(splash) = app.get_webview_window(&splash_label) {
+                        let _ = splash.eval(
+                            "window.__showError('Could not resolve staging directory')",
+                        );
+                    }
+                    show_main(&app, &splash_label);
+                    return;
+                }
+            };
+            let stage = tokio::time::timeout(
+                std::time::Duration::from_secs(300),
+                stage_update(
+                    &update_info.latest_version,
+                    bundle_url,
+                    bundle_sha,
+                    bundle_sig,
+                    &staging_root,
+                ),
+            )
+            .await;
+
+            match stage {
+                Ok(Ok(_)) => {
+                    log::info!(
+                        "updater: staged v{}, awaiting user restart",
+                        update_info.latest_version
+                    );
+                    if let Some(splash) = app.get_webview_window(&splash_label) {
+                        let v = update_info.latest_version.replace('\'', "\\'");
+                        let _ = splash.eval(&format!(
+                            "window.__showUpdateReady('{v}')"
+                        ));
+                    }
+                    return;
+                }
+                Ok(Err(e)) => {
+                    let msg = e.replace('\'', "\\'");
+                    if let Some(splash) = app.get_webview_window(&splash_label) {
+                        let _ = splash.eval(&format!(
+                            "window.__showError('Stage failed: {msg}')"
+                        ));
+                    }
+                    match rx.recv() {
+                        Ok(m) if m == "retry" => continue,
+                        _ => {
+                            show_main(&app, &splash_label);
+                            return;
+                        }
+                    }
+                }
+                Err(_) => {
+                    if let Some(splash) = app.get_webview_window(&splash_label) {
+                        let _ = splash.eval(
+                            "window.__showError('Download timed out (5 min)')",
+                        );
+                    }
+                    match rx.recv() {
+                        Ok(m) if m == "retry" => continue,
+                        _ => {
+                            show_main(&app, &splash_label);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Legacy NSIS install path (first-install only) ───────────
         let dl = tokio::time::timeout(
             std::time::Duration::from_secs(300),
             download_update(&platform.url, &platform.sha256),
