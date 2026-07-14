@@ -12,10 +12,46 @@
 ; Abort/Retry/Ignore dialog that users hit when they double-click setup.exe
 ; while the app is already running (foreground, tray-minimised, or autostart).
 ;
-; Requires nsProcess plugin (nsis-plugins/nsProcess.dll + nsProcess-x86.dll)
-; to be vendored. See installer/nsis-plugins/README.md.
+; ponytail: nsProcess macro stubs inlined here. The Tauri v2 NSIS bundler
+; invokes this file from a temp build directory, so a relative !include
+; ("nsis-plugins\nsProcess.nsh") fails to resolve. Inlining avoids the path
+; resolution problem; the plugin DLLs (nsProcess.dll, nsProcess-x86.dll) still
+; must be vendored into installer/nsis-plugins/ (see README.md). The DLLs
+; themselves are NOT loaded by name — they're discovered by the NSIS plugin
+; loader from the installer directory — so inlining the macros does not
+; change DLL resolution.
 
-!include "nsis-plugins\nsProcess.nsh"
+!macro nsProcessFindProcess PROCESS OUTPUTVAR
+    nsProcess::FindProcess "${PROCESS}"
+    Pop ${OUTPUTVAR}
+!macroend
+
+!macro nsProcessKillProcess PROCESS
+    nsProcess::KillProcess "${PROCESS}"
+!macroend
+
+!macro nsProcessCloseProcess PROCESS CLOSE_TYPE
+    nsProcess::CloseProcess "${PROCESS}" "${CLOSE_TYPE}"
+!macroend
+
+!macro nsProcessGetProcessName PID OUTVAR
+    nsProcess::GetProcessName "${PID}"
+    Pop ${OUTVAR}
+!macroend
+
+!macro nsProcessGetProcessPath PID OUTVAR
+    nsProcess::GetProcessPath "${PID}"
+    Pop ${OUTVAR}
+!macroend
+
+!macro nsProcessExitProcess PID
+    nsProcess::ExitProcess "${PID}"
+!macroend
+
+!macro nsProcessListProcesses COUNT OUTVAR
+    nsProcess::ListProcesses "${COUNT}"
+    Pop ${OUTVAR}
+!macroend
 
 ; Tauri v2 calls `HookMacro PreInstall` from the NSIS template. We define
 ; the macro if not already defined so this file is safe even if the calling
