@@ -95,7 +95,46 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Install minisign (portable, both Linux and macOS runners)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v minisign >/dev/null 2>&1; then
+            echo "minisign already present: $(command -v minisign)"
+            minisign -v
+            exit 0
+          fi
+          # ponytail: install minisign-0.11 portable binaries (Go single-file, no compiler).
+          # Verified layouts:
+          #   linux : tar.gz with minisign-linux/{x86_64,aarch64}/minisign
+          #   macos : zip with a single universal Mach-O named `minisign`
+          WORK="$RUNNER_TEMP/minisign-install"
+          mkdir -p "$WORK"
+          cd "$WORK"
+          case "$(uname -s)" in
+            Darwin)
+              curl -sSL --fail -o macos.zip https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-macos.zip
+              unzip -o macos.zip >/dev/null
+              install -m 0755 minisign /usr/local/bin/minisign
+              ;;
+            Linux)
+              curl -sSL --fail -o linux.tgz https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-linux.tar.gz
+              tar -xzf linux.tgz
+              case "$(uname -m)" in
+                x86_64)       BIN=minisign-linux/x86_64/minisign ;;
+                aarch64|arm64) BIN=minisign-linux/aarch64/minisign ;;
+                *) echo "::error::unsupported arch: $(uname -m)"; exit 1 ;;
+              esac
+              install -m 0755 "$BIN" /usr/local/bin/minisign
+              ;;
+            *) echo "::error::unsupported runner OS: $(uname -s)"; exit 1 ;;
+          esac
+          /usr/local/bin/minisign -v
+          echo "ok: minisign installed at $(command -v minisign)"
+
       - name: Verify updater secrets decrypt before build
+        if: runner.os != 'Windows'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -103,7 +142,8 @@ jobs:
         run: |
           set -euo pipefail
           if ! command -v minisign >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+            echo "::error::minisign binary not found in PATH after install step — cannot validate secrets."
+            exit 1
           fi
           echo "secret byte-lengths: key=${#TAURI_SIGNING_PRIVATE_KEY} pw=${#TAURI_SIGNING_PRIVATE_KEY_PASSWORD} pub=${#TAURI_UPDATER_PUBKEY}"
           # ponytail: write secrets to a temp keybox (NOT logged) so we can validate
@@ -116,16 +156,14 @@ jobs:
           printf '%s' "$TAURI_UPDATER_PUBKEY" | base64 -d > "$PUB"
           chmod 600 "$KEY"
           echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" > "$WORK/pw"
-          # minisign -d requires a signed message; sign a probe with the same key+password
-          # then verify it. If decryption fails, minisign exits non-zero here — fast fail.
           echo "probe" > "$WORK/probe"
           if ! minisign -S -s "$KEY" -m "$WORK/probe" -p "$PUB" < "$WORK/pw" 2>"$WORK/sign.err"; then
-            echo "::error::minisign signing failed — TAURI_SIGNING_PRIVATE_KEY_PASSWORD does not decrypt the key in TAURI_SIGNING_PRIVATE_KEY."
+            echo "::error::minisign signing failed — TAURI_SIGNING_PRIVATE_KEY_PASSWORD does not decrypt the key in TAURI_SIGNING_PRIVATE_KEY. Stderr:"
             cat "$WORK/sign.err"
             exit 1
           fi
           if ! minisign -V -p "$PUB" -m "$WORK/probe" 2>"$WORK/verify.err"; then
-            echo "::error::minisign verify failed — TAURI_UPDATER_PUBKEY does not match the private key."
+            echo "::error::minisign verify failed — TAURI_UPDATER_PUBKEY does not match the private key. Stderr:"
             cat "$WORK/verify.err"
             exit 1
           fi
