@@ -30,7 +30,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "${TAURI_UPDATER_PUBKEY}",
+      "pubkey": "RWTTkNBOXSLU+/t5tulHPgL3ZObSZBEFVJcb1zhGGJ457iisfRDDjrZB",
       "endpoints": [
         "https://github.com/Lucif3rHun1/PaintKiDukaan/releases/latest/download/latest.json"
       ]
