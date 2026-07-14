@@ -95,17 +95,41 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Diagnose updater secret lengths
+      - name: Verify updater secrets decrypt before build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
         run: |
-          echo "key len=${#TAURI_SIGNING_PRIVATE_KEY}"
-          echo "pw len=${#TAURI_SIGNING_PRIVATE_KEY_PASSWORD}"
-          echo "pub len=${#TAURI_UPDATER_PUBKEY}"
-          # ponytail: temporary diagnostic — prints byte lengths only, no secret content leaked
-          # remove once TAURI_SIGNING_PRIVATE_KEY_PASSWORD decrypt succeeds in CI
+          set -euo pipefail
+          if ! command -v minisign >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+          fi
+          echo "secret byte-lengths: key=${#TAURI_SIGNING_PRIVATE_KEY} pw=${#TAURI_SIGNING_PRIVATE_KEY_PASSWORD} pub=${#TAURI_UPDATER_PUBKEY}"
+          # ponytail: write secrets to a temp keybox (NOT logged) so we can validate
+          # password decryption against the real Minisign keybox — fast fail before
+          # the heavy 30+ min build. Never echo contents.
+          WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
+          KEY="$WORK/updater.key"
+          PUB="$WORK/updater.pub"
+          printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > "$KEY"
+          printf '%s' "$TAURI_UPDATER_PUBKEY" | base64 -d > "$PUB"
+          chmod 600 "$KEY"
+          echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" > "$WORK/pw"
+          # minisign -d requires a signed message; sign a probe with the same key+password
+          # then verify it. If decryption fails, minisign exits non-zero here — fast fail.
+          echo "probe" > "$WORK/probe"
+          if ! minisign -S -s "$KEY" -m "$WORK/probe" -p "$PUB" < "$WORK/pw" 2>"$WORK/sign.err"; then
+            echo "::error::minisign signing failed — TAURI_SIGNING_PRIVATE_KEY_PASSWORD does not decrypt the key in TAURI_SIGNING_PRIVATE_KEY."
+            cat "$WORK/sign.err"
+            exit 1
+          fi
+          if ! minisign -V -p "$PUB" -m "$WORK/probe" 2>"$WORK/verify.err"; then
+            echo "::error::minisign verify failed — TAURI_UPDATER_PUBKEY does not match the private key."
+            cat "$WORK/verify.err"
+            exit 1
+          fi
+          echo "ok: updater secrets decrypt and pubkey matches."
 
       - name: Build Tauri app
         env:
