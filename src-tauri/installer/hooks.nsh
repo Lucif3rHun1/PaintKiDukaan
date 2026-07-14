@@ -12,57 +12,15 @@
 ; Abort/Retry/Ignore dialog that users hit when they double-click setup.exe
 ; while the app is already running (foreground, tray-minimised, or autostart).
 ;
-; ponytail: nsProcess macro stubs inlined here. The Tauri v2 NSIS bundler
-; invokes this file from a temp build directory, so a relative !include
-; ("nsis-plugins\nsProcess.nsh") fails to resolve. Inlining avoids the path
-; resolution problem; the plugin DLLs (nsProcess.dll, nsProcess-x86.dll) still
-; must be vendored into installer/nsis-plugins/ (see README.md). The DLLs
-; themselves are NOT loaded by name — they're discovered by the NSIS plugin
-; loader from the installer directory — so inlining the macros does not
-; change DLL resolution.
+; ponytail: nsProcess plugin (3rd-party) is NOT vendored and is unavailable
+; in Tauri-bundled NSIS 3.11. Use `nsExec` (always available) + `tasklist`
+; (always present on Windows) instead. `tasklist /FI "IMAGENAME eq X"`
+; exits 0 when at least one matching process exists, 1 otherwise — that's
+; our "is running?" signal. The polling loop sleeps 500ms and re-checks.
 
-!macro nsProcessFindProcess PROCESS OUTPUTVAR
-    nsProcess::FindProcess "${PROCESS}"
-    Pop ${OUTPUTVAR}
-!macroend
-
-!macro nsProcessKillProcess PROCESS
-    nsProcess::KillProcess "${PROCESS}"
-!macroend
-
-!macro nsProcessCloseProcess PROCESS CLOSE_TYPE
-    nsProcess::CloseProcess "${PROCESS}" "${CLOSE_TYPE}"
-!macroend
-
-!macro nsProcessGetProcessName PID OUTVAR
-    nsProcess::GetProcessName "${PID}"
-    Pop ${OUTVAR}
-!macroend
-
-!macro nsProcessGetProcessPath PID OUTVAR
-    nsProcess::GetProcessPath "${PID}"
-    Pop ${OUTVAR}
-!macroend
-
-!macro nsProcessExitProcess PID
-    nsProcess::ExitProcess "${PID}"
-!macroend
-
-!macro nsProcessListProcesses COUNT OUTVAR
-    nsProcess::ListProcesses "${COUNT}"
-    Pop ${OUTVAR}
-!macroend
-
-; Tauri v2 calls `HookMacro PreInstall` from the NSIS template. We define
-; the macro if not already defined so this file is safe even if the calling
-; site is missing (e.g. Tauri version drift). The function pkbPreInstall is
-; callable independently for direct NSIS includes.
-
-!ifndef HookPreInstall
-  !macro HookPreInstall
+!macro HookPreInstall
     Call pkbPreInstall
-  !macroend
-!endif
+!macroend
 
 Function pkbPreInstall
     ; bail early if we don't have a $INSTDIR yet (first install mode)
@@ -70,11 +28,10 @@ Function pkbPreInstall
         Return
     ${EndIf}
 
-    ; 0 = not found, positive PID = running
-    nsProcess::FindProcess "paintkiduakan-master.exe"
-    Pop $R0
-
-    ${If} $R0 == "0"
+    ; nsExec returns the tasklist exit code in $0. 0 = process exists, 1 = not.
+    ; Output goes to the installer log; we only care about the exit code.
+    nsExec::ExecToLog 'tasklist /FI "IMAGENAME eq paintkiduakan-master.exe" /NH'
+    ${If} $0 != 0
         ; not running — proceed silently
         Return
     ${EndIf}
@@ -89,9 +46,8 @@ Function pkbPreInstall
     ; poll up to ~10s (20 × 500ms). Bail as soon as it's gone.
     ${For} $R2 1 20
         Sleep 500
-        nsProcess::FindProcess "paintkiduakan-master.exe"
-        Pop $R0
-        ${If} $R0 == "0"
+        nsExec::ExecToLog 'tasklist /FI "IMAGENAME eq paintkiduakan-master.exe" /NH'
+        ${If} $0 != 0
             Return
         ${EndIf}
     ${Next}
