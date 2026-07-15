@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FileDown } from "lucide-react";
 import { buildPdf } from "../../lib/pdf";
 import { downloadSpreadsheet } from "../../lib/spreadsheet";
@@ -22,17 +22,57 @@ export function DownloadMenu({
   className,
 }: DownloadMenuProps) {
   const [open, setOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const enterFrameRef = useRef<number | null>(null);
+
+  const closeMenu = useCallback(() => {
+    if (!open) return;
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current);
+      enterFrameRef.current = null;
+    }
+    setOpen(false);
+    setIsVisible(false);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setIsClosing(false);
+      return;
+    }
+    setIsClosing(true);
+  }, [open]);
+
+  function openMenu() {
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current);
+    }
+    setOpen(true);
+    setIsClosing(false);
+    setIsVisible(false);
+    enterFrameRef.current = window.requestAnimationFrame(() => {
+      setIsVisible(true);
+      enterFrameRef.current = null;
+    });
+  }
+
+  useEffect(
+    () => () => {
+      if (enterFrameRef.current !== null) {
+        window.cancelAnimationFrame(enterFrameRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!open) return;
     const onClick = (event: MouseEvent) => {
       if (ref.current?.contains(event.target as Node)) return;
-      setOpen(false);
+      closeMenu();
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
+  }, [open, closeMenu]);
 
   const sheetRows = rows.map((row) => row.map((cell) => String(cell ?? "")));
   const download = (format: "csv" | "xlsx" | "pdf") => {
@@ -41,14 +81,17 @@ export function DownloadMenu({
     } else {
       downloadSpreadsheet(headers, sheetRows, filename, format);
     }
-    setOpen(false);
+    closeMenu();
   };
 
   return (
     <div ref={ref} className={cn("relative inline-flex", className)}>
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (open) closeMenu();
+          else openMenu();
+        }}
         className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -56,10 +99,22 @@ export function DownloadMenu({
         <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
         Download
       </button>
-      {open ? (
+      {open || isClosing ? (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 w-32 rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground shadow-xl"
+          onTransitionEnd={(event) => {
+            if (
+              isClosing &&
+              event.target === event.currentTarget &&
+              event.propertyName === "opacity"
+            ) {
+              setIsClosing(false);
+            }
+          }}
+          className={cn(
+            "absolute right-0 top-full z-50 mt-1 w-32 origin-top-right rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground shadow-xl transition-[opacity,transform] duration-fast ease-out will-change-transform motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
+            isVisible ? "scale-100 opacity-100" : "scale-[0.97] opacity-0",
+          )}
         >
           {(["CSV", "XLSX", "PDF"] as const).map((label) => (
             <button

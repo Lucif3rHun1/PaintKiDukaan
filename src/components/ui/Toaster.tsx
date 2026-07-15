@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   useToasts,
@@ -29,10 +30,22 @@ const bg: Record<ToastVariant, string> = {
 };
 
 function ToastItem({ toast: t }: { toast: Toast }) {
+  const [entered, setEntered] = useState(false);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg",
+        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg transition-[transform,opacity] ease-out will-change-transform motion-reduce:translate-x-0 motion-reduce:scale-100 motion-reduce:opacity-100 motion-reduce:transition-none",
+        t.exiting
+          ? "translate-x-0 scale-[0.97] opacity-0 duration-fast"
+          : entered
+            ? "translate-x-0 scale-100 opacity-100 duration-normal"
+            : "translate-x-full scale-100 opacity-0 duration-normal",
         bg[t.variant],
       )}
     >

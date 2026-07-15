@@ -41,19 +41,59 @@ function parseValue(value?: string) {
 export function DatePicker({ value, onChange, placeholder = "Pick date", className }: DatePickerProps) {
   const { year, month, day: selectedDay } = parseValue(value);
   const [open, setOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const [viewMonth, setViewMonth] = useState(month);
   const [viewYear, setViewYear] = useState(year);
   const ref = useRef<HTMLDivElement>(null);
+  const enterFrameRef = useRef<number | null>(null);
+
+  const closePicker = useCallback(() => {
+    if (!open) return;
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current);
+      enterFrameRef.current = null;
+    }
+    setOpen(false);
+    setIsVisible(false);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setIsClosing(false);
+      return;
+    }
+    setIsClosing(true);
+  }, [open]);
+
+  function openPicker() {
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current);
+    }
+    setOpen(true);
+    setIsClosing(false);
+    setIsVisible(false);
+    enterFrameRef.current = window.requestAnimationFrame(() => {
+      setIsVisible(true);
+      enterFrameRef.current = null;
+    });
+  }
+
+  useEffect(
+    () => () => {
+      if (enterFrameRef.current !== null) {
+        window.cancelAnimationFrame(enterFrameRef.current);
+      }
+    },
+    [],
+  );
 
   // Close on outside click
   useEffect(() => {
     if (!open) return;
     function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) closePicker();
     }
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
-  }, [open]);
+  }, [open, closePicker]);
 
   // Sync view when value changes
   useEffect(() => {
@@ -63,8 +103,8 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
 
   const select = useCallback((y: number, m: number, d: number) => {
     onChange?.(formatDate(y, m, d));
-    setOpen(false);
-  }, [onChange]);
+    closePicker();
+  }, [onChange, closePicker]);
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);
   const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
@@ -84,7 +124,10 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
       {/* Trigger */}
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (open) closePicker();
+          else openPicker();
+        }}
         aria-haspopup="dialog"
         aria-expanded={open}
         className={cn(
@@ -97,8 +140,22 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
       </button>
 
       {/* Popover */}
-      {open && (
-        <div className="absolute z-50 mt-1 rounded-lg border border-border bg-popover p-3 shadow-lg">
+      {(open || isClosing) && (
+        <div
+          onTransitionEnd={(event) => {
+            if (
+              isClosing &&
+              event.target === event.currentTarget &&
+              event.propertyName === "opacity"
+            ) {
+              setIsClosing(false);
+            }
+          }}
+          className={cn(
+            "absolute z-50 mt-1 origin-top-left rounded-lg border border-border bg-popover p-3 shadow-lg transition-[opacity,transform] duration-fast ease-out motion-reduce:transition-none motion-reduce:scale-100 motion-reduce:opacity-100",
+            isVisible ? "scale-100 opacity-100" : "scale-[0.97] opacity-0",
+          )}
+        >
           {/* Month/Year nav */}
           <div className="mb-2 flex items-center justify-between">
             <button

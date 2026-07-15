@@ -3,9 +3,10 @@ import { useSyncExternalStore } from "react";
 export type ToastVariant = "success" | "error" | "info" | "warning";
 
 export interface Toast {
-  id: string;
-  variant: ToastVariant;
-  message: string;
+  readonly id: string;
+  readonly variant: ToastVariant;
+  readonly message: string;
+  readonly exiting: boolean;
 }
 
 // External store
@@ -29,16 +30,28 @@ function getSnapshot() {
 
 // ponytail: cap at 8 to prevent unbounded growth on error loops
 const MAX_TOASTS = 8;
+const EXIT_DURATION_MS = 120;
 
-function addToast(variant: ToastVariant, message: string) {
-  const id = crypto.randomUUID();
-  const next = [...toasts, { id, variant, message }];
-  if (next.length > MAX_TOASTS) next.splice(0, next.length - MAX_TOASTS);
-  toasts = next;
+function removeToast(id: string) {
+  const target = toasts.find((t) => t.id === id);
+  if (!target || target.exiting) return;
+
+  toasts = toasts.map((t) => (t.id === id ? { ...t, exiting: true } : t));
   emit();
   setTimeout(() => {
     toasts = toasts.filter((t) => t.id !== id);
     emit();
+  }, EXIT_DURATION_MS);
+}
+
+function addToast(variant: ToastVariant, message: string) {
+  const id = crypto.randomUUID();
+  const next = [...toasts, { id, variant, message, exiting: false }];
+  if (next.length > MAX_TOASTS) next.splice(0, next.length - MAX_TOASTS);
+  toasts = next;
+  emit();
+  setTimeout(() => {
+    removeToast(id);
   }, 4000);
 }
 
@@ -56,28 +69,26 @@ export const toast = {
     },
   ): Promise<T> => {
     const loadingId = crypto.randomUUID();
-    toasts = [...toasts, { id: loadingId, variant: "info", message: msgs.loading }];
+    toasts = [
+      ...toasts,
+      { id: loadingId, variant: "info", message: msgs.loading, exiting: false },
+    ];
     emit();
     return p
       .then((v) => {
-        toasts = toasts.filter((t) => t.id !== loadingId);
-        emit();
+        removeToast(loadingId);
         const msg = typeof msgs.success === "function" ? msgs.success(v) : msgs.success;
         addToast("success", msg);
         return v;
       })
       .catch((e) => {
-        toasts = toasts.filter((t) => t.id !== loadingId);
-        emit();
+        removeToast(loadingId);
         const msg = typeof msgs.error === "function" ? msgs.error(e) : msgs.error;
         addToast("error", msg);
         throw e;
       });
   },
-  dismiss: (id: string) => {
-    toasts = toasts.filter((t) => t.id !== id);
-    emit();
-  },
+  dismiss: removeToast,
 };
 
 // React hooks for Toaster component

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, isValidElement } from "react";
+import { useCallback, useEffect, useRef, useState, isValidElement } from "react";
 import { createPortal } from "react-dom";
 import { MoreHorizontal } from "lucide-react";
 import { cn } from "./cn";
@@ -35,19 +35,28 @@ function isIconComponent(
 interface MenuPos {
   top: number;
   left: number;
-  placement: "bottom-right" | "top-right";
+  placement: "bottom-left" | "bottom-right" | "top-left" | "top-right";
 }
 
 const MENU_WIDTH = 192; // w-48
 const MENU_ITEM_PX = 36;
 const MENU_VPAD = 8;
 const VIEWPORT_GUTTER = 8;
+const MENU_ORIGIN: Record<MenuPos["placement"], string> = {
+  "bottom-left": "origin-top-left",
+  "bottom-right": "origin-top-right",
+  "top-left": "origin-bottom-left",
+  "top-right": "origin-bottom-right",
+};
 
 export function ActionMenu({ label, actions, items, className }: Props) {
   const [open, setOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const enterFrameRef = useRef<number | null>(null);
   const [pos, setPos] = useState<MenuPos>({
     top: 0,
     left: 0,
@@ -55,6 +64,54 @@ export function ActionMenu({ label, actions, items, className }: Props) {
   });
 
   const allActions = (items ?? actions ?? []).filter((a) => !a.disabled);
+
+  const closeMenu = useCallback(() => {
+    if (!open) return;
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current);
+      enterFrameRef.current = null;
+    }
+    setOpen(false);
+    setIsVisible(false);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setIsClosing(false);
+      return;
+    }
+    setIsClosing(true);
+  }, [open]);
+
+  function openMenu() {
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current);
+    }
+    setOpen(true);
+    setIsClosing(false);
+    setIsVisible(false);
+    enterFrameRef.current = window.requestAnimationFrame(() => {
+      setIsVisible(true);
+      enterFrameRef.current = null;
+    });
+  }
+
+  function closeOnBlur(event: React.FocusEvent<HTMLElement>) {
+    const next = event.relatedTarget;
+    if (
+      next instanceof Node &&
+      (triggerRef.current?.contains(next) || menuRef.current?.contains(next))
+    ) {
+      return;
+    }
+    closeMenu();
+  }
+
+  useEffect(
+    () => () => {
+      if (enterFrameRef.current !== null) {
+        window.cancelAnimationFrame(enterFrameRef.current);
+      }
+    },
+    [],
+  );
 
   // Position the portal-rendered menu relative to the trigger, flipping up if
   // it would overflow the bottom of the viewport. Recomputed when the menu
@@ -90,7 +147,7 @@ export function ActionMenu({ label, actions, items, className }: Props) {
     }
     compute();
     function dismissOnScroll() {
-      setOpen(false);
+      closeMenu();
     }
     window.addEventListener("scroll", dismissOnScroll, true);
     window.addEventListener("resize", dismissOnScroll);
@@ -98,7 +155,7 @@ export function ActionMenu({ label, actions, items, className }: Props) {
       window.removeEventListener("scroll", dismissOnScroll, true);
       window.removeEventListener("resize", dismissOnScroll);
     };
-  }, [open, allActions.length]);
+  }, [open, allActions.length, closeMenu]);
 
   // Keyboard navigation while the menu is open.
   useEffect(() => {
@@ -106,7 +163,7 @@ export function ActionMenu({ label, actions, items, className }: Props) {
     function handler(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        setOpen(false);
+        closeMenu();
         triggerRef.current?.focus();
         return;
       }
@@ -124,12 +181,12 @@ export function ActionMenu({ label, actions, items, className }: Props) {
         const action = allActions[activeIndex];
         action.onSelect?.();
         action.onClick?.();
-        setOpen(false);
+        closeMenu();
       }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, activeIndex, allActions]);
+  }, [open, activeIndex, allActions, closeMenu]);
 
   useEffect(() => {
     if (open) setActiveIndex(0);
@@ -143,18 +200,23 @@ export function ActionMenu({ label, actions, items, className }: Props) {
       const target = e.target as Node;
       if (triggerRef.current?.contains(target)) return;
       if (menuRef.current?.contains(target)) return;
-      setOpen(false);
+      closeMenu();
     }
     window.addEventListener("mousedown", outside);
     return () => window.removeEventListener("mousedown", outside);
-  }, [open]);
+  }, [open, closeMenu]);
 
   return (
     <>
       <button
         ref={triggerRef}
         type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (open) closeMenu();
+          else openMenu();
+        }}
+        onBlur={closeOnBlur}
         className={cn(
           "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
           className,
@@ -165,7 +227,7 @@ export function ActionMenu({ label, actions, items, className }: Props) {
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </button>
-      {open &&
+      {(open || isClosing) &&
         createPortal(
           <div
             ref={menuRef}
@@ -177,7 +239,21 @@ export function ActionMenu({ label, actions, items, className }: Props) {
               left: pos.left,
               width: MENU_WIDTH,
             }}
-            className="z-[1000] max-h-60 overflow-auto rounded-lg border border-border bg-card text-foreground shadow-xl ring-1 ring-black/5"
+            onBlur={closeOnBlur}
+            onTransitionEnd={(event) => {
+              if (
+                isClosing &&
+                event.target === event.currentTarget &&
+                event.propertyName === "opacity"
+              ) {
+                setIsClosing(false);
+              }
+            }}
+            className={cn(
+              "z-[1000] max-h-60 overflow-auto rounded-lg border border-border bg-card text-foreground shadow-xl ring-1 ring-black/5 transition-[opacity,transform] duration-fast ease-out will-change-transform motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
+              MENU_ORIGIN[pos.placement],
+              isVisible ? "scale-100 opacity-100" : "scale-[0.97] opacity-0",
+            )}
           >
             {allActions.length === 0 ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">No actions</div>
@@ -201,7 +277,7 @@ export function ActionMenu({ label, actions, items, className }: Props) {
                   onClick={() => {
                     action.onSelect?.();
                     action.onClick?.();
-                    setOpen(false);
+                    closeMenu();
                     triggerRef.current?.focus();
                   }}
                 >

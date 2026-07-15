@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "./Button";
 import { Card } from "./Card";
+import { cn } from "./cn";
 
 interface UnsavedChangesModalProps {
   readonly open: boolean;
@@ -16,16 +19,64 @@ export function UnsavedChangesModal({
   onCancel,
   description,
 }: UnsavedChangesModalProps) {
-  if (!open) return null;
+  const [isMounted, setIsMounted] = useState(open);
+  const [isClosing, setIsClosing] = useState(true);
 
-  return (
+  useEffect(() => {
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    if (open) {
+      setIsMounted(true);
+      if (reducedMotion) {
+        setIsClosing(false);
+        return;
+      }
+
+      setIsClosing(true);
+      const frame = requestAnimationFrame(() => setIsClosing(false));
+      return () => cancelAnimationFrame(frame);
+    }
+
+    if (reducedMotion || isClosing) {
+      setIsMounted(false);
+      return;
+    }
+
+    setIsClosing(true);
+  }, [open]);
+
+  if (!isMounted) return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="unsaved-changes-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60"
+      onTransitionEnd={(event) => {
+        if (
+          event.target === event.currentTarget &&
+          event.propertyName === "opacity" &&
+          !open &&
+          isClosing
+        ) {
+          setIsMounted(false);
+        }
+      }}
+      className={cn(
+        "fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 transition-opacity duration-normal ease-out motion-reduce:transition-none motion-reduce:opacity-100",
+        isClosing ? "opacity-0" : "opacity-100",
+      )}
     >
-      <Card className="w-full max-w-sm space-y-4 p-6">
+      <Card
+        className={cn(
+          "w-full max-w-sm space-y-4 p-6 transition-[opacity,transform] ease-out will-change-transform motion-reduce:transition-none motion-reduce:scale-100 motion-reduce:opacity-100",
+          isClosing
+            ? "scale-[0.97] opacity-0 duration-fast"
+            : "scale-100 opacity-100 duration-normal",
+        )}
+      >
         <h2
           id="unsaved-changes-title"
           className="text-lg font-semibold text-foreground"
@@ -47,6 +98,7 @@ export function UnsavedChangesModal({
           </Button>
         </div>
       </Card>
-    </div>
+    </div>,
+    document.body,
   );
 }
