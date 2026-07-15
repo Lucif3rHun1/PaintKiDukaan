@@ -15,7 +15,7 @@ function AppErrorFallback({ error, resetErrorBoundary }: AppErrorFallbackProps) 
       aria-live="assertive"
       className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100"
     >
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900/90 p-8 shadow-2xl backdrop-blur">
+      <div className="surface-translucent w-full max-w-md rounded-2xl border border-white/10 p-8 shadow-2xl">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-destructive/15">
             <AlertOctagon className="h-5 w-5 text-destructive" />

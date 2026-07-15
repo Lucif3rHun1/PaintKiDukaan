@@ -482,7 +482,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
         }
       >
         {caption ? <div className="sr-only">{caption}</div> : null}
-        <div className="sticky top-0 z-10 flex bg-card/95 [backdrop-filter:saturate(180%)_blur(8px)] [box-shadow:inset_0_-1px_0_0_theme(colors.border)] text-left text-xs uppercase text-muted-foreground" role="row">
+        <div className="surface-translucent sticky top-0 z-10 flex [box-shadow:inset_0_-1px_0_0_theme(colors.border)] text-left text-xs uppercase text-muted-foreground" role="row">
           {finalColumns.map((col, colIdx) => (
             <div
               key={col.id ?? (typeof col.header === "string" ? col.header : undefined) ?? `col-${colIdx}`}

@@ -138,7 +138,7 @@ export function ShortcutOverlay({ open, onClose, groups }: Props) {
           }
         }}
         className={cn(
-          "mx-4 w-full max-w-2xl rounded-lg border border-border bg-card p-6 text-card-foreground shadow-2xl transition-[opacity,transform] duration-normal ease-out will-change-transform motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
+          "surface-translucent mx-4 w-full max-w-2xl rounded-lg border border-border p-6 text-card-foreground shadow-2xl transition-[opacity,transform] duration-normal ease-out will-change-transform motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
           isClosing ? "scale-[0.97] opacity-0" : "scale-100 opacity-100",
         )}
       >
