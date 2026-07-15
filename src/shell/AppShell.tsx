@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -293,7 +293,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
       <div className="flex h-screen overflow-hidden bg-sidebar text-sidebar-foreground">
         <aside
           className={cn(
-            "hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-2 transition-[width] duration-200 motion-reduce:transition-none md:flex",
+            "hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-2 md:flex",
             collapsed ? "w-14" : "w-60",
           )}
         >
@@ -316,7 +316,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
 
           {(() => {
             const visibleGroups = groups
-              .map((g) => ({ ...g, items: g.items.filter((i) => !OWNER_ONLY_IDS.has(i.id) && !(isStocker && STOCKER_HIDDEN_IDS.has(i.id))) }))
+              .map((g) => ({ ...g, items: g.items.filter((i) => (isOwner || !OWNER_ONLY_IDS.has(i.id)) && !(isStocker && STOCKER_HIDDEN_IDS.has(i.id))) }))
               .filter((g) => g.items.length > 0);
             // Flatten every sidebar link across all groups so isLinkActive can
             // detect cross-group yield (e.g. "Sales" at #/sales must yield to
@@ -581,9 +581,42 @@ function BackupActivity({ backupAge }: { backupAge: number | null }) {
 function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser }: { user: AppShellUser | null; shopName?: string | null; collapsed: boolean; onLock: () => void; onLogout: () => void; onSwitchUser?: () => void }) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
+  const enterFrameRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const [hasOtherUsers, setHasOtherUsers] = useState(false);
   const phase = useSecurity((s) => s.phase);
+
+  const closeMenu = useCallback(() => {
+    if (!open) return;
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current);
+      enterFrameRef.current = null;
+    }
+    setOpen(false);
+    setIsVisible(false);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setIsClosing(false);
+      return;
+    }
+    setIsClosing(true);
+  }, [open]);
+
+  function openMenu() {
+    if (enterFrameRef.current !== null) window.cancelAnimationFrame(enterFrameRef.current);
+    setOpen(true);
+    setIsClosing(false);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setIsVisible(true);
+      return;
+    }
+    setIsVisible(false);
+    enterFrameRef.current = window.requestAnimationFrame(() => {
+      setIsVisible(true);
+      enterFrameRef.current = null;
+    });
+  }
 
   useEffect(() => {
     if (phase !== "unlocked") return;
@@ -596,10 +629,10 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
     window.setTimeout(() => firstItem?.focus(), 0);
 
     function handleOutside(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) closeMenu();
     }
     function handleEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") closeMenu();
     }
     document.addEventListener("mousedown", handleOutside);
     document.addEventListener("keydown", handleEscape);
@@ -607,7 +640,14 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
       document.removeEventListener("mousedown", handleOutside);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [open]);
+  }, [open, closeMenu]);
+
+  useEffect(
+    () => () => {
+      if (enterFrameRef.current !== null) window.cancelAnimationFrame(enterFrameRef.current);
+    },
+    [],
+  );
 
   const displayName = toTitleCase(user?.name ?? "Owner");
   const displayRole = toTitleCase(user?.role ?? "stocker");
@@ -616,7 +656,10 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
     <div ref={wrapperRef} className="relative border-t border-sidebar-border pt-3">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (open) closeMenu();
+          else openMenu();
+        }}
         className={cn(
           "flex w-full items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent px-2 py-2 text-left transition-colors hover:bg-sidebar-accent/80",
           collapsed && "justify-center px-0",
@@ -631,12 +674,22 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
               <div className="truncate text-sm font-medium text-sidebar-foreground">{displayName}</div>
               <div className="truncate text-xs text-sidebar-foreground/60">{displayRole}</div>
             </div>
-            <ChevronDown className={cn("h-4 w-4 text-sidebar-foreground/60 transition-transform", open && "rotate-180")} aria-hidden="true" />
+            <ChevronDown className={cn("h-4 w-4 text-sidebar-foreground/60 transition-transform motion-reduce:transition-none", open && "rotate-180")} aria-hidden="true" />
           </>
         ) : null}
       </button>
-      {open ? (
-        <div className="absolute bottom-full left-0 z-50 mb-2 w-56 rounded-xl border border-border bg-popover p-1.5 text-sm text-popover-foreground shadow-xl">
+      {open || isClosing ? (
+        <div
+          onTransitionEnd={(event) => {
+            if (isClosing && event.target === event.currentTarget && event.propertyName === "opacity") {
+              setIsClosing(false);
+            }
+          }}
+          className={cn(
+            "absolute bottom-full left-0 z-50 mb-2 w-56 origin-bottom-left rounded-xl border border-border bg-popover p-1.5 text-sm text-popover-foreground shadow-xl transition-[opacity,transform] duration-fast ease-out will-change-transform motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
+            isVisible ? "scale-100 opacity-100" : "scale-[0.97] opacity-0",
+          )}
+        >
           {/* User header */}
           <div className="flex items-center gap-3 px-3 py-2.5">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
@@ -654,7 +707,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
           <button
             ref={firstItemRef}
             type="button"
-            onClick={() => { onLock(); setOpen(false); }}
+            onClick={() => { onLock(); closeMenu(); }}
             className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-foreground transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
           >
             <Lock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -663,7 +716,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
           {hasOtherUsers && onSwitchUser ? (
             <button
               type="button"
-              onClick={() => { onSwitchUser(); setOpen(false); }}
+              onClick={() => { onSwitchUser(); closeMenu(); }}
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-foreground transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
             >
               <UserCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -672,7 +725,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
           ) : null}
           <button
             type="button"
-            onClick={() => { onLogout(); setOpen(false); }}
+            onClick={() => { onLogout(); closeMenu(); }}
             className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-destructive transition-colors hover:bg-destructive/10 focus:bg-destructive/10 focus:outline-none"
           >
             <LogOut className="h-4 w-4" aria-hidden="true" />
