@@ -165,6 +165,11 @@ pub struct AppState {
     pub recovery_passphrase: Mutex<Option<Zeroizing<String>>>,
     /// Timestamp of last successful test-restore (unix ms).
     pub last_test_restore_unix_ms: Mutex<Option<i64>>,
+    /// audit(F8): Tray icon init outcome. Values: "uninitialized" | "ok" |
+    /// "unavailable". Surfaced via `master_health` so Settings → Master Health
+    /// can show "Tray: unavailable" instead of a silent drop on platforms
+    /// where the tray subsystem fails to register.
+    pub tray_status: Mutex<&'static str>,
 }
 
 impl Default for AppState {
@@ -180,6 +185,7 @@ impl Default for AppState {
             last_backup_unix_ms: Mutex::new(None),
             last_test_restore_unix_ms: Mutex::new(None),
             recovery_passphrase: Mutex::new(None),
+            tray_status: Mutex::new("uninitialized"),
         }
     }
 }

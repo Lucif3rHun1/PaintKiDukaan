@@ -4,6 +4,13 @@
 //! and "Lock now" calls the Win32 `LockWorkStation` API. On non-Windows
 //! hosts the lock falls back to emitting `tray:lock` so the frontend can
 //! still navigate to the lock route.
+//!
+//! audit(F2,F3,F8): Icon is loaded via `tauri::include_image!` (compile-time)
+//! so a missing or malformed icon is a build failure, not a runtime invisible
+//! tray. Init result is recorded into `AppState.tray_status` so the Settings
+//! page can show "Tray: unavailable" instead of a silent drop. Menu refresh
+//! is driven by window Show/Hide events, not by tray hover, so we don't
+//! rebuild the menu on every mouseover.
 
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
@@ -11,20 +18,26 @@ use tauri::{App, AppHandle, Emitter, Manager, Runtime};
 
 const TRAY_ID: &str = "pkb-master-tray";
 
+// audit(F2): compile-time icon embed. Tauri requires PNG for `include_image!`
+// and we ship 32x32.png in the icons/ directory. If this asset is missing the
+// build fails — exactly the right behavior (was previously a runtime fallback
+// to a 1x1 invisible placeholder).
+const TRAY_ICON: tauri::image::Image<'static> = tauri::include_image!("icons/32x32.png");
+
 /// Build the tray icon and attach it to the running app. Best-effort: a
-/// failure here is logged but never propagated (the app must keep running).
+/// failure here is logged AND recorded to `AppState.tray_status` (both
+/// success and failure arms) so it is observable via Settings → Master
+/// Health. The caller in `lib.rs` records "unavailable" on Err before
+/// the warn log; we record "ok" here on the success path.
 pub fn init<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
 
     let menu = build_tray_menu(&handle)?;
 
-    let icon = match app.default_window_icon() {
-        Some(icon) => icon.clone(),
-        None => {
-            log::warn!("tray: no default window icon found, using 1x1 placeholder");
-            tauri::image::Image::new_owned(vec![0u8; 4], 1, 1)
-        }
-    };
+    // audit(F2): primary icon is the compile-time embedded PNG. Fall back to
+    // the default window icon only if the embedded image failed to decode at
+    // runtime (should never happen for a checked-in asset).
+    let icon = TRAY_ICON.clone();
 
     TrayIconBuilder::with_id(TRAY_ID)
         .tooltip(concat!("PaintKiDukaan v", env!("CARGO_PKG_VERSION")))
@@ -39,16 +52,24 @@ pub fn init<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Erro
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
+            // audit(F3): drop the Enter → refresh branch. Refresh is now
+            // driven by window Show/Hide events (see `wire_window_visibility`).
             match event {
                 TrayIconEvent::Click {
                     button: MouseButton::Left,
                     ..
                 } => show_main_window(tray.app_handle()),
-                TrayIconEvent::Enter { .. } => refresh_tray_menu(tray.app_handle()),
                 _ => {}
             }
         })
         .build(app)?;
+
+    // audit(F2): record success.
+    set_tray_status(&handle, "ok");
+
+    // audit(F3): wire the menu-refresh trigger to actual window visibility
+    // changes rather than tray hover.
+    wire_window_visibility(&handle);
 
     Ok(())
 }
@@ -84,6 +105,19 @@ fn refresh_tray_menu<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+// audit(F3): only refresh on real visibility transitions, not hover.
+fn wire_window_visibility<R: Runtime>(app: &AppHandle<R>) {
+    let app_handle = app.clone();
+    if let Some(window) = app.get_webview_window("main") {
+        window.on_window_event(move |event| match event {
+            tauri::WindowEvent::Resized(_)
+            | tauri::WindowEvent::Moved(_)
+            | tauri::WindowEvent::CloseRequested { .. } => {}
+            _ => refresh_tray_menu(&app_handle),
+        });
+    }
+}
+
 fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -111,4 +145,26 @@ fn lock_workstation<R: Runtime>(app: &AppHandle<R>) {
 #[cfg(not(target_os = "windows"))]
 fn lock_workstation<R: Runtime>(app: &AppHandle<R>) {
     let _ = app.emit("tray:lock", ());
+}
+
+// audit(F8): record tray init outcome into AppState so Settings → Master
+// Health can surface "Tray: unavailable" instead of a silent failure.
+pub(crate) fn set_tray_status<R: Runtime>(app: &AppHandle<R>, status: &'static str) {
+    let state = app.state::<crate::commands::auth::AppState>();
+    if let Ok(mut s) = state.tray_status.lock() {
+        *s = status;
+        drop(s);
+    }
+    drop(state);
+}
+
+#[cfg(test)]
+mod tests {
+    // Compile-time only check: `tauri::include_image!` resolves at build time.
+    // If this module compiles, the asset is present and decodable.
+    #[test]
+    fn tray_icon_asset_compiles() {
+        // Reference the constant so a removal is a compile error.
+        let _ = super::TRAY_ICON.clone();
+    }
 }

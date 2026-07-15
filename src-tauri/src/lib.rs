@@ -69,6 +69,13 @@ pub fn run() {
         std::process::exit(0);
     }
 
+    // audit(F1): `--pkb-start-minimized` — autostart path on Windows. The
+    // process starts, lands in the tray, never shows the window. Frontend
+    // remains in its previous phase (typically Locked); the user clicks the
+    // tray icon to bring it up. Without this, autostart-launches flash a
+    // visible window on every login.
+    let start_minimized = std::env::args().any(|a| a == "--pkb-start-minimized");
+
     
 
     #[cfg(target_os = "windows")]
@@ -166,9 +173,11 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
+        // audit(v0.2.0 CRITICAL #4): register --pkb-start-minimized so OS autostart
+        // launches land in the tray without flashing a visible window.
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
+            Some(vec!["--pkb-start-minimized"]),
         ))
         .plugin(tauri_plugin_process::init())
         .plugin(
@@ -217,6 +226,11 @@ pub fn run() {
 
             log::info!("Initializing hardening subsystems...");
             if let Err(e) = hardening::tray::init(app) {
+                // audit(v0.2.0 HIGH #1, F8): record tray init failure into AppState
+                // so Settings → Master Health surfaces "Tray: unavailable" instead
+                // of the silent drop. Must precede the warn log so the user sees
+                // the status even if log streaming is buffered.
+                hardening::tray::set_tray_status(&app.handle(), "unavailable");
                 log::warn!("Tray init failed (non-fatal): {}", e);
             }
 
@@ -290,8 +304,35 @@ pub fn run() {
             }
 
             if let Some(main) = app.get_webview_window("main") {
-                let _ = main.show();
-                let _ = main.set_focus();
+                // audit(F1): only show the window on a normal launch. Autostart
+                // passes --pkb-start-minimized; the user gets a tray-only app
+                // and brings it forward via tray left-click.
+                if !start_minimized {
+                    let _ = main.show();
+                    let _ = main.set_focus();
+                }
+
+                // audit(F1): on user-initiated close (X button, Alt+F4), emit
+                // the same graceful-quit event the NSIS installer uses. The
+                // frontend can persist dirty drafts; we then exit. Tray-quit
+                // and the menu Quit path take the same `graceful_shutdown`
+                // route for symmetry.
+                // audit(v0.2.0): prevent_close is REQUIRED — without it, the
+                // window closes immediately on X-click and the frontend never
+                // gets a chance to flush drafts via the graceful-quit listener.
+                // The 3s thread sleep below is a safety net for unresponsive FE.
+                let handle_for_close = handle.clone();
+                main.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let h = handle_for_close.clone();
+                        std::thread::spawn(move || {
+                            let _ = h.emit("app://graceful-quit-requested", ());
+                            std::thread::sleep(std::time::Duration::from_millis(3000));
+                            crate::graceful_shutdown(&h);
+                        });
+                    }
+                });
             }
 
             log::info!("Setup complete");
@@ -531,7 +572,7 @@ pub fn run() {
             commands::updater::cmd_current_target,
             commands::updater::cmd_retry_update,
             commands::updater::cmd_quit_app,
-            commands::updater::cmd_quit_after_update,
+            commands::updater::cmd_request_data_wipe,
             // Session logs (Slice D)
             session::cmd_read_session_logs,
         ])
@@ -541,21 +582,19 @@ pub fn run() {
             std::process::exit(1);
         });
 
-    app.run(|app_handle, event| {
-        if let tauri::RunEvent::WindowEvent {
-            label,
-            event: tauri::WindowEvent::CloseRequested { .. },
-            ..
-        } = &event
-        {
-            let _ = label;
-            crate::graceful_shutdown(app_handle);
-        }
+    app.run(|_app_handle, _event| {
+        // audit(F5): CloseRequested is now handled by the window-specific
+        // handler registered in `setup` (main.on_window_event). It emits
+        // `app://graceful-quit-requested` so the frontend can persist dirty
+        // drafts, waits 3 s, then calls `graceful_shutdown`. The previous
+        // RunEvent-level handler here raced with that and won — calling
+        // `graceful_shutdown` after 300 ms before the frontend could save.
     });
 }
 
-/// Ponytail: single choke-point for every quit path (CloseRequested, tray Quit,
-/// cmd_quit_app, cmd_quit_after_update, --graceful-quit single-instance branch).
+/// Ponytail: single choke-point for every quit path (CloseRequested via
+/// main.on_window_event, tray Quit, cmd_quit_app, --graceful-quit
+/// single-instance branch).
 ///
 /// Best-effort: signals `scan::SHUTDOWN` so rdev's hook thread has a chance to
 /// unwind (its `if SHUTDOWN.load { return }` gate fires on the next keystroke).

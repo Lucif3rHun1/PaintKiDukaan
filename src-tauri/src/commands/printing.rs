@@ -178,7 +178,7 @@ fn validate_input(printer_name: &str, data: &ReceiptData) -> AppResult<()> {
     Ok(())
 }
 
-fn build_receipt(data: ReceiptData) -> Vec<u8> {
+pub fn build_receipt(data: ReceiptData) -> Vec<u8> {
     let width = match data.paper_size.as_deref() {
         Some("thermal-58mm") => WIDTH_58MM,
         _ => WIDTH_80MM,

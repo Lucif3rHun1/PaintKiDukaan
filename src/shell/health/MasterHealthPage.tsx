@@ -68,6 +68,7 @@ export function MasterHealthPage() {
         <Row k="Database engine" v={data.app.sqlcipher} />
         <Row k="Last backup" v={data.app.last_backup} />
         <Row k="Last test-restore" v={data.app.last_test_restore} />
+        <Row k="Tray" v={data.app.tray_status} />
       </Section>
 
       <Section title="System">

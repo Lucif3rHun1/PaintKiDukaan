@@ -120,7 +120,27 @@ pub fn cmd_quit_app(app: tauri::AppHandle) -> Result<(), String> {
     crate::graceful_shutdown(&app);
 }
 
-#[tauri::command]
-pub fn cmd_quit_after_update(_app: tauri::AppHandle) -> Result<String, String> {
-    Ok("auto-install".into())
+// audit(v0.2.0 HIGH #5, F6): best-effort write of the wipe-on-uninstall
+// marker. The matching read path lives in `installer/hooks.nsh` — when
+// this file is present, `HookPostUninstall` does `RMDir /r` of the app
+// data dir on the way out. Marker filename MUST stay in sync with the
+// NSH `${FileExists}` check.
+const WIPE_MARKER_FILENAME: &str = "pkb-wipe-on-uninstall.marker";
+
+pub fn write_wipe_marker(reason: &str) -> Result<(), String> {
+    let dir = dirs::data_dir()
+        .map(|p| p.join("in.paintkiduakan.master"))
+        .ok_or_else(|| "no per-user data dir on this platform".to_string())?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+    let path = dir.join(WIPE_MARKER_FILENAME);
+    let body = format!("pkb-wipe-on-uninstall=1\nreason={reason}\n");
+    std::fs::write(&path, body)
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_request_data_wipe(reason: String) -> Result<(), String> {
+    write_wipe_marker(&reason)
 }

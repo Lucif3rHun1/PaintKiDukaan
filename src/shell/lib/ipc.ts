@@ -69,6 +69,7 @@ export interface MasterHealth {
     sqlcipher: string;
     last_backup: string;
     last_test_restore: string;
+    tray_status: string;
   };
   system: {
     bitlocker_c_drive: string;

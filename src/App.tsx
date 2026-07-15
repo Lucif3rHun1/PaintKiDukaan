@@ -5,6 +5,8 @@ import { Alert } from "./components/ui/Alert";
 import logo from "./assets/logo-64.png";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { z } from "zod";
 
 /* ── Security UI ─────────────────────────────────────────── */
@@ -238,6 +240,22 @@ export default function App() {
       });
     }
   }, [phase]);
+
+  // audit(v0.2.0 CRITICAL #3): listen for graceful-quit from the backend.
+  // On X-click, lib.rs emits this event then waits 3s as a safety net.
+  // We exit immediately so the FE has a chance to flush dirty drafts
+  // (TODO: route through isAnyFormDirty + UnsavedChangesModal before exit).
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      unlisten = await listen("app://graceful-quit-requested", () => {
+        void getCurrentWindow().close();
+      });
+    })();
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   /* ── Bootstrap ─────────────────────────────────────────── */
   useEffect(() => {

@@ -37,6 +37,9 @@ pub struct AppHealth {
     pub sqlcipher: String,
     pub last_backup: String,
     pub last_test_restore: String,
+    /// audit(F8): "ok" | "unavailable" | "uninitialized". Frontend renders
+    /// this as a row in Settings → Master Health.
+    pub tray_status: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -100,6 +103,13 @@ pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, 
     let bitlocker = bitlocker_status_inner().unwrap_or_else(|_| "unknown".into());
     let sleep_prevented = prevent_sleep::is_prevented();
 
+    // audit(F8): read tray_status out of AppState so Settings shows it.
+    let tray_status = state
+        .tray_status
+        .lock()
+        .map(|s| (*s).to_string())
+        .unwrap_or_else(|_| "unknown".into());
+
     Ok(MasterHealth {
         checked_at: format_iso(now),
         overall: "ok".to_string(),
@@ -109,6 +119,7 @@ pub fn master_health(state: tauri::State<'_, AppState>) -> Result<MasterHealth, 
             sqlcipher: "bundled".to_string(),
             last_backup,
             last_test_restore,
+            tray_status,
         },
         system: SystemHealth {
             bitlocker_c_drive: bitlocker,
