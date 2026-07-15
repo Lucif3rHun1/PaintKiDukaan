@@ -20,6 +20,7 @@ use tauri::{Emitter, Manager};
 
 use crate::commands::auth::AppState;
 use crate::security::ipc_auth::authorize_err;
+use crate::AppError;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ScanEvent {
@@ -62,6 +63,7 @@ pub fn scan_target(state: tauri::State<'_, AppState>) -> Result<String, String> 
     Ok(state.scan_target.read().clone())
 }
 
+#[cfg(target_os = "windows")]
 pub fn init<R: tauri::Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {
     let buffer = Arc::new(Mutex::new(WedgeBuffer::default()));
     app.manage(buffer.clone());
@@ -114,7 +116,16 @@ fn run_hook<R: tauri::Runtime>(buffer: Arc<Mutex<WedgeBuffer>>, app: tauri::AppH
                     return;
                 }
 
-                let settings = app_state.settings.lock().unwrap();
+                let settings = match app_state.settings.lock() {
+                    Ok(s) => s,
+                    Err(_) => {
+                        log::error!(
+                            "scanner: {}",
+                            AppError::Internal("settings lock poisoned".into())
+                        );
+                        return;
+                    }
+                };
                 let min_length = settings
                     .get("scanner_min_length")
                     .and_then(|v| v.as_u64())

@@ -4,10 +4,14 @@
 //! These commands exist only to keep the frontend IPC surface stable.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
+
+use crate::error::AppError;
 
 #[derive(Serialize, Deserialize)]
 pub struct UpdateInfo {
@@ -76,12 +80,25 @@ pub async fn cmd_download_update(
         .await
         .map_err(|e| e.to_string())?;
     let sha256 = hex::encode(Sha256::digest(&bytes));
+
+    // W1.1 hardening: defense-in-depth hash check before the bytes ever reach
+    // the plugin install path. The plugin already verifies Minisign + SHA-256
+    // internally, but the caller-supplied `_expected_sha256` lets us fail fast
+    // with a precise Validation error rather than a generic plugin failure.
+    if !sha256.eq_ignore_ascii_case(_expected_sha256.trim()) {
+        return Err(AppError::Validation(format!(
+            "sha256 mismatch: expected {}, got {}",
+            _expected_sha256, sha256
+        ))
+        .into());
+    }
+
     let result = DownloadResult {
         path: PathBuf::new(),
         bytes: bytes.len() as u64,
         sha256: sha256.clone(),
     };
-    *CACHED_UPDATE.lock().unwrap() = Some((update, bytes));
+    *CACHED_UPDATE.lock() = Some((update, bytes));
     Ok(result)
 }
 
@@ -89,12 +106,14 @@ pub async fn cmd_download_update(
 pub async fn cmd_install_update(_path: PathBuf, app: tauri::AppHandle) -> Result<(), String> {
     let (update, bytes) = CACHED_UPDATE
         .lock()
-        .unwrap()
         .take()
         .ok_or_else(|| "no downloaded update".to_string())?;
     update.install(&bytes).map_err(|e| e.to_string())?;
-    app.exit(0);
-    Ok(())
+    // W1.1 hardening: route through the single shutdown choke-point so the
+    // scanner hook thread is torn down before the process exits (otherwise
+    // `app.exit(0)` / `std::process::exit(0)` can leave `WH_KEYBOARD_LL`
+    // unhooked on Windows).
+    crate::graceful_shutdown(&app)
 }
 
 #[tauri::command]
@@ -127,10 +146,15 @@ pub fn cmd_quit_app(app: tauri::AppHandle) -> Result<(), String> {
 // NSH `${FileExists}` check.
 const WIPE_MARKER_FILENAME: &str = "pkb-wipe-on-uninstall.marker";
 
-pub fn write_wipe_marker(reason: &str) -> Result<(), String> {
-    let dir = dirs::data_dir()
-        .map(|p| p.join("in.paintkiduakan.master"))
-        .ok_or_else(|| "no per-user data dir on this platform".to_string())?;
+pub fn write_wipe_marker(app: &tauri::AppHandle, reason: &str) -> Result<(), String> {
+    // W1.1 hardening: resolve via `app.path().app_data_dir()` so the marker
+    // lands in the same directory Tauri uses for the DB, logs, and snapshots.
+    // `dirs::data_dir()` is host-level and can point elsewhere on macOS
+    // sandbox / Windows Store installs.
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Internal(format!("app_data_dir unavailable: {e}")).to_string())?;
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
     let path = dir.join(WIPE_MARKER_FILENAME);
@@ -141,6 +165,6 @@ pub fn write_wipe_marker(reason: &str) -> Result<(), String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn cmd_request_data_wipe(reason: String) -> Result<(), String> {
-    write_wipe_marker(&reason)
+pub fn cmd_request_data_wipe(app: tauri::AppHandle, reason: String) -> Result<(), String> {
+    write_wipe_marker(&app, &reason)
 }

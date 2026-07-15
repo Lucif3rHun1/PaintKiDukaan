@@ -40,6 +40,7 @@ pub fn resolve(name: &str) -> PathBuf {
             "ps" => PathBuf::from("/bin/ps"),
             "netstat" => PathBuf::from("/usr/sbin/netstat"),
             "ss" => PathBuf::from("/usr/sbin/ss"),
+            "defaults" => PathBuf::from("/usr/bin/defaults"),
             "powercfg" | "net" | "wmic" | "rundll32" => {
                 // Windows-only tools — should never be called on macOS.
                 // Return the raw name so the caller gets a clear "not found" error.

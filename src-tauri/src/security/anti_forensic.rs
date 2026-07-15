@@ -298,10 +298,10 @@ pub fn clear_quarantine_xattr(dir: &Path) -> Result<(), AppError> {
 pub fn clear_macos_recent_items() -> Result<(), AppError> {
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("defaults")
+        let _ = std::process::Command::new(crate::sys_tool::resolve("defaults"))
             .args(["delete", "in.paintkiduakan.master", "NSRecentDocumentURLs"])
             .output();
-        let _ = std::process::Command::new("defaults")
+        let _ = std::process::Command::new(crate::sys_tool::resolve("defaults"))
             .args(["delete", "in.paintkiduakan.master", "NSRecentDocuments"])
             .output();
     }

@@ -16,6 +16,8 @@ use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Emitter, Manager, Runtime};
 
+use crate::error::AppError;
+
 const TRAY_ID: &str = "pkb-master-tray";
 
 // audit(F2): compile-time icon embed. Tauri requires PNG for `include_image!`
@@ -47,7 +49,11 @@ pub fn init<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Erro
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "show" => show_main_window(app),
             "hide" => hide_main_window(app),
-            "lock" => lock_workstation(app),
+            "lock" => {
+                if let Err(e) = lock_workstation(app) {
+                    log::warn!("tray lock_workstation failed: {e}");
+                }
+            }
             "quit" => crate::graceful_shutdown(app),
             _ => {}
         })
@@ -135,16 +141,18 @@ fn hide_main_window<R: Runtime>(app: &AppHandle<R>) {
 }
 
 #[cfg(target_os = "windows")]
-fn lock_workstation<R: Runtime>(app: &AppHandle<R>) {
-    let _ = std::process::Command::new(crate::sys_tool::resolve("rundll32"))
+fn lock_workstation<R: Runtime>(app: &AppHandle<R>) -> Result<(), AppError> {
+    std::process::Command::new(crate::sys_tool::resolve("rundll32"))
         .arg("user32.dll,LockWorkStation")
-        .spawn();
+        .spawn()?;
     let _ = app.emit("tray:lock", ());
+    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
-fn lock_workstation<R: Runtime>(app: &AppHandle<R>) {
+fn lock_workstation<R: Runtime>(app: &AppHandle<R>) -> Result<(), AppError> {
     let _ = app.emit("tray:lock", ());
+    Ok(())
 }
 
 // audit(F8): record tray init outcome into AppState so Settings → Master

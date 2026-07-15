@@ -7,19 +7,17 @@ fn read_reg_string(
     subkey: &str,
     value: &str,
 ) -> Option<String> {
-    use std::ffi::CString;
-    use windows::Win32::System::Registry::{
-        RegCloseKey, RegOpenKeyExA, RegQueryValueExA, HKEY, KEY_READ,
-    };
+    use windows::Win32::System::Registry::{RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, KEY_READ};
 
-    let subkey_c = CString::new(subkey).ok()?;
-    let value_c = CString::new(value).ok()?;
+    // Encode subkey and value name as UTF-16 with NUL terminator (wide API).
+    let subkey_w: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
+    let value_w: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
 
     unsafe {
         let mut hkey = HKEY(std::ptr::null_mut());
-        let status = RegOpenKeyExA(
+        let status = RegOpenKeyExW(
             hkey_root,
-            windows::core::PCSTR(subkey_c.as_ptr() as *const u8),
+            windows::core::PCWSTR(subkey_w.as_ptr()),
             0,
             KEY_READ,
             &mut hkey as *mut HKEY,
@@ -28,29 +26,30 @@ fn read_reg_string(
             return None;
         }
 
-        // Query size first.
+        // Query size first (in bytes; wide chars are 2 bytes each).
         let mut pc_data: u32 = 0;
-        let status = RegQueryValueExA(
+        let status = RegQueryValueExW(
             hkey,
-            windows::core::PCSTR(value_c.as_ptr() as *const u8),
+            windows::core::PCWSTR(value_w.as_ptr()),
             None,
             None,
             None,
             Some(&mut pc_data),
         );
-        let buf_len = pc_data;
-        if status != windows::Win32::Foundation::ERROR_SUCCESS || buf_len == 0 {
+        if status != windows::Win32::Foundation::ERROR_SUCCESS || pc_data == 0 {
             let _ = RegCloseKey(hkey);
             return None;
         }
 
-        let mut buf = vec![0u8; buf_len as usize];
-        let status = RegQueryValueExA(
+        // Allocate as u16 to match the wide-char buffer; the API writes bytes.
+        let char_count = (pc_data as usize) / std::mem::size_of::<u16>();
+        let mut buf = vec![0u16; char_count];
+        let status = RegQueryValueExW(
             hkey,
-            windows::core::PCSTR(value_c.as_ptr() as *const u8),
+            windows::core::PCWSTR(value_w.as_ptr()),
             None,
             None,
-            Some(buf.as_mut_ptr()),
+            Some(buf.as_mut_ptr() as *mut u8),
             Some(&mut pc_data),
         );
         let _ = RegCloseKey(hkey);
@@ -58,20 +57,19 @@ fn read_reg_string(
             return None;
         }
 
-        // Strip NUL terminator if present.
+        // Strip NUL terminators (REG_SZ is terminated, possibly multi-NUL on wide).
         while buf.last() == Some(&0) {
             buf.pop();
         }
-        String::from_utf8(buf).ok()
+        String::from_utf16(&buf).ok()
     }
 }
 
 #[cfg(target_os = "windows")]
 fn register_uninstall_inner() -> Result<(), AppError> {
-    use std::ffi::CString;
     use windows::Win32::Foundation::ERROR_SUCCESS;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegCreateKeyExA, RegSetValueExA, HKEY, HKEY_CURRENT_USER, KEY_WRITE,
+        RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_WRITE,
         REG_OPTION_NON_VOLATILE, REG_SZ,
     };
 
@@ -103,20 +101,25 @@ fn register_uninstall_inner() -> Result<(), AppError> {
 
     // Quoted path — no user-controlled interpolation, safe from injection.
     let uninstall_cmd = format!("\"{}\"", uninstaller_path);
-    let cmd_cstr =
-        CString::new(uninstall_cmd).map_err(|e| AppError::Internal(format!("CString: {e}")))?;
+    // Encode as UTF-16 with NUL terminator for the wide registry API.
+    // REG_SZ requires the terminating null in cbData.
+    let cmd_w: Vec<u16> = uninstall_cmd
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
 
     // Write into the NSIS-created uninstall key so Add/Remove Programs
     // shows a single entry instead of duplicates.
-    let key_path =
-        CString::new("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\in.paintkiduakan.master")
-            .unwrap();
+    let key_path_w: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\in.paintkiduakan.master"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
 
     unsafe {
         let mut hkey = windows::Win32::System::Registry::HKEY(std::ptr::null_mut());
-        let status = RegCreateKeyExA(
+        let status = RegCreateKeyExW(
             HKEY_CURRENT_USER,
-            windows::core::PCSTR(key_path.as_ptr() as *const u8),
+            windows::core::PCWSTR(key_path_w.as_ptr()),
             0,
             None,
             REG_OPTION_NON_VOLATILE,
@@ -127,22 +130,29 @@ fn register_uninstall_inner() -> Result<(), AppError> {
         );
         if status != ERROR_SUCCESS {
             return Err(AppError::Internal(format!(
-                "RegCreateKeyExA failed: {status:?}"
+                "RegCreateKeyExW failed: {status:?}"
             )));
         }
 
-        let value_name = CString::new("UninstallString").unwrap();
-        let status = RegSetValueExA(
+        let value_name_w: Vec<u16> = "UninstallString"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let data_bytes = std::slice::from_raw_parts(
+            cmd_w.as_ptr() as *const u8,
+            cmd_w.len() * std::mem::size_of::<u16>(),
+        );
+        let status = RegSetValueExW(
             hkey,
-            windows::core::PCSTR(value_name.as_ptr() as *const u8),
+            windows::core::PCWSTR(value_name_w.as_ptr()),
             0,
             REG_SZ,
-            Some(cmd_cstr.as_bytes()),
+            Some(data_bytes),
         );
         let _ = RegCloseKey(hkey);
         if status != ERROR_SUCCESS {
             return Err(AppError::Internal(format!(
-                "RegSetValueExA failed: {status:?}"
+                "RegSetValueExW failed: {status:?}"
             )));
         }
     }

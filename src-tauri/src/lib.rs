@@ -234,13 +234,14 @@ pub fn run() {
                 log::warn!("Tray init failed (non-fatal): {}", e);
             }
 
-            if !cfg!(target_os = "macos") {
-                if let Err(e) = scan::init(app) {
-                    log::warn!("Scan init failed (non-fatal): {}", e);
-                }
+            // audit(W1.2): scan::init and the hook thread are Windows-only; gate the
+            // call site with #[cfg] so non-Windows targets don't reference a
+            // compiled-out symbol. macOS dropped the Accessibility-prompting
+            // CGEventTap path; Linux has no wedge either.
+            #[cfg(target_os = "windows")]
+            if let Err(e) = scan::init(app) {
+                log::warn!("Scan init failed (non-fatal): {}", e);
             }
-            // macOS: no scanner hook — Accessibility-prompting CGEventTap path was
-            // dropped after consuming keyboard events through the React tree.
 
             // M4.2: USB HID scanner runs alongside keyboard-wedge hooks.
             match hid_scanner::try_init(app.handle().clone()) {
