@@ -524,7 +524,7 @@ export default function App() {
       {tab === "dashboard" && (
         <ErrorBoundary context="Dashboard">
           <Suspense fallback={<RouteFallback />}>
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+            <div>
               <Dashboard />
             </div>
           </Suspense>
@@ -535,7 +535,7 @@ export default function App() {
       {tab === "sales" && salesRoute === "new" ? (
         <ErrorBoundary context="Sales — new">
           <Suspense fallback={<RouteFallback />}>
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+            <div>
               <SalesPage
                 user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
                 onExit={() => (setHash("#/sales"))}
@@ -547,7 +547,7 @@ export default function App() {
       {tab === "sales" && salesRoute === "return" ? (
         <ErrorBoundary context="Sales — return">
           <Suspense fallback={<RouteFallback />}>
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+            <div>
               <ReturnPage
                 user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
                 onBack={() => (setHash("#/sales/return"))}
@@ -559,7 +559,7 @@ export default function App() {
       {tab === "sales" && salesRoute === "return-list" ? (
         <ErrorBoundary context="Sales — return list">
           <Suspense fallback={<RouteFallback />}>
-            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
+            <div className="flex h-full flex-col">
               <ReturnListPage
                 onCreate={() => (setHash("#/sales/return/new"))}
                 onSelect={(id) => (setHash(`#/sales/return/${id}`))}
@@ -574,7 +574,7 @@ export default function App() {
         return (
           <ErrorBoundary context="Sales — return detail">
             <Suspense fallback={<RouteFallback />}>
-              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <div>
                 <ReturnDetailPage
                   id={id}
                   onBack={() => (setHash("#/sales/return"))}
@@ -587,7 +587,7 @@ export default function App() {
       {tab === "sales" && salesRoute === "list" ? (
         <ErrorBoundary context="Sales — list">
           <Suspense fallback={<RouteFallback />}>
-            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
+            <div className="flex h-full flex-col">
               <SalesListPage onCreate={() => (setHash("#/sales/new"))} />
             </div>
           </Suspense>
@@ -599,7 +599,7 @@ export default function App() {
         return (
           <ErrorBoundary context="Sales — detail">
             <Suspense fallback={<RouteFallback />}>
-              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <div>
                 <SaleDetailPage
                   id={id}
                   onBack={() => (setHash("#/sales"))}
@@ -627,7 +627,7 @@ export default function App() {
         return (
           <ErrorBoundary context="Sales — edit">
             <Suspense fallback={<RouteFallback />}>
-              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <div>
                 <SalesPage
                   user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
                   onExit={() => (setHash("#/sales"))}
@@ -645,7 +645,7 @@ export default function App() {
       {tab === "inward" && inwardRoute === "new" ? (
         <ErrorBoundary context="Inward — new">
           <Suspense fallback={<RouteFallback />}>
-            <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+            <div>
               <InwardPage
                 user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }}
                 onExit={() => (setHash("#/inward"))}
@@ -657,7 +657,7 @@ export default function App() {
       {tab === "inward" && inwardRoute === "list" ? (
         <ErrorBoundary context="Inward — list">
           <Suspense fallback={<RouteFallback />}>
-            <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
+            <div className="flex h-full flex-col">
               <InwardListPage
                 onCreate={() => (setHash("#/inward/new"))}
                 onSelect={(id) => (setHash(`#/inward/${id}`))}
@@ -672,7 +672,7 @@ export default function App() {
         return (
           <ErrorBoundary context="Inward — detail">
             <Suspense fallback={<RouteFallback />}>
-              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <div>
                 <InwardDetailPage
                   id={id}
                   onBack={() => (setHash("#/inward"))}
@@ -688,7 +688,7 @@ export default function App() {
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Reports">
             <Suspense fallback={<RouteFallback />}>
-              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <div>
                 {(() => {
                   const h = window.location.hash;
                   let section: "sales" | "inventory" | "customers" = "sales";
@@ -710,7 +710,7 @@ export default function App() {
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Close Day">
             <Suspense fallback={<RouteFallback />}>
-              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <div>
                 <DayClosePage user={{ id: user?.id ?? 0, name: user?.name ?? "Owner", role }} />
               </div>
             </Suspense>
@@ -718,7 +718,7 @@ export default function App() {
         </RoleGuard>
       )}
       {tab === "items" && (
-        <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col gap-3 duration-200">
+        <div className="flex h-full flex-col gap-3">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Inventory</h2>
           <ErrorBoundary context="Inventory">
             <Suspense fallback={<RouteFallback />}>
@@ -753,7 +753,7 @@ export default function App() {
         );
       })() : null}
       {tab === "barcodes" && (
-        <div className="animate-in fade-in motion-reduce:animate-none space-y-3 duration-200">
+        <div className="space-y-3">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Barcode Labels</h2>
           <ErrorBoundary context="Barcode Labels">
             <Suspense fallback={<RouteFallback />}>
@@ -766,7 +766,7 @@ export default function App() {
         <RoleGuard minRole="cashier">
           <ErrorBoundary context="Vendors">
             <Suspense fallback={<RouteFallback />}>
-              <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
+              <div className="flex h-full flex-col">
                 <VendorList
                   role={role}
                   refreshKey={refreshKey}
@@ -783,7 +783,7 @@ export default function App() {
         <RoleGuard minRole="cashier">
           <ErrorBoundary context="Customers">
             <Suspense fallback={<RouteFallback />}>
-              <div className="flex h-full animate-in fade-in motion-reduce:animate-none flex-col duration-200">
+              <div className="flex h-full flex-col">
                 <CustomerList
                   role={role}
                   refreshKey={refreshKey}
@@ -800,7 +800,7 @@ export default function App() {
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Settings">
             <Suspense fallback={<RouteFallback />}>
-              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <div>
                 <SettingsPage />
               </div>
             </Suspense>
@@ -811,7 +811,7 @@ export default function App() {
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Health">
             <Suspense fallback={<RouteFallback />}>
-              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <div>
                 <MasterHealthPage />
               </div>
             </Suspense>
@@ -822,7 +822,7 @@ export default function App() {
         <RoleGuard minRole="owner">
           <ErrorBoundary context="Logs">
             <Suspense fallback={<RouteFallback />}>
-              <div className="animate-in fade-in motion-reduce:animate-none duration-200">
+              <div>
                 <AdminLogs />
               </div>
             </Suspense>
