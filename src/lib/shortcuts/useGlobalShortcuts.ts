@@ -1,8 +1,12 @@
 import { useShortcut } from "../shortcuts";
 
 export interface GlobalShortcutsOptions {
-  onSave?: () => void;
-  onHelp?: () => void;
+  readonly onSave?: () => void;
+  readonly onHelp?: () => void;
+}
+
+function isShortcutOverlayOpen(): boolean {
+  return document.querySelector("dialog[data-shortcut-overlay-open][open]") !== null;
 }
 
 /**
@@ -19,7 +23,9 @@ export function useGlobalShortcuts(opts: GlobalShortcutsOptions): void {
     scope: "global",
     description: "Save",
     allowInInputs: true,
-    onMatch: () => onSave?.(),
+    onMatch: () => {
+      if (!isShortcutOverlayOpen()) onSave?.();
+    },
   });
 
   useShortcut({
@@ -37,3 +43,5 @@ export function useGlobalShortcuts(opts: GlobalShortcutsOptions): void {
     onMatch: () => onHelp?.(),
   });
 }
+
+export { isShortcutOverlayOpen };
