@@ -378,7 +378,17 @@ fn get_loopback_listeners() -> Vec<LoopbackListener> {
     }
 }
 
-/// Parse netstat -ano output for 127.0.0.1 LISTENING entries.
+/// Returns true if `local` is a loopback socket address: IPv4 `127.0.0.1:*`,
+/// bracketed IPv6 `[::1]:*`, or unbracketed IPv6 `::1:*`.
+fn is_loopback_addr(local: &str) -> bool {
+    // ponytail: explicit prefix match over std::net parsing — inputs come
+    // straight from netstat/ss and are never validated upstream.
+    local.starts_with("127.0.0.1:")
+        || local.starts_with("[::1]:")
+        || local.starts_with("::1:")
+}
+
+/// Parse netstat -ano output for loopback LISTENING entries (IPv4 or IPv6).
 fn parse_netstat_output(output: &str) -> Vec<LoopbackListener> {
     let mut listeners = Vec::new();
     for line in output.lines() {
@@ -395,7 +405,7 @@ fn parse_netstat_output(output: &str) -> Vec<LoopbackListener> {
         if state != "LISTENING" {
             continue;
         }
-        if !local.starts_with("127.0.0.1:") {
+        if !is_loopback_addr(local) {
             continue;
         }
         if let Some(port_str) = local.split(':').last() {
@@ -424,7 +434,7 @@ fn parse_ss_output(output: &str) -> Vec<LoopbackListener> {
             continue;
         }
         let local = parts[3];
-        if !local.starts_with("127.0.0.1:") {
+        if !is_loopback_addr(local) {
             continue;
         }
         if let Some(port_str) = local.split(':').last() {
@@ -556,5 +566,44 @@ LISTEN   0         128              127.0.0.1:9999            0.0.0.0:*";
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("pcap_driver"));
+    }
+
+    #[test]
+    fn is_loopback_addr_matches_ipv4_and_ipv6() {
+        assert!(is_loopback_addr("127.0.0.1:8080"));
+        assert!(is_loopback_addr("[::1]:8080"));
+        assert!(is_loopback_addr("::1:8080"));
+        assert!(!is_loopback_addr("192.168.1.1:80"));
+        assert!(!is_loopback_addr("0.0.0.0:80"));
+        assert!(!is_loopback_addr("[::]:80"));
+        assert!(!is_loopback_addr("fe80::1:80"));
+        assert!(!is_loopback_addr(""));
+    }
+
+    #[test]
+    fn parse_netstat_finds_ipv6_loopback_listener() {
+        let input = "\
+  TCP    127.0.0.1:1420         0.0.0.0:0              LISTENING       1234
+  TCP    [::1]:54321            [::]:0                 LISTENING       5678
+  TCP    ::1:9999               [::]:0                 LISTENING       9101
+  TCP    192.168.1.1:80         0.0.0.0:0              LISTENING       9999
+  TCP    [::]:80                [::]:0                 LISTENING       2222";
+        let listeners = parse_netstat_output(input);
+        assert_eq!(listeners.len(), 3);
+        assert!(listeners.iter().any(|l| l.port == 1420));
+        assert!(listeners.iter().any(|l| l.port == 54321));
+        assert!(listeners.iter().any(|l| l.port == 9999));
+    }
+
+    #[test]
+    fn parse_ss_finds_ipv6_loopback_listener() {
+        let input = "\
+State    Recv-Q    Send-Q       Local Address:Port       Peer Address:Port
+LISTEN   0         128              127.0.0.1:1420            0.0.0.0:*
+LISTEN   0         128              [::1]:9999                 [::]:*";
+        let listeners = parse_ss_output(input);
+        assert_eq!(listeners.len(), 2);
+        assert!(listeners.iter().any(|l| l.port == 1420));
+        assert!(listeners.iter().any(|l| l.port == 9999));
     }
 }

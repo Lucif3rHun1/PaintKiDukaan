@@ -1287,7 +1287,7 @@ mod tests {
     fn inactive_user_rejected() {
         let state = make_state(Some("owner"));
         {
-            let mut session = state.session.lock().unwrap();
+            let mut session = state.session.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(ref mut user) = *session {
                 user.is_active = false;
             }

@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "macos")]
+use std::collections::HashMap;
 use std::process::Command;
 #[cfg(target_os = "windows")]
 use std::process::Stdio;
@@ -296,8 +298,58 @@ fn try_cim_discover() -> Vec<DiscoveredPrinter> {
 // ── macOS lpstat discovery ──────────────────────────────────────────────
 
 #[cfg(target_os = "macos")]
+fn connection_type_from_uri(uri: Option<&str>) -> &'static str {
+    let Some(scheme) = uri.and_then(|value| value.split_once("://").map(|(scheme, _)| scheme))
+    else {
+        return "unknown";
+    };
+
+    if scheme.eq_ignore_ascii_case("usb") {
+        "usb"
+    } else if scheme.eq_ignore_ascii_case("ipp")
+        || scheme.eq_ignore_ascii_case("ipps")
+        || scheme.eq_ignore_ascii_case("socket")
+        || scheme.eq_ignore_ascii_case("dnssd")
+        || scheme.eq_ignore_ascii_case("lpd")
+        || scheme.eq_ignore_ascii_case("http")
+        || scheme.eq_ignore_ascii_case("https")
+    {
+        "network"
+    } else if scheme.eq_ignore_ascii_case("serial") {
+        "serial"
+    } else if scheme.eq_ignore_ascii_case("parallel") {
+        "parallel"
+    } else {
+        "unknown"
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn discover_macos_printers() -> AppResult<Vec<DiscoveredPrinter>> {
-    let output = Command::new(crate::sys_tool::resolve("lpstat"))
+    let lpstat = crate::sys_tool::resolve("lpstat");
+    let uri_by_name = Command::new(&lpstat)
+        .arg("-v")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .filter_map(|line| {
+                    let rest = line.trim().strip_prefix("device for ")?;
+                    let (name, uri) = rest.split_once(':')?;
+                    let name = name.trim();
+                    let uri = uri.trim();
+                    if name.is_empty() || uri.is_empty() {
+                        return None;
+                    }
+                    Some((name.to_string(), uri.to_string()))
+                })
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
+
+    let output = Command::new(&lpstat)
         .arg("-p")
         .output()
         .ok()
@@ -319,11 +371,12 @@ fn discover_macos_printers() -> AppResult<Vec<DiscoveredPrinter>> {
             Some(n) if !n.is_empty() => n.to_string(),
             _ => continue,
         };
+        let connection_type = connection_type_from_uri(uri_by_name.get(&name).map(String::as_str));
         printers.push(DiscoveredPrinter {
             name,
             driver_name: None,
             port_name: None,
-            connection_type: "usb".into(),
+            connection_type: connection_type.into(),
         });
     }
 

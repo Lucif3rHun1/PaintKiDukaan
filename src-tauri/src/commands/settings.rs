@@ -315,7 +315,7 @@ mod tests {
         let settings = Mutex::new(HashMap::<String, Value>::new());
         hydrate_settings_from_sql(&db, &settings);
 
-        let guard = settings.lock().unwrap();
+        let guard = settings.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(
             guard.get("shop_name"),
             Some(&Value::String("Acme Paints".into()))
@@ -356,7 +356,7 @@ mod tests {
         let settings = Mutex::new(initial);
         hydrate_settings_from_sql(&db, &settings);
 
-        let guard = settings.lock().unwrap();
+        let guard = settings.lock().unwrap_or_else(|e| e.into_inner());
         // shop_name was NULL in SQL → hydrate skipped → default preserved.
         assert_eq!(
             guard.get("shop_name"),
@@ -377,7 +377,7 @@ mod tests {
 
         let settings = Mutex::new(HashMap::<String, Value>::new());
         hydrate_settings_from_sql(&db, &settings);
-        let guard = settings.lock().unwrap();
+        let guard = settings.lock().unwrap_or_else(|e| e.into_inner());
 
         assert_eq!(
             guard.get("shop_name"),

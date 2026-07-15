@@ -92,7 +92,7 @@ impl Default for BoundedSettings {
     fn default() -> Self {
         let s = Self::new();
         {
-            let mut guard = s.lock().unwrap();
+            let mut guard = s.lock().unwrap_or_else(|e| e.into_inner());
             guard.insert("scanner_min_length".into(), Value::Number(4.into()));
             guard.insert("scanner_avg_ms_per_char".into(), Value::Number(25.into()));
             guard.insert("scanner_terminator".into(), Value::String("enter".into()));
@@ -858,7 +858,7 @@ fn handle_lockout(state: &AppState, attempts: u32) -> Result<(), AppError> {
     let db_path = state
         .db_path
         .lock()
-        .unwrap()
+        .map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?
         .clone()
         .ok_or(AppError::NoDb)?;
     let lockout = read_lockout_from_keystore(&db_path).unwrap_or_else(|_| default_lockout_row());
@@ -1018,7 +1018,7 @@ pub fn lock(state: State<AppState>) -> Result<(), AppError> {
     }
     *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
     *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
-    *state.recovery_passphrase.lock().unwrap() = None;
+    *state.recovery_passphrase.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = None;
     sync_session_to_static(&state);
     Ok(())
 }
@@ -1064,7 +1064,7 @@ pub fn change_pin(
     let db_path = state
         .db_path
         .lock()
-        .unwrap()
+        .map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?
         .clone()
         .ok_or(AppError::NoDb)?;
     let db = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
@@ -1289,7 +1289,7 @@ pub fn login_user(state: State<AppState>, name: String, pin: String) -> Result<S
     let db_path = state
         .db_path
         .lock()
-        .unwrap()
+        .map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?
         .clone()
         .ok_or(AppError::NoDb)?;
 
@@ -1523,10 +1523,10 @@ mod tests {
         use zeroize::Zeroizing;
 
         let state = AppState::default();
-        *state.recovery_passphrase.lock().unwrap() =
+        *state.recovery_passphrase.lock().unwrap_or_else(|e| e.into_inner()) =
             Some(Zeroizing::new("toy-recovery-passphrase".to_string()));
 
-        let guard = state.recovery_passphrase.lock().unwrap();
+        let guard = state.recovery_passphrase.lock().unwrap_or_else(|e| e.into_inner());
         let stored = guard.as_ref().unwrap();
         assert_eq!(
             type_name::<Zeroizing<String>>(),
@@ -1560,7 +1560,7 @@ mod tests {
         .unwrap();
 
         let state = AppState::default();
-        *state.db_path.lock().unwrap() = Some(db_path.clone());
+        *state.db_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(db_path.clone());
 
         let result = handle_lockout(&state, 5);
         assert!(
@@ -1607,7 +1607,7 @@ mod tests {
         );
 
         for n in 1..=DECEPTION_THRESHOLD {
-            let mut failed = state.failed_attempts.lock().unwrap();
+            let mut failed = state.failed_attempts.lock().unwrap_or_else(|e| e.into_inner());
             *failed += 1;
             let attempts = *failed;
             drop(failed);
@@ -1692,8 +1692,8 @@ mod tests {
         .unwrap();
 
         let state = AppState::default();
-        *state.db_path.lock().unwrap() = Some(db_path.clone());
-        *state.recovery_passphrase.lock().unwrap() = Some(zeroize::Zeroizing::new(
+        *state.db_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(db_path.clone());
+        *state.recovery_passphrase.lock().unwrap_or_else(|e| e.into_inner()) = Some(zeroize::Zeroizing::new(
             "wipe-backup-test-passphrase".to_string(),
         ));
 
