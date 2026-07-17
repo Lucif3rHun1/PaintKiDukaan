@@ -912,11 +912,11 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                   />
                 ) : (
                   <div className="rounded border border-border">
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] items-center gap-2 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    <div className="grid grid-cols-[2rem_1fr_auto_8rem_2rem] items-center gap-2 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground sm:grid-cols-[2.5rem_1fr_auto_auto_8rem_2.5rem]">
                       <div className="text-center">#</div>
                       <div>Item</div>
                       <div>Qty</div>
-                      <div className="text-right">Rate</div>
+                      <div className="hidden text-right sm:block">Rate</div>
                       <div className="text-right">Amount</div>
                       <div />
                     </div>
@@ -929,7 +929,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                           key={`${l.item_id}-${i}`}
                           className="border-t border-border px-3 py-2"
                         >
-                          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] items-center gap-2">
+                          <div className="grid grid-cols-[2rem_1fr_auto_8rem_2rem] items-center gap-2 sm:grid-cols-[2.5rem_1fr_auto_auto_8rem_2.5rem]">
                             <div className="text-center text-xs text-muted-foreground tabular-nums">{i + 1}</div>
                             <div className="min-w-0">
                               {kind === "fbill" ? (
@@ -972,7 +972,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
+                            <div className="hidden items-center justify-end gap-1 text-xs text-muted-foreground sm:flex">
                               <span>×</span>
                               <MoneyInput
                                 value={l.price}

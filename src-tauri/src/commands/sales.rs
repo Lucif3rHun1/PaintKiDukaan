@@ -1825,7 +1825,7 @@ pub fn cmd_list_sales_paged(
                     COALESCE(c.name, '') \
              FROM sales s \
              LEFT JOIN customers c ON c.id = s.customer_id";
-        let count_select = "SELECT COUNT(*) FROM sales";
+        let count_select = "SELECT COUNT(*) FROM sales s";
 
         let (rows, total) = paged_query(
             c,
