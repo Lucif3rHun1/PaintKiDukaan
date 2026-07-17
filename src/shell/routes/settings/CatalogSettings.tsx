@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { toast } from "../../../lib/feedback/toast";
-import { Alert, Button, Card, DataTable, EmptyState, Section } from "../../../components/ui";
+import { Alert, Button, Card, DataTable, EmptyState, InlineDialog, Section } from "../../../components/ui";
 import type { ColumnDef } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import { ipc } from "../../lib/ipc";
@@ -20,6 +20,7 @@ import {
 } from "../../../domain/units/api";
 
 import { extractError } from "../../../lib/extractError";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 function SettingsList({ items, emptyText, onRemove }: { items: string[]; emptyText: string; onRemove: (item: string) => void }) {
   if (items.length === 0) {
     return <EmptyState title={emptyText} description="Add one above to make it available across billing and catalog workflows." className="rounded-md border border-border py-8" />;
@@ -120,6 +121,8 @@ export function LocationsSettings() {
   const [newLocation, setNewLocation] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [expandedLocations, setExpandedLocations] = useState<Set<number>>(new Set());
+  const [confirmRemoveLocation, setConfirmRemoveLocation] = useState<LocationItem | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<LocationItem | null>(null);
 
   const refresh = () => {
     tauriInvoke<LocationItem[]>("list_locations")
@@ -146,16 +149,22 @@ export function LocationsSettings() {
   };
 
   const remove = async (location: LocationItem) => {
-    if (!window.confirm(`Remove location "${location.name}"? This cannot be undone.`)) return;
+    setConfirmRemoveLocation(location);
+  };
+
+  const confirmRemoveLocationAction = async () => {
+    if (!confirmRemoveLocation) return;
     setError(null);
     try {
-      await ipc.removeLocation(location.name);
+      await ipc.removeLocation(confirmRemoveLocation.name);
       refresh();
       toast.success("Location removed");
     } catch (e) {
       const message = extractError(e);
       setError(message);
       toast.error("Failed to remove location", message);
+    } finally {
+      setConfirmRemoveLocation(null);
     }
   };
 
@@ -210,7 +219,7 @@ export function LocationsSettings() {
                         </span>
                         {loc.name}
                       </button>
-                      <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${loc.name}`} onClick={() => void remove(loc)} className="text-destructive hover:bg-destructive/10">
+                      <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${loc.name}`} onClick={() => setConfirmTarget(loc)} className="text-destructive hover:bg-destructive/10">
                         Remove
                       </Button>
                     </div>
@@ -222,6 +231,18 @@ export function LocationsSettings() {
           )}
         </div>
       </Section>
+      <InlineDialog
+        open={confirmRemoveLocation !== null}
+        onClose={() => setConfirmRemoveLocation(null)}
+        title="Remove location"
+        description={`Remove location "${confirmRemoveLocation?.name}"? This cannot be undone.`}
+        size="sm"
+      >
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setConfirmRemoveLocation(null)}>Cancel</Button>
+          <Button variant="danger" onClick={confirmRemoveLocationAction}>Remove</Button>
+        </div>
+      </InlineDialog>
     </Card>
   );
 }

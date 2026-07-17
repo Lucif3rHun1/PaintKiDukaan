@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "../../../lib/feedback/toast";
-import { Button, Card, DataTable, Section, Skeleton, Badge, Select } from "../../../components/ui";
+import { Button, Card, DataTable, InlineDialog, Section, Skeleton, Badge, Select } from "../../../components/ui";
 import type { ColumnDef } from "../../../components/ui";
 import { formatDateForDisplay } from "../../../lib/date";
 import { ipc, type Device } from "../../lib/ipc";
@@ -105,6 +105,7 @@ export function UsersSettings() {
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState<string>("cashier");
   const [newPin, setNewPin] = useState("");
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<UserRecord | null>(null);
 
   function load() {
     ipc
@@ -136,18 +137,19 @@ export function UsersSettings() {
 
   async function deleteUser(user: UserRecord) {
     if (user.role === "owner") return;
-    if (
-      !window.confirm(
-        `Delete user "${user.name}"? They will no longer be able to log in.`,
-      )
-    )
-      return;
+    setConfirmDeleteUser(user);
+  }
+
+  async function confirmDeleteUserAction() {
+    if (!confirmDeleteUser) return;
     try {
-      await ipc.deleteUser(user.id);
+      await ipc.deleteUser(confirmDeleteUser.id);
       toast.success("User removed");
       load();
     } catch (e) {
       toast.error("Failed to delete user", extractError(e));
+    } finally {
+      setConfirmDeleteUser(null);
     }
   }
 
@@ -211,6 +213,18 @@ export function UsersSettings() {
           </div>
         </div>
       </Section>
+      <InlineDialog
+        open={confirmDeleteUser !== null}
+        onClose={() => setConfirmDeleteUser(null)}
+        title="Delete user"
+        description={`Delete user "${confirmDeleteUser?.name}"? They will no longer be able to log in.`}
+        size="sm"
+      >
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setConfirmDeleteUser(null)}>Cancel</Button>
+          <Button variant="danger" onClick={confirmDeleteUserAction}>Delete</Button>
+        </div>
+      </InlineDialog>
     </Card>
   );
 }
@@ -293,6 +307,7 @@ export function DevicesSettings() {
   const [enrolling, setEnrolling] = useState(false);
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState<string>("cashier");
+  const [confirmRevokeDevice, setConfirmRevokeDevice] = useState<Device | null>(null);
 
   function load() {
     setLoading(true);
@@ -322,18 +337,19 @@ export function DevicesSettings() {
   }
 
   async function revoke(device: Device) {
-    if (
-      !window.confirm(
-        `Remove device "${device.name}"? It will no longer be able to unlock the app.`,
-      )
-    )
-      return;
+    setConfirmRevokeDevice(device);
+  }
+
+  async function confirmRevokeDeviceAction() {
+    if (!confirmRevokeDevice) return;
     try {
-      await ipc.revokeDevice(device.id);
+      await ipc.revokeDevice(confirmRevokeDevice.id);
       toast.success("Device removed");
       load();
     } catch (e) {
       toast.error("Failed to remove device", extractError(e));
+    } finally {
+      setConfirmRevokeDevice(null);
     }
   }
 
@@ -377,6 +393,18 @@ export function DevicesSettings() {
           </div>
         </div>
       </Section>
+      <InlineDialog
+        open={confirmRevokeDevice !== null}
+        onClose={() => setConfirmRevokeDevice(null)}
+        title="Revoke device"
+        description={`Remove device "${confirmRevokeDevice?.name}"? It will no longer be able to unlock the app.`}
+        size="sm"
+      >
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setConfirmRevokeDevice(null)}>Cancel</Button>
+          <Button variant="danger" onClick={confirmRevokeDeviceAction}>Revoke</Button>
+        </div>
+      </InlineDialog>
     </Card>
   );
 }

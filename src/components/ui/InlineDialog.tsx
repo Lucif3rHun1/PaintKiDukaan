@@ -28,6 +28,9 @@ export function InlineDialog({
 }: InlineDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const descriptionId = useId();
+  // ponytail: native <dialog> doesn't restore focus on close; capture trigger before open
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const [isClosing, setIsClosing] = useState(true);
 
   const requestClose = useCallback(() => {
@@ -35,6 +38,14 @@ export function InlineDialog({
     setIsClosing(true);
     onClose();
   }, [isClosing, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    return () => {
+      previouslyFocusedRef.current?.focus?.();
+    };
+  }, [open]);
 
   useEffect(() => {
     const el = dialogRef.current;
@@ -94,7 +105,10 @@ export function InlineDialog({
           dialogRef.current?.close();
         }
       }}
+      role="dialog"
+      aria-modal="true"
       aria-labelledby={title ? titleId : undefined}
+      aria-describedby={description ? descriptionId : undefined}
       aria-label={ariaLabel}
       className={cn(
         "rounded-xl border border-border bg-card p-0 transition-[opacity,transform] duration-normal ease-out will-change-transform backdrop:bg-foreground/60 backdrop:transition-opacity backdrop:duration-normal backdrop:ease-out motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:backdrop:transition-none motion-reduce:backdrop:opacity-100",
@@ -112,7 +126,7 @@ export function InlineDialog({
               <h2 id={titleId} className="text-lg font-semibold text-foreground">{title}</h2>
             )}
             {description && (
-              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+              <p id={descriptionId} className="mt-1 text-sm text-muted-foreground">{description}</p>
             )}
           </div>
         </div>

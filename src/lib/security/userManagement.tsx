@@ -14,7 +14,7 @@ import { useForm } from "react-hook-form";
 
 import { createUserSchema, type CreateUserInput, pinSchema } from "./pin";
 import { type Role, useSecurity } from "./state";
-import { Alert, Badge, Button, Field, Select } from "../../components/ui";
+import { Alert, Badge, Button, Field, InlineDialog, Select } from "../../components/ui";
 
 interface ListedUser {
   id: number;
@@ -42,6 +42,7 @@ export function UserManagement() {
   const [users, setUsers] = useState<ListedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeleteTarget, setConfirmDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const setPhase = useSecurity((state) => state.setPhase);
@@ -96,13 +97,16 @@ export function UserManagement() {
     }
   }
 
-  async function onDeleteUser(userId: number, userName: string) {
-    if (!window.confirm(`Remove ${userName}? They will no longer be able to log in.`)) {
-      return;
-    }
+  function onDeleteUser(userId: number, userName: string) {
+    setConfirmDeleteTarget({ id: userId, name: userName });
+  }
+
+  async function confirmDeleteAction() {
+    if (!confirmDeleteTarget) return;
     setError(null);
     try {
-      await invoke("delete_user", { user_id: userId });
+      await invoke("delete_user", { user_id: confirmDeleteTarget.id });
+      setConfirmDeleteTarget(null);
       await loadUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -322,6 +326,19 @@ export function UserManagement() {
           </Button>
         </div>
       </section>
+
+      <InlineDialog
+        open={confirmDeleteTarget !== null}
+        onClose={() => setConfirmDeleteTarget(null)}
+        title="Remove user"
+        description={`Remove ${confirmDeleteTarget?.name ?? ""}? They will no longer be able to log in.`}
+        size="sm"
+      >
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setConfirmDeleteTarget(null)}>Cancel</Button>
+          <Button variant="danger" onClick={confirmDeleteAction}>Remove</Button>
+        </div>
+      </InlineDialog>
     </main>
   );
 }

@@ -140,22 +140,24 @@ function OutstandingList({
   total,
   rows,
   hasSearch,
+  negative,
 }: {
   title: string;
   total: number;
   rows: readonly { id: number; name: string; outstanding: number }[];
   hasSearch: boolean;
+  negative: boolean;
 }) {
   return (
     <div>
       <p className="mb-2 text-xs uppercase text-muted-foreground">
-        {title} · total <Money paise={total} negative={total > 0} />
+        {title} · total <Money paise={total} negative={negative && total > 0} />
       </p>
       <ul className="text-sm text-muted-foreground">
         {rows.map((row) => (
           <li key={row.id} className="flex items-center justify-between border-b border-border py-1">
             <span className="truncate pr-2">{row.name}</span>
-            <Money paise={row.outstanding} negative={row.outstanding > 0} />
+            <Money paise={row.outstanding} negative={negative && row.outstanding > 0} />
           </li>
         ))}
         {rows.length === 0 && (
@@ -736,12 +738,14 @@ export default function ReportsPage({ user }: Props) {
                     total={out?.customer_total ?? 0}
                     rows={filteredCustomers.map((c) => ({ id: c.customer_id, name: c.name, outstanding: c.outstanding }))}
                     hasSearch={outstandingSearch.trim().length > 0}
+                    negative={false}
                   />
                   <OutstandingList
                     title="Vendors"
                     total={out?.vendor_total ?? 0}
                     rows={filteredVendors.map((v) => ({ id: v.vendor_id, name: v.name, outstanding: v.outstanding }))}
                     hasSearch={outstandingSearch.trim().length > 0}
+                    negative={true}
                   />
                 </div>
               </div>

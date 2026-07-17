@@ -528,10 +528,12 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
       return;
     }
 
+    const saleDate = todayLocalYyyymmdd();
+
     const payload: NewSale = {
       customer_id: customer?.id ?? null,
       kind,
-      date: todayLocalYyyymmdd(),
+      date: saleDate,
       bill_discount: billDiscount,
       paid_amount: finalPaid,
       payment_modes: finalSplits,
@@ -910,7 +912,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                   />
                 ) : (
                   <div className="rounded border border-border">
-                    <div className="grid grid-cols-[2.5rem_1fr_auto_auto_8rem_2.5rem] items-center gap-2 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] items-center gap-2 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
                       <div className="text-center">#</div>
                       <div>Item</div>
                       <div>Qty</div>
@@ -927,7 +929,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                           key={`${l.item_id}-${i}`}
                           className="border-t border-border px-3 py-2"
                         >
-                          <div className="grid grid-cols-[2.5rem_1fr_auto_auto_8rem_2.5rem] items-center gap-2">
+                          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] items-center gap-2">
                             <div className="text-center text-xs text-muted-foreground tabular-nums">{i + 1}</div>
                             <div className="min-w-0">
                               {kind === "fbill" ? (
@@ -1108,7 +1110,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                   size="lg"
                   icon={Save}
                   loading={busy}
-                  disabled={!canSave}
+                  disabled={!canSave || busy}
                   className="w-full"
                   shortcut="F9"
                 >

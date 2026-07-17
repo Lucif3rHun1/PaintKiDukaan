@@ -125,11 +125,18 @@ pub(crate) fn do_backup<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     passphrase_override: Option<String>,
 ) -> Result<BackupMetadata, String> {
-    let mut passphrase = passphrase_override
+    let mut passphrase = match passphrase_override
         .filter(|p| !p.is_empty())
         .map(Zeroizing::new)
-        .or_else(|| state.recovery_passphrase.lock().ok()?.clone())
-        .ok_or_else(|| "backup failed: no recovery passphrase on file. Re-run onboarding or use Settings → System to reset.".to_string())?;
+    {
+        Some(p) => p,
+        None => state
+            .recovery_passphrase
+            .lock()
+            .map_err(|e| format!("backup failed: recovery-passphrase mutex poisoned: {e}"))?
+            .clone()
+            .ok_or_else(|| "backup failed: no recovery passphrase on file. Re-run onboarding or use Settings → System to reset.".to_string())?,
+    };
 
     let result = (|| -> Result<BackupMetadata, String> {
         let targets = list_backup_targets().map_err(err_str)?;
@@ -209,7 +216,7 @@ pub fn restore<R: tauri::Runtime>(
     let mut passphrase = state
         .recovery_passphrase
         .lock()
-        .unwrap()
+        .map_err(|e| format!("restore failed: recovery-passphrase mutex poisoned: {e}"))?
         .clone()
         .ok_or_else(|| "restore failed: no recovery passphrase on file".to_string())?;
 
@@ -249,7 +256,7 @@ pub fn restore_into_first_launch<R: tauri::Runtime>(
     let mut passphrase = state
         .recovery_passphrase
         .lock()
-        .unwrap()
+        .map_err(|e| format!("restore failed: recovery-passphrase mutex poisoned: {e}"))?
         .clone()
         .ok_or_else(|| "restore failed: no recovery passphrase on file".to_string())?;
 
@@ -300,7 +307,7 @@ pub fn test_restore<R: tauri::Runtime>(
     let mut passphrase = state
         .recovery_passphrase
         .lock()
-        .unwrap()
+        .map_err(|e| format!("test-restore failed: recovery-passphrase mutex poisoned: {e}"))?
         .clone()
         .ok_or_else(|| "test-restore failed: no recovery passphrase on file".to_string())?;
 

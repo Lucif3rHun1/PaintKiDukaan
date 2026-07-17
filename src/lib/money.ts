@@ -13,7 +13,8 @@ export function formatRupeesFromPaise(paise: number): string {
 
 export function parseRupeesToPaise(rupees: string): number {
   const cleaned = rupees.replace(/[₹,\s]/g, "");
-  if (/[eE]/.test(cleaned)) return 0;
+  if (cleaned === "") return 0;
+  if (!/^\d+(\.\d*)?$|^\.\d+$/.test(cleaned)) return 0;
   const num = parseFloat(cleaned);
   if (!Number.isFinite(num) || num < 0) return 0;
   const paise = Math.round(num * 100);

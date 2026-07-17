@@ -249,6 +249,12 @@ export default function DayClosePage({ user }: Props) {
 
   if (view === "summary" && lastClose) {
     const lc = lastClose;
+    // ponytail: withinTolerance must be computed from lc.variance, not the
+    // outer-scope `variance` (which is reset to 0 because the form state was
+    // cleared after submit). Otherwise the summary always shows green.
+    const summaryWithinTolerance =
+      lc.variance === 0 ||
+      Math.abs(lc.variance) <= VARIANCE_TOLERANCE_PAISE;
     return (
       <div className="space-y-4">
         <div className="rounded-lg bg-success/10 border border-success/20 px-4 py-3 text-sm text-success">
@@ -281,7 +287,7 @@ export default function DayClosePage({ user }: Props) {
                 <Money
                   paise={lc.variance}
                   className={
-                    withinTolerance
+                    summaryWithinTolerance
                       ? "font-semibold text-success"
                       : "font-semibold text-destructive"
                   }

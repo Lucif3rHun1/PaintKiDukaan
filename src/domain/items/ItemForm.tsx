@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Printer } from "lucide-react";
-import { Alert, Button, Field, Money, MoneyInput, Section, Select } from "../../components/ui";
+import { Alert, Button, Field, InlineDialog, Money, MoneyInput, Section, Select } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useGlobalShortcuts } from "../../lib/shortcuts/useGlobalShortcuts";
@@ -81,6 +81,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
     initial?.barcode ?? "",
   );
   const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [confirmOverwriteItem, setConfirmOverwriteItem] = useState<Item | null>(null);
   const [nameSuggestions, setNameSuggestions] = useState<Item[]>([]);
   const nameDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [openingStock, setOpeningStock] = useState("0");
@@ -363,19 +364,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
                   key={item.id}
                   type="button"
                   onClick={() => {
-                    if (!window.confirm("This will overwrite current form values. Continue?")) return;
-                    setName(item.name);
-                    if (item.brand_id) setBrandId(item.brand_id);
-                    if (item.category) setCategory(item.category);
-                    if (item.sell_unit_id) setSellUnitId(item.sell_unit_id);
-                    setRetailPricePaise(item.retail_price_paise);
-                    setCostPaise(item.cost_paise);
-                    if (item.promo_price_paise != null) setPromoPricePaise(item.promo_price_paise);
-                    if (item.primary_location_id) setPrimaryLocationId(item.primary_location_id);
-                    if (item.sub_location_id != null) setSubLocationId(item.sub_location_id);
-                    if (item.position) setPosition(item.position);
-                    setMinStock(item.min_stock?.toString() ?? "1");
-                    setNameSuggestions([]);
+                    setConfirmOverwriteItem(item);
                   }}
                   className="flex w-full items-center gap-3 border-b border-border/50 px-3 py-2 text-left last:border-b-0 hover:bg-muted/50"
                 >
@@ -631,6 +620,43 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           {busy ? "Saving…" : "Save"}
         </Button>
       </div>
+
+      <InlineDialog
+        open={confirmOverwriteItem !== null}
+        onClose={() => setConfirmOverwriteItem(null)}
+        title="Overwrite form values?"
+        description="This will overwrite current form values. Continue?"
+        size="sm"
+      >
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setConfirmOverwriteItem(null)}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              const item = confirmOverwriteItem!;
+              setName(item.name);
+              if (item.brand_id) setBrandId(item.brand_id);
+              if (item.category) setCategory(item.category);
+              if (item.sell_unit_id) setSellUnitId(item.sell_unit_id);
+              setRetailPricePaise(item.retail_price_paise);
+              setCostPaise(item.cost_paise);
+              if (item.promo_price_paise != null) setPromoPricePaise(item.promo_price_paise);
+              if (item.primary_location_id) setPrimaryLocationId(item.primary_location_id);
+              if (item.sub_location_id != null) setSubLocationId(item.sub_location_id);
+              if (item.position) setPosition(item.position);
+              setMinStock(item.min_stock?.toString() ?? "1");
+              setNameSuggestions([]);
+              setConfirmOverwriteItem(null);
+            }}
+          >
+            Continue
+          </Button>
+        </div>
+      </InlineDialog>
     </form>
   );
 }
