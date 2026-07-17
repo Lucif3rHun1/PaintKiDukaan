@@ -65,13 +65,13 @@ pub struct CommandAcl {
     pub min_role: Role,
 }
 
-/// Complete ACL table for every command registered in `invoke_handler` (198 total).
+/// Complete ACL table for every command registered in `invoke_handler` (205 total).
 ///
 /// Classification:
-/// - **Public** (7): callable before unlock — bootstrap, login, recovery, logging, session queries.
-/// - **Stocker+** (12): read-only reference data — items, brands, units, locations, types.
+/// - **Public** (6): callable before unlock — bootstrap, login, recovery, logging, session queries.
+/// - **Stocker+** (13): read-only reference data + touch_activity — items, brands, units, locations, types.
 /// - **Cashier+** (91): operational — sales, purchases, day-close, CRUD, reports, alerts.
-/// - **Owner-only** (39): admin — unlock, user mgmt, settings writes, backup, hardening, void, printers, import, PDE, categories.
+/// - **Owner-only** (46): admin — unlock, user mgmt, settings writes, backup, hardening, void, printers, import, PDE, categories, updater, app lifecycle.
 pub const COMMAND_ACL: &[CommandAcl] = &[
     // ── Public (7) ─────────────────────────────────────────────────────
     CommandAcl {
@@ -88,7 +88,7 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
     },
     CommandAcl {
         name: "touch_activity",
-        min_role: Role::Public,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "current_session",
@@ -901,6 +901,35 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "cmd_read_session_logs",
         min_role: Role::Owner,
     },
+    // ── Updater & app lifecycle (Owner-only) ─────────────────────────────
+    CommandAcl {
+        name: "cmd_check_update",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_download_update",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_install_update",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_current_target",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_retry_update",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_quit_app",
+        min_role: Role::Owner,
+    },
+    CommandAcl {
+        name: "cmd_request_data_wipe",
+        min_role: Role::Owner,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1071,7 +1100,6 @@ mod tests {
             "login_user",
             "first_launch_setup",
             "restore_from_recovery",
-            "touch_activity",
             "current_session",
         ];
         for name in &public_cmds {

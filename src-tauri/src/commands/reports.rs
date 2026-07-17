@@ -54,12 +54,12 @@ pub fn daily_sales(
 ) -> Result<DailySalesReport, ReportsError> {
     db.with_conn(|c| -> Result<DailySalesReport, ReportsError> {
         let mut stmt = c.prepare(
-            "SELECT date(s.date) AS day,
+            "SELECT s.date AS day,
                     COUNT(*) AS bills,
                     SUM(total) AS grand_total,
                     SUM(bill_discount) AS total_discount
              FROM sales s
-             WHERE status = 'final' AND date(s.date) BETWEEN ?1 AND ?2
+             WHERE status = 'final' AND s.date BETWEEN ?1 AND ?2
              GROUP BY day ORDER BY day ASC",
         )?;
         let agg_rows = stmt.query_map(params![from_date, to_date], |r| {
@@ -78,10 +78,10 @@ pub fn daily_sales(
         }
 
         let mut stmt2 = c.prepare(
-            "SELECT date(s.date) AS day, sp.mode, sp.amount_paise
+            "SELECT s.date AS day, sp.mode, sp.amount_paise
              FROM sales s
              JOIN sale_payments sp ON sp.sale_id = s.id
-             WHERE s.status = 'final' AND date(s.date) BETWEEN ?1 AND ?2",
+             WHERE s.status = 'final' AND s.date BETWEEN ?1 AND ?2",
         )?;
         let mode_rows = stmt2.query_map(params![from_date, to_date], |r| {
             Ok((

@@ -881,20 +881,21 @@ pub fn list(
 ) -> anyhow::Result<Vec<Sale>> {
     db.with_conn(|c| {
         let mut sql = String::from(
-            "SELECT id,no,customer_id,date,status,subtotal,bill_discount,
-                    total,paid_amount,payment_modes_json,validity_days,
-                    converted_from_id,user_id,created_at
-             FROM sales",
+            "SELECT s.id,s.no,s.customer_id,s.date,s.status,s.subtotal,s.bill_discount,
+                    s.total,s.paid_amount,s.payment_modes_json,s.validity_days,
+                    s.converted_from_id,s.user_id,s.created_at,
+                    COALESCE(c.name, '')
+             FROM sales s LEFT JOIN customers c ON c.id = s.customer_id",
         );
         let mut bound: Vec<rusqlite::types::Value> = Vec::new();
         let mut conds: Vec<String> = Vec::new();
         if let Some(s) = status {
             bound.push(s.to_string().into());
-            conds.push(format!("status = ?{}", bound.len()));
+            conds.push(format!("s.status = ?{}", bound.len()));
         }
         if let Some(d) = from_date {
             bound.push(d.to_string().into());
-            conds.push(format!("date >= ?{}", bound.len()));
+            conds.push(format!("s.date >= ?{}", bound.len()));
         }
         if let Some(d) = to_date {
             let upper = NaiveDate::parse_from_str(d, "%Y-%m-%d")
@@ -903,31 +904,22 @@ pub fn list(
                 .map(|nd| nd.format("%Y-%m-%d").to_string())
                 .unwrap_or_else(|| d.to_string());
             bound.push(upper.into());
-            conds.push(format!("date < ?{}", bound.len()));
+            conds.push(format!("s.date < ?{}", bound.len()));
         }
         if !conds.is_empty() {
             sql.push_str(" WHERE ");
             sql.push_str(&conds.join(" AND "));
         }
-        sql.push_str(" ORDER BY date DESC, id DESC LIMIT ?");
+        sql.push_str(" ORDER BY s.date DESC, s.id DESC LIMIT ?");
         bound.push(limit.into());
         sql.push_str(&format!("{}", bound.len()));
         let mut stmt = c.prepare(&sql)?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(&bound), row_to_sale_header)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(&bound), row_to_sale_header_with_name)?;
         let mut out = Vec::new();
         for r in rows {
-            let s = r?;
-            let items = load_items(c, s.id)?;
-            let customer_name = if let Some(cid) = s.customer_id {
-                customers::get_by_id(c, cid)?.map(|c| c.name)
-            } else {
-                None
-            };
-            out.push(Sale {
-                customer_name,
-                items,
-                ..s
-            });
+            let mut s = r?;
+            s.items = load_items(c, s.id)?;
+            out.push(s);
         }
         Ok(out)
     })
@@ -977,6 +969,32 @@ fn row_to_sale_header(r: &rusqlite::Row<'_>) -> rusqlite::Result<Sale> {
         no: r.get(1)?,
         customer_id: r.get(2)?,
         customer_name: None,
+        date: r.get(3)?,
+        status: r.get(4)?,
+        subtotal: r.get(5)?,
+        bill_discount: r.get(6)?,
+        total: r.get(7)?,
+        paid_amount: r.get(8)?,
+        payment_modes: modes,
+        validity_days: r.get(10)?,
+        converted_from_id: r.get(11)?,
+        user_id: r.get(12)?,
+        created_at: r.get(13)?,
+        items: Vec::new(),
+    })
+}
+
+/// Like `row_to_sale_header` but reads customer_name from column 14
+/// (LEFT JOIN customers). Avoids N+1 per-row customer lookups.
+fn row_to_sale_header_with_name(r: &rusqlite::Row<'_>) -> rusqlite::Result<Sale> {
+    let modes_json: String = r.get(9)?;
+    let modes: Vec<PaymentSplit> = serde_json::from_str(&modes_json).unwrap_or_default();
+    let cname: String = r.get(14)?;
+    Ok(Sale {
+        id: r.get(0)?,
+        no: r.get(1)?,
+        customer_id: r.get(2)?,
+        customer_name: if cname.is_empty() { None } else { Some(cname) },
         date: r.get(3)?,
         status: r.get(4)?,
         subtotal: r.get(5)?,
@@ -1114,6 +1132,13 @@ fn now_epoch_ms() -> i64 {
 // -----------------------------------------------------------------------------
 // Sale returns (RET/...) — owner-PIN-gated, atomic.
 // -----------------------------------------------------------------------------
+
+struct FkGuard<'a>(&'a rusqlite::Connection);
+impl Drop for FkGuard<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.execute_batch("PRAGMA foreign_keys = ON");
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateSaleReturnPayload {
@@ -1367,11 +1392,12 @@ pub fn create_sale_return(
         let created_at = now_epoch_ms();
         let reason = payload.reason.clone();
 
-        // Ponytail: standalone returns (sale_id=0) reference no existing sale,
-        // so FK on sale_returns.sale_id would fail. Disable FK for these INSERTs.
-        if is_standalone {
+        let _fk_guard = if is_standalone {
             c.execute_batch("PRAGMA foreign_keys = OFF")?;
-        }
+            Some(FkGuard(c))
+        } else {
+            None
+        };
 
         let return_id: i64 = c.query_row(
             "INSERT INTO sale_returns
@@ -1428,10 +1454,7 @@ pub fn create_sale_return(
             }
         }
 
-        // Re-enable FK after standalone INSERTs complete.
-        if is_standalone {
-            c.execute_batch("PRAGMA foreign_keys = ON")?;
-        }
+        drop(_fk_guard);
 
         for m in &payload.payment_modes {
             c.execute(
@@ -1761,16 +1784,16 @@ pub fn cmd_list_sales_paged(
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
         if let Some(s) = query.filters.get("status").and_then(|v| v.as_str()) {
-            wheres.push("status = ?".to_string());
+            wheres.push("s.status = ?".to_string());
             params.push(Box::new(s.to_string()));
         }
         if let Some(cid) = query.filters.get("customer_id").and_then(|v| v.as_i64()) {
-            wheres.push("customer_id = ?".to_string());
+            wheres.push("s.customer_id = ?".to_string());
             params.push(Box::new(cid));
         }
         if let Some(d) = query.filters.get("from_date").and_then(|v| v.as_str()) {
             if !d.is_empty() {
-                wheres.push("date >= ?".to_string());
+                wheres.push("s.date >= ?".to_string());
                 params.push(Box::new(d.to_string()));
             }
         }
@@ -1781,21 +1804,27 @@ pub fn cmd_list_sales_paged(
                     .and_then(|nd| nd.succ_opt())
                     .map(|nd| nd.format("%Y-%m-%d").to_string())
                     .unwrap_or_else(|| d.to_string());
-                wheres.push("date < ?".to_string());
+                wheres.push("s.date < ?".to_string());
                 params.push(Box::new(upper));
             }
         }
 
+        let sort_col = match sort_field.as_str() {
+            "customer_name" => "COALESCE(c.name, '')".to_string(),
+            other => format!("s.{}", other),
+        };
         let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
-        let order_by = format!(" ORDER BY {} {} LIMIT ? OFFSET ?", sort_field, sort_dir);
+        let order_by = format!(" ORDER BY {} {} LIMIT ? OFFSET ?", sort_col, sort_dir);
         params.push(Box::new(limit));
         params.push(Box::new(offset));
 
         let base_select =
-            "SELECT id, no, customer_id, date, status, subtotal, bill_discount, \
-                    total, paid_amount, payment_modes_json, validity_days, \
-                    converted_from_id, user_id, created_at \
-             FROM sales";
+            "SELECT s.id, s.no, s.customer_id, s.date, s.status, s.subtotal, s.bill_discount, \
+                    s.total, s.paid_amount, s.payment_modes_json, s.validity_days, \
+                    s.converted_from_id, s.user_id, s.created_at, \
+                    COALESCE(c.name, '') \
+             FROM sales s \
+             LEFT JOIN customers c ON c.id = s.customer_id";
         let count_select = "SELECT COUNT(*) FROM sales";
 
         let (rows, total) = paged_query(
@@ -1805,23 +1834,11 @@ pub fn cmd_list_sales_paged(
             &where_refs,
             &order_by,
             &params,
-            row_to_sale_header,
+            row_to_sale_header_with_name,
         )?;
 
-        let mut enriched = Vec::with_capacity(rows.len());
-        for s in rows {
-            let customer_name = if let Some(cid) = s.customer_id {
-                customers::get_by_id(c, cid)?.map(|c| c.name)
-            } else {
-                None
-            };
-            enriched.push(Sale {
-                customer_name,
-                ..s
-            });
-        }
         Ok(ListPage {
-            rows: enriched,
+            rows,
             total,
         })
     })

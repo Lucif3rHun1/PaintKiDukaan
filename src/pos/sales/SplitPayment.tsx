@@ -52,8 +52,7 @@ export function SplitPayment({ total, splits, onChange, balanceTenderAvailable }
       }
     } else if (
       prevTotal.current !== total &&
-      splits.length === 1 &&
-      splits[0]?.mode === "cash"
+      splits.length === 1
     ) {
       onChange([{ ...splits[0], amount: total }]);
     }

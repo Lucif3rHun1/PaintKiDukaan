@@ -1236,6 +1236,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
           types={customerTypes}
           onSaved={handleCustomerCreated}
           onCancel={() => setCreateCustomerOpen(false)}
+          role={user.role}
         />
       </InlineDialog>
 

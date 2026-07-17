@@ -18,6 +18,7 @@ interface Props {
   types: CustomerType[];
   onSaved: (c: Customer) => void;
   onCancel: () => void;
+  role?: "owner" | "cashier" | "stocker";
 }
 
 export function CustomerForm({
@@ -26,6 +27,7 @@ export function CustomerForm({
   types,
   onSaved,
   onCancel,
+  role,
 }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [phone, setPhone] = useState(initial?.phone ?? "");
@@ -135,6 +137,7 @@ export function CustomerForm({
           autoCapitalize="none"
           spellCheck={false}
           className="input"
+          disabled={role != null && role !== "owner"}
         />
       </Field>
 

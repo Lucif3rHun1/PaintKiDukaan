@@ -107,11 +107,14 @@ pub fn run() {
     // On macOS: ~/Library/Application Support/in.paintkiduakan.master/
     // On Linux: ~/.local/share/in.paintkiduakan.master/
     // On Windows: %APPDATA%/in.paintkiduakan.master/
-    let log_dir = dirs::data_local_dir()
-        .unwrap_or_default()
-        .join(crate::obs!("in.paintkiduakan.master"));
-    std::fs::create_dir_all(&log_dir)
-        .unwrap_or_else(|e| panic!("failed to create log dir {:?}: {}", log_dir, e));
+    let mut log_dir = match dirs::data_local_dir() {
+        Some(base) => base.join(crate::obs!("in.paintkiduakan.master")),
+        None => std::env::temp_dir().join(crate::obs!("in.paintkiduakan.master")),
+    };
+    if std::fs::create_dir_all(&log_dir).is_err() {
+        log_dir = std::env::temp_dir().join(crate::obs!("in.paintkiduakan.master"));
+        let _ = std::fs::create_dir_all(&log_dir);
+    }
 
     // Run migration before opening the log so the new name is used from first write.
     if let Some(app_data) = dirs::data_local_dir()

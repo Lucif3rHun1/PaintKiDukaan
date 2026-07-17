@@ -27,6 +27,8 @@ pub struct CustomerLedgerTransaction {
     pub debit_paise: i64,
     pub credit_paise: i64,
     pub balance_paise: i64,
+    #[serde(skip_serializing)]
+    sort_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,52 +75,51 @@ pub fn customer_ledger_impl(db: &Db, customer_id: i64, limit: i64) -> AppResult<
             |r| r.get(0),
         )?;
 
-        // Sales: finalized invoices for this customer.
         let mut stmt = c.prepare(
             "SELECT id, no, created_at, total, COALESCE(total - paid_amount, 0)
              FROM sales
              WHERE customer_id = ?1 AND status = 'final'
-             ORDER BY created_at ASC, id ASC
-             LIMIT ?2",
+             ORDER BY created_at ASC, id ASC",
         )?;
-        let sale_rows = stmt.query_map(params![customer_id, limit], |r| {
+        let sale_rows = stmt.query_map(params![customer_id], |r| {
+            let created_at_text: String = r.get(2)?;
             Ok(CustomerLedgerTransaction {
                 id: r.get::<_, i64>(0)?,
-                date: r.get::<_, String>(2)?,
+                date: created_at_text.clone(),
                 kind: "sale".to_string(),
                 ref_no: r.get::<_, String>(1).ok(),
                 description: None,
                 debit_paise: r.get::<_, i64>(3)?,
                 credit_paise: 0,
                 balance_paise: 0,
+                sort_ms: text_datetime_to_ms(&created_at_text),
             })
         })?;
         let mut rows: Vec<CustomerLedgerTransaction> = sale_rows.collect::<Result<Vec<_>, _>>()?;
 
-        // Customer payments: khata settlements.
         let mut stmt = c.prepare(
             "SELECT id, created_at, amount_paise, mode, note
              FROM customer_payments
              WHERE customer_id = ?1
-             ORDER BY created_at ASC, id ASC
-             LIMIT ?2",
+             ORDER BY created_at ASC, id ASC",
         )?;
-        let payment_rows = stmt.query_map(params![customer_id, limit], |r| {
+        let payment_rows = stmt.query_map(params![customer_id], |r| {
+            let created_at_ms: i64 = r.get(1)?;
             Ok(CustomerLedgerTransaction {
                 id: r.get::<_, i64>(0)?,
-                date: ms_to_date(r.get::<_, i64>(1)?),
+                date: ms_to_date(created_at_ms),
                 kind: "payment".to_string(),
                 ref_no: None,
                 description: r.get::<_, String>(4).ok(),
                 debit_paise: 0,
                 credit_paise: r.get::<_, i64>(2)?,
                 balance_paise: 0,
+                sort_ms: created_at_ms,
             })
         })?;
         rows.extend(payment_rows.collect::<Result<Vec<_>, _>>()?);
 
-        // Sort ascending by date then id for running-balance calculation.
-        rows.sort_by(|a, b| a.date.cmp(&b.date).then_with(|| a.id.cmp(&b.id)));
+        rows.sort_by(|a, b| a.sort_ms.cmp(&b.sort_ms).then_with(|| a.id.cmp(&b.id)));
 
         let mut balance = opening_balance_paise;
         for row in &mut rows {
@@ -126,13 +127,15 @@ pub fn customer_ledger_impl(db: &Db, customer_id: i64, limit: i64) -> AppResult<
             row.balance_paise = balance;
         }
 
-        // Return newest-first for display.
+        let closing_balance_paise = balance;
+
         rows.reverse();
+        rows.truncate(limit.max(1) as usize);
 
         Ok(CustomerLedger {
             customer_id,
             opening_balance_paise,
-            closing_balance_paise: balance,
+            closing_balance_paise,
             rows,
         })
     })
@@ -266,6 +269,15 @@ fn ms_to_date(ms: i64) -> String {
         .single()
         .map(|dt| dt.format("%Y-%m-%d").to_string())
         .unwrap_or_else(|| String::new())
+}
+
+fn text_datetime_to_ms(s: &str) -> i64 {
+    use chrono::NaiveDateTime;
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+        .ok()
+        .and_then(|dt| dt.and_local_timezone(chrono::Local).single())
+        .map(|dt| dt.timestamp_millis())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
