@@ -15,6 +15,29 @@ describe("LockScreen account switcher", () => {
     ]);
   });
 
+  it("focuses the PIN immediately and submits it with Enter", async () => {
+    globalThis.__tauriInvokeMock.mockResolvedValue({
+      user: { id: 1, name: "Owner", role: "owner" },
+      locked: false,
+      pin_role: "real",
+    });
+
+    render(<LockScreen />);
+
+    const pin = screen.getByLabelText("Six digit PIN");
+    expect(pin).toHaveFocus();
+
+    await userEvent.type(pin, "123456{Enter}");
+
+    await waitFor(() => {
+      expect(globalThis.__tauriInvokeMock).toHaveBeenCalledWith(
+        "unlock",
+        expect.objectContaining({ pin: "123456" }),
+        undefined,
+      );
+    });
+  });
+
   it("logs in the selected staff account when multiple users are available", async () => {
     globalThis.__tauriInvokeMock.mockResolvedValue({
       user: { id: 2, name: "Asha", role: "cashier" },
