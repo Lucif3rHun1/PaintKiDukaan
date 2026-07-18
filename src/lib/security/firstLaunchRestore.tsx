@@ -8,12 +8,12 @@ import {
   FileWarning,
   FolderOpen,
   HardDrive,
-  Loader2,
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
+import { extractError } from "../../lib/extractError";
 
 import {
   firstLaunchRestoreSchema,
@@ -23,6 +23,7 @@ import {
 import { type Role, useSecurity } from "./state";
 import { ipc } from "../../shell/lib/ipc";
 import { fieldError } from "../validation";
+import { Alert, Button } from "../../components/ui";
 
 interface FirstLaunchRestoreProps {
   onCancel: () => void;
@@ -35,14 +36,8 @@ const STEPS = [
 ] as const;
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  "h-11 w-full rounded-md border border-input bg-surface-sunken px-3 text-sm text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none";
 const labelClass = "text-sm font-medium text-foreground";
-const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
-const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
-const dangerButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-destructive px-4 text-sm font-medium text-destructive-foreground transition-colors duration-150 hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function truncateMiddle(value: string) {
   if (value.length <= 54) return value;
@@ -58,8 +53,6 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [visible, setVisible] = useState(true);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const {
     register,
@@ -83,14 +76,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
   const pathValid = envelopePath.trim().length > 0;
   const passphraseValid = recoveryPassphraseSchema.safeParse(passphrase).success;
 
-  const animateToStep = useCallback((next: 0 | 1 | 2) => {
-    clearTimeout(timerRef.current);
-    setVisible(false);
-    timerRef.current = setTimeout(() => {
-      setStep(next);
-      setVisible(true);
-    }, 150);
-  }, []);
+  const moveToStep = useCallback((next: 0 | 1 | 2) => setStep(next), []);
 
   const pickFile = useCallback(async () => {
     try {
@@ -103,18 +89,14 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
     }
   }, [setValue]);
 
-  useEffect(() => {
-    return () => { clearTimeout(timerRef.current); };
-  }, []);
-
   async function goToPassphrase() {
     const ok = await trigger("envelopePath");
-    if (ok && pathValid) animateToStep(1);
+    if (ok && pathValid) moveToStep(1);
   }
 
   async function goToConfirm() {
     const ok = await trigger("passphrase");
-    if (ok) animateToStep(2);
+    if (ok) moveToStep(2);
   }
 
   async function onSubmit(input: FirstLaunchRestoreInput) {
@@ -149,16 +131,16 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
       setBackendError(boot.kind === "error" ? boot.message : "Restore completed but app returned an unexpected state. Please restart.");
       setLoading(false);
     } catch (error) {
-      setBackendError(error instanceof Error ? error.message : String(error));
+      setBackendError(extractError(error));
       setLoading(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
+    <main className="min-h-dvh bg-surface-canvas px-4 py-8 text-foreground sm:px-6">
+      <section className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-md items-center">
         <form
-          className="w-full rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8"
+          className="w-full rounded-xl border border-border bg-surface-raised p-5 shadow-raised sm:p-6"
           onSubmit={handleSubmit(onSubmit)}
         >
           <div className="mb-6 flex items-center justify-between gap-4">
@@ -187,13 +169,13 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                   {i > 0 && (
                     <div className="mx-1 h-px w-6 sm:w-10">
                       <div
-                        className={`h-full transition-colors duration-200 ${i <= step ? "bg-success" : "bg-border"}`}
+                        className={`h-full transition-colors duration-fast motion-reduce:transition-none ${i <= step ? "bg-success" : "bg-border"}`}
                       />
                     </div>
                   )}
                   <div className="flex flex-col items-center gap-1">
                     <div
-                      className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition-[transform,colors,box-shadow] duration-200 ${
+                      className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-fast motion-reduce:transition-none ${
                         done
                           ? "bg-success text-success-foreground"
                           : active
@@ -204,7 +186,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                       {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
                     </div>
                     <span
-                      className={`text-[10px] font-medium leading-none ${active ? "text-foreground" : "text-muted-foreground"}`}
+                      className={`text-xs font-medium leading-none ${active ? "text-foreground" : "text-muted-foreground"}`}
                     >
                       {s.label}
                     </span>
@@ -214,7 +196,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
             })}
           </div>
 
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-3.5 py-3">
+          <div className="surface-sunken flex items-center gap-3 rounded-lg border border-border px-3 py-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
               {(() => {
                 const Icon = STEPS[step].icon;
@@ -228,16 +210,13 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
           </div>
 
           {backendError ? (
-            <div
-              className="flex gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-sm text-destructive"
-              role="alert"
-            >
+            <Alert variant="destructive">
               <FileWarning className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="leading-snug">{backendError}</span>
-            </div>
+            </Alert>
           ) : null}
 
-          <div className={`transition-[opacity,transform] duration-200 ease-in-out ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"}`}>
+          <div>
           {step === 0 ? (
             <div>
               <label className={labelClass} htmlFor="envelopePath">
@@ -254,15 +233,16 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                   type="text"
                   {...register("envelopePath")}
                 />
-                <button
-                  className={ghostButtonClass}
+                <Button
+                  variant="secondary"
+                  size="lg"
                   type="button"
                   onClick={pickFile}
                   aria-label="Browse for backup file"
                 >
                   <FolderOpen className="mr-1.5 h-4 w-4" aria-hidden="true" />
                   Browse
-                </button>
+                </Button>
               </div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 Absolute path to a backup file. E.g. /Users/me/backups/shop-2025-01-15.pkb1
@@ -288,7 +268,7 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
                   {...register("passphrase")}
                 />
                 <button
-                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
                   type="button"
                   onClick={() => setShowPassphrase((v) => !v)}
                   aria-label={showPassphrase ? "Hide recovery password" : "Show recovery password"}
@@ -321,57 +301,65 @@ export function FirstLaunchRestore({ onCancel }: FirstLaunchRestoreProps) {
 
           <div className="mt-6 flex gap-3">
             {step > 0 ? (
-              <button
-                className={ghostButtonClass}
+              <Button
+                variant="secondary"
+                size="lg"
                 type="button"
-                onClick={() => animateToStep(step === 2 ? 1 : 0)}
+                onClick={() => moveToStep(step === 2 ? 1 : 0)}
                 disabled={loading}
               >
                 <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
                 Back
-              </button>
+              </Button>
             ) : null}
             {step === 0 ? (
-              <button
-                className={`${buttonClass} flex-1`}
+              <Button
+                className="flex-1"
+                variant="primary"
+                size="lg"
                 type="button"
                 onClick={goToPassphrase}
                 disabled={!pathValid || loading}
               >
                 Continue
-              </button>
+              </Button>
             ) : null}
             {step === 1 ? (
-              <button
-                className={`${buttonClass} flex-1`}
+              <Button
+                className="flex-1"
+                variant="primary"
+                size="lg"
                 type="button"
                 onClick={goToConfirm}
                 disabled={!passphraseValid || loading}
               >
                 Continue
-              </button>
+              </Button>
             ) : null}
             {step === 2 ? (
-              <button
-                className={`${dangerButtonClass} flex-1`}
+              <Button
+                className="flex-1"
+                variant="danger"
+                size="lg"
                 type="submit"
-                disabled={loading}
+                loading={loading}
               >
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
                 Restore and continue
-              </button>
+              </Button>
             ) : null}
           </div>
 
-          <button
-            className="mt-5 flex w-full items-center justify-center gap-2 text-center text-sm font-medium text-primary transition-colors duration-150 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50"
+          <Button
+            className="mt-4 w-full"
+            variant="ghost"
+            size="md"
             type="button"
             onClick={onCancel}
             disabled={loading}
           >
             <X className="h-4 w-4" aria-hidden="true" />
             Cancel restore
-          </button>
+          </Button>
         </form>
       </section>
     </main>

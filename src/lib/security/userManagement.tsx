@@ -11,8 +11,9 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { extractError } from "../../lib/extractError";
 
-import { createUserSchema, type CreateUserInput, pinSchema } from "./pin";
+import { createUserSchema, type CreateUserInput } from "./pin";
 import { type Role, useSecurity } from "./state";
 import { Alert, Badge, Button, Field, InlineDialog, Select } from "../../components/ui";
 
@@ -23,7 +24,7 @@ interface ListedUser {
 }
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  "h-11 w-full rounded-md border border-input bg-surface-sunken px-3 text-sm text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none";
 
 function roleBadge(role: Role) {
   const variant: Record<Role, "warning" | "success" | "info"> = {
@@ -60,7 +61,7 @@ export function UserManagement() {
       setLoginUsers(result);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(extractError(err));
     } finally {
       setLoading(false);
     }
@@ -93,7 +94,7 @@ export function UserManagement() {
       setShowCreateForm(false);
       await loadUsers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(extractError(err));
     }
   }
 
@@ -109,7 +110,7 @@ export function UserManagement() {
       setConfirmDeleteTarget(null);
       await loadUsers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(extractError(err));
     }
   }
 
@@ -117,9 +118,9 @@ export function UserManagement() {
   const stockers = users.filter((u) => u.role === "stocker");
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
+    <main className="min-h-dvh bg-surface-canvas px-4 py-8 text-foreground sm:px-6">
       <section className="mx-auto max-w-lg">
-        <div className="rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8">
+        <div className="rounded-xl border border-border bg-surface-raised p-5 shadow-raised sm:p-6">
           {/* Header */}
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
@@ -146,7 +147,7 @@ export function UserManagement() {
           {/* Create form */}
           {showCreateForm ? (
             <form
-              className="mb-6 rounded-xl border border-border bg-background/60 p-4 space-y-4"
+              className="surface-sunken mb-6 space-y-4 rounded-lg border border-border p-4"
               onSubmit={handleSubmit(onCreateUser)}
             >
               <p className="text-sm font-medium text-foreground">Add staff member</p>
@@ -182,7 +183,7 @@ export function UserManagement() {
                     {...register("pin")}
                   />
                   <button
-                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
                     type="button"
                     onClick={() => setShowPin((v) => !v)}
                     aria-label={showPin ? "Hide PIN" : "Show PIN"}
@@ -244,7 +245,7 @@ export function UserManagement() {
               <Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden="true" />
             </div>
           ) : users.length === 0 ? (
-            <div className="rounded-xl border border-border bg-background/60 p-6 text-center">
+              <div className="surface-sunken rounded-lg border border-border p-6 text-center">
               <Users className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
               <p className="mt-2 text-sm text-muted-foreground">
                 No staff members yet. Add cashiers and stockers above.
@@ -254,14 +255,14 @@ export function UserManagement() {
             <div className="space-y-4">
               {cashiers.length > 0 && (
                 <div>
-                  <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <h2 className="mb-2 text-sm font-medium text-muted-foreground">
                     Cashiers
                   </h2>
                   <ul className="space-y-1.5">
                     {cashiers.map((user) => (
                       <li
                         key={user.id}
-                        className="flex items-center justify-between rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                        className="flex min-h-11 items-center justify-between rounded-lg border border-border bg-surface-panel px-3 py-2"
                       >
                         <div className="flex items-center gap-3">
                           <span className="text-sm font-medium text-foreground">{user.name}</span>
@@ -283,14 +284,14 @@ export function UserManagement() {
               )}
               {stockers.length > 0 && (
                 <div>
-                  <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <h2 className="mb-2 text-sm font-medium text-muted-foreground">
                     Stockers
                   </h2>
                   <ul className="space-y-1.5">
                     {stockers.map((user) => (
                       <li
                         key={user.id}
-                        className="flex items-center justify-between rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                        className="flex min-h-11 items-center justify-between rounded-lg border border-border bg-surface-panel px-3 py-2"
                       >
                         <div className="flex items-center gap-3">
                           <span className="text-sm font-medium text-foreground">{user.name}</span>

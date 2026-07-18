@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { toast } from "../../../lib/feedback/toast";
-import { Alert, Button, Card, DataTable, EmptyState, InlineDialog, Section } from "../../../components/ui";
+import { Alert, Badge, Button, Card, DataTable, EmptyState, InlineDialog, Section } from "../../../components/ui";
 import type { ColumnDef } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
 import { ipc } from "../../lib/ipc";
@@ -181,8 +181,9 @@ export function LocationsSettings() {
   };
 
   return (
-    <Card>
-      <Section title="Stock locations" description="Locations group stock and make inventory movement easier to audit. Sub-locations add another layer of precision (e.g. Rack → Shelf).">
+    <Card depth="flat">
+      <Card.Body>
+      <Section title="Stock locations" description="Locations group stock and make inventory movement easier to audit. Sub-locations add another layer of precision (e.g. Rack → Shelf)." action={<Badge variant={locations.length > 0 ? "success" : "warning"}>{locations.length} configured</Badge>}>
         <div className="space-y-4 text-sm">
           <div className="flex gap-2">
             <input
@@ -243,6 +244,7 @@ export function LocationsSettings() {
           <Button variant="danger" onClick={confirmRemoveLocationAction}>Remove</Button>
         </div>
       </InlineDialog>
+      </Card.Body>
     </Card>
   );
 }
@@ -288,8 +290,9 @@ export function CustomerTypesSettings() {
   };
 
   return (
-    <Card>
-      <Section title="Customer types" description="Reusable customer groups for pricing, reporting, and segmentation.">
+    <Card depth="flat">
+      <Card.Body>
+      <Section title="Customer types" description="Reusable customer groups for pricing, reporting, and segmentation." action={<Badge variant={customerTypes.length > 0 ? "success" : "warning"}>{customerTypes.length} configured</Badge>}>
         <div className="space-y-4 text-sm">
           <div className="flex gap-2">
             <input
@@ -310,6 +313,7 @@ export function CustomerTypesSettings() {
           <SettingsList items={customerTypes} emptyText="No customer types configured" onRemove={(customerType) => void remove(customerType)} />
         </div>
       </Section>
+      </Card.Body>
     </Card>
   );
 }
@@ -323,8 +327,9 @@ export function CatalogSettingsCombined() {
   const [tab, setTab] = useState<"brands" | "categories" | "units">("brands");
 
   return (
-    <Card>
-      <Section title="Catalog" description="Manage brands, categories, and units used across items and billing.">
+    <Card depth="flat">
+      <Card.Body>
+      <Section title="Catalog" description="Manage brands, categories, and units used across items and billing." action={<Badge variant="info">{tab} active</Badge>}>
         <div className="flex gap-1 border-b border-border mb-4">
           {(["brands", "categories", "units"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
@@ -342,6 +347,7 @@ export function CatalogSettingsCombined() {
           </div>
         )}
       </Section>
+      </Card.Body>
     </Card>
   );
 }
@@ -457,7 +463,7 @@ function SaleUnitsSettings() {
             type="text"
             value={editLabel}
             onChange={(e) => setEditLabel(e.target.value)}
-            className="w-32 rounded border border-border bg-card px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none"
+            className="input h-8 w-32 bg-surface-sunken"
           />
         ) : (
           <span className="truncate text-foreground">{u.label}</span>
@@ -493,11 +499,11 @@ function SaleUnitsSettings() {
           type="button"
           onClick={() => void toggleActive(u)}
           disabled={busy}
-          className={`inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+          className={`inline-flex h-5 w-9 items-center rounded-full transition-colors duration-fast ${
             u.is_active ? "bg-primary" : "bg-muted"
           }`}
         >
-          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${u.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform duration-fast ${u.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
         </button>
       ),
     },
@@ -519,8 +525,9 @@ function SaleUnitsSettings() {
   ];
 
   return (
-    <Card>
-      <Section title="Sale Units" description="The units items are sold in. Each controls quantity precision (whole numbers or decimals).">
+    <Card depth="flat">
+      <Card.Body>
+      <Section title="Sale Units" description="The units items are sold in. Each controls quantity precision (whole numbers or decimals)." action={<Badge variant={units.length > 0 ? "success" : "warning"}>{units.length} units</Badge>}>
         <div className="space-y-4 text-sm">
           <div className="flex flex-wrap items-end gap-2">
             <div className="flex flex-col">
@@ -574,6 +581,7 @@ function SaleUnitsSettings() {
           />
         </div>
       </Section>
+      </Card.Body>
     </Card>
   );
 }
@@ -666,7 +674,7 @@ function PurchaseUnitsSettings() {
             value={editLabel}
             onChange={(e) => setEditLabel(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void saveEdit(); if (e.key === "Escape") setEditingId(null); }}
-            className="w-40 rounded border border-border bg-card px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none"
+            className="input h-8 w-40 bg-surface-sunken"
             autoFocus
           />
         ) : (
@@ -683,11 +691,11 @@ function PurchaseUnitsSettings() {
           type="button"
           onClick={() => void toggleActive(u)}
           disabled={busy}
-          className={`inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+          className={`inline-flex h-5 w-9 items-center rounded-full transition-colors duration-fast ${
             u.is_active ? "bg-primary" : "bg-muted"
           }`}
         >
-          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${u.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform duration-fast ${u.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
         </button>
       ),
     },
@@ -709,8 +717,9 @@ function PurchaseUnitsSettings() {
   ];
 
   return (
-    <Card>
-      <Section title="Purchase Units" description="Packaging labels used when receiving stock (e.g. Carton, Roll, Sack). Per-item remembered.">
+    <Card depth="flat">
+      <Card.Body>
+      <Section title="Purchase Units" description="Packaging labels used when receiving stock (e.g. Carton, Roll, Sack). Per-item remembered." action={<Badge variant={units.length > 0 ? "success" : "warning"}>{units.length} units</Badge>}>
         <div className="space-y-4 text-sm">
           <div className="flex gap-2">
             <input
@@ -735,6 +744,7 @@ function PurchaseUnitsSettings() {
           />
         </div>
       </Section>
+      </Card.Body>
     </Card>
   );
 }

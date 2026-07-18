@@ -16,9 +16,9 @@ import { useSecurity, type Role } from "../../lib/security/state";
 import { SkeletonRow } from "../../components/ui/SkeletonRow";
 
 const severityClasses: Record<Severity, string> = {
-  info: "border-l-4 border-info bg-info/10",
-  warning: "border-l-4 border-warning bg-warning/10",
-  error: "border-l-4 border-destructive bg-destructive/10",
+  info: "bg-info/10",
+  warning: "bg-warning/10",
+  error: "bg-destructive/10",
 };
 
 const severityDot: Record<Severity, string> = {
@@ -106,7 +106,7 @@ export function AlertBell({ currentRole }: AlertBellProps) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative p-2 rounded-full hover:bg-muted transition-colors"
+        className="relative p-2 rounded-full hover:bg-muted transition-colors duration-fast"
         aria-label="Notifications"
       >
         <Bell className="w-5 h-5 text-foreground" />
@@ -120,7 +120,7 @@ export function AlertBell({ currentRole }: AlertBellProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden">
+        <div className="absolute right-0 z-30 mt-2 w-80 sm:w-96 overflow-hidden rounded-lg border border-border bg-card shadow-overlay">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <h3 className="font-semibold text-foreground">Alerts</h3>
             {count > 0 && (
@@ -176,7 +176,7 @@ export function AlertBell({ currentRole }: AlertBellProps) {
                       <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
                         {alert.message}
                       </p>
-                      <p className="text-[10px] text-muted-foreground mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {new Date(alert.created_at).toLocaleString()}
                       </p>
                     </div>

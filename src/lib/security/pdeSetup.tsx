@@ -1,10 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
   Eye,
   EyeOff,
-  Loader2,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -22,6 +22,7 @@ import {
   shopNameSchema,
 } from "./pin";
 import { fieldError } from "../validation";
+import { Alert, Button } from "../../components/ui";
 
 type Step = "opt-in" | "decoy-pin" | "duress-pin" | "fake-data" | "confirm";
 
@@ -34,12 +35,8 @@ const STEPS: ReadonlyArray<{ key: Step; label: string; icon: typeof Shield }> = 
 ];
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  "h-11 w-full rounded-md border border-input bg-surface-sunken px-3 text-sm text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none";
 const labelClass = "text-sm font-medium text-foreground";
-const buttonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
-const ghostButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors duration-150 hover:border-border hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
 function pinStrength(pin: string): { label: string; color: string; width: string } {
   if (pin.length === 0) return { label: "", color: "bg-muted", width: "w-0" };
@@ -59,7 +56,7 @@ function PinStrengthMeter({ pin }: { pin: string }) {
   return (
     <div className="mt-1.5 flex items-center gap-2">
       <div className="h-1.5 flex-1 rounded-full bg-muted">
-        <div className={`h-full rounded-full transition-[color,background-color,border-color,opacity] duration-300 ${s.color} ${s.width}`} />
+        <div className={`h-full rounded-full transition-[color,background-color,border-color,opacity] duration-normal motion-reduce:transition-none ${s.color} ${s.width}`} />
       </div>
       <span className={`text-xs font-medium ${s.color.replace("bg-", "text-")}`}>{s.label}</span>
     </div>
@@ -81,7 +78,6 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
     register,
     control,
     formState: { errors },
-    handleSubmit,
     trigger,
     getValues,
   } = useForm<PdeSetupInput>({
@@ -180,7 +176,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
           {STEPS.map((s, i) => (
             <div key={s.key} className="flex items-center gap-2">
               <div
-                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-200 ${
+                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors duration-fast motion-reduce:transition-none ${
                   i < stepIndex
                     ? "bg-success text-success-foreground"
                     : i === stepIndex
@@ -188,7 +184,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
                       : "bg-muted text-muted-foreground"
                 }`}
               >
-                {i < stepIndex ? "✓" : i + 1}
+                {i < stepIndex ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : i + 1}
               </div>
               <span
                 className={`text-xs font-medium hidden ${
@@ -204,7 +200,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
           {STEPS.map((_, i) => (
             <span
               key={i}
-              className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${
+              className={`h-1.5 flex-1 rounded-full transition-colors duration-fast motion-reduce:transition-none ${
                 i < stepIndex
                   ? "bg-success"
                   : i === stepIndex
@@ -217,7 +213,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       </div>
 
       {/* Step description */}
-      <div className="flex items-center gap-3 rounded-xl border border-border bg-card/60 p-3">
+      <div className="surface-sunken flex items-center gap-3 rounded-lg border border-border p-3">
         <currentMeta.icon className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
         <div>
           <p className="text-sm font-medium text-foreground">{currentMeta.label}</p>
@@ -233,10 +229,10 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
 
       {/* Backend error */}
       {backendError && (
-        <div className="flex gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+        <Alert variant="destructive">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{backendError}</span>
-        </div>
+        </Alert>
       )}
 
       {/* Step: opt-in */}
@@ -251,7 +247,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
               An intruder cannot tell which PIN is real.
             </p>
           </div>
-          <label className="flex items-center gap-3 rounded-xl border border-border bg-card/60 p-4 cursor-pointer">
+          <label className="surface-sunken flex cursor-pointer items-center gap-3 rounded-lg border border-border p-4">
             <input
               type="checkbox"
               className="h-5 w-5 rounded border-border bg-muted text-primary focus:ring-ring"
@@ -282,7 +278,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
                 {...register("decoyPin")}
               />
               <button
-                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
                 type="button"
                 onClick={() => setShowPins((v) => !v)}
                 aria-label={showPins ? "Hide PINs" : "Show PINs"}
@@ -333,7 +329,7 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
                 {...register("duressPin")}
               />
               <button
-                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
                 type="button"
                 onClick={() => setShowPins((v) => !v)}
                 aria-label={showPins ? "Hide PINs" : "Show PINs"}
@@ -418,36 +414,37 @@ export function PdeSetupWizard({ onComplete, onCancel }: PdeSetupWizardProps) {
       {/* Navigation */}
       <div className="flex gap-3">
         {step !== "opt-in" && (
-          <button className={ghostButtonClass} type="button" onClick={goBack}>
+          <Button variant="secondary" size="lg" type="button" onClick={goBack}>
             Back
-          </button>
+          </Button>
         )}
         {step === "opt-in" && (
-          <button className={ghostButtonClass} type="button" onClick={onCancel}>
+          <Button variant="secondary" size="lg" type="button" onClick={onCancel}>
             Skip
-          </button>
+          </Button>
         )}
         {step !== "confirm" ? (
-          <button
-            className={`${buttonClass} flex-1`}
+          <Button
+            className="flex-1"
+            variant="primary"
+            size="lg"
             type="button"
             onClick={goNext}
             disabled={!canContinue[step]}
           >
             Continue
-          </button>
+          </Button>
         ) : (
-          <button
-            className={`${buttonClass} flex-1`}
+          <Button
+            className="flex-1"
+            variant="primary"
+            size="lg"
             type="button"
             onClick={onSubmit}
-            disabled={submitting}
+            loading={submitting}
           >
-            {submitting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            ) : null}
             Set up fake shop
-          </button>
+          </Button>
         )}
       </div>
     </div>

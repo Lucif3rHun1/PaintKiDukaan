@@ -1,14 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Alert, PageHeader, TabsLegacy, type TabItem } from "../../components/ui";
 import { todayLocalYyyymmdd } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
-import {
-  comparisonMetrics,
-  dailySales,
-  listDayClose,
-} from "../../pos/api";
+import { listDayClose } from "../../pos/api";
+import { useSecurity } from "../../lib/security/state";
 import {
   listAlerts,
   markAlertRead,
@@ -17,15 +14,19 @@ import {
 } from "../../domain/alerts";
 import { InventoryTab } from "./dashboard/InventoryTab";
 import { BusinessTab } from "./dashboard/BusinessTab";
-import { Skeleton } from "boneyard-js/react";
+import { QuickActionsBar } from "./dashboard/QuickActionsBar";
+import {
+  dashboardTabsForRole,
+  roleCanReadAlerts,
+  roleCanReadBusiness,
+  roleCanReadDayClose,
+  type DashTab,
+} from "./dashboard/access";
 
 const STAGGER = {
-  sales: 30_000,
   dayClose: 60_000,
   alerts: 26_000,
 };
-
-type DashTab = "inventory" | "business";
 
 const DASH_TABS: ReadonlyArray<TabItem<DashTab>> = [
   { id: "business", label: "Business" },
@@ -34,16 +35,6 @@ const DASH_TABS: ReadonlyArray<TabItem<DashTab>> = [
 
 function startOfTodayIso(): string {
   return todayLocalYyyymmdd();
-}
-
-// ponytail: this is "last 7 days" not "start of week" — name matches behaviour
-function last7DaysIso(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 6);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 const severityToAlertVariant: Record<Severity, "destructive" | "warning" | "info"> = {
@@ -60,16 +51,19 @@ const severityRank: Record<Severity, number> = {
 
 export function Dashboard() {
   const queryClient = useQueryClient();
-  const [dashTab, setDashTab] = useState<DashTab>("business");
+  const role = useSecurity((state) => state.session.user?.role ?? "stocker");
+  const canReadBusiness = roleCanReadBusiness(role);
+  const canReadDayClose = roleCanReadDayClose(role);
+  const canReadAlerts = roleCanReadAlerts(role);
+  const availableTabIds = dashboardTabsForRole(role);
+  const availableTabs = DASH_TABS.filter((tab) => availableTabIds.includes(tab.id));
+  const [dashTab, setDashTab] = useState<DashTab>(() => canReadBusiness ? "business" : "inventory");
 
   const today = startOfTodayIso();
-  const weekStart = last7DaysIso();
 
-  const weeklySales = useQuery({
-    queryKey: ["dashboard", "sales", "weekly", today],
-    queryFn: () => dailySales(weekStart, today),
-    refetchInterval: STAGGER.sales,
-  });
+  useEffect(() => {
+    if (!availableTabIds.includes(dashTab)) setDashTab(canReadBusiness ? "business" : "inventory");
+  }, [availableTabIds, canReadBusiness, dashTab]);
 
   const dayClose = useQuery({
     queryKey: ["dashboard", "dayClose", "latest"],
@@ -79,18 +73,20 @@ export function Dashboard() {
       return { latest, overdue: !latest || latest < today };
     },
     refetchInterval: STAGGER.dayClose,
+    enabled: canReadDayClose,
   });
 
   const alerts = useQuery({
     queryKey: [...ALERTS_QUERY_KEY, "list"],
     queryFn: () => listAlerts(),
     refetchInterval: STAGGER.alerts,
+    enabled: canReadAlerts,
   });
 
-  const anyError = weeklySales.error || dayClose.error || alerts.error;
+  const anyError = dayClose.error || alerts.error;
 
   const errorMsg = anyError
-    ? [weeklySales.error, dayClose.error, alerts.error]
+    ? [dayClose.error, alerts.error]
         .map((e) => extractError(e))
         .filter(Boolean)
         .join(" • ")
@@ -114,19 +110,22 @@ export function Dashboard() {
   };
 
   return (
-  <Skeleton name="dashboard" loading={weeklySales.isLoading || dayClose.isLoading} select="viewport">
-    <div className="space-y-3">
+    <div className="mx-auto w-full max-w-screen-xl min-w-0 space-y-4">
       <PageHeader
         title="Dashboard"
-        description="A quick read on today’s sales, stock pressure, and operational alerts."
+        description={canReadBusiness
+          ? "Current business state, material risks, and the next useful actions."
+          : "Current stock pressure and the next useful inventory actions."}
         accent="slate"
       >
-        <TabsLegacy
-          items={DASH_TABS}
-          value={dashTab}
-          onChange={setDashTab}
-          ariaLabel="Dashboard sections"
-        />
+        {availableTabs.length > 1 ? (
+          <TabsLegacy
+            items={availableTabs}
+            value={dashTab}
+            onChange={setDashTab}
+            ariaLabel="Dashboard sections"
+          />
+        ) : null}
       </PageHeader>
 
       {errorMsg && (
@@ -150,14 +149,13 @@ export function Dashboard() {
         </section>
       )}
 
-      {dashTab === "business" ? (
-        <BusinessTab
-          dayCloseOverdue={Boolean(dayClose.data?.overdue)}
-        />
+      <QuickActionsBar role={role} dayCloseOverdue={Boolean(dayClose.data?.overdue)} />
+
+      {dashTab === "business" && canReadBusiness ? (
+        <BusinessTab />
       ) : (
         <InventoryTab />
       )}
     </div>
-  </Skeleton>
   );
 }

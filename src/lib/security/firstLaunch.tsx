@@ -7,7 +7,6 @@ import {
   Eye,
   EyeOff,
   HardDrive,
-  Loader2,
   ShoppingBag,
   Lock,
   FileKey,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
+import { extractError } from "../../lib/extractError";
 
 import {
   addressSchema,
@@ -49,9 +49,9 @@ const STEPS = [
   { key: "path", label: "Get Started", shortLabel: "Start", icon: Store, description: "Choose how you want to start PaintKiDukaan" },
   { label: "Shop", shortLabel: "Shop", icon: ShoppingBag, description: "Basic information about your shop" },
   { label: "Security", shortLabel: "PIN", icon: Lock, description: "Set a 6-digit PIN to lock and unlock the app" },
-  { label: "Recovery", shortLabel: "Recov...", icon: FileKey, description: "A secret phrase to recover your data if you forget your PIN" },
-  { label: "Inventory", shortLabel: "Inven...", icon: Package, description: "Your inventory setup" },
-  { label: "Emergency", shortLabel: "Emerg...", icon: Shield, description: "Emergency protection" },
+  { label: "Recovery", shortLabel: "Recovery", icon: FileKey, description: "A secret phrase to recover your data if you forget your PIN" },
+  { label: "Inventory", shortLabel: "Inventory", icon: Package, description: "Your inventory setup" },
+  { label: "Emergency", shortLabel: "Emergency", icon: Shield, description: "Emergency protection" },
 ] as const;
 const FRESH_STEP_INDEX: Record<FreshStep, number> = {
   shop: 0,
@@ -76,8 +76,8 @@ const PREVIOUS_STEP: Record<FreshStep, Step> = {
 };
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-border bg-background px-3.5 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:opacity-50";
-const labelClass = "text-[13px] font-medium text-foreground";
+  "h-11 w-full rounded-md border border-input bg-surface-sunken px-3 text-sm text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none";
+const labelClass = "text-sm font-medium text-foreground";
 
 function normalizeSession(result: SetupResponse): Session {
   const role: Role = result.user?.role ?? result.role ?? "stocker";
@@ -100,7 +100,7 @@ function StepIndicator({ current }: { current: number }) {
               <div className={`absolute left-1/2 right-[-50%] top-[18px] h-0.5 ${done ? "bg-success" : "bg-border"}`} />
             ) : null}
               <div
-                className={`relative z-10 flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-[transform,colors,box-shadow] duration-200 ${
+                className={`relative z-10 flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors duration-fast motion-reduce:transition-none ${
                   done
                     ? "bg-success text-success-foreground"
                     : active
@@ -112,7 +112,7 @@ function StepIndicator({ current }: { current: number }) {
                 {done ? <Check className="h-4 w-4" aria-hidden="true" /> : i + 1}
               </div>
               <span
-                className={`max-w-12 truncate text-center text-[11px] font-medium leading-none sm:max-w-none sm:text-xs ${active ? "text-foreground" : "text-muted-foreground"}`}
+                className={`max-w-14 truncate text-center text-xs font-medium leading-none sm:max-w-none ${active ? "text-foreground" : "text-muted-foreground"}`}
               >
                 <span className="sm:hidden">{s.shortLabel}</span>
                 <span className="hidden sm:inline">{s.label}</span>
@@ -199,7 +199,7 @@ export function FirstLaunch() {
       setSessionData(session);
       setStep("pde");
     } catch (error) {
-      setBackendError(error instanceof Error ? error.message : String(error));
+      setBackendError(extractError(error));
     }
   }
 
@@ -225,39 +225,38 @@ export function FirstLaunch() {
   const stepNumber = step === "path" ? 0 : currentFreshIndex + 1;
 
   return (
-    <main className="flex h-screen w-screen bg-background text-foreground">
+    <main className="flex min-h-dvh w-full bg-surface-canvas text-foreground">
       {/* Left: branding panel */}
-      <div className="relative hidden w-1/2 items-center justify-center bg-zinc-900 lg:flex">
-        <div className="absolute inset-0 bg-[radial-gradient(#3f3f46_1px,transparent_1px)] bg-[length:4px_4px] opacity-30" />
-        <div className="relative z-10 flex flex-col items-center text-center">
-          <img src={logo} alt="PaintKiDukaan" className="mb-6 h-24 w-24 rounded-2xl shadow-2xl" />
-          <h1 className="text-4xl font-bold tracking-tight text-white">PaintKiDukaan</h1>
-          <p className="mt-2 text-sm font-medium uppercase tracking-[4px] text-zinc-400">Paint Shop Manager</p>
-          <div className="mt-10 space-y-3 text-left text-sm text-zinc-400">
+      <aside className="hidden w-1/2 items-center justify-center bg-sidebar text-sidebar-foreground lg:flex">
+        <div className="flex flex-col items-center text-center">
+          <img src={logo} alt="PaintKiDukaan" className="mb-5 h-20 w-20 rounded-xl shadow-raised" />
+          <h1 className="text-3xl font-semibold tracking-tight">PaintKiDukaan</h1>
+          <p className="mt-2 text-sm text-sidebar-foreground/70">Paint shop manager</p>
+          <div className="mt-8 space-y-3 text-left text-sm text-sidebar-foreground/70">
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
-                <ShoppingBag className="h-4 w-4 text-white" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-accent text-sidebar-accent-foreground">
+                  <ShoppingBag className="h-4 w-4" />
               </div>
               <span>Manage inventory &amp; sales</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
-                <Lock className="h-4 w-4 text-white" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-accent text-sidebar-accent-foreground">
+                  <Lock className="h-4 w-4" />
               </div>
               <span>Protected PIN security</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
-                <FileKey className="h-4 w-4 text-white" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-accent text-sidebar-accent-foreground">
+                  <FileKey className="h-4 w-4" />
               </div>
               <span>Recovery password backup</span>
             </div>
           </div>
         </div>
-      </div>
+      </aside>
 
       {/* Right: form panel */}
-      <div className="flex w-full items-center justify-center overflow-y-auto px-6 py-8 lg:w-1/2">
+      <div className="flex w-full items-center justify-center overflow-y-auto px-4 py-6 sm:px-6 sm:py-8 lg:w-1/2">
         <form className="w-full max-w-md space-y-5" onSubmit={handleSubmit(onSubmit)}>
           {/* Mobile branding */}
           <div className="flex flex-col items-center text-center lg:hidden">
@@ -268,7 +267,7 @@ export function FirstLaunch() {
            {/* Header */}
           <div className="flex items-center gap-3">
             <div className="flex-1">
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary">PaintKiDukaan</p>
+              <p className="text-sm font-medium text-primary">Setup progress</p>
               <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground">
                 {step === "pde" ? "Emergency Protection" : step === "inventory" ? "Inventory Ready" : "Set up your shop"}
               </h2>
@@ -289,16 +288,16 @@ export function FirstLaunch() {
             </Alert>
           ) : null}
 
-          <div key={step} className="animate-in fade-in slide-in-from-right-2 duration-300 motion-reduce:animate-none">
+          <div key={step} className="animate-in fade-in duration-fast motion-reduce:animate-none">
             {/* ── Step: Path ── */}
             {step === "path" ? (
               <div className="space-y-3">
                 <button
-                  className="group flex w-full items-center gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-[colors,box-shadow,border-color] duration-150 hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="group flex w-full items-center gap-3 rounded-lg border border-border bg-surface-raised p-4 text-left shadow-raised transition-[color,background-color,border-color,transform] duration-fast ease-standard hover:border-primary/40 hover:bg-surface-selected focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none"
                   type="button"
                   onClick={() => setStep("shop")}
                 >
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors duration-150 group-hover:bg-primary group-hover:text-primary-foreground">
+                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors duration-fast motion-reduce:transition-none group-hover:bg-primary group-hover:text-primary-foreground">
                     <Store className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -307,14 +306,14 @@ export function FirstLaunch() {
                       Start fresh with a new shop. You'll set your shop details, owner PIN, and recovery password.
                     </span>
                   </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden="true" />
                 </button>
                 <button
-                  className="group flex w-full items-center gap-3.5 rounded-xl border border-border bg-background p-4 text-left shadow-sm transition-[colors,box-shadow,border-color] duration-150 hover:border-info/50 hover:bg-info/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="group flex w-full items-center gap-3 rounded-lg border border-border bg-surface-raised p-4 text-left shadow-raised transition-[color,background-color,border-color,transform] duration-fast ease-standard hover:border-info/40 hover:bg-info/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none"
                   type="button"
                   onClick={() => setShowRestore(true)}
                 >
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-info/10 text-info transition-colors duration-150 group-hover:bg-info group-hover:text-info-foreground">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-info/10 text-info transition-colors duration-fast motion-reduce:transition-none group-hover:bg-info group-hover:text-info-foreground">
                     <HardDrive className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -323,7 +322,7 @@ export function FirstLaunch() {
                       Restore from a backup file. Use this if you previously backed up and want to continue.
                     </span>
                   </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-info" aria-hidden="true" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-info" aria-hidden="true" />
                 </button>
               </div>
             ) : null}
@@ -450,7 +449,7 @@ export function FirstLaunch() {
                     {...register("passphrase")}
                   />
                   <button
-                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
                     type="button"
                     onClick={() => setShowPassphrase((visible) => !visible)}
                     aria-label={showPassphrase ? "Hide password" : "Show password"}
@@ -486,12 +485,12 @@ export function FirstLaunch() {
                 <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
                   <Package className="h-6 w-6 text-success" />
                 </div>
-                <h2 className="text-lg font-semibold text-foreground">Your Inventory is Ready</h2>
+                 <h2 className="text-lg font-semibold text-foreground">Your inventory is ready</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   We've set up your default locations. You can add items and customize further from the Items page.
                 </p>
               </div>
-              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+               <div className="surface-sunken space-y-3 rounded-lg border border-border p-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
                     <Store className="h-4 w-4" />

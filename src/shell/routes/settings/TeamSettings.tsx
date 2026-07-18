@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "../../../lib/feedback/toast";
-import { Button, Card, DataTable, InlineDialog, Section, Skeleton, Badge, Select } from "../../../components/ui";
+import { Alert, Button, Card, DataTable, InlineDialog, Section, Skeleton, Badge, Select } from "../../../components/ui";
 import type { ColumnDef } from "../../../components/ui";
 import { formatDateForDisplay } from "../../../lib/date";
 import { ipc, type Device } from "../../lib/ipc";
@@ -26,7 +26,7 @@ function Field({
 }
 
 const inputCls =
-  "w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary";
+  "input bg-surface-sunken";
 
 /* ── 1. UsersSettings ───────────────────────────────────────────── */
 
@@ -158,17 +158,28 @@ export function UsersSettings() {
   const pinValid = newPin.length === 6 && /^\d{6}$/.test(newPin);
 
   return (
-    <Card>
-      <Section
-        title="Users"
-        description="Create accounts and assign permissions."
-      >
+    <div className="space-y-3">
+      <Card depth="raised">
+        <Card.Body className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground">Team access</h2>
+              <Badge variant={users.length > 0 ? "success" : "warning"}>{users.length} {users.length === 1 ? "user" : "users"}</Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">Active accounts can sign in according to their assigned role.</p>
+          </div>
+          <Badge variant="info">Owner managed</Badge>
+        </Card.Body>
+      </Card>
+      {users.length <= 1 ? <Alert variant="warning" title="No additional staff account">Add a cashier or stocker account so daily work does not rely on owner access.</Alert> : null}
+      <Card depth="flat">
+        <Section title="Users" description="Create accounts and assign permissions.">
         <div className="space-y-4 text-sm">
           {/* user list */}
           <UsersTable users={users} onDelete={deleteUser} />
 
           {/* add user form */}
-          <div className="flex items-end gap-3 rounded-lg border border-border bg-muted/30 p-3">
+          <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border bg-surface-sunken p-3 md:flex-row md:items-end">
             <Field label="Name">
               <input
                 value={newName}
@@ -212,7 +223,7 @@ export function UsersSettings() {
             </Button>
           </div>
         </div>
-      </Section>
+        </Section>
       <InlineDialog
         open={confirmDeleteUser !== null}
         onClose={() => setConfirmDeleteUser(null)}
@@ -225,7 +236,8 @@ export function UsersSettings() {
           <Button variant="danger" onClick={confirmDeleteUserAction}>Delete</Button>
         </div>
       </InlineDialog>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -356,17 +368,28 @@ export function DevicesSettings() {
   if (loading) return <Skeleton variant="card" className="h-60" />;
 
   return (
-    <Card>
-      <Section
-        title="Trusted devices"
-        description="Devices allowed to unlock this shop. Each device gets a permissions-based PIN entry screen."
-      >
+    <div className="space-y-3">
+      <Card depth="raised">
+        <Card.Body className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground">Device trust</h2>
+              <Badge variant={devices.some((device) => device.is_active) ? "success" : "warning"}>{devices.filter((device) => device.is_active).length} active</Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">{devices.length} total enrolled {devices.length === 1 ? "device" : "devices"}.</p>
+          </div>
+          <Badge variant="info">Role scoped</Badge>
+        </Card.Body>
+      </Card>
+      {!devices.some((device) => device.is_active) ? <Alert variant="warning" title="No active trusted device">Add a device before expecting it to unlock this shop.</Alert> : null}
+      <Card depth="flat">
+        <Section title="Trusted devices" description="Devices allowed to unlock this shop. Each device gets a permissions-based PIN entry screen.">
         <div className="space-y-4 text-sm">
           {/* device table */}
           <DevicesTable devices={devices} onRevoke={revoke} />
 
           {/* enroll form */}
-          <div className="flex items-end gap-3 rounded-lg border border-border bg-muted/30 p-3">
+          <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border bg-surface-sunken p-3 md:flex-row md:items-end">
             <Field label="Device name">
               <input
                 value={newName}
@@ -392,7 +415,7 @@ export function DevicesSettings() {
             </Button>
           </div>
         </div>
-      </Section>
+        </Section>
       <InlineDialog
         open={confirmRevokeDevice !== null}
         onClose={() => setConfirmRevokeDevice(null)}
@@ -405,6 +428,7 @@ export function DevicesSettings() {
           <Button variant="danger" onClick={confirmRevokeDeviceAction}>Revoke</Button>
         </div>
       </InlineDialog>
-    </Card>
+      </Card>
+    </div>
   );
 }

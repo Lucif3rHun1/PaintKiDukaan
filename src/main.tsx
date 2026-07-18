@@ -7,12 +7,15 @@ import { initSessionLog } from "./lib/security/sessionLog";
 import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
 import { applyInitialTheme } from "./lib/theme";
 import { queryClient } from "./lib/query/queryClient";
+import { PrimitiveShowcase } from "./dev/PrimitiveShowcase";
 import "./index.css";
+
+const isPrimitiveShowcase = import.meta.env.DEV && window.location.hash === "#/__showcase";
 
 // Must run BEFORE React mounts so console overrides are in place before any
 // component renders.
 applyInitialTheme();
-initSessionLog();
+if (!isPrimitiveShowcase) initSessionLog();
 
 if (import.meta.env.PROD) {
   document.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -23,7 +26,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <App />
+          {isPrimitiveShowcase ? (
+            <PrimitiveShowcase />
+          ) : (
+            <App />
+          )}
         </ThemeProvider>
       </QueryClientProvider>
     </AppErrorBoundary>

@@ -175,7 +175,7 @@ function SettingsSubPageHeader({ categoryLabel, itemTitle, description, backHref
   return (
     <PageHeader
       title={itemTitle}
-      description={`Settings > ${categoryLabel}. ${description}`}
+      description={`${categoryLabel} settings. ${description}`}
       accent="slate"
       actions={
         <Button type="button" variant="ghost" size="sm" onClick={() => {

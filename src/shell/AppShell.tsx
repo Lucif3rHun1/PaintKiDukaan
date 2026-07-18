@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -34,8 +34,8 @@ import { usePageBadge } from "../pos/hooks";
 import { useShortcut } from "../lib/shortcuts";
 import { toTitleCase } from "../lib/format/titleCase";
 import { AlertBell } from "./components/AlertBell";
-import type { Role } from "../lib/security/state";
-import { useSecurity } from "../lib/security/state";
+import { roleCanAccessShellTarget } from "./access";
+import { useSecurity, type Role } from "../lib/security/state";
 import { ipc } from "./lib/ipc";
 import { useGlobalShortcuts } from "../lib/shortcuts/useGlobalShortcuts";
 
@@ -56,7 +56,7 @@ export type AppShellTab =
 
 interface AppShellUser {
   name?: string;
-  role?: string;
+  role?: Role;
 }
 
 interface AppShellProps {
@@ -86,7 +86,20 @@ interface SidebarGroup {
   items: SidebarLink[];
 }
 
-import { SETTINGS_CATEGORIES, type SettingsCategoryId } from "./settingsCategories";
+import { SETTINGS_CATEGORIES, categoryForSettingsItemHash, type SettingsCategoryId } from "./settingsCategories";
+
+// ponytail: useSyncExternalStore so isLinkActive re-reads window.location.hash
+// when the hash changes within the same tab (e.g. settings/shop → settings/system).
+function subscribeHashChange(onStoreChange: () => void) {
+  window.addEventListener("hashchange", onStoreChange);
+  return () => window.removeEventListener("hashchange", onStoreChange);
+}
+function getHashSnapshot() {
+  return typeof window === "undefined" ? "" : window.location.hash;
+}
+function getServerHashSnapshot() {
+  return "";
+}
 
 const dashboardLink: SidebarLink = {
   id: "dashboard",
@@ -119,6 +132,7 @@ const groups: SidebarGroup[] = [
     items: [
       { id: "sales", label: "Sales", icon: ShoppingCart, tab: "sales", hash: "#/sales" },
       { id: "sales-return", label: "Returns", icon: RotateCcw, tab: "sales", hash: "#/sales/return" },
+      { id: "day-close", label: "Close Day", icon: ClipboardCheck, tab: "day-close", hash: "#/day-close" },
     ],
   },
   {
@@ -147,7 +161,6 @@ const groups: SidebarGroup[] = [
     icon: BarChart3,
     items: [
       { id: "sales-report", label: "Sales Report", icon: BarChart3, tab: "sales-report", hash: "#/reports/sales" },
-      { id: "day-close", label: "Close Day", icon: ClipboardCheck, tab: "day-close", hash: "#/day-close" },
     ],
   },
   {
@@ -189,8 +202,9 @@ const SIDEBAR_SHORTCUTS: Record<string, string> = {
   "barcode-labels": "Alt+0",
 };
 
+
 export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, onLogout, onSwitchUser, children }: AppShellProps) {
-  const wide = useMediaQuery("(min-width: 1024px)");
+  const wide = useMediaQuery("(min-width: 1280px)");
   const collapsed = !wide;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     transactions: true,
@@ -202,6 +216,8 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
     diagnostics: true,
   });
   const [showShortcuts, setShowShortcuts] = useState(false);
+  useSyncExternalStore(subscribeHashChange, getHashSnapshot, getServerHashSnapshot);
+
   const contextPageBadge = usePageBadge();
   const [pageBadge, setPageBadge] = useState(contextPageBadge);
 
@@ -217,6 +233,8 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
   const role = user?.role ?? "stocker";
   const isOwner = role === "owner";
   const isStocker = role === "stocker";
+  // ponytail: isOwner/isStocker only kept where fine-grained checks are still needed
+  // (backup badge, AlertBell, desktop/mobile header visibility).
   const shopNameQuery = useQuery({
     queryKey: ["app", "shopName"],
     queryFn: () => ipc.getSetting("shop_name"),
@@ -231,18 +249,15 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
   });
   const shopName = shopNameQuery.data || "PaintKiDukaan";
   const displayRole = toTitleCase(user?.role ?? "stocker");
-  const OWNER_ONLY_IDS = new Set(["sales-report", "day-close", "settings-shop", "settings-catalog", "settings-printing", "settings-team", "settings-system", "logs"]);
-  const STOCKER_HIDDEN_IDS = new Set(["sales", "customers", "vendors", "inward"]);
-
   useShortcut({ key: "1", alt: true, scope: "global", description: "Dashboard", onMatch: () => onNavigate("dashboard") });
-  useShortcut({ key: "2", alt: true, scope: "global", description: "Sales", onMatch: () => !isStocker && onNavigate("sales", "#/sales") });
-  useShortcut({ key: "3", alt: true, scope: "global", description: "Inward", onMatch: () => { if (!isStocker) onNavigate("inward", "#/inward"); } });
-  useShortcut({ key: "4", alt: true, scope: "global", description: "Customers", onMatch: () => !isStocker && onNavigate("customers", "#/customers") });
-  useShortcut({ key: "5", alt: true, scope: "global", description: "Sales Report", onMatch: () => isOwner && onNavigate("sales-report", "#/reports/sales") });
-  useShortcut({ key: "6", alt: true, scope: "global", description: "Settings (Shop)", onMatch: () => isOwner && onNavigate("settings", "#/settings/shop") });
+  useShortcut({ key: "2", alt: true, scope: "global", description: "Sales", onMatch: () => roleCanAccessShellTarget(role, "sales") && onNavigate("sales", "#/sales") });
+  useShortcut({ key: "3", alt: true, scope: "global", description: "Inward", onMatch: () => roleCanAccessShellTarget(role, "inward") && onNavigate("inward", "#/inward") });
+  useShortcut({ key: "4", alt: true, scope: "global", description: "Customers", onMatch: () => roleCanAccessShellTarget(role, "customers") && onNavigate("customers", "#/customers") });
+  useShortcut({ key: "5", alt: true, scope: "global", description: "Sales Report", onMatch: () => roleCanAccessShellTarget(role, "sales-report") && onNavigate("sales-report", "#/reports/sales") });
+  useShortcut({ key: "6", alt: true, scope: "global", description: "Settings (Shop)", onMatch: () => roleCanAccessShellTarget(role, "settings") && onNavigate("settings", "#/settings/shop") });
   useShortcut({ key: "7", alt: true, scope: "global", description: "Items", onMatch: () => onNavigate("items", "#/items") });
-  useShortcut({ key: "8", alt: true, scope: "global", description: "Vendors", onMatch: () => !isStocker && onNavigate("vendors", "#/vendors") });
-  useShortcut({ key: "9", alt: true, scope: "global", description: "Returns", onMatch: () => !isStocker && onNavigate("sales", "#/sales/return") });
+  useShortcut({ key: "8", alt: true, scope: "global", description: "Vendors", onMatch: () => roleCanAccessShellTarget(role, "vendors") && onNavigate("vendors", "#/vendors") });
+  useShortcut({ key: "9", alt: true, scope: "global", description: "Returns", onMatch: () => roleCanAccessShellTarget(role, "sales-return") && onNavigate("sales", "#/sales/return") });
   useShortcut({ key: "0", alt: true, scope: "global", description: "Barcodes", onMatch: () => onNavigate("barcodes", "#/barcodes") });
 
   useGlobalShortcuts({ onHelp: () => setShowShortcuts((v) => !v) });
@@ -252,14 +267,14 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
       title: "Global Navigation",
       items: [
         { key: "1", alt: true, label: "Dashboard" },
-        ...(!isStocker ? [{ key: "2", alt: true, label: "Sales" }] : []),
-        ...(!isStocker ? [{ key: "3", alt: true, label: "Inward" }] : []),
-        ...(!isStocker ? [{ key: "4", alt: true, label: "Customers" }] : []),
-        ...(isOwner ? [{ key: "5", alt: true, label: "Sales Report" }] : []),
-        ...(isOwner ? [{ key: "6", alt: true, label: "Settings" }] : []),
+        ...(roleCanAccessShellTarget(role, "sales") ? [{ key: "2", alt: true, label: "Sales" }] : []),
+        ...(roleCanAccessShellTarget(role, "inward") ? [{ key: "3", alt: true, label: "Inward" }] : []),
+        ...(roleCanAccessShellTarget(role, "customers") ? [{ key: "4", alt: true, label: "Customers" }] : []),
+        ...(roleCanAccessShellTarget(role, "sales-report") ? [{ key: "5", alt: true, label: "Sales Report" }] : []),
+        ...(roleCanAccessShellTarget(role, "settings") ? [{ key: "6", alt: true, label: "Settings" }] : []),
         { key: "7", alt: true, label: "Items" },
-        ...(!isStocker ? [{ key: "8", alt: true, label: "Vendors" }] : []),
-        ...(!isStocker ? [{ key: "9", alt: true, label: "Returns" }] : []),
+        ...(roleCanAccessShellTarget(role, "vendors") ? [{ key: "8", alt: true, label: "Vendors" }] : []),
+        ...(roleCanAccessShellTarget(role, "sales-return") ? [{ key: "9", alt: true, label: "Returns" }] : []),
         { key: "0", alt: true, label: "Barcodes" },
       ],
     },
@@ -290,7 +305,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
   ];
 
   return (
-      <div className="flex h-screen overflow-hidden bg-sidebar text-sidebar-foreground">
+      <div className="flex h-dvh min-h-0 overflow-hidden bg-sidebar text-sidebar-foreground">
         <aside
           className={cn(
             "hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-2 md:flex",
@@ -316,7 +331,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
 
           {(() => {
             const visibleGroups = groups
-              .map((g) => ({ ...g, items: g.items.filter((i) => (isOwner || !OWNER_ONLY_IDS.has(i.id)) && !(isStocker && STOCKER_HIDDEN_IDS.has(i.id))) }))
+              .map((g) => ({ ...g, items: g.items.filter((item) => roleCanAccessShellTarget(role, item.id)) }))
               .filter((g) => g.items.length > 0);
             // Flatten every sidebar link across all groups so isLinkActive can
             // detect cross-group yield (e.g. "Sales" at #/sales must yield to
@@ -358,7 +373,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
                   type="button"
                   onClick={() => setExpanded((current) => ({ ...current, [group.id]: !current[group.id] }))}
                   className={cn(
-                    "flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    "flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground/70 outline-none transition-colors duration-fast hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring motion-reduce:transition-none",
                     collapsed && "justify-center px-0",
                   )}
                 >
@@ -398,7 +413,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Desktop top bar */}
-        <header className="hidden md:flex h-14 items-center justify-between border-b border-border bg-background px-4 sticky top-0 z-40">
+        <header className="hidden h-14 items-center justify-between border-b border-border bg-surface-panel px-4 md:flex">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground tracking-tight">
             <span>{tabTitle(activeTab)}</span>
             {activeTab !== "dashboard" ? <DraftBadge draft={pageBadge.draft} /> : null}
@@ -409,8 +424,8 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
             ) : null}
           </div>
           <div className="flex items-center gap-2">
-            <AlertBell currentRole={user?.role as Role | undefined} />
-            <BackupActivity backupAge={backupQuery.data?.backup_age_hours ?? null} />
+            {!isStocker ? <AlertBell currentRole={user?.role} /> : null}
+            {isOwner ? <BackupActivity backupAge={backupQuery.data?.backup_age_hours ?? null} /> : null}
             <Button
               variant="ghost"
               size="sm"
@@ -422,17 +437,17 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           </div>
         </header>
 
-        <header className="flex items-center justify-between border-b border-border bg-card px-4 py-3 md:hidden">
+        <header className="flex min-h-14 items-center justify-between border-b border-sidebar-border bg-sidebar px-4 py-2 md:hidden">
           <div className="flex items-center gap-2">
             <img src={LOGO_64} alt="PaintKiDukaan" width={28} height={28} className="h-7 w-7 rounded-md object-contain" />
             <span className="flex flex-col leading-tight">
               <span className="text-sm font-semibold text-sidebar-foreground">{shopName}</span>
-              <span className="text-[11px] text-muted-foreground">{displayRole}</span>
+              <span className="text-xs text-sidebar-foreground/60">{displayRole}</span>
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <AlertBell currentRole={user?.role as Role | undefined} />
-            <BackupActivity backupAge={backupQuery.data?.backup_age_hours ?? null} />
+            {!isStocker ? <AlertBell currentRole={user?.role} /> : null}
+            {isOwner ? <BackupActivity backupAge={backupQuery.data?.backup_age_hours ?? null} /> : null}
             <Button
               variant="ghost"
               size="sm"
@@ -444,22 +459,21 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           </div>
         </header>
 
-        <nav className="flex overflow-x-auto border-b border-border bg-muted px-2 py-1 md:hidden">
+        <nav className="flex min-h-11 overflow-x-auto border-b border-sidebar-border bg-sidebar px-2 py-1 md:hidden" aria-label="Primary navigation">
           {mobileLinks
-            .filter((item) => role === "owner" || !OWNER_ONLY_IDS.has(item.id))
-            .filter((item) => !(isStocker && STOCKER_HIDDEN_IDS.has(item.id)))
+            .filter((item) => roleCanAccessShellTarget(role, item.id))
             .slice(0, 7)
             .map((item) => (
               <SidebarLinkButton key={item.id} link={item} active={isLinkActive(item, activeTab)} collapsed={false} onNavigate={onNavigate} mobile />
             ))}
           <MobileMoreMenu
-            links={mobileLinks.filter((item) => role === "owner" || !OWNER_ONLY_IDS.has(item.id)).filter((item) => !(isStocker && STOCKER_HIDDEN_IDS.has(item.id))).slice(7)}
+            links={mobileLinks.filter((item) => roleCanAccessShellTarget(role, item.id)).slice(7)}
             activeTab={activeTab}
             onNavigate={onNavigate}
           />
         </nav>
 
-        <main className="flex-1 overflow-y-auto bg-background px-4 pt-3 pb-4 text-foreground sm:px-6 sm:pt-4 sm:pb-6">
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface-canvas px-4 pb-4 pt-3 text-foreground sm:px-6 sm:pb-6 sm:pt-4">
           {bootstrapError ? (
             <p className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
               {bootstrapError}
@@ -476,7 +490,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
 
 function SidebarSectionLabel({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (collapsed) return <div className="mt-2" />;
-  return <div className="mb-1 mt-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/60">{children}</div>;
+  return <div className="mb-1 mt-2 px-2 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">{children}</div>;
 }
 
 function isLinkActive(
@@ -488,7 +502,10 @@ function isLinkActive(
   if (typeof window === "undefined") return true;
   const hash = window.location.hash;
   if (link.tab === "settings") {
-    if (link.category) return hash === link.hash || hash.startsWith(`${link.hash}/`);
+    if (link.category) {
+      if (hash === link.hash || hash.startsWith(`${link.hash}/`)) return true;
+      return categoryForSettingsItemHash(hash) === link.category;
+    }
     return hash === "" || hash === "#/" || hash === "#/settings";
   }
   // A parent link (e.g. "Items" at #/items) must yield to a more specific
@@ -529,7 +546,7 @@ function SidebarLinkButton({
       type="button"
       onClick={() => onNavigate(link.tab, link.hash)}
       className={cn(
-        "flex items-center gap-2 rounded-md text-sm transition-colors",
+        "flex items-center gap-2 rounded-md text-sm outline-none transition-colors duration-fast focus-visible:ring-2 focus-visible:ring-sidebar-ring motion-reduce:transition-none",
         mobile ? "shrink-0 px-3 py-1.5 text-xs" : "h-9 w-full px-2",
         nested && "pl-9",
         collapsed && !mobile && "justify-center px-0",
@@ -569,7 +586,7 @@ function BackupActivity({ backupAge }: { backupAge: number | null }) {
   return (
     <div className="group relative">
       <Activity className={cn("h-4 w-4", tone)} aria-label={status} />
-      <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 whitespace-nowrap rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100">
+      <div className="pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground opacity-0 shadow-overlay transition-opacity duration-fast group-hover:opacity-100">
         <div className="font-medium">Backup Status</div>
         <div>{status}</div>
         <div>Age: {backupAge === null ? "Unknown" : `${Math.round(backupAge)}h`}</div>
@@ -686,7 +703,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
             }
           }}
           className={cn(
-            "absolute bottom-full left-0 z-50 mb-2 w-56 origin-bottom-left rounded-xl border border-border bg-popover p-1.5 text-sm text-popover-foreground shadow-xl transition-[opacity,transform] duration-fast ease-out will-change-transform motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
+            "absolute bottom-full left-0 z-30 mb-2 w-56 origin-bottom-left rounded-xl border border-border bg-popover p-1.5 text-sm text-popover-foreground shadow-overlay transition-[opacity,transform] duration-fast ease-enter will-change-transform motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
             isVisible ? "scale-100 opacity-100" : "scale-[0.97] opacity-0",
           )}
         >
@@ -760,7 +777,7 @@ function MobileMoreMenu({ links, activeTab, onNavigate }: { links: SidebarLink[]
         More ▾
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 w-40 rounded-lg border border-border bg-popover p-1 shadow-xl z-50">
+        <div className="absolute right-0 mt-1 z-30 w-40 rounded-lg border border-border bg-popover p-1 shadow-overlay">
           {links.map((item) => (
             <button
               key={item.id}

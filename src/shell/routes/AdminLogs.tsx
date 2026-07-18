@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw, FileText } from "lucide-react";
-import { DataTable, Button, EmptyState, Select, type ColumnDef } from "../../components/ui";
+import { AlertTriangle, FileText, RefreshCw, ScrollText } from "lucide-react";
+import { Alert, Badge, Button, Card, DataTable, EmptyState, Select, Skeleton, type ColumnDef } from "../../components/ui";
 import { ipc, type LogEntry } from "../lib/ipc";
 import { extractError } from "../../lib/extractError";
-import { Skeleton } from "boneyard-js/react";
 
 const LEVEL_OPTIONS = [
   { value: "all", label: "All levels" },
@@ -52,13 +51,66 @@ export function AdminLogs() {
   const filtered = (data ?? []).filter(
     (entry) => levelFilter === "all" || entry.level === levelFilter,
   );
+  const errorCount = (data ?? []).filter((entry) => entry.level === "ERROR").length;
+  const warningCount = (data ?? []).filter((entry) => entry.level === "WARN").length;
 
   return (
-  <Skeleton name="admin-logs" loading={isLoading} select="viewport">
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Admin logs</h2>
-        <div className="flex items-center gap-2">
+      <Card depth="raised">
+        <Card.Body className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid flex-1 gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <ScrollText className="h-4 w-4" aria-hidden="true" />
+                Session entries
+              </div>
+              {isLoading ? <Skeleton className="h-7 w-16" /> : <p className="text-2xl font-bold leading-7 tabular-nums text-foreground">{data?.length ?? 0}</p>}
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                Errors
+              </div>
+              {isLoading ? <Skeleton className="h-7 w-16" /> : <p className="text-2xl font-bold leading-7 tabular-nums text-foreground">{errorCount}</p>}
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Warnings</div>
+              {isLoading ? <Skeleton className="h-7 w-16" /> : <p className="text-2xl font-bold leading-7 tabular-nums text-foreground">{warningCount}</p>}
+            </div>
+          </div>
+          <Button type="button" onClick={() => refetch()} loading={isFetching} icon={RefreshCw}>
+            Refresh logs
+          </Button>
+        </Card.Body>
+      </Card>
+
+      {error ? (
+        <Alert variant="destructive" title="Logs could not be loaded">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>{extractError(error)}</span>
+            <Button type="button" variant="destructive" size="sm" onClick={() => refetch()} loading={isFetching}>Try again</Button>
+          </div>
+        </Alert>
+      ) : errorCount > 0 ? (
+        <Alert variant="destructive" title={`${errorCount} error ${errorCount === 1 ? "entry" : "entries"} need review`}>
+          Filter to Error, inspect the latest failure, then refresh after taking corrective action.
+        </Alert>
+      ) : warningCount > 0 ? (
+        <Alert variant="warning" title={`${warningCount} warning ${warningCount === 1 ? "entry" : "entries"} recorded`}>
+          Review warnings for degraded operations. No session errors are currently recorded.
+        </Alert>
+      ) : (
+        <Alert variant="success" title="No errors or warnings recorded">
+          The current session log contains no entries requiring attention.
+        </Alert>
+      )}
+
+      <Card depth="flat">
+        <Card.Header className="flex-row items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Admin logs</h2>
+            <p className="text-xs text-muted-foreground">Showing {filtered.length} of {data?.length ?? 0} entries</p>
+          </div>
           <Select
             options={LEVEL_OPTIONS}
             value={levelFilter}
@@ -67,55 +119,29 @@ export function AdminLogs() {
             className="w-36"
             aria-label="Filter by log level"
           />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            aria-label="Refresh logs"
-          >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-      </div>
-
-      {error ? (
-        <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-          {extractError(error)}
-        </div>
-      ) : (
-        <DataTable
-          data={filtered}
-          columns={columns}
-          keyExtractor={(row, i) => `${row.timestamp}-${i}`}
-          loading={isLoading}
-          stickyHeader
-          emptyState={
-            <EmptyState
-              icon={FileText}
-              title="No log entries"
-              description={levelFilter !== "all" ? `No ${levelFilter} entries found.` : "The session log is empty."}
-            />
-          }
-        />
-      )}
+        </Card.Header>
+        <Card.Body>
+          <DataTable
+            data={filtered}
+            columns={columns}
+            keyExtractor={(row, i) => `${row.timestamp}-${i}`}
+            loading={isLoading}
+            stickyHeader
+            emptyState={
+              <EmptyState
+                icon={FileText}
+                title="No log entries"
+                description={levelFilter !== "all" ? `No ${levelFilter} entries found.` : "The session log is empty."}
+              />
+            }
+          />
+        </Card.Body>
+      </Card>
     </div>
-  </Skeleton>
   );
 }
 
 function LevelBadge({ level }: { level: string }) {
-  const cls =
-    level === "ERROR"
-      ? "bg-destructive/15 text-destructive"
-      : level === "WARN"
-        ? "bg-warning/15 text-warning"
-        : level === "DEBUG" || level === "TRACE"
-          ? "bg-muted text-muted-foreground"
-          : "bg-primary/10 text-primary";
-  return (
-    <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>
-      {level}
-    </span>
-  );
+  const variant = level === "ERROR" ? "danger" : level === "WARN" ? "warning" : level === "DEBUG" || level === "TRACE" ? "muted" : "info";
+  return <Badge variant={variant}>{level}</Badge>;
 }

@@ -442,15 +442,15 @@ export default function App() {
         {phase === "locked" && <LockScreen />}
         {phase === "restore-recovery" && <RestoreFromRecovery />}
         {phase === "keystore-error" && (
-          <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-6 text-zinc-100">
-            <div className="w-full max-w-md space-y-5 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-8 shadow-2xl backdrop-blur">
+          <div className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
+            <div className="w-full max-w-md space-y-5 rounded-xl border border-border bg-card p-8 shadow-overlay">
               <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-500/10 text-red-400 ring-1 ring-red-500/20">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive ring-1 ring-destructive/20">
                   <AlertTriangle className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-red-400">Keystore error</p>
-                  <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-zinc-100">Security Store Unavailable</h2>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-destructive">Keystore error</p>
+                  <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground">Security Store Unavailable</h2>
                 </div>
               </div>
               <Alert variant="destructive" title="Action required">
@@ -476,8 +476,8 @@ export default function App() {
                     Erase &amp; Start Fresh
                   </Button>
                 ) : (
-                  <div className="space-y-2 rounded-xl border border-red-900/50 bg-red-950/30 p-3">
-                    <p className="text-xs leading-5 text-red-300">
+                  <div className="space-y-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+                    <p className="text-xs leading-5 text-destructive">
                       This will permanently erase all data. Click again to confirm.
                     </p>
                     <div className="flex gap-2">
@@ -719,7 +719,7 @@ export default function App() {
       )}
       {tab === "items" && (
         <div className="flex h-full flex-col gap-3">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Inventory</h2>
+          <h2 className="text-lg font-semibold text-foreground">Inventory</h2>
           <ErrorBoundary context="Inventory">
             <Suspense fallback={<RouteFallback />}>
               <ItemList role={role} />
@@ -729,7 +729,7 @@ export default function App() {
       )}
       {tab === "formulas" && formulasRoute === "list" ? (
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Shade formulas</h2>
+          <h2 className="text-lg font-semibold text-foreground">Shade formulas</h2>
           <ErrorBoundary context="Formulas">
             <Suspense fallback={<RouteFallback />}>
               <FormulasPage role={role} />
@@ -754,7 +754,7 @@ export default function App() {
       })() : null}
       {tab === "barcodes" && (
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Barcode Labels</h2>
+          <h2 className="text-lg font-semibold text-foreground">Barcode Labels</h2>
           <ErrorBoundary context="Barcode Labels">
             <Suspense fallback={<RouteFallback />}>
               <BulkLabelsPage />

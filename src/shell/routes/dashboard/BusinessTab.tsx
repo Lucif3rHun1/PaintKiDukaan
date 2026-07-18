@@ -12,7 +12,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Badge, Button, Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton, TopItemsCard, TrendChartCard, formatQtyValue } from "../../../components/ui";
+import { Badge, Button, Card, Money, PeriodDropdown, Skeleton, TopItemsCard, TrendChartCard, formatQtyValue } from "../../../components/ui";
 import {
   comparisonMetrics,
   dailySales,
@@ -29,7 +29,6 @@ import { todayLocalYyyymmdd, shiftDaysLocal } from "../../../lib/date";
 import { useMediaQuery } from "../../../lib/hooks/useMediaQuery";
 import { Row } from "./shared";
 import { TopMetricsRow, type TopMetric } from "./TopMetricsRow";
-import { QuickActionsBar } from "./QuickActionsBar";
 
 const STAGGER_BUSINESS = 32_000;
 const ALL_RANGE_START = "1900-01-01";
@@ -43,11 +42,7 @@ function valuesByDate<T>(rows: readonly T[], dates: readonly string[], dateOf: (
   return dates.map((date) => map.get(date) ?? 0);
 }
 
-interface BusinessTabProps {
-  dayCloseOverdue: boolean;
-}
-
-export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
+export function BusinessTab() {
   const today = todayLocalYyyymmdd();
   const [overviewFrom, setOverviewFrom] = useState(today);
   const [overviewTo, setOverviewTo] = useState(today);
@@ -179,11 +174,9 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
   const condensed = isMobile && !showAll;
 
   return (
-    <div className="space-y-3">
-      <QuickActionsBar dayCloseOverdue={dayCloseOverdue} />
-
+    <div className="w-full min-w-0 space-y-4">
       <section aria-label="Business overview">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between rounded-lg border-b border-border bg-muted/30 px-3 py-2">
           <h3 className="text-sm font-semibold">Overview</h3>
           <PeriodDropdown
             value={{ from: overviewFrom, to: overviewTo }}
@@ -192,7 +185,7 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
         </div>
         <TopMetricsRow
           label="Business metrics"
-          gridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          gridClassName="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4 lg:gap-5"
           metrics={[
             {
               id: "business-total-sales",
@@ -287,7 +280,7 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
         </div>
       )}
 
-      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-3 ${condensed ? "hidden" : ""}`}>
+      <section className={`grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3 lg:gap-5 ${condensed ? "hidden" : ""}`}>
         <Card className="self-start">
           <Card.Header className="flex items-center justify-between">
             <div>
@@ -301,7 +294,7 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
           </Card.Header>
           <Card.Body>
             {weekSales.isLoading || weekPurchase.isLoading ? (
-              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full rounded-lg" />
             ) : salesByDay.every((v) => v === 0) && purchasesByDay.every((v) => v === 0) ? (
               <p className="py-6 text-center text-xs text-muted-foreground">
                 No sales or purchases in this range.
@@ -337,7 +330,7 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
         />
       </section>
 
-      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
+      <section className={`grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2 lg:gap-5 ${condensed ? "hidden" : ""}`}>
         <TopItemsCard
           title="Top 5 Items (Purchase)"
           items={(topPurchased.data ?? []).slice(0, 5).map((r) => ({
@@ -385,7 +378,7 @@ export function BusinessTab({ dayCloseOverdue }: BusinessTabProps) {
         </Card>
       </section>
 
-      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
+      <section className={`grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2 lg:gap-5 ${condensed ? "hidden" : ""}`}>
         <Card>
           <Card.Header>
             <h3 className="text-sm font-semibold">Party Overview</h3>

@@ -41,8 +41,8 @@ interface TopMetricsRowProps {
  */
 export function TopMetricsRow({ metrics, label = "Top metrics", gridClassName }: TopMetricsRowProps) {
   return (
-    <section aria-label={label} className="space-y-3">
-      <div className={gridClassName ?? "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}>
+    <section aria-label={label} className="min-w-0 space-y-4">
+      <div className={gridClassName ?? "grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 lg:gap-5 xl:grid-cols-4"}>
         {metrics.map((m) => (
           <MetricCard
             key={m.id}

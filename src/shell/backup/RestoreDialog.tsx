@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { CheckCircle, FolderOpen } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 
-import { Button, InlineDialog } from "../../components/ui";
+import { Alert, Button, Card, InlineDialog } from "../../components/ui";
 import { restore, testRestore } from "./api";
 import { ipc } from "../lib/ipc";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -92,51 +92,50 @@ export function RestoreDialog({ open, onClose, onDone }: RestoreDialogProps) {
         size="md"
       >
         <div className="space-y-4">
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-foreground">Backup file path</span>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                className="input flex-1 font-mono text-xs"
-                placeholder="/abs/path/to/backup.pkb1"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                size="md"
-                icon={FolderOpen}
-                onClick={handleBrowse}
-                disabled={busy}
-              >
-                Browse…
-              </Button>
-            </div>
-          </label>
+          <Alert variant="warning" title="Current shop data will be replaced">
+            Test the selected backup first. Applying recovery keeps the previous data separately, but interrupts current work.
+          </Alert>
 
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-foreground">Recovery password</span>
-            <input
-              type="password"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              className="input"
-            />
-          </label>
+          <Card depth="flat" className="bg-surface-sunken">
+            <Card.Body className="space-y-4">
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-foreground">Backup file path</span>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    value={path}
+                    onChange={(e) => setPath(e.target.value)}
+                    className="input min-w-0 flex-1 font-mono text-xs"
+                    placeholder="/abs/path/to/backup.pkb1"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="md"
+                    icon={FolderOpen}
+                    onClick={handleBrowse}
+                    disabled={busy}
+                  >
+                    Browse…
+                  </Button>
+                </div>
+              </label>
 
-          {error && (
-            <div className="rounded-md border border-warning/30 bg-warning/10 p-2 text-sm text-warning-foreground">
-              {error}
-            </div>
-          )}
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-foreground">Recovery password</span>
+                <input
+                  type="password"
+                  value={passphrase}
+                  onChange={(e) => setPassphrase(e.target.value)}
+                  className="input"
+                />
+              </label>
+            </Card.Body>
+          </Card>
 
-          {success && (
-            <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success/10 p-2 text-sm">
-              <CheckCircle className="h-4 w-4 shrink-0 text-success" />
-              <span>{success}</span>
-            </div>
-          )}
+          {error ? <Alert variant="destructive" title="Recovery check failed">{error}</Alert> : null}
+
+          {success ? <Alert variant="success" title="Backup verified">{success}</Alert> : null}
 
           <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
             <Button

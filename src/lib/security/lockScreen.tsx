@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tauriInvoke as invoke } from "./tauri";
 import logo from "../../assets/logo-128.png";
-import { AlertCircle, KeyRound, Loader2, Timer } from "lucide-react";
+import { AlertCircle, KeyRound, Timer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
@@ -125,14 +125,14 @@ export function LockScreen() {
   // Wiped state — must use recovery
   if (isWiped) {
     return (
-      <main className="flex h-screen w-screen items-center justify-center bg-background px-6 text-foreground">
+      <main className="flex min-h-dvh w-full items-center justify-center bg-surface-canvas px-4 py-8 text-foreground sm:px-6">
         <div className="w-full max-w-lg space-y-6">
           <div className="flex flex-col items-center text-center">
-            <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-destructive/10">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-xl bg-destructive/10">
               <img src={logo} alt="" className="h-14 w-14 rounded-xl" />
             </div>
-            <p className="text-sm font-semibold uppercase tracking-[3px] text-destructive">Data deleted</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight">Recovery required</h1>
+            <p className="text-sm font-medium text-destructive">Data deleted</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Recovery required</h1>
           </div>
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-5 text-sm leading-6 text-destructive">
             <p className="font-medium">Too many failed attempts — data has been deleted.</p>
@@ -155,28 +155,15 @@ export function LockScreen() {
   }
 
   return (
-    <main className="flex h-screen w-screen bg-background text-foreground">
-      {/* Left: branding panel */}
-      <div className="relative hidden w-1/2 items-center justify-center bg-zinc-900 lg:flex">
-        <div className="absolute inset-0 bg-[radial-gradient(#3f3f46_1px,transparent_1px)] bg-[length:4px_4px] opacity-30" />
-        <div className="relative z-10 flex flex-col items-center text-center">
-          <img src={logo} alt="PaintKiDukaan" className="mb-6 h-24 w-24 rounded-2xl shadow-2xl" />
-          <h1 className="text-4xl font-bold tracking-tight text-white">PaintKiDukaan</h1>
-          <p className="mt-2 text-sm font-medium uppercase tracking-[4px] text-zinc-400">Paint Shop Manager</p>
-          <div className="mt-8 flex items-center gap-2 text-xs text-zinc-500">
-            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Secure &amp; Protected
-          </div>
-        </div>
-      </div>
-
-      {/* Right: PIN form */}
-      <div className="flex w-full items-center justify-center px-6 lg:w-1/2">
-        <form className="w-full max-w-md space-y-6" onSubmit={handleSubmit(onSubmit)}>
-          {/* Mobile branding */}
-          <div className="flex flex-col items-center text-center lg:hidden">
-            <img src={logo} alt="PaintKiDukaan" className="mb-3 h-16 w-16 rounded-xl" />
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">PaintKiDukaan</h1>
+    <main className="flex min-h-dvh w-full items-center justify-center bg-surface-canvas px-4 py-8 text-foreground sm:px-6">
+      <div className="w-full max-w-md rounded-xl border border-border bg-surface-raised p-5 shadow-raised sm:p-6">
+        <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+          <div className="flex items-center gap-3">
+            <img src={logo} alt="PaintKiDukaan" className="h-12 w-12 rounded-lg" />
+            <div>
+              <h1 className="text-lg font-semibold text-foreground">PaintKiDukaan</h1>
+              <p className="text-sm text-muted-foreground">Secure shop access</p>
+            </div>
           </div>
 
           {/* Welcome */}
@@ -233,7 +220,7 @@ export function LockScreen() {
                   label: `${user.name} — ${user.role}`,
                 }))}
                 size="md"
-                className="h-12 w-full rounded-xl border-2 border-border bg-background px-4 text-sm text-foreground outline-none transition-[colors,box-shadow] duration-150 focus:border-primary focus:ring-4 focus:ring-primary/20"
+                 className="h-11 w-full rounded-md border border-input bg-surface-sunken px-3 text-sm text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
               />
             </div>
           ) : null}
@@ -246,10 +233,11 @@ export function LockScreen() {
             <div className="relative">
               <input
                 id="pin"
-                className="h-14 w-full rounded-xl border-2 border-border bg-background px-4 text-center text-2xl font-semibold tracking-[0.5em] text-foreground outline-none transition-[colors,box-shadow] duration-150 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/20 disabled:opacity-50"
-                aria-label="Six digit PIN"
-                aria-invalid={Boolean(errors.pin)}
-                autoComplete="off"
+                className="h-14 w-full rounded-md border border-input bg-surface-sunken px-4 text-center text-2xl font-semibold tracking-[0.5em] text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+                 aria-label="Six digit PIN"
+                 aria-invalid={Boolean(errors.pin)}
+                 autoFocus
+                 autoComplete="off"
                 inputMode="numeric"
                 maxLength={6}
                 placeholder="••••••"
@@ -268,7 +256,7 @@ export function LockScreen() {
           </div>
 
           {/* Attempt counter */}
-          <div className="min-h-[48px] text-sm text-muted-foreground">
+          <div className="min-h-12 text-sm text-muted-foreground">
             {failedAttempts > 0 && !lockedUntil ? (
               <p role="alert" className="rounded-lg bg-muted/50 px-4 py-3">
                 Failed attempts: <span className="font-semibold text-foreground">{failedAttempts}</span>/5

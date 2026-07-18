@@ -1,5 +1,5 @@
 import { Monitor, Moon, Sun } from "lucide-react";
-import { Card, Section } from "../../../components/ui";
+import { Alert, Badge, Card, Section } from "../../../components/ui";
 import { useTheme, type ThemeMode } from "../../../lib/theme";
 
 const OPTIONS: ReadonlyArray<{
@@ -17,11 +17,19 @@ export function ThemeSettings() {
   const { mode, resolved, setMode } = useTheme();
 
   return (
-    <Card>
-      <Section
-        title="Appearance"
-        description="Choose how PaintKiDukaan looks. System follows your OS preference."
-      >
+    <div className="space-y-3">
+      <Card depth="raised">
+        <Card.Body className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Current appearance</h2>
+            <p className="mt-1 text-sm text-muted-foreground">PaintKiDukaan is using <span className="font-medium text-foreground">{resolved === "dark" ? "Dark" : "Light"}</span>{mode === "system" ? " from the system preference" : " by explicit choice"}.</p>
+          </div>
+          <Badge variant="success">{mode === "system" ? "System managed" : `${resolved === "dark" ? "Dark" : "Light"} active`}</Badge>
+        </Card.Body>
+      </Card>
+      <Alert variant="info" title="Theme changes apply immediately">Choose a mode below. System mode is the safest next action when this device is shared across lighting conditions.</Alert>
+      <Card depth="flat">
+        <Section title="Appearance" description="Choose how PaintKiDukaan looks. System follows your OS preference.">
         <fieldset className="space-y-3" aria-label="Theme mode">
           {OPTIONS.map(({ id, label, description, Icon }) => {
             const selected = mode === id;
@@ -31,8 +39,8 @@ export function ThemeSettings() {
                 className={
                   "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 " +
                   (selected
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-card hover:bg-muted")
+                    ? "border-primary bg-surface-selected"
+                    : "border-border bg-surface-sunken hover:bg-surface-raised")
                 }
               >
                 <input
@@ -46,7 +54,7 @@ export function ThemeSettings() {
                 <span
                   className={
                     "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md " +
-                    (selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")
+                    (selected ? "bg-primary text-primary-foreground" : "bg-surface-raised text-muted-foreground")
                   }
                 >
                   <Icon className="h-4 w-4" aria-hidden="true" />
@@ -67,7 +75,8 @@ export function ThemeSettings() {
           Currently using <strong className="text-foreground">{resolved === "dark" ? "Dark" : "Light"}</strong>
           {mode === "system" ? " (from your system preference)." : "."}
         </p>
-      </Section>
-    </Card>
+        </Section>
+      </Card>
+    </div>
   );
 }

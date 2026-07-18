@@ -9,7 +9,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, EmptyState, MetricCard, Money, PeriodDropdown, Skeleton, TopItemsCard, formatQtyValue, ConcernCard, DonutCard, Button } from "../../../components/ui";
+import { Card, EmptyState, Money, PeriodDropdown, Skeleton, TopItemsCard, formatQtyValue, ConcernCard, DonutCard, Button } from "../../../components/ui";
 import { TopMetricsRow, type TopMetric } from "./TopMetricsRow";
 import {
   dailySales,
@@ -26,14 +26,20 @@ import { formatItemName } from "../../../domain/items/display";
 import { formatDateForDisplay, todayLocalYyyymmdd, shiftDaysLocal } from "../../../lib/date";
 import { useMediaQuery } from "../../../lib/hooks/useMediaQuery";
 import { useSecurity } from "../../../lib/security/state";
+import {
+  roleCanReadInventoryAnalytics,
+  roleCanReadInventoryTurnover,
+} from "./access";
 
 
 const STAGGER_INVENTORY = 32_000;
 
 export function InventoryTab() {
   const brands = useQuery({ queryKey: ["brands"], queryFn: listBrands });
-  const role = useSecurity((s) => s.session.user?.role);
+  const role = useSecurity((s) => s.session.user?.role ?? "stocker");
   const isStocker = role === "stocker";
+  const canReadAnalytics = roleCanReadInventoryAnalytics(role);
+  const canReadTurnover = roleCanReadInventoryTurnover(role);
   const [byCategoryMode, setByCategoryMode] = useState<"value" | "qty">(isStocker ? "qty" : "value");
   const [fromDate, setFromDate] = useState(() => shiftDaysLocal(6));
   const [toDate, setToDate] = useState(() => todayLocalYyyymmdd());
@@ -42,13 +48,14 @@ export function InventoryTab() {
     queryKey: ["dashboard", "stockHealth"],
     queryFn: () => stockHealthSummary(),
     refetchInterval: STAGGER_INVENTORY,
+    enabled: canReadAnalytics,
   });
 
   const stockReportQuery = useQuery({
     queryKey: ["dashboard", "stockReport"],
     queryFn: () => stockReport(),
     refetchInterval: STAGGER_INVENTORY,
-    enabled: !isStocker,
+    enabled: canReadAnalytics,
   });
 
   const lowStock = useQuery({
@@ -61,39 +68,41 @@ export function InventoryTab() {
     queryKey: ["dashboard", "deadStock", 60],
     queryFn: () => deadStock(60),
     refetchInterval: STAGGER_INVENTORY,
+    enabled: canReadAnalytics,
   });
 
   const agingQuery = useQuery({
     queryKey: ["dashboard", "inventoryAging"],
     queryFn: () => inventoryAging(),
     refetchInterval: STAGGER_INVENTORY,
+    enabled: canReadAnalytics,
   });
 
   const turnoverQuery = useQuery({
     queryKey: ["dashboard", "inventoryTurnover"],
     queryFn: () => inventoryTurnover(),
     refetchInterval: STAGGER_INVENTORY,
-    enabled: !isStocker,
+    enabled: canReadTurnover,
   });
 
   const periodSales = useQuery({
     queryKey: ["dashboard", "sales", "period", fromDate, toDate],
     queryFn: () => dailySales(fromDate, toDate),
     refetchInterval: STAGGER_INVENTORY,
-    enabled: !isStocker,
+    enabled: canReadAnalytics,
   });
 
   const topSold = useQuery({
     queryKey: ["dashboard", "topItemsSold", fromDate, toDate],
     queryFn: () => topItemsSold(fromDate || undefined, toDate || undefined, 5),
     refetchInterval: STAGGER_INVENTORY,
-    enabled: !isStocker,
+    enabled: canReadAnalytics,
   });
   const topPurchased = useQuery({
     queryKey: ["dashboard", "topItemsPurchased", fromDate, toDate],
     queryFn: () => topItemsPurchased(fromDate || undefined, toDate || undefined, 5),
     refetchInterval: STAGGER_INVENTORY,
-    enabled: !isStocker,
+    enabled: canReadAnalytics,
   });
 
   const health = stockHealth.data;
@@ -112,9 +121,46 @@ export function InventoryTab() {
   const [showAll, setShowAll] = useState(false);
   const condensed = isMobile && !showAll;
 
+  if (isStocker) {
+    return (
+      <section aria-labelledby="inventory-attention-title" className="min-w-0 space-y-3">
+        <div className="rounded-lg bg-surface-panel px-4 py-3 ring-1 ring-foreground/10">
+          <h2 id="inventory-attention-title" className="text-lg font-semibold text-foreground text-balance">
+            Inventory attention
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm leading-5 text-muted-foreground text-pretty">
+            Review items below their reorder threshold, then open the catalog to update stock details.
+          </p>
+        </div>
+        <ConcernCard
+          title="Low stock and reorder alerts"
+          items={(lowStock.data ?? []).slice(0, 8).map((item) => ({
+            id: item.id,
+            name: formatItemName(item, brands.data ?? []),
+          }))}
+          loading={lowStock.isLoading}
+          statusFn={(item) => ((lowStock.data ?? []).find((candidate) => candidate.id === item.id)?.current_qty ?? 0) <= 0 ? "destructive" : "warning"}
+          renderStatus={(item) => {
+            const raw = (lowStock.data ?? []).find((candidate) => candidate.id === item.id);
+            if (!raw) return null;
+            if (raw.current_qty < 0) return `Negative stock (${raw.current_qty})`;
+            if (raw.current_qty === 0) return "Out of stock";
+            return `${raw.current_qty} / min ${raw.min_stock}`;
+          }}
+          headerAction={<a href="#/items" className="text-xs font-medium text-primary hover:underline">View all items</a>}
+          emptyState={{
+            icon: <PackageOpen aria-hidden="true" />,
+            title: "Stock levels look healthy",
+            description: "No items are below their reorder threshold.",
+          }}
+        />
+      </section>
+    );
+  }
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
+    <div className="w-full min-w-0 space-y-4">
+      <div className="flex items-center justify-between rounded-lg border-b border-border bg-muted/30 px-3 py-2">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
           Inventory Overview
         </h2>
@@ -125,7 +171,9 @@ export function InventoryTab() {
       </div>
       <TopMetricsRow
         label="Inventory metrics"
-        gridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        gridClassName={isStocker
+          ? "grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 lg:gap-5"
+          : "grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 lg:grid-cols-5 lg:gap-5"}
         metrics={([
           {
             id: "inventory-total-items",
@@ -135,7 +183,7 @@ export function InventoryTab() {
             loading: stockHealth.isLoading,
             value: <span className="text-xl font-semibold tabular-nums">{health?.total_active_items ?? 0}</span>,
           },
-          ...(!isStocker
+          ...(canReadAnalytics
             ? [{
                 id: "inventory-stock-value",
                 label: "Stock Value (retail)",
@@ -161,7 +209,7 @@ export function InventoryTab() {
             loading: stockHealth.isLoading,
             value: <span className="text-xl font-semibold tabular-nums">{health?.zero_count ?? 0}</span>,
           },
-          ...(!isStocker
+          ...(canReadTurnover
             ? [{
                 id: "inventory-stock-turnover",
                 label: "Stock Turnover",
@@ -190,14 +238,20 @@ export function InventoryTab() {
         </div>
       )}
 
-      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
+      <section className={`grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2 lg:gap-5 ${condensed ? "hidden" : ""}`}>
         <Card>
           <Card.Header>
             <h3 className="text-sm font-semibold">Stock Health</h3>
           </Card.Header>
           <Card.Body>
             {stockHealth.isLoading ? (
-              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full rounded-lg" />
+            ) : !health ? (
+              <EmptyState
+                icon={<PackageOpen />}
+                title="Stock health unavailable"
+                description="Stock health will appear when inventory data is available."
+              />
             ) : (
               <DonutCard
                 segments={[
@@ -235,7 +289,7 @@ export function InventoryTab() {
         />
       </section>
 
-      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
+      <section className={`grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2 lg:gap-5 ${condensed ? "hidden" : ""}`}>
         <TopItemsCard
           title="Top Moving Items"
           items={(topSold.data ?? []).slice(0, 5).map((r) => ({
@@ -251,41 +305,35 @@ export function InventoryTab() {
         <Card>
           <Card.Header className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Stock by Category</h3>
-            {!isStocker && (
+            {canReadAnalytics && (
               <div className="flex gap-1 rounded-md border border-border bg-card p-0.5 text-xs">
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={() => setByCategoryMode("value")}
                   aria-pressed={byCategoryMode === "value"}
-                  className={
-                    byCategoryMode === "value"
-                      ? "rounded bg-primary px-2 py-0.5 text-primary-foreground"
-                      : "rounded px-2 py-0.5 text-muted-foreground hover:text-foreground"
-                  }
+                  className={byCategoryMode === "value" ? "bg-primary text-primary-foreground hover:bg-primary/80" : "text-muted-foreground"}
                 >
                   Value
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={() => setByCategoryMode("qty")}
                   aria-pressed={byCategoryMode === "qty"}
-                  className={
-                    byCategoryMode === "qty"
-                      ? "rounded bg-primary px-2 py-0.5 text-primary-foreground"
-                      : "rounded px-2 py-0.5 text-muted-foreground hover:text-foreground"
-                  }
+                  className={byCategoryMode === "qty" ? "bg-primary text-primary-foreground hover:bg-primary/80" : "text-muted-foreground"}
                 >
                   Qty
-                </button>
+                </Button>
               </div>
             )}
           </Card.Header>
           <Card.Body>
             {stockReportQuery.isLoading ? (
-              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full rounded-lg" />
             ) : byGroup.length === 0 ? (
               <EmptyState
-                icon={Receipt}
+                icon={<Receipt />}
                 title="No category data"
                 description="Stock grouped by brand/category will appear here."
               />
@@ -322,7 +370,7 @@ export function InventoryTab() {
         </Card>
       </section>
 
-      <section className={`grid grid-cols-1 gap-3 lg:grid-cols-2 ${condensed ? "hidden" : ""}`}>
+      <section className={`grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2 lg:gap-5 ${condensed ? "hidden" : ""}`}>
         <ConcernCard
           title="Dead Stock (60+ days idle)"
           items={(deadStockQuery.data ?? []).slice(0, 8).map((r) => ({ id: r.item_id, name: r.name }))}
@@ -349,9 +397,9 @@ export function InventoryTab() {
           </Card.Header>
           <Card.Body>
             {agingQuery.isLoading ? (
-              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full rounded-lg" />
             ) : !aging ? (
-              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full rounded-lg" />
             ) : (
               <ul className="space-y-2">
                 {[

@@ -4,6 +4,7 @@ import logo from "../../assets/logo-64.png";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
+import { extractError } from "../../lib/extractError";
 
 import {
   pinSchema,
@@ -23,7 +24,7 @@ interface RestoreResponse {
 }
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  "h-11 w-full rounded-md border border-input bg-surface-sunken px-3 text-sm text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none";
 
 function normalizeSession(result: RestoreResponse): Session {
   const role: Role = result.user?.role ?? result.role ?? "stocker";
@@ -81,15 +82,15 @@ export function RestoreFromRecovery() {
       security.setSession(session);
       security.setPhase("unlocked");
     } catch (error) {
-      setBackendError(error instanceof Error ? error.message : String(error));
+      setBackendError(extractError(error));
     }
   }
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
+    <main className="min-h-dvh bg-surface-canvas px-4 py-8 text-foreground sm:px-6">
+      <section className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-md items-center">
         <form
-          className="w-full rounded-2xl border border-border bg-card/80 p-6 shadow-2xl shadow-background/40 backdrop-blur sm:p-8"
+          className="w-full rounded-xl border border-border bg-surface-raised p-5 shadow-raised sm:p-6"
           onSubmit={handleSubmit(onSubmit)}
         >
           <div className="mb-6 flex items-center justify-between gap-4">
@@ -130,7 +131,7 @@ export function RestoreFromRecovery() {
                   {...register("passphrase")}
                 />
                 <button
-                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
                   type="button"
                   onClick={() => setShowPassphrase((visible) => !visible)}
                   aria-label={showPassphrase ? "Hide recovery password" : "Show recovery password"}

@@ -7,6 +7,7 @@ import { Section } from "../../../components/ui/Section";
 import { Radio } from "../../../components/ui/Radio";
 import { Select } from "../../../components/ui/Select";
 import { InlineDialog } from "../../../components/ui/InlineDialog";
+import { Alert, Badge, Skeleton } from "../../../components/ui";
 import { emit } from "@tauri-apps/api/event";
 import { ipc } from "../../lib/ipc";
 import { extractError } from "../../../lib/extractError";
@@ -70,7 +71,7 @@ function TabButton({
       onClick={onClick}
       aria-pressed={active}
       className={
-        "flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+        "flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium outline-none transition-colors duration-fast focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
         (active
           ? "border-primary text-foreground"
           : "border-transparent text-muted-foreground hover:text-foreground")
@@ -94,6 +95,7 @@ function PrintersPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
+  const defaultPrinter = printers?.find((printer) => printer.is_default) ?? null;
 
   const reload = useCallback(async () => {
     setError(null);
@@ -166,11 +168,21 @@ function PrintersPanel() {
 
   return (
     <div className="space-y-4">
-      {error ? (
-        <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-          {error}
-        </div>
-      ) : null}
+      <Card depth="raised">
+        <Card.Body className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground">Printer state</h2>
+              {printers === null ? <Skeleton className="h-5 w-20" /> : <Badge variant={printers.length > 0 ? "info" : "warning"}>{printers.length} configured</Badge>}
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">{defaultPrinter ? `${defaultPrinter.name} is the current default.` : "No default printer is configured."}</p>
+          </div>
+          <Button size="md" onClick={() => setModal({ mode: "add" })} shortcut="F6" icon={Plus}>Add printer</Button>
+        </Card.Body>
+      </Card>
+
+      {error ? <Alert variant="destructive" title="Printer action failed">{error}</Alert> : null}
+      {printers !== null && !defaultPrinter ? <Alert variant="warning" title="No default printer">Add a printer or mark an existing printer as default before printing receipts or labels.</Alert> : null}
 
       <Section
         title="Saved printers"
@@ -221,8 +233,8 @@ function PrintersPanel() {
           {discovered && discovered.length > 0 ? (
             <div className="grid gap-2 md:grid-cols-2">
               {discovered.map((d) => (
-                <Card key={`${d.name}-${d.port_name ?? ""}`}>
-                  <div className="flex items-center justify-between gap-2">
+                <Card key={`${d.name}-${d.port_name ?? ""}`} depth="flat">
+                  <Card.Body className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="truncate font-medium">{d.name}</div>
                       <div className="truncate text-xs text-muted-foreground">
@@ -239,7 +251,7 @@ function PrintersPanel() {
                     >
                       Add
                     </Button>
-                  </div>
+                  </Card.Body>
                 </Card>
               ))}
             </div>
@@ -276,8 +288,8 @@ function PrinterCard({
   onRemove: () => void;
 }) {
   return (
-    <Card>
-      <div className="space-y-2">
+    <Card depth={printer.is_default ? "raised" : "flat"}>
+      <Card.Body className="space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="truncate font-semibold">{printer.name}</div>
@@ -288,7 +300,7 @@ function PrinterCard({
             </div>
           </div>
           {printer.is_default ? (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Default</span>
+            <Badge variant="success">Default</Badge>
           ) : null}
         </div>
         <div className="flex gap-2">
@@ -304,7 +316,7 @@ function PrinterCard({
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
-      </div>
+      </Card.Body>
     </Card>
   );
 }
@@ -516,13 +528,23 @@ function ScannerPanel() {
 
   return (
     <div className="space-y-4">
-      {error ? (
-        <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-          {error}
-        </div>
-      ) : null}
+      <Card depth="raised">
+        <Card.Body className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground">Scanner state</h2>
+              <Badge variant={loaded ? "success" : "muted"}>{loaded ? "Settings loaded" : "Loading"}</Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">Minimum {minLength} characters · {terminator} terminator · {avgMs} ms average.</p>
+          </div>
+          <Button onClick={save} disabled={!loaded || saving} loading={saving} shortcut="F9">Save scanner settings</Button>
+        </Card.Body>
+      </Card>
+      {error ? <Alert variant="destructive" title="Scanner action failed">{error}</Alert> : null}
+      {!lastFired ? <Alert variant="info" title="Scanner test pending">Use Manual test after saving to confirm the full barcode lookup flow.</Alert> : <Alert variant="success" title="Manual scan fired">Last barcode: <span className="font-mono">{lastFired}</span></Alert>}
       <Section title="Scanner behaviour" description="Fine-tune how the scanner reads barcode input.">
-        <div className="grid gap-3 md:grid-cols-2">
+        <Card depth="flat" className="bg-surface-sunken">
+          <Card.Body className="grid gap-3 md:grid-cols-2">
           <Field label="Min length (chars)">
             <input
               className="input"
@@ -554,7 +576,7 @@ function ScannerPanel() {
               size="md"
             />
           </Field>
-          <details className="col-span-full rounded-lg border border-border bg-muted/20 px-3 py-2">
+          <details className="col-span-full rounded-lg border border-border bg-surface-raised px-3 py-2">
             <summary className="cursor-pointer select-none text-sm font-medium text-foreground">Advanced scanner settings</summary>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <Field label="Timeout ms (time-gap mode)">
@@ -578,7 +600,8 @@ function ScannerPanel() {
               </Field>
             </div>
           </details>
-        </div>
+          </Card.Body>
+        </Card>
         <div className="flex justify-end">
           <Button onClick={save} disabled={!loaded || saving} shortcut="F9">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -632,7 +655,7 @@ function SkeletonRows() {
   return (
     <div className="grid gap-3 md:grid-cols-2">
       {[0, 1].map((i) => (
-        <div key={i} className="h-24 animate-pulse motion-reduce:animate-none rounded-lg border border-border bg-card/40" />
+        <Skeleton key={i} variant="card" className="h-24" />
       ))}
     </div>
   );

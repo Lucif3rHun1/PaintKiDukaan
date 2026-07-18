@@ -12,3 +12,24 @@ export const SETTINGS_CATEGORIES: ReadonlyArray<{ id: SettingsCategoryId; label:
   { id: "team", label: "Team & Devices", icon: Users },
   { id: "system", label: "System", icon: HardDrive },
 ];
+
+const SETTINGS_ITEM_CATEGORY_BY_PREFIX = [
+  ["#/settings/shop-info", "shop"],
+  ["#/settings/currency", "shop"],
+  ["#/settings/customer-types", "catalog"],
+  ["#/settings/locations", "catalog"],
+  ["#/settings/catalog", "catalog"],
+  ["#/settings/hardware", "printing"],
+  ["#/settings/users", "team"],
+  ["#/settings/devices", "team"],
+  ["#/settings/backup", "system"],
+  ["#/settings/security", "system"],
+  ["#/settings/owner-security", "system"],
+  ["#/settings/theme", "system"],
+  ["#/settings/master-health", "system"],
+] as const;
+
+export function categoryForSettingsItemHash(hash: string): SettingsCategoryId | null {
+  const match = SETTINGS_ITEM_CATEGORY_BY_PREFIX.find(([prefix]) => hash === prefix || hash.startsWith(`${prefix}/`));
+  return match?.[1] ?? null;
+}

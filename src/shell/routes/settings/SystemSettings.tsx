@@ -5,7 +5,6 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
-  Loader2,
   Shield,
 } from "lucide-react";
 
@@ -71,36 +70,42 @@ export function MasterHealthSettings() {
   if (loading) return <SkeletonRow count={6} />;
   if (error) {
     return (
-      <Card>
-        <Section title="Master health" description="Run diagnostics across data, network, and operations.">
-          <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
-          </div>
-        </Section>
-      </Card>
+      <Alert variant="destructive" title="Health check failed">{error}</Alert>
     );
   }
 
-  const overallBadge =
-    data?.overall === "ok"
-      ? "bg-success/20 text-success"
-      : data?.overall === "warn"
-        ? "bg-warning/20 text-warning"
-        : "bg-destructive/20 text-destructive";
+  const overallVariant = data?.overall === "ok" ? "success" : data?.overall === "warn" ? "warning" : "danger";
+  const overallLabel = data?.overall === "ok" ? "Healthy" : data?.overall === "warn" ? "Attention needed" : "Action required";
 
   return (
-    <Card>
-      <Section title="Master health" description="Run diagnostics across data, network, and operations.">
-        <div className="space-y-3 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Overall</span>
-            {data && (
-              <span className={`rounded px-2 py-0.5 text-xs font-medium ${overallBadge}`}>
-                {data.overall}
-              </span>
-            )}
+    <div className="space-y-3 text-sm">
+      <Card depth="raised">
+        <Card.Body className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground">System health</h2>
+              {data ? <Badge variant={overallVariant}>{overallLabel}</Badge> : null}
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {data?.checked_at ? <>Last checked at <span className="font-mono tabular-nums text-foreground">{data.checked_at}</span>.</> : "No diagnostics recorded yet."}
+            </p>
           </div>
+          <Badge variant="info">Owner view</Badge>
+        </Card.Body>
+      </Card>
 
+      {data?.overall === "ok" ? (
+        <Alert variant="success" title="No health risks detected">
+          Continue normal operation. Re-run diagnostics after system or hardware changes.
+        </Alert>
+      ) : (
+        <Alert variant={data?.overall === "warn" ? "warning" : "destructive"} title={overallLabel}>
+          Review the detailed checks below, correct the reported condition, then run the health check again from the Master health page.
+        </Alert>
+      )}
+
+      <Card depth="flat">
+        <Card.Body className="grid gap-3 lg:grid-cols-2">
           <HealthSection title="App">
             <HealthRow k="Version" v={data?.app.version} />
             <HealthRow k="Browser engine" v={data?.app.webview2} />
@@ -143,20 +148,16 @@ export function MasterHealthSettings() {
             <HealthRow k="Low-stock count" v={data?.ops.low_stock_count != null ? String(data.ops.low_stock_count) : undefined} />
             <HealthRow k="Pending sales" v={data?.ops.pending_sales != null ? String(data.ops.pending_sales) : undefined} />
           </HealthSection>
-
-          {data?.checked_at && (
-            <p className="text-xs text-muted-foreground">Checked at {data.checked_at}</p>
-          )}
-        </div>
-      </Section>
-    </Card>
+        </Card.Body>
+      </Card>
+    </div>
   );
 }
 
 function HealthSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border p-3">
-      <h4 className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{title}</h4>
+    <div className="rounded-md border border-border bg-surface-sunken p-3">
+      <h4 className="mb-2 text-sm font-semibold text-foreground">{title}</h4>
       <div className="space-y-1">{children}</div>
     </div>
   );
@@ -166,7 +167,7 @@ function HealthRow({ k, v }: { k: string; v: string | undefined }) {
   return (
     <div className="flex justify-between gap-3 text-sm">
       <span className="text-muted-foreground">{k}</span>
-      <span className="font-mono text-foreground">{v ?? "—"}</span>
+      <span className="min-w-0 break-all text-right font-mono tabular-nums text-foreground">{v ?? "—"}</span>
     </div>
   );
 }
@@ -200,9 +201,7 @@ function PdeSettingsCard() {
     return (
       <Card>
         <Section title="Plausible Deniability" description="Decoy and duress PIN setup.">
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
+          <SkeletonRow count={3} />
         </Section>
       </Card>
     );
@@ -259,7 +258,7 @@ function PdeSettingsCard() {
 
             {/* ponytail: fake shop preview — PdeStatus doesn't include fake_shop_name yet. Add when backend returns it. */}
 
-            <div className="rounded-lg border border-border bg-muted p-3 space-y-2">
+            <div className="rounded-lg border border-border bg-surface-sunken p-3 space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Decoy PIN</span>
                 <div className="flex items-center gap-2">
@@ -331,7 +330,7 @@ function ChangeDecoyPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-lg border border-border bg-muted p-3">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-lg border border-border bg-surface-sunken p-3">
       <p className="text-sm font-medium text-foreground">Change decoy PIN</p>
       {error && (
         <p className="flex items-center gap-1.5 text-sm text-destructive" role="alert">
@@ -341,7 +340,7 @@ function ChangeDecoyPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
       <div className="space-y-2">
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="Current real PIN"
             autoComplete="off"
             inputMode="numeric"
@@ -361,7 +360,7 @@ function ChangeDecoyPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
         {errors.currentRealPin && <p className="text-xs text-destructive">{errors.currentRealPin.message}</p>}
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="New decoy PIN"
             autoComplete="off"
             inputMode="numeric"
@@ -373,7 +372,7 @@ function ChangeDecoyPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
         {errors.newDecoyPin && <p className="text-xs text-destructive">{errors.newDecoyPin.message}</p>}
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="Confirm new decoy PIN"
             autoComplete="off"
             inputMode="numeric"
@@ -420,7 +419,7 @@ function ChangeDuressPinForm({ onDone, onCancel }: { onDone: () => void; onCance
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-lg border border-border bg-muted p-3">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-lg border border-border bg-surface-sunken p-3">
       <p className="text-sm font-medium text-foreground">Change duress PIN</p>
       {error && (
         <p className="flex items-center gap-1.5 text-sm text-destructive" role="alert">
@@ -430,7 +429,7 @@ function ChangeDuressPinForm({ onDone, onCancel }: { onDone: () => void; onCance
       <div className="space-y-2">
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="Current real PIN"
             autoComplete="off"
             inputMode="numeric"
@@ -449,7 +448,7 @@ function ChangeDuressPinForm({ onDone, onCancel }: { onDone: () => void; onCance
         </div>
         {errors.currentRealPin && <p className="text-xs text-destructive">{errors.currentRealPin.message}</p>}
         <input
-          className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          className="input"
           placeholder="New duress PIN"
           autoComplete="off"
           inputMode="numeric"
@@ -459,7 +458,7 @@ function ChangeDuressPinForm({ onDone, onCancel }: { onDone: () => void; onCance
         />
         {errors.newDuressPin && <p className="text-xs text-destructive">{errors.newDuressPin.message}</p>}
         <input
-          className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          className="input"
           placeholder="Confirm new duress PIN"
           autoComplete="off"
           inputMode="numeric"
@@ -517,9 +516,7 @@ function SecurityPolicyCard() {
     return (
       <Card>
         <Section title="Safety Settings" description="Emergency response and duress behavior.">
-          <div className="py-8 flex justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
+          <SkeletonRow count={3} />
         </Section>
       </Card>
     );
@@ -537,7 +534,7 @@ function SecurityPolicyCard() {
         }
       >
         <div className="space-y-4">
-          <label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted p-3">
+          <label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-sunken p-3">
             <div>
               <span className="text-sm font-medium text-foreground">Delete data on duress</span>
               <p className="text-xs text-muted-foreground">Silently delete real data when duress PIN is used.</p>
@@ -636,7 +633,7 @@ function ChangeOwnerPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-lg border border-border bg-muted p-3">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-lg border border-border bg-surface-sunken p-3">
       <p className="text-sm font-medium text-foreground">Change owner PIN</p>
       {error && (
         <p className="flex items-center gap-1.5 text-sm text-destructive" role="alert">
@@ -646,7 +643,7 @@ function ChangeOwnerPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
       <div className="space-y-2">
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="Current PIN"
             autoComplete="off"
             inputMode="numeric"
@@ -658,7 +655,7 @@ function ChangeOwnerPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
         {errors.oldPin && <p className="text-xs text-destructive">{errors.oldPin.message}</p>}
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="New PIN"
             autoComplete="off"
             inputMode="numeric"
@@ -670,7 +667,7 @@ function ChangeOwnerPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
         {errors.newPin && <p className="text-xs text-destructive">{errors.newPin.message}</p>}
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="Confirm new PIN"
             autoComplete="off"
             inputMode="numeric"
@@ -718,7 +715,7 @@ function SetRecoveryPassphraseForm({ onDone, onCancel }: { onDone: () => void; o
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-lg border border-border bg-muted p-3">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-lg border border-border bg-surface-sunken p-3">
       <p className="text-sm font-medium text-foreground">Set recovery password</p>
       {error && (
         <p className="flex items-center gap-1.5 text-sm text-destructive" role="alert">
@@ -728,7 +725,7 @@ function SetRecoveryPassphraseForm({ onDone, onCancel }: { onDone: () => void; o
       <div className="space-y-2">
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="Current PIN (for verification)"
             autoComplete="off"
             inputMode="numeric"
@@ -740,7 +737,7 @@ function SetRecoveryPassphraseForm({ onDone, onCancel }: { onDone: () => void; o
         {errors.currentPin && <p className="text-xs text-destructive">{errors.currentPin.message}</p>}
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="New recovery password"
             autoComplete="off"
             type="password"
@@ -750,7 +747,7 @@ function SetRecoveryPassphraseForm({ onDone, onCancel }: { onDone: () => void; o
         {errors.newPassphrase && <p className="text-xs text-destructive">{errors.newPassphrase.message}</p>}
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="input"
             placeholder="Confirm recovery password"
             autoComplete="off"
             type="password"
@@ -776,7 +773,7 @@ function OwnerSecuritySettings() {
       <Card>
         <Section title="Owner Security" description="Change PIN and manage recovery password. Owner access only.">
           <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-muted p-4">
+            <div className="rounded-lg border border-border bg-surface-sunken p-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="font-medium text-foreground">Change Owner PIN</p>
@@ -794,7 +791,7 @@ function OwnerSecuritySettings() {
               )}
             </div>
 
-            <div className="rounded-lg border border-border bg-muted p-4">
+            <div className="rounded-lg border border-border bg-surface-sunken p-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="font-medium text-foreground">Recovery Password</p>
