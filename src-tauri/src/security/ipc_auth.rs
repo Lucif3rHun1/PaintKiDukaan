@@ -1074,6 +1074,7 @@ mod tests {
             last_backup_unix_ms: Mutex::new(None),
             recovery_passphrase: Mutex::new(None),
             last_test_restore_unix_ms: Mutex::new(None),
+            tray_status: Mutex::new("uninitialized"),
         }
     }
 

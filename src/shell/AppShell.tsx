@@ -372,6 +372,8 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
                 <button
                   type="button"
                   onClick={() => setExpanded((current) => ({ ...current, [group.id]: !current[group.id] }))}
+                  aria-expanded={expanded[group.id]}
+                  aria-controls={`sidebar-group-${group.id}`}
                   className={cn(
                     "flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground/70 outline-none transition-colors duration-fast hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring motion-reduce:transition-none",
                     collapsed && "justify-center px-0",
@@ -382,7 +384,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
                   {!collapsed ? <ChevronDown className={cn("h-4 w-4 transition-transform motion-reduce:transition-none", !expanded[group.id] && "-rotate-90")} /> : null}
                 </button>
                 {expanded[group.id] && !collapsed ? (
-                  <div className="mt-0.5 space-y-0.5">
+                  <div id={`sidebar-group-${group.id}`} className="mt-0.5 space-y-0.5">
                     {group.items.map((item) => (
                       <SidebarLinkButton
                         key={item.id}
@@ -459,19 +461,21 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
           </div>
         </header>
 
-        <nav className="flex min-h-11 overflow-x-auto border-b border-sidebar-border bg-sidebar px-2 py-1 md:hidden" aria-label="Primary navigation">
-          {mobileLinks
-            .filter((item) => roleCanAccessShellTarget(role, item.id))
-            .slice(0, 7)
-            .map((item) => (
-              <SidebarLinkButton key={item.id} link={item} active={isLinkActive(item, activeTab)} collapsed={false} onNavigate={onNavigate} mobile />
-            ))}
+        <div className="flex min-h-11 border-b border-sidebar-border bg-sidebar px-2 py-1 md:hidden">
+          <nav className="flex min-w-0 flex-1 overflow-x-auto" aria-label="Primary navigation">
+            {mobileLinks
+              .filter((item) => roleCanAccessShellTarget(role, item.id))
+              .slice(0, 7)
+              .map((item) => (
+                <SidebarLinkButton key={item.id} link={item} active={isLinkActive(item, activeTab)} collapsed={false} onNavigate={onNavigate} mobile />
+              ))}
+          </nav>
           <MobileMoreMenu
             links={mobileLinks.filter((item) => roleCanAccessShellTarget(role, item.id)).slice(7)}
             activeTab={activeTab}
             onNavigate={onNavigate}
           />
-        </nav>
+        </div>
 
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface-canvas px-4 pb-4 pt-3 text-foreground sm:px-6 sm:pb-6 sm:pt-4">
           {bootstrapError ? (
@@ -547,7 +551,7 @@ function SidebarLinkButton({
       onClick={() => onNavigate(link.tab, link.hash)}
       className={cn(
         "flex items-center gap-2 rounded-md text-sm outline-none transition-colors duration-fast focus-visible:ring-2 focus-visible:ring-sidebar-ring motion-reduce:transition-none",
-        mobile ? "shrink-0 px-3 py-1.5 text-xs" : "h-9 w-full px-2",
+        mobile ? "min-h-11 shrink-0 px-3 text-xs" : "h-9 w-full px-2",
         nested && "pl-9",
         collapsed && !mobile && "justify-center px-0",
         active ? "bg-sidebar-primary text-sidebar-primary-foreground" : mobile ? "text-sidebar-foreground/60 hover:text-sidebar-foreground" : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -585,8 +589,10 @@ function BackupActivity({ backupAge }: { backupAge: number | null }) {
   const status = backupAge === null ? "Backup status unknown" : backupAge > 24 ? "Backup overdue" : backupAge > 12 ? "Backup aging" : "Backup healthy";
   return (
     <div className="group relative">
-      <Activity className={cn("h-4 w-4", tone)} aria-label={status} />
-      <div className="pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground opacity-0 shadow-overlay transition-opacity duration-fast group-hover:opacity-100">
+      <button type="button" className="flex size-10 items-center justify-center rounded-md outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={status} aria-describedby="backup-activity-details">
+        <Activity className={cn("h-4 w-4", tone)} aria-hidden="true" />
+      </button>
+      <div id="backup-activity-details" role="tooltip" className="pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground opacity-0 shadow-overlay transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100">
         <div className="font-medium">Backup Status</div>
         <div>{status}</div>
         <div>Age: {backupAge === null ? "Unknown" : `${Math.round(backupAge)}h`}</div>
@@ -597,6 +603,7 @@ function BackupActivity({ backupAge }: { backupAge: number | null }) {
 
 function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser }: { user: AppShellUser | null; shopName?: string | null; collapsed: boolean; onLock: () => void; onLogout: () => void; onSwitchUser?: () => void }) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
   const enterFrameRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
@@ -649,7 +656,10 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) closeMenu();
     }
     function handleEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") closeMenu();
+      if (e.key === "Escape") {
+        closeMenu();
+        triggerRef.current?.focus();
+      }
     }
     document.addEventListener("mousedown", handleOutside);
     document.addEventListener("keydown", handleEscape);
@@ -672,7 +682,11 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
   return (
     <div ref={wrapperRef} className="relative border-t border-sidebar-border pt-3">
       <button
+        ref={triggerRef}
         type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls="account-menu"
         onClick={() => {
           if (open) closeMenu();
           else openMenu();
@@ -697,6 +711,8 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
       </button>
       {open || isClosing ? (
         <div
+          id="account-menu"
+          role="menu"
           onTransitionEnd={(event) => {
             if (isClosing && event.target === event.currentTarget && event.propertyName === "opacity") {
               setIsClosing(false);
@@ -724,6 +740,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
           <button
             ref={firstItemRef}
             type="button"
+            role="menuitem"
             onClick={() => { onLock(); closeMenu(); }}
             className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-foreground transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
           >
@@ -733,6 +750,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
           {hasOtherUsers && onSwitchUser ? (
             <button
               type="button"
+              role="menuitem"
               onClick={() => { onSwitchUser(); closeMenu(); }}
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-foreground transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
             >
@@ -742,6 +760,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
           ) : null}
           <button
             type="button"
+            role="menuitem"
             onClick={() => { onLogout(); closeMenu(); }}
             className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-destructive transition-colors hover:bg-destructive/10 focus:bg-destructive/10 focus:outline-none"
           >
@@ -757,37 +776,55 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
 function MobileMoreMenu({ links, activeTab, onNavigate }: { links: SidebarLink[]; activeTab: AppShellTab; onNavigate: (tab: AppShellTab, hash?: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const firstItemRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && e.target instanceof Node && !ref.current.contains(e.target)) setOpen(false);
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    window.setTimeout(() => firstItemRef.current?.focus(), 0);
     document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
   return (
     <div className="relative shrink-0" ref={ref}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="shrink-0 px-3 py-1.5 text-xs text-sidebar-foreground/60 hover:text-sidebar-foreground"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls="mobile-more-menu"
+        className="min-h-11 shrink-0 px-3 text-xs text-sidebar-foreground/60 hover:text-sidebar-foreground"
       >
         More ▾
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 z-30 w-40 rounded-lg border border-border bg-popover p-1 shadow-overlay">
-          {links.map((item) => (
+        <div id="mobile-more-menu" role="menu" className="absolute right-0 z-30 mt-1 w-40 rounded-lg border border-border bg-popover p-1 shadow-overlay">
+          {links.map((item, index) => (
             <button
+              ref={index === 0 ? firstItemRef : undefined}
               key={item.id}
               type="button"
+              role="menuitem"
               onClick={() => {
                 onNavigate(item.tab, item.hash);
                 setOpen(false);
               }}
               className={cn(
-                "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm",
+                "flex min-h-10 w-full items-center gap-2 rounded-md px-3 text-left text-sm",
                 isLinkActive(item, activeTab) ? "bg-primary text-primary-foreground" : "hover:bg-muted"
               )}
             >

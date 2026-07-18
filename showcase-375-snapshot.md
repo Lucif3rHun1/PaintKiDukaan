@@ -1,0 +1,206 @@
+- main [ref=e3] [box=0,0,375,4137]:
+  - generic [ref=e4] [box=0,0,375,4137]:
+    - generic [ref=e5] [box=16,24,343,342]:
+      - generic [ref=e6] [box=32,36,311,244]:
+        - generic [ref=e7] [box=32,36,311,204]:
+          - heading "Shared primitive verification" [level=1] [ref=e8] [box=32,36,311,32]
+          - paragraph [ref=e9] [box=32,72,311,168]: This intentionally long operational message verifies that headings, descriptions, alerts, table cells, actions, and narrow layouts remain readable when a paint name or recovery instruction exceeds the usual counter-day copy length without clipping or forcing viewport-wide overflow.
+        - 'generic "Theme controls. Resolved theme: dark" [ref=e11] [box=32,252,187,28]':
+          - button "System" [ref=e12] [cursor=pointer] [box=32,252,67,28]
+          - button "Light" [ref=e13] [cursor=pointer] [box=107,252,53,28]
+          - button "Dark" [pressed] [ref=e14] [cursor=pointer] [box=168,252,51,28]
+      - generic "Showcase coverage" [ref=e16] [box=32,305,311,48]:
+        - generic [ref=e17] [box=32,305,125,20]: Tier A · interaction
+        - generic [ref=e18] [box=165,305,91,20]: Tier B · state
+        - generic [ref=e19] [box=32,333,134,20]: Tier C · composition
+        - generic [ref=e20] [box=174,333,68,20]: Zero IPC
+    - generic [ref=e21] [box=16,398,343,1004]:
+      - generic [ref=e23] [box=16,398,343,62]:
+        - heading "Tier A · interactive controls" [level=2] [ref=e24] [box=16,398,343,28]
+        - paragraph [ref=e25] [box=16,428,343,32]: Use Tab, Shift+Tab, Enter, Space, arrows, and Escape to inspect the full keyboard path.
+      - generic [ref=e27] [box=16,488,343,898]:
+        - generic [ref=e28] [box=32,488,311,148]:
+          - button "Save bill" [ref=e29] [cursor=pointer] [box=32,488,103,44]
+          - button "Secondary" [ref=e30] [cursor=pointer] [box=143,490,97,40]
+          - button "Outline" [ref=e31] [cursor=pointer] [box=248,490,73,40]
+          - button "Archive" [ref=e32] [cursor=pointer] [box=32,542,98,40]
+          - button "Ghost" [ref=e33] [cursor=pointer] [box=138,542,65,40]
+          - button "Saving" [disabled] [box=211,540,92,44]
+          - button "Disabled" [disabled] [box=32,592,84,44]
+          - button "Inspect package" [ref=e34] [cursor=pointer] [box=124,594,40,40]
+          - button "Showcase actions" [ref=e35] [cursor=pointer] [box=172,594,40,40]
+          - button "Open dialog" [ref=e40] [cursor=pointer] [box=220,594,105,40]
+        - generic [ref=e41] [box=32,660,311,498]:
+          - generic [ref=e42] [box=32,660,311,84]:
+            - generic [ref=e43] [box=32,660,311,20]: Search inventory
+            - searchbox "Search inventory showcase" [ref=e45] [box=32,684,311,40]: Exterior emulsion
+            - generic [ref=e46] [box=32,728,311,16]: Filled state with long content
+          - generic [ref=e47] [box=32,760,311,64]:
+            - generic [ref=e48] [box=32,760,311,20]: Customer type *
+            - combobox "Customer type" [ref=e50] [box=32,784,172,40]:
+              - option "Retail counter" [selected] [box=0,0,0,0]
+              - option "Contractor account" [box=0,0,0,0]
+              - option "Wholesale" [box=0,0,0,0]
+              - option "Archived option" [disabled] [box=0,0,0,0]
+          - generic [ref=e51] [box=32,840,311,84]:
+            - generic [ref=e52] [box=32,840,311,20]: Invalid search
+            - searchbox "Invalid search showcase" [invalid] [ref=e54] [box=32,864,311,40]: Unknown coating
+            - alert [ref=e55] [box=32,908,311,16]: Choose an item that exists in the current location.
+          - generic [ref=e56] [box=32,940,311,58]:
+            - generic [ref=e57] [box=32,940,311,20]: Amount
+            - generic [ref=e58] [box=32,964,311,34]:
+              - generic [ref=e59] [box=32,971,9,20]: ₹
+              - textbox "Amount ₹" [ref=e60] [box=47,964,296,34]: 4,865.00
+          - generic [ref=e61] [box=32,1014,311,64]:
+            - generic [ref=e62] [box=32,1014,311,20]: Quantity
+            - generic [ref=e63] [box=32,1038,152,40]:
+              - button "Decrease" [ref=e64] [cursor=pointer] [box=32,1038,40,40]
+              - button "Increase" [ref=e66] [cursor=pointer] [box=76,1038,40,40]
+              - spinbutton "Quantity" [ref=e68] [box=120,1038,64,40]: "2"
+          - generic [ref=e69] [box=32,1094,311,64]:
+            - generic [ref=e70] [box=32,1094,311,20]: Billing date
+            - button "Billing date" [ref=e72] [cursor=pointer] [box=32,1118,311,40]:
+              - generic [ref=e75] [box=65,1128,77,20]: Jul 17, 2026
+        - group "Payment method" [ref=e76] [box=32,1182,311,48]:
+          - generic [ref=e78] [box=32,1210,311,20]:
+            - generic [ref=e79] [cursor=pointer] [box=32,1210,57,20]:
+              - radio "Cash" [checked] [ref=e82] [box=31,1220,1,1]
+              - text: Cash
+            - generic [ref=e83] [cursor=pointer] [box=105,1210,63,20]:
+              - radio "Credit" [ref=e85] [box=104,1220,1,1]
+              - text: Credit
+        - generic [ref=e86] [box=32,1254,311,132]:
+          - tablist "Data state examples" [ref=e87] [box=32,1254,299,132]:
+            - tab "Populated" [selected] [ref=e88] [cursor=pointer] [box=36,1258,85,124]
+            - tab "Loading" [ref=e89] [cursor=pointer] [box=121,1258,70,124]
+            - tab "Empty" [ref=e90] [cursor=pointer] [box=191,1258,60,124]
+            - tab "Disabled" [disabled] [box=251,1258,76,124]
+          - tabpanel "Populated" [ref=e91] [box=339,1254,84,132]: Three deterministic inventory rows are ready for review.
+    - generic [ref=e92] [box=16,1434,343,1823]:
+      - generic [ref=e94] [box=16,1434,343,62]:
+        - heading "Tier B · feedback and data states" [level=2] [ref=e95] [box=16,1434,343,28]
+        - paragraph [ref=e96] [box=16,1464,343,32]: Semantic status always includes text; loading geometry matches the loaded content.
+      - generic [ref=e97] [box=16,1508,343,528]:
+        - alert [ref=e98] [box=16,1508,343,88]:
+          - generic [ref=e99] [box=29,1519,317,20]: Information
+          - generic [ref=e100] [box=29,1541,317,44]: The selected location has a pending stock count.
+        - alert [ref=e103] [box=16,1608,343,88]:
+          - generic [ref=e104] [box=29,1619,317,20]: Saved
+          - generic [ref=e105] [box=29,1641,317,44]: The deterministic bill is ready for the next action.
+        - alert [ref=e109] [box=16,1708,343,208]:
+          - generic [ref=e110] [box=29,1719,317,20]: Review required
+          - generic [ref=e111] [box=29,1741,317,164]: This intentionally long operational message verifies that headings, descriptions, alerts, table cells, actions, and narrow layouts remain readable when a paint name or recovery instruction exceeds the usual counter-day copy length without clipping or forcing viewport-wide overflow.
+        - alert [ref=e114] [box=16,1928,343,108]:
+          - generic [ref=e115] [box=29,1939,317,20]: Unable to load
+          - generic [ref=e116] [box=29,1961,317,64]: The fixture exposes recovery copy without backend details.
+      - generic [ref=e119] [box=16,2048,343,388]:
+        - generic [ref=e121] [box=16,2060,343,64]:
+          - generic [ref=e122] [box=28,2060,319,24]: Focal total
+          - strong [ref=e129] [box=28,2094,145,28]: ₹11,213.00
+        - generic [ref=e131] [box=16,2160,343,64]:
+          - generic [ref=e132] [box=28,2160,319,24]: Low stock
+          - strong [ref=e139] [box=28,2194,16,28]: "3"
+        - generic [ref=e141] [box=16,2260,343,64]:
+          - generic [ref=e142] [box=28,2260,319,24]: Healthy items
+          - strong [ref=e149] [box=28,2294,33,28]: "18"
+        - generic [ref=e150] [box=16,2348,343,88]: Loading metric
+      - table [ref=e163] [box=17,2449,522,235]:
+        - caption [ref=e164] [box=16,2481,1,1]: Populated deterministic inventory table
+        - rowgroup [ref=e165] [box=17,2449,522,33]:
+          - row "Item Stock Price Status" [ref=e166] [box=17,2449,522,33]:
+            - columnheader "Item" [ref=e167] [box=17,2449,248,33]
+            - columnheader "Stock" [ref=e168] [box=265,2449,68,33]
+            - columnheader "Price" [ref=e169] [box=333,2449,93,33]
+            - columnheader "Status" [ref=e170] [box=426,2449,113,33]
+        - rowgroup [ref=e171] [box=17,2482,522,202]:
+          - row "WeatherGuard Exterior Emulsion, Brilliant White, twenty litre contractor pack WG-EXT-BW-20L 18 bucket ₹4,865.00 In stock" [ref=e172] [box=17,2482,522,93]:
+            - cell "WeatherGuard Exterior Emulsion, Brilliant White, twenty litre contractor pack WG-EXT-BW-20L" [ref=e173] [box=17,2482,248,93]:
+              - generic [ref=e174] [box=29,2490,224,76]:
+                - generic [ref=e175] [box=29,2490,224,60]: WeatherGuard Exterior Emulsion, Brilliant White, twenty litre contractor pack
+                - generic [ref=e176] [box=29,2550,224,16]: WG-EXT-BW-20L
+            - cell "18 bucket" [ref=e177] [box=265,2482,68,93]
+            - cell "₹4,865.00" [ref=e179] [box=333,2482,93,93]
+            - cell "In stock" [ref=e180] [box=426,2482,113,93]
+          - row "Synthetic Enamel Signal Red SE-SR-4L 3 tin ₹1,479.00 Low stock" [ref=e182] [box=17,2575,522,53]:
+            - cell "Synthetic Enamel Signal Red SE-SR-4L" [ref=e183] [box=17,2575,248,53]:
+              - generic [ref=e184] [box=29,2583,224,36]:
+                - generic [ref=e185] [box=29,2583,224,20]: Synthetic Enamel Signal Red
+                - generic [ref=e186] [box=29,2603,224,16]: SE-SR-4L
+            - cell "3 tin" [ref=e187] [box=265,2575,68,53]
+            - cell "₹1,479.00" [ref=e189] [box=333,2575,93,53]
+            - cell "Low stock" [ref=e190] [box=426,2575,113,53]
+          - row "Wall Primer Interior WP-INT-10L 0 bucket ₹2,210.00 Out of stock" [ref=e192] [box=17,2628,522,57]:
+            - cell "Wall Primer Interior WP-INT-10L" [ref=e193] [box=17,2628,248,57]:
+              - generic [ref=e194] [box=29,2638,224,36]:
+                - generic [ref=e195] [box=29,2638,224,20]: Wall Primer Interior
+                - generic [ref=e196] [box=29,2658,224,16]: WP-INT-10L
+            - cell "0 bucket" [ref=e197] [box=265,2628,68,57]
+            - cell "₹2,210.00" [ref=e199] [box=333,2628,93,57]
+            - cell "Out of stock" [ref=e200] [box=426,2628,113,57]
+      - generic [ref=e202] [box=16,2697,343,560]:
+        - table [ref=e204] [box=17,2698,341,305]:
+          - caption [ref=e205] [box=16,2730,1,1]: Empty inventory table
+          - rowgroup [ref=e206] [box=17,2698,341,33]:
+            - row "Item Stock Price Status" [ref=e207] [box=17,2698,341,33]:
+              - columnheader "Item" [ref=e208] [box=17,2698,76,33]
+              - columnheader "Stock" [ref=e209] [box=93,2698,88,33]
+              - columnheader "Price" [ref=e210] [box=181,2698,82,33]
+              - columnheader "Status" [ref=e211] [box=264,2698,94,33]
+          - rowgroup [ref=e212] [box=17,2731,341,272]:
+            - row "No items yet Add an item to begin tracking stock at this location. Add item" [ref=e213] [box=17,2731,341,272]:
+              - cell "No items yet Add an item to begin tracking stock at this location. Add item" [ref=e214] [box=17,2731,341,272]:
+                - generic [ref=e215] [box=18,2732,339,270]
+        - table [ref=e228] [box=17,3017,341,239]:
+          - caption [ref=e229] [box=16,3049,1,1]: Error inventory table
+          - rowgroup [ref=e230] [box=17,3017,341,33]:
+            - row "Item Stock Price Status" [ref=e231] [box=17,3017,341,33]:
+              - columnheader "Item" [ref=e232] [box=17,3017,76,33]
+              - columnheader "Stock" [ref=e233] [box=93,3017,88,33]
+              - columnheader "Price" [ref=e234] [box=181,3017,82,33]
+              - columnheader "Status" [ref=e235] [box=264,3017,94,33]
+          - rowgroup [ref=e236] [box=17,3050,341,206]:
+            - row "Failed to load data Inventory fixtures could not be read. Retry" [ref=e237] [box=17,3050,341,206]:
+              - cell "Failed to load data Inventory fixtures could not be read. Retry" [ref=e238] [box=17,3050,341,206]:
+                - generic [ref=e239] [box=18,3051,339,204]
+    - generic [ref=e246] [box=16,3289,343,824]:
+      - generic [ref=e248] [box=16,3289,343,62]:
+        - heading "Tier C · responsive composition" [level=2] [ref=e249] [box=16,3289,343,28]
+        - paragraph [ref=e250] [box=16,3319,343,32]: Dense lists remain flat; focal summaries rise; long content truncates or wraps without viewport overflow.
+      - generic [ref=e251] [box=16,3363,343,457]:
+        - generic [ref=e252] [box=16,3363,343,269]:
+          - generic [ref=e254] [box=28,3375,171,38]:
+            - heading "Top items" [level=3] [ref=e255] [box=28,3375,171,20]
+            - generic [ref=e256] [box=28,3397,171,16]: Long labels and tabular values
+          - list [ref=e258] [box=28,3438,319,182]:
+            - listitem [ref=e259] [box=28,3438,319,60]:
+              - generic [ref=e260] [box=44,3450,215,36]:
+                - generic [ref=e261] [box=44,3456,24,24]: "1"
+                - generic [ref=e262] [box=80,3450,179,36]
+              - generic [ref=e265] [box=271,3460,60,16]: ₹4,865.00
+            - listitem [ref=e267] [box=28,3498,319,61]:
+              - generic [ref=e268] [box=44,3511,215,36]:
+                - generic [ref=e269] [box=44,3517,24,24]: "2"
+                - generic [ref=e270] [box=80,3511,179,36]
+              - generic [ref=e273] [box=271,3521,60,16]: ₹1,479.00
+            - listitem [ref=e275] [box=28,3559,319,61]:
+              - generic [ref=e276] [box=44,3572,215,36]:
+                - generic [ref=e277] [box=44,3578,24,24]: "3"
+                - generic [ref=e278] [box=80,3572,179,36]
+              - generic [ref=e281] [box=271,3582,60,16]: ₹2,210.00
+        - generic [ref=e283] [box=16,3644,343,176]:
+          - generic [ref=e285] [box=28,3656,119,38]:
+            - heading "Stock concerns" [level=3] [ref=e286] [box=28,3656,119,20]
+            - generic [ref=e287] [box=28,3678,119,16]: Risk plus explicit text
+          - list [ref=e289] [box=28,3719,319,89]:
+            - listitem [ref=e290] [box=28,3719,319,44]:
+              - generic [ref=e291] [box=44,3731,193,20]: Synthetic Enamel Signal Red
+              - generic [ref=e292] [box=249,3731,82,20]: 3 remaining
+            - listitem [ref=e293] [box=28,3763,319,45]:
+              - generic [ref=e294] [box=44,3776,193,20]: Wall Primer Interior
+              - generic [ref=e295] [box=249,3776,82,20]: 0 remaining
+      - generic [ref=e296] [box=16,3832,343,281]:
+        - heading "Barcode preview and passive content" [level=3] [ref=e298] [box=32,3848,311,24]
+        - generic [ref=e299] [box=16,3905,343,192]:
+          - img "Barcode WG-EXT-BW-20L" [ref=e301] [box=34,3907,92,32]:
+            - generic [ref=e303] [box=35,3919,91,8]: WG-EXT-BW-20L
+          - paragraph [ref=e354] [box=32,3957,311,140]: This intentionally long operational message verifies that headings, descriptions, alerts, table cells, actions, and narrow layouts remain readable when a paint name or recovery instruction exceeds the usual counter-day copy length without clipping or forcing viewport-wide overflow.

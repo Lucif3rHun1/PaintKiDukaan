@@ -35,7 +35,6 @@ export interface DataTableProps<T> {
   tableClassName?: string;
   /** ClassName applied to every <tbody> row. Can be a string or a function of row + index. */
   rowClassName?: string | ((row: T, index: number) => string);
-  onRowClick?: (row: T, index: number) => void;
   /** Whether the header row should stick on vertical scroll. */
   stickyHeader?: boolean;
   /** Optional header className for the sticky header background. */
@@ -63,7 +62,6 @@ export function DataTable<T>({
   className,
   tableClassName,
   rowClassName,
-  onRowClick,
   stickyHeader = false,
   headerClassName,
 }: DataTableProps<T>) {
@@ -76,7 +74,7 @@ export function DataTable<T>({
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <thead
           className={cn(
-            "text-left text-xs uppercase text-muted-foreground",
+            "text-left text-xs text-muted-foreground",
             stickyHeader && "sticky top-0 z-10",
             headerClassName ?? (stickyHeader ? "bg-surface-panel" : "border-b border-border bg-surface-panel"),
           )}
@@ -141,20 +139,10 @@ export function DataTable<T>({
                   key={keyExtractor(row, index)}
                   className={cn(
                     "border-b border-border transition-colors duration-fast last:border-b-0 motion-reduce:transition-none",
-                    onRowClick && "cursor-pointer hover:bg-muted",
-                    !onRowClick && "hover:bg-muted/50",
-                    rowExtra,
-                  )}
-                  onClick={onRowClick ? () => onRowClick(row, index) : undefined}
-                  tabIndex={onRowClick ? 0 : undefined}
-                  role={onRowClick ? "button" : undefined}
-                  onKeyDown={onRowClick ? (e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onRowClick(row, index);
-                    }
-                  } : undefined}
-                >
+                     "hover:bg-muted/50",
+                     rowExtra,
+                   )}
+                 >
                 {columns.map((col, i) => (
                   <td
                     key={col.id ?? (typeof col.header === "string" ? col.header : undefined) ?? `cell-${i}`}

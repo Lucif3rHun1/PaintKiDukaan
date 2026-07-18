@@ -10,7 +10,7 @@ import { isAppError } from "../../domain/types";
 import { extractError } from "../../lib/extractError";
 import { type UnlockInput, unlockSchema } from "./pin";
 import { type Role, type Session, type User, useSecurity } from "./state";
-import { Alert, Button, Select } from "../../components/ui";
+import { Alert, Button } from "../../components/ui";
 
 interface UnlockResponse {
   user?: { id?: number; name?: string; role?: Role } | null;
@@ -209,22 +209,28 @@ export function LockScreen() {
           ) : null}
 
           {loginUsers.length > 1 ? (
-            <div>
-              <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="login-user">
-                Account
-              </label>
-              <Select
-                id="login-user"
-                value={String(selectedUser?.id ?? "")}
-                onChange={(event) => setSelectedUserId(Number(event.currentTarget.value))}
-                options={loginUsers.map((user) => ({
-                  value: String(user.id),
-                  label: `${user.name} — ${user.role}`,
-                }))}
-                size="md"
-                 className="h-11 w-full rounded-md border border-input bg-surface-sunken px-3 text-sm text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
-              />
-            </div>
+            <fieldset>
+              <legend className="mb-2 text-sm font-medium text-foreground">Account</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {loginUsers.map((user) => (
+                  <label key={user.id} className="relative cursor-pointer">
+                    <input
+                      type="radio"
+                      name="login-user"
+                      value={user.id}
+                      aria-label={`${user.name} — ${user.role}`}
+                      checked={selectedUser?.id === user.id}
+                      onChange={() => setSelectedUserId(user.id)}
+                      className="peer sr-only"
+                    />
+                    <span className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-input bg-surface-sunken px-3 text-sm text-foreground transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard hover:bg-muted/60 peer-checked:border-primary peer-checked:bg-primary/10 peer-focus-visible:ring-2 peer-focus-visible:ring-ring/40 motion-reduce:transition-none">
+                      <span className="min-w-0 truncate font-medium">{user.name}</span>
+                      <span className="shrink-0 text-xs capitalize text-muted-foreground">{user.role}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
           ) : null}
 
           {/* PIN input */}

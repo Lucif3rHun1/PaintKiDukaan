@@ -34,7 +34,7 @@ export function QtyInput({
         onClick={dec}
         disabled={disabled || value <= min}
         aria-label="Decrease"
-        className="inline-flex h-8 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-40"
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-40"
       >
         <Minus className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
@@ -43,7 +43,7 @@ export function QtyInput({
         onClick={inc}
         disabled={disabled || value >= ceiling}
         aria-label="Increase"
-        className="inline-flex h-8 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-40"
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-40"
       >
         <Plus className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
@@ -75,7 +75,7 @@ export function QtyInput({
         max={max}
         step={step}
         aria-label={ariaLabel}
-        className="h-8 w-16 rounded border border-border bg-background text-center text-sm tabular-nums outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-10 w-16 rounded border border-border bg-background text-center text-sm tabular-nums outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
       />
     </div>
   );

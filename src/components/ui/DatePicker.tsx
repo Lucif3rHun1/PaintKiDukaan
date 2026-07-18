@@ -46,6 +46,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
   const [viewMonth, setViewMonth] = useState(month);
   const [viewYear, setViewYear] = useState(year);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const enterFrameRef = useRef<number | null>(null);
 
   const closePicker = useCallback(() => {
@@ -89,10 +90,21 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
   useEffect(() => {
     if (!open) return;
     function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) closePicker();
+      if (ref.current && e.target instanceof Node && !ref.current.contains(e.target)) closePicker();
     }
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
+  }, [open, closePicker]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      closePicker();
+      triggerRef.current?.focus();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [open, closePicker]);
 
   // Sync view when value changes
@@ -123,6 +135,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
     <div ref={ref} className={cn("relative", className)}>
       {/* Trigger */}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => {
           if (open) closePicker();
@@ -130,6 +143,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
         }}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls="date-picker-dialog"
         className={cn(
           "input flex w-full items-center gap-2 px-2 py-1 text-left text-sm",
           !value && "text-muted-foreground",
@@ -142,6 +156,9 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
       {/* Popover */}
       {(open || isClosing) && (
         <div
+          id="date-picker-dialog"
+          role="dialog"
+          aria-label="Choose date"
           onTransitionEnd={(event) => {
             if (
               isClosing &&
@@ -164,7 +181,8 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
                 if (viewMonth === 0) { setViewMonth(11); setViewYear(viewYear - 1); }
                 else setViewMonth(viewMonth - 1);
               }}
-              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Previous month"
+              className="inline-flex h-10 w-10 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -177,7 +195,8 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
                 if (viewMonth === 11) { setViewMonth(0); setViewYear(viewYear + 1); }
                 else setViewMonth(viewMonth + 1);
               }}
-              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Next month"
+              className="inline-flex h-10 w-10 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -205,7 +224,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
                   onClick={() => select(viewYear, viewMonth, d)}
                   aria-current={isSelected ? "date" : undefined}
                   className={cn(
-                    "h-8 w-8 rounded text-sm transition-colors",
+                    "h-10 w-10 rounded text-sm transition-colors",
                     isSelected
                       ? "bg-primary text-primary-foreground font-medium"
                       : isToday
@@ -226,7 +245,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", classNa
               const t = new Date();
               select(t.getFullYear(), t.getMonth(), t.getDate());
             }}
-            className="mt-2 w-full rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="mt-2 min-h-10 w-full rounded border border-border px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             Today
           </button>

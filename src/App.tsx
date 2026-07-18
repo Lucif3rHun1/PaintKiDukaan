@@ -1,9 +1,9 @@
 import { tauriInvoke as invoke } from "./lib/security/tauri";
 import { toast } from "./lib/feedback/toast";
-import { Button, Toaster } from "./components/ui";
+import { Button, PageHeader, SkeletonRow, Toaster } from "./components/ui";
 import { Alert } from "./components/ui/Alert";
 import logo from "./assets/logo-64.png";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -121,10 +121,10 @@ function RouteFallback() {
     <div
       role="status"
       aria-live="polite"
-      className="flex h-64 items-center justify-center text-sm text-muted-foreground"
+      aria-label="Loading page"
+      className="space-y-3 py-4"
     >
-      <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-      Loading…
+      <SkeletonRow count={4} />
     </div>
   );
 }
@@ -727,7 +727,7 @@ export default function App() {
       )}
       {tab === "items" && (
         <div className="flex h-full flex-col gap-3">
-          <h2 className="text-lg font-semibold text-foreground">Inventory</h2>
+          <PageHeader title="Inventory" description="Manage products, stock levels, pricing, and locations." accent="slate" />
           <ErrorBoundary context="Inventory">
             <Suspense fallback={<RouteFallback />}>
               <ItemList role={role} />
@@ -737,7 +737,7 @@ export default function App() {
       )}
       {tab === "formulas" && formulasRoute === "list" ? (
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold text-foreground">Shade formulas</h2>
+          <PageHeader title="Shade formulas" description="Find and maintain repeatable paint mixing formulas." accent="slate" />
           <ErrorBoundary context="Formulas">
             <Suspense fallback={<RouteFallback />}>
               <FormulasPage role={role} />
@@ -762,7 +762,7 @@ export default function App() {
       })() : null}
       {tab === "barcodes" && (
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold text-foreground">Barcode Labels</h2>
+          <PageHeader title="Barcode labels" description="Prepare and print product labels for supported printers." accent="slate" />
           <ErrorBoundary context="Barcode Labels">
             <Suspense fallback={<RouteFallback />}>
               <BulkLabelsPage />

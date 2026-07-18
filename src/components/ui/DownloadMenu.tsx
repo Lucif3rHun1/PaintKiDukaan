@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { FileDown } from "lucide-react";
-import { buildPdf } from "../../lib/pdf";
-import { downloadSpreadsheet } from "../../lib/spreadsheet";
 import { Button } from "./Button";
 import { cn } from "./cn";
 
@@ -34,6 +32,7 @@ export function DownloadMenu({
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const enterFrameRef = useRef<number | null>(null);
+  const menuId = useId();
 
   const closeMenu = useCallback(() => {
     if (!open) return;
@@ -75,7 +74,7 @@ export function DownloadMenu({
   useEffect(() => {
     if (!open) return;
     const onClick = (event: MouseEvent) => {
-      if (ref.current?.contains(event.target as Node)) return;
+      if (event.target instanceof Node && ref.current?.contains(event.target)) return;
       closeMenu();
     };
     document.addEventListener("mousedown", onClick);
@@ -87,8 +86,10 @@ export function DownloadMenu({
     try {
       const currentRows = loadRows ? await loadRows() : rows;
       if (format === "pdf") {
+        const { buildPdf } = await import("../../lib/pdf");
         buildPdf(headers, currentRows, title, subtitle);
       } else {
+        const { downloadSpreadsheet } = await import("../../lib/spreadsheet");
         const sheetRows = currentRows.map((row) => row.map((cell) => String(cell ?? "")));
         downloadSpreadsheet(headers, sheetRows, filename, format);
       }
@@ -101,24 +102,33 @@ export function DownloadMenu({
   };
 
   return (
-    <div ref={ref} className={cn("relative inline-flex", className)}>
+    <div
+      ref={ref}
+      className={cn("relative inline-flex", className)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") closeMenu();
+      }}
+    >
       <Button
         type="button"
         size="sm"
         variant="secondary"
         icon={FileDown}
         loading={loading}
+        className="min-h-10"
         onClick={() => {
           if (open) closeMenu();
           else openMenu();
         }}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={menuId}
       >
         {loading ? "Preparing…" : label}
       </Button>
       {open || isClosing ? (
         <div
+          id={menuId}
           role="menu"
           onTransitionEnd={(event) => {
             if (
@@ -140,7 +150,7 @@ export function DownloadMenu({
               type="button"
               role="menuitem"
               disabled={loading}
-              className="flex w-full rounded-md px-3 py-1.5 text-left hover:bg-muted focus:bg-muted focus:outline-none"
+              className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left hover:bg-muted focus:bg-muted focus:outline-none"
               onClick={() => void download(label.toLowerCase() as "csv" | "xlsx" | "pdf")}
             >
               {label}

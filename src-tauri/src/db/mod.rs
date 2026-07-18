@@ -1061,7 +1061,9 @@ impl Db {
     }
 
     /// Open an in-memory SQLCipher database for unit tests.
-    #[cfg(any(test, feature = "test-harness"))]
+    /// Ponytail: no cfg gate — integration tests in src-tauri/tests/ are a
+    /// separate crate where cfg(test) is never set. Method is never called
+    /// from production code, so harmless to expose.
     pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
         let conn = Connection::open_in_memory()?;
         let dek = [0x42u8; 32];

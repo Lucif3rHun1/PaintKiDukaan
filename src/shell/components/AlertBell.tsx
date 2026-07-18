@@ -49,6 +49,7 @@ export function AlertBell({ currentRole }: AlertBellProps) {
 
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -82,6 +83,17 @@ export function AlertBell({ currentRole }: AlertBellProps) {
   }, [open]);
 
   useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
+  useEffect(() => {
     const handler = () => setOpen(true);
     window.addEventListener("open-alert-bell", handler);
     return () => window.removeEventListener("open-alert-bell", handler);
@@ -104,10 +116,14 @@ export function AlertBell({ currentRole }: AlertBellProps) {
   return (
     <div className="relative" ref={panelRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="relative p-2 rounded-full hover:bg-muted transition-colors duration-fast"
         aria-label="Notifications"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls="alerts-panel"
       >
         <Bell className="w-5 h-5 text-foreground" />
         {count > 0 && (
@@ -120,14 +136,19 @@ export function AlertBell({ currentRole }: AlertBellProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-80 sm:w-96 overflow-hidden rounded-lg border border-border bg-card shadow-overlay">
+        <div
+          id="alerts-panel"
+          role="dialog"
+          aria-labelledby="alerts-heading"
+          className="absolute right-0 z-30 mt-2 w-80 sm:w-96 overflow-hidden rounded-lg border border-border bg-card shadow-overlay"
+        >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <h3 className="font-semibold text-foreground">Alerts</h3>
+            <h3 id="alerts-heading" className="font-semibold text-foreground">Alerts</h3>
             {count > 0 && (
               <button
                 type="button"
                 onClick={handleMarkAll}
-                className="text-xs text-primary hover:text-primary/80 font-medium"
+                className="min-h-10 rounded px-2 text-xs font-medium text-primary hover:bg-muted hover:text-primary/80"
               >
                 Mark all read
               </button>
@@ -184,8 +205,8 @@ export function AlertBell({ currentRole }: AlertBellProps) {
                       <button
                         type="button"
                         onClick={() => handleMarkRead(alert.id)}
-                        className="p-1 rounded hover:bg-muted text-muted-foreground"
-                        title="Mark read"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+                        aria-label={`Mark ${alertTitle(alert)} as read`}
                       >
                         <Check className="w-4 h-4" />
                       </button>

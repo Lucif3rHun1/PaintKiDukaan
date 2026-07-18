@@ -212,7 +212,9 @@ export function LocationsSettings() {
                       <button
                         type="button"
                         onClick={() => toggleExpanded(loc.id)}
-                        className="flex items-center gap-2 font-medium hover:text-primary"
+                        aria-expanded={isExpanded}
+                        aria-controls={`sub-locations-${loc.id}`}
+                        className="flex min-h-10 items-center gap-2 rounded px-1 font-medium hover:bg-muted hover:text-primary"
                       >
                         <span className="select-none text-muted-foreground" aria-hidden="true">
                           {isExpanded ? "▼" : "▶"}
@@ -223,7 +225,11 @@ export function LocationsSettings() {
                         Remove
                       </Button>
                     </div>
-                    {isExpanded && <SubLocationList locationId={loc.id} onError={(msg) => setError(msg)} />}
+                    {isExpanded && (
+                      <div id={`sub-locations-${loc.id}`}>
+                        <SubLocationList locationId={loc.id} onError={(msg) => setError(msg)} />
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -341,7 +347,7 @@ export function CatalogSettingsCombined() {
         <div className="flex gap-1 border-b border-border mb-4">
           {(["brands", "categories", "units"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-3 py-1.5 text-sm capitalize whitespace-nowrap ${tab === t ? "border-b-2 border-primary text-foreground font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              className={`min-h-11 px-3 text-sm capitalize whitespace-nowrap ${tab === t ? "border-b-2 border-primary text-foreground font-medium" : "text-muted-foreground hover:text-foreground"}`}
             >{t}</button>
           ))}
         </div>
@@ -479,12 +485,12 @@ function SaleUnitsSettings() {
       cell: (u) =>
         editingId === u.id ? (
           <div className="flex gap-3 text-xs">
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input type="radio" name={`prec-${u.id}`} checked={editPrecision === 0} onChange={() => setEditPrecision(0)} className="h-3 w-3" />
+            <label className="flex min-h-10 cursor-pointer items-center gap-1">
+              <input type="radio" name={`prec-${u.id}`} checked={editPrecision === 0} onChange={() => setEditPrecision(0)} className="h-4 w-4" />
               Whole
             </label>
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input type="radio" name={`prec-${u.id}`} checked={editPrecision === 3} onChange={() => setEditPrecision(3)} className="h-3 w-3" />
+            <label className="flex min-h-10 cursor-pointer items-center gap-1">
+              <input type="radio" name={`prec-${u.id}`} checked={editPrecision === 3} onChange={() => setEditPrecision(3)} className="h-4 w-4" />
               Decimal
             </label>
           </div>
@@ -505,11 +511,11 @@ function SaleUnitsSettings() {
           aria-label={`${u.is_active ? "Deactivate" : "Activate"} ${u.label}`}
           onClick={() => void toggleActive(u)}
           disabled={busy}
-          className={`inline-flex h-5 w-9 items-center rounded-full transition-colors duration-fast ${
-            u.is_active ? "bg-primary" : "bg-muted"
-          }`}
+          className="inline-flex h-10 w-11 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         >
-          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform duration-fast ${u.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
+          <span className={`inline-flex h-6 w-10 items-center rounded-full transition-colors duration-fast ${u.is_active ? "bg-primary" : "bg-muted"}`}>
+            <span className={`inline-block h-4 w-4 rounded-full bg-background transition-transform duration-fast ${u.is_active ? "translate-x-5" : "translate-x-1"}`} />
+          </span>
         </button>
       ),
     },
@@ -521,11 +527,11 @@ function SaleUnitsSettings() {
       cell: (u) =>
         editingId === u.id ? (
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => void saveEdit()} disabled={busy} className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">Save</button>
-            <button type="button" onClick={cancelEdit} disabled={busy} className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Cancel</button>
+            <button type="button" onClick={() => void saveEdit()} disabled={busy} className="min-h-10 rounded bg-primary px-3 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">Save</button>
+            <button type="button" onClick={cancelEdit} disabled={busy} className="min-h-10 rounded border border-border px-3 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Cancel</button>
           </div>
         ) : (
-          <button type="button" onClick={() => startEdit(u)} disabled={busy} className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Edit</button>
+          <button type="button" onClick={() => startEdit(u)} disabled={busy} className="min-h-10 rounded border border-border px-3 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Edit</button>
         ),
     },
   ];
@@ -563,12 +569,12 @@ function SaleUnitsSettings() {
             <div className="flex flex-col">
               <label className="mb-1 text-xs font-medium text-muted-foreground">Precision</label>
               <div className="flex gap-3 rounded border border-border px-2 py-1.5 text-xs">
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="radio" name="new-prec" checked={newPrecision === 0} onChange={() => setNewPrecision(0)} className="h-3 w-3" />
+                <label className="flex min-h-10 cursor-pointer items-center gap-1">
+                  <input type="radio" name="new-prec" checked={newPrecision === 0} onChange={() => setNewPrecision(0)} className="h-4 w-4" />
                   Whole
                 </label>
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="radio" name="new-prec" checked={newPrecision === 3} onChange={() => setNewPrecision(3)} className="h-3 w-3" />
+                <label className="flex min-h-10 cursor-pointer items-center gap-1">
+                  <input type="radio" name="new-prec" checked={newPrecision === 3} onChange={() => setNewPrecision(3)} className="h-4 w-4" />
                   Decimal
                 </label>
               </div>
@@ -700,11 +706,11 @@ function PurchaseUnitsSettings() {
           aria-label={`${u.is_active ? "Deactivate" : "Activate"} ${u.label}`}
           onClick={() => void toggleActive(u)}
           disabled={busy}
-          className={`inline-flex h-5 w-9 items-center rounded-full transition-colors duration-fast ${
-            u.is_active ? "bg-primary" : "bg-muted"
-          }`}
+          className="inline-flex h-10 w-11 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         >
-          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform duration-fast ${u.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
+          <span className={`inline-flex h-6 w-10 items-center rounded-full transition-colors duration-fast ${u.is_active ? "bg-primary" : "bg-muted"}`}>
+            <span className={`inline-block h-4 w-4 rounded-full bg-background transition-transform duration-fast ${u.is_active ? "translate-x-5" : "translate-x-1"}`} />
+          </span>
         </button>
       ),
     },
@@ -716,11 +722,11 @@ function PurchaseUnitsSettings() {
       cell: (u) =>
         editingId === u.id ? (
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => void saveEdit()} disabled={busy} className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">Save</button>
-            <button type="button" onClick={() => setEditingId(null)} disabled={busy} className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Cancel</button>
+            <button type="button" onClick={() => void saveEdit()} disabled={busy} className="min-h-10 rounded bg-primary px-3 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">Save</button>
+            <button type="button" onClick={() => setEditingId(null)} disabled={busy} className="min-h-10 rounded border border-border px-3 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Cancel</button>
           </div>
         ) : (
-          <button type="button" onClick={() => startEdit(u)} disabled={busy} className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Edit</button>
+          <button type="button" onClick={() => startEdit(u)} disabled={busy} className="min-h-10 rounded border border-border px-3 text-xs text-muted-foreground hover:bg-card disabled:opacity-50">Edit</button>
         ),
     },
   ];

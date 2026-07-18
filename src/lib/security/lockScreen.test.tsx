@@ -47,7 +47,8 @@ describe("LockScreen account switcher", () => {
 
     render(<LockScreen />);
 
-    await userEvent.selectOptions(screen.getByLabelText("Account"), "2");
+    expect(screen.queryByRole("combobox", { name: "Account" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Asha — cashier" }));
     expect(screen.getByLabelText("Asha PIN")).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText("Six digit PIN"), "123456");

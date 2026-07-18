@@ -350,9 +350,9 @@ function ChangeDecoyPinForm({ onDone, onCancel }: { onDone: () => void; onCancel
           />
           <button
             type="button"
-            tabIndex={-1}
             onClick={() => setShowPins((v) => !v)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            aria-label={showPins ? "Hide PINs" : "Show PINs"}
+            className="absolute right-0 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             {showPins ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -439,9 +439,9 @@ function ChangeDuressPinForm({ onDone, onCancel }: { onDone: () => void; onCance
           />
           <button
             type="button"
-            tabIndex={-1}
             onClick={() => setShowPins((v) => !v)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            aria-label={showPins ? "Hide PINs" : "Show PINs"}
+            className="absolute right-0 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             {showPins ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>

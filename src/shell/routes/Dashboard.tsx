@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { Alert, PageHeader, TabsLegacy, type TabItem } from "../../components/ui";
+import { Alert, PageHeader, SkeletonRow, TabsLegacy, type TabItem } from "../../components/ui";
 import { todayLocalYyyymmdd } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 import { listDayClose } from "../../pos/api";
@@ -12,8 +12,6 @@ import {
   ALERTS_QUERY_KEY,
   type Severity,
 } from "../../domain/alerts";
-import { InventoryTab } from "./dashboard/InventoryTab";
-import { BusinessTab } from "./dashboard/BusinessTab";
 import { QuickActionsBar } from "./dashboard/QuickActionsBar";
 import {
   dashboardTabsForRole,
@@ -22,6 +20,13 @@ import {
   roleCanReadDayClose,
   type DashTab,
 } from "./dashboard/access";
+
+const BusinessTab = lazy(() =>
+  import("./dashboard/BusinessTab").then((module) => ({ default: module.BusinessTab })),
+);
+const InventoryTab = lazy(() =>
+  import("./dashboard/InventoryTab").then((module) => ({ default: module.InventoryTab })),
+);
 
 const STAGGER = {
   dayClose: 60_000,
@@ -151,11 +156,9 @@ export function Dashboard() {
 
       <QuickActionsBar role={role} dayCloseOverdue={Boolean(dayClose.data?.overdue)} />
 
-      {dashTab === "business" && canReadBusiness ? (
-        <BusinessTab />
-      ) : (
-        <InventoryTab />
-      )}
+      <Suspense fallback={<SkeletonRow count={4} />}>
+        {dashTab === "business" && canReadBusiness ? <BusinessTab /> : <InventoryTab />}
+      </Suspense>
     </div>
   );
 }
