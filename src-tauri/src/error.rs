@@ -87,14 +87,10 @@ impl AppError {
     }
 
     fn safe_message(&self) -> String {
-        match self {
-            AppError::Db(_)
-            | AppError::Internal(_)
-            | AppError::Io(_)
-            | AppError::Crypto(_)
-            | AppError::LockedOut { .. } => self.user_message(),
-            _ => self.to_string(),
-        }
+        // Use Display (#[error(…)]) so backend logs contain the actual error
+        // details (SQL string, path, timestamp). The frontend never sees this
+        // field — it reads `user_message` instead.
+        self.to_string()
     }
 
     pub fn code(&self) -> &'static str {
