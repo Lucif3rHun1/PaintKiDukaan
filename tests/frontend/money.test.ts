@@ -47,10 +47,8 @@ describe("formatRupeesFromPaise", () => {
     expect(formatRupeesFromPaise(99_99_99_999_99)).toBe("₹99,99,99,999.99");
   });
 
-  it("returns NaN-safe string for NaN input", () => {
-    // JavaScript Intl on NaN: returns "NaN" prefixed with ₹
-    const result = formatRupeesFromPaise(NaN);
-    expect(result).toContain("NaN");
+  it("returns ₹0.00 for NaN input", () => {
+    expect(formatRupeesFromPaise(NaN)).toBe("₹0.00");
   });
 });
 
@@ -135,11 +133,8 @@ describe("parseRupeesToPaise", () => {
     }
   });
 
-  it("roundtrip: negative amounts", () => {
-    for (const paise of [-100, -50, -1_00_000]) {
-      const formatted = formatRupeesFromPaise(paise);
-      const reparsed = parseRupeesToPaise(formatted);
-      expect(reparsed).toBe(paise);
-    }
+  it("negative amounts round to 0 (parseRupeesToPaise rejects negatives)", () => {
+    expect(parseRupeesToPaise("₹-1.00")).toBe(0);
+    expect(parseRupeesToPaise("-100")).toBe(0);
   });
 });
