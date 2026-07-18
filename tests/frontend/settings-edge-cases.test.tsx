@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Brand, Location, Unit } from "../../src/domain/types";
+import type { Brand, Location } from "../../src/domain/types";
 
 /* ── mocks ─────────────────────────────────────────────────────────── */
 
@@ -24,10 +24,13 @@ vi.mock("../../src/lib/security/tauri", () => ({
 }));
 
 const unitsApiMocks = vi.hoisted(() => ({
-  listUnits: vi.fn(),
-  createUnit: vi.fn(),
-  updateUnit: vi.fn(),
-  deactivateUnit: vi.fn(),
+  listSaleUnits: vi.fn(),
+  createSaleUnit: vi.fn(),
+  updateSaleUnit: vi.fn(),
+  deactivateSaleUnit: vi.fn(),
+  listPurchaseUnits: vi.fn(),
+  createPurchaseUnit: vi.fn(),
+  updatePurchaseUnit: vi.fn(),
 }));
 
 const locationsApiMocks = vi.hoisted(() => ({
@@ -83,10 +86,10 @@ const SAMPLE_BRANDS: Brand[] = [
   { id: 2, name: "Berger", prefix: "BG", next_seq: 12 },
 ];
 
-const SAMPLE_UNITS: Unit[] = [
-  { id: 1, code: "KG", label: "Kilogram", dimension: "mass", is_active: true },
-  { id: 2, code: "L", label: "Litre", dimension: "volume", is_active: true },
-  { id: 3, code: "OLD", label: "Deprecated", dimension: "count", is_active: false },
+const SAMPLE_UNITS = [
+  { id: 1, code: "kg", label: "Kilogram", quantity_precision: 3, is_active: true, created_at: "2025-01-01", updated_at: "2025-01-01" },
+  { id: 2, code: "ltr", label: "Litre", quantity_precision: 3, is_active: true, created_at: "2025-01-01", updated_at: "2025-01-01" },
+  { id: 3, code: "old", label: "Deprecated", quantity_precision: 0, is_active: false, created_at: "2025-01-01", updated_at: "2025-01-01" },
 ];
 
 const SAMPLE_LOCATIONS: Location[] = [
@@ -109,10 +112,13 @@ beforeEach(() => {
   ipcMocks.listCustomerTypes.mockReset().mockResolvedValue([]);
   ipcMocks.addCustomerType.mockReset().mockResolvedValue([]);
   ipcMocks.removeCustomerType.mockReset().mockResolvedValue([]);
-  unitsApiMocks.listUnits.mockReset().mockResolvedValue([]);
-  unitsApiMocks.createUnit.mockReset().mockResolvedValue(SAMPLE_UNITS[0]);
-  unitsApiMocks.updateUnit.mockReset().mockResolvedValue(SAMPLE_UNITS[0]);
-  unitsApiMocks.deactivateUnit.mockReset().mockResolvedValue(undefined);
+  unitsApiMocks.listSaleUnits.mockReset().mockResolvedValue([]);
+  unitsApiMocks.createSaleUnit.mockReset().mockResolvedValue(1);
+  unitsApiMocks.updateSaleUnit.mockReset().mockResolvedValue(undefined);
+  unitsApiMocks.deactivateSaleUnit.mockReset().mockResolvedValue(undefined);
+  unitsApiMocks.listPurchaseUnits.mockReset().mockResolvedValue([]);
+  unitsApiMocks.createPurchaseUnit.mockReset().mockResolvedValue(1);
+  unitsApiMocks.updatePurchaseUnit.mockReset().mockResolvedValue(undefined);
   apiMocks.listBrands.mockReset().mockResolvedValue([]);
   apiMocks.listBrandsPaged.mockReset().mockResolvedValue({ rows: [], total: 0 });
   apiMocks.createBrand.mockReset().mockResolvedValue(SAMPLE_BRANDS[0]);
@@ -139,6 +145,7 @@ describe("Soft-delete dependency handling", () => {
 
     const removeBtn = await screen.findByRole("button", { name: /remove.*warehouse/i });
     await user.click(removeBtn);
+    await user.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
       expect(ipcMocks.removeLocation).toHaveBeenCalledWith("Warehouse");
@@ -146,22 +153,22 @@ describe("Soft-delete dependency handling", () => {
     expect(toastMocks.toast.success).toHaveBeenCalledWith("Location removed");
   });
 
-  it("unit deactivation calls deactivateUnit (not delete)", async () => {
-    unitsApiMocks.listUnits.mockResolvedValue(SAMPLE_UNITS);
+  it("unit deactivation calls deactivateSaleUnit (not delete)", async () => {
+    unitsApiMocks.listSaleUnits.mockResolvedValue(SAMPLE_UNITS);
     const user = userEvent.setup();
     const wrapper = createWrapper();
     render(<CatalogUnitsSettings />, { wrapper });
 
-    await screen.findByText("KG");
+    await screen.findByText("kg");
 
-    const deactivateBtns = screen.getAllByRole("button", { name: "Deactivate" });
-    expect(deactivateBtns[0]).not.toBeDisabled();
-    await user.click(deactivateBtns[0]);
+    const deactivateSwitch = screen.getByRole("switch", { name: "Deactivate Kilogram" });
+    expect(deactivateSwitch).not.toBeDisabled();
+    await user.click(deactivateSwitch);
 
     await waitFor(() => {
-      expect(unitsApiMocks.deactivateUnit).toHaveBeenCalledWith(1);
+      expect(unitsApiMocks.deactivateSaleUnit).toHaveBeenCalledWith(1);
     });
-    expect(toastMocks.toast.success).toHaveBeenCalledWith("Unit deactivated");
+    expect(toastMocks.toast.success).toHaveBeenCalledWith("Deactivated");
   });
 
   it("brand deactivation calls deactivateBrand (soft-delete)", async () => {
@@ -185,14 +192,14 @@ describe("Soft-delete dependency handling", () => {
 
   it("inactive units are filtered out of the list (no deactivate button shown)", async () => {
     const activeOnly = SAMPLE_UNITS.filter((u) => u.is_active);
-    unitsApiMocks.listUnits.mockResolvedValue(activeOnly);
+    unitsApiMocks.listSaleUnits.mockResolvedValue(activeOnly);
     const wrapper = createWrapper();
     render(<CatalogUnitsSettings />, { wrapper });
 
-    await screen.findByText("KG");
+    await screen.findByText("kg");
 
-    const deactivateBtns = screen.queryAllByRole("button", { name: "Deactivate" });
-    expect(deactivateBtns.length).toBe(activeOnly.length);
+    const deactivateSwitches = screen.queryAllByRole("switch", { name: /^Deactivate/ });
+    expect(deactivateSwitches.length).toBe(activeOnly.length);
   });
 });
 
@@ -225,19 +232,14 @@ describe("Validation edge cases", () => {
     expect(ipcMocks.addLocation).not.toHaveBeenCalled();
   });
 
-  it("empty unit code and label does not invoke createUnit (button disabled)", async () => {
-    unitsApiMocks.listUnits.mockResolvedValue([]);
-    const user = userEvent.setup();
+  it("empty unit code and label does not invoke createSaleUnit (button disabled)", async () => {
+    unitsApiMocks.listSaleUnits.mockResolvedValue([]);
     const wrapper = createWrapper();
     render(<CatalogUnitsSettings />, { wrapper });
 
-    await user.click(screen.getByRole("button", { name: "Add Unit" }));
-
-    const createBtn = screen.getByRole("button", { name: "Create Unit" });
+    const createBtn = await screen.findByRole("button", { name: "Add sale unit" });
     expect(createBtn).toBeDisabled();
-
-    await user.click(createBtn);
-    expect(unitsApiMocks.createUnit).not.toHaveBeenCalled();
+    expect(unitsApiMocks.createSaleUnit).not.toHaveBeenCalled();
   });
 
   it("brand prefix rejects special characters", async () => {
@@ -351,17 +353,16 @@ describe("UI state edge cases", () => {
   });
 
   it("Enter key on unit code alone does not submit (label required)", async () => {
-    unitsApiMocks.listUnits.mockResolvedValue([]);
+    unitsApiMocks.listSaleUnits.mockResolvedValue([]);
     const user = userEvent.setup();
     const wrapper = createWrapper();
     render(<CatalogUnitsSettings />, { wrapper });
 
-    await user.click(screen.getByRole("button", { name: "Add Unit" }));
-    const codeInput = screen.getByPlaceholderText("e.g. L, KG");
+    const codeInput = await screen.findByPlaceholderText("e.g. ltr");
     await user.type(codeInput, "KG");
     await user.keyboard("{Enter}");
 
-    expect(unitsApiMocks.createUnit).not.toHaveBeenCalled();
+    expect(unitsApiMocks.createSaleUnit).not.toHaveBeenCalled();
   });
 
   it("addLocation is invoked on second attempt after rejection", async () => {
@@ -456,29 +457,31 @@ describe("UI state edge cases", () => {
     resolveDeactivate!();
   });
 
-  it("unit add invokes createUnit when submitted with valid input", async () => {
-    unitsApiMocks.listUnits.mockResolvedValue([]);
-    let resolveCreate: (value: Unit) => void;
-    unitsApiMocks.createUnit.mockImplementation(
-      () => new Promise<Unit>((resolve) => { resolveCreate = resolve; }),
+  it("unit add invokes createSaleUnit when submitted with valid input", async () => {
+    unitsApiMocks.listSaleUnits.mockResolvedValue([]);
+    let resolveCreate: (value: number) => void;
+    unitsApiMocks.createSaleUnit.mockImplementation(
+      () => new Promise<number>((resolve) => { resolveCreate = resolve; }),
     );
     const user = userEvent.setup();
     const wrapper = createWrapper();
     render(<CatalogUnitsSettings />, { wrapper });
 
-    await user.click(screen.getByRole("button", { name: "Add Unit" }));
-
-    const codeInput = screen.getByPlaceholderText("e.g. L, KG");
-    const labelInput = screen.getByPlaceholderText("e.g. Liter, Kilogram");
+    const codeInput = await screen.findByPlaceholderText("e.g. ltr");
+    const labelInput = screen.getByPlaceholderText("e.g. Litre");
     await user.type(codeInput, "KG");
     await user.type(labelInput, "Kilogram");
-    await user.click(screen.getByRole("button", { name: "Create Unit" }));
+    await user.click(screen.getByRole("button", { name: "Add sale unit" }));
 
     await waitFor(() => {
-      expect(unitsApiMocks.createUnit).toHaveBeenCalledWith("KG", "Kilogram", "count");
+      expect(unitsApiMocks.createSaleUnit).toHaveBeenCalledWith({
+        code: "kg",
+        label: "Kilogram",
+        quantity_precision: 0,
+      });
     });
 
-    resolveCreate!(SAMPLE_UNITS[0]);
+    resolveCreate!(1);
   });
 });
 

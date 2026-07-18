@@ -122,7 +122,6 @@ export function LocationsSettings() {
   const [error, setError] = useState<string | null>(null);
   const [expandedLocations, setExpandedLocations] = useState<Set<number>>(new Set());
   const [confirmRemoveLocation, setConfirmRemoveLocation] = useState<LocationItem | null>(null);
-  const [confirmTarget, setConfirmTarget] = useState<LocationItem | null>(null);
 
   const refresh = () => {
     tauriInvoke<LocationItem[]>("list_locations")
@@ -148,7 +147,7 @@ export function LocationsSettings() {
     }
   };
 
-  const remove = async (location: LocationItem) => {
+  const remove = (location: LocationItem) => {
     setConfirmRemoveLocation(location);
   };
 
@@ -220,7 +219,7 @@ export function LocationsSettings() {
                         </span>
                         {loc.name}
                       </button>
-                      <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${loc.name}`} onClick={() => setConfirmTarget(loc)} className="text-destructive hover:bg-destructive/10">
+                      <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${loc.name}`} onClick={() => remove(loc)} className="text-destructive hover:bg-destructive/10">
                         Remove
                       </Button>
                     </div>
@@ -323,6 +322,15 @@ export function CatalogBrandsSettings() {
   return <BrandAdmin role="owner" />;
 }
 
+export function CatalogUnitsSettings() {
+  return (
+    <div className="space-y-6">
+      <SaleUnitsSettings />
+      <PurchaseUnitsSettings />
+    </div>
+  );
+}
+
 export function CatalogSettingsCombined() {
   const [tab, setTab] = useState<"brands" | "categories" | "units">("brands");
 
@@ -340,12 +348,7 @@ export function CatalogSettingsCombined() {
 
         {tab === "brands" && <BrandAdmin role="owner" />}
         {tab === "categories" && <CategoryAdmin role="owner" />}
-        {tab === "units" && (
-          <div className="space-y-6">
-            <SaleUnitsSettings />
-            <PurchaseUnitsSettings />
-          </div>
-        )}
+        {tab === "units" && <CatalogUnitsSettings />}
       </Section>
       </Card.Body>
     </Card>
@@ -497,6 +500,9 @@ function SaleUnitsSettings() {
       cell: (u) => (
         <button
           type="button"
+          role="switch"
+          aria-checked={u.is_active}
+          aria-label={`${u.is_active ? "Deactivate" : "Activate"} ${u.label}`}
           onClick={() => void toggleActive(u)}
           disabled={busy}
           className={`inline-flex h-5 w-9 items-center rounded-full transition-colors duration-fast ${
@@ -568,7 +574,7 @@ function SaleUnitsSettings() {
               </div>
             </div>
             <Button type="button" onClick={() => void add()} disabled={!newCode.trim() || !newLabel.trim() || busy}>
-              Add
+              Add sale unit
             </Button>
           </div>
           {error && <Alert>{error}</Alert>}
@@ -689,6 +695,9 @@ function PurchaseUnitsSettings() {
       cell: (u) => (
         <button
           type="button"
+          role="switch"
+          aria-checked={u.is_active}
+          aria-label={`${u.is_active ? "Deactivate" : "Activate"} ${u.label}`}
           onClick={() => void toggleActive(u)}
           disabled={busy}
           className={`inline-flex h-5 w-9 items-center rounded-full transition-colors duration-fast ${
@@ -731,7 +740,7 @@ function PurchaseUnitsSettings() {
               className="input"
             />
             <Button type="button" onClick={() => void add()} disabled={!newLabel.trim() || busy} shortcut="F6">
-              Add
+              Add purchase unit
             </Button>
           </div>
           {error && <Alert>{error}</Alert>}

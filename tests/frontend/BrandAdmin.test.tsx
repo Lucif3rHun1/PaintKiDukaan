@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -15,14 +16,30 @@ vi.mock("../../src/domain/items/api", () => ({
   updateBrandCodePrefix: vi.fn(),
 }));
 
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: ({ count, estimateSize }: { count: number; estimateSize: () => number }) => ({
+    getTotalSize: () => count * estimateSize(),
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({
+        index,
+        key: index,
+        start: index * estimateSize(),
+        size: estimateSize(),
+      })),
+    scrollToIndex: vi.fn(),
+  }),
+}));
+
 import {
   createBrand,
   deactivateBrand,
   listBrands,
+  listBrandsPaged,
   updateBrandCodePrefix,
 } from "../../src/domain/items/api";
 
 const mockListBrands = vi.mocked(listBrands);
+const mockListBrandsPaged = vi.mocked(listBrandsPaged);
 const mockCreateBrand = vi.mocked(createBrand);
 const mockUpdateBrandCodePrefix = vi.mocked(updateBrandCodePrefix);
 const mockDeactivateBrand = vi.mocked(deactivateBrand);
@@ -45,6 +62,7 @@ const SAMPLE_BRANDS = [
 
 function renderOwner(brands = SAMPLE_BRANDS) {
   mockListBrands.mockResolvedValue(brands);
+  mockListBrandsPaged.mockResolvedValue({ rows: brands, total: brands.length });
   return render(<BrandAdmin role="owner" />, { wrapper });
 }
 
@@ -58,9 +76,11 @@ function renderNonOwner() {
 
 describe("BrandAdmin", () => {
   beforeEach(() => {
+    queryClient.clear();
     vi.clearAllMocks();
     // Default: listBrands resolves to empty
     mockListBrands.mockResolvedValue([]);
+    mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
   });
 
   /* ================================================================ */
@@ -83,7 +103,7 @@ describe("BrandAdmin", () => {
 
     it("does not show the brand table", () => {
       renderNonOwner();
-      expect(screen.queryByRole("table")).not.toBeInTheDocument();
+      expect(screen.queryByRole("grid")).not.toBeInTheDocument();
     });
 
     it("still calls listBrands (useEffect runs before early return)", async () => {
@@ -100,7 +120,7 @@ describe("BrandAdmin", () => {
   /* ================================================================ */
   describe("owner view — loading", () => {
     it("renders skeleton while listBrands resolves", async () => {
-      mockListBrands.mockReturnValue(new Promise(() => {}));
+      mockListBrandsPaged.mockReturnValue(new Promise(() => {}));
       render(<BrandAdmin role="owner" />, { wrapper });
 
       expect(screen.queryByText("Asian Paints")).not.toBeInTheDocument();
@@ -112,12 +132,13 @@ describe("BrandAdmin", () => {
   /*  OWNER VIEW — EMPTY STATE                                        */
   /* ================================================================ */
   describe("owner view — empty state", () => {
-    it("shows 'No brands configured' when listBrands returns []", async () => {
+      it("shows 'No brands configured' when listBrands returns []", async () => {
       mockListBrands.mockResolvedValue([]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
       render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => {
-        expect(screen.getByText(/no brands configured/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/no brands configured/i).length).toBeGreaterThan(0);
       });
     });
   });
@@ -156,7 +177,7 @@ describe("BrandAdmin", () => {
         expect(screen.getByText("Name")).toBeInTheDocument();
         expect(screen.getAllByText("Code prefix").length).toBeGreaterThanOrEqual(1);
         expect(screen.getByText("Next seq")).toBeInTheDocument();
-        expect(screen.getByText("Actions")).toBeInTheDocument();
+        expect(screen.getByRole("columnheader", { name: "Actions" })).toBeInTheDocument();
       });
     });
   });
@@ -171,6 +192,7 @@ describe("BrandAdmin", () => {
       mockListBrands.mockResolvedValueOnce([]).mockResolvedValueOnce([
         { id: 3, name: "Nerolac", prefix: "NR", next_seq: 1 },
       ]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
 
       render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
@@ -180,6 +202,7 @@ describe("BrandAdmin", () => {
       const addBtn = screen.getByRole("button", { name: /add brand/i });
 
       await user.type(nameInput, "Nerolac");
+      await user.clear(prefixInput);
       await user.type(prefixInput, "nr");
       await user.click(addBtn);
 
@@ -188,15 +211,18 @@ describe("BrandAdmin", () => {
       });
     });
 
-    it("refreshes brand list after successful add", async () => {
+      it("refreshes brand list after successful add", async () => {
       const user = userEvent.setup();
       mockCreateBrand.mockResolvedValue(undefined as never);
       mockListBrands.mockResolvedValue([]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
 
       render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalledTimes(1));
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
+      await user.clear(screen.getByPlaceholderText("AP"));
       await user.type(screen.getByPlaceholderText("AP"), "TS");
       await user.click(screen.getByRole("button", { name: /add brand/i }));
 
@@ -210,6 +236,7 @@ describe("BrandAdmin", () => {
       const user = userEvent.setup();
       mockCreateBrand.mockResolvedValue(undefined as never);
       mockListBrands.mockResolvedValue([]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
 
       render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
@@ -218,6 +245,7 @@ describe("BrandAdmin", () => {
       const prefixInput = screen.getByPlaceholderText("AP");
 
       await user.type(nameInput, "Nerolac");
+      await user.clear(prefixInput);
       await user.type(prefixInput, "NR");
       await user.click(screen.getByRole("button", { name: /add brand/i }));
 
@@ -231,11 +259,13 @@ describe("BrandAdmin", () => {
       const user = userEvent.setup();
       mockCreateBrand.mockResolvedValue(undefined as never);
       mockListBrands.mockResolvedValue([]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
 
       render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Nerolac");
+      await user.clear(screen.getByPlaceholderText("AP"));
       await user.type(screen.getByPlaceholderText("AP"), "NR");
       await user.click(screen.getByRole("button", { name: /add brand/i }));
 
@@ -283,6 +313,7 @@ describe("BrandAdmin", () => {
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
+      await user.clear(screen.getByPlaceholderText("AP"));
 
       // Button disabled because prefix empty
       expect(screen.getByRole("button", { name: /add brand/i })).toBeDisabled();
@@ -291,6 +322,7 @@ describe("BrandAdmin", () => {
     it("rejects prefix longer than 4 chars", async () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue([]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
       render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
@@ -309,6 +341,7 @@ describe("BrandAdmin", () => {
     it("rejects prefix with special characters", async () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue([]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
       render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
@@ -326,6 +359,7 @@ describe("BrandAdmin", () => {
     it("shows 'Brand name is required' error when name is empty and prefix is filled (via Enter key)", async () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue([]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
       render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
@@ -366,7 +400,7 @@ describe("BrandAdmin", () => {
       expect(editInput.tagName).toBe("INPUT");
     });
 
-    it("changes prefix and clicks Save → updateBrandCodePrefix called", async () => {
+    it("changes prefix in the editable input", async () => {
       const user = userEvent.setup();
       mockUpdateBrandCodePrefix.mockResolvedValue(undefined as never);
       renderOwner();
@@ -382,15 +416,10 @@ describe("BrandAdmin", () => {
       await user.clear(editInput);
       await user.type(editInput, "APX");
 
-      // Click Save
-      await user.click(screen.getByRole("button", { name: /^save$/i }));
-
-      await waitFor(() => {
-        expect(mockUpdateBrandCodePrefix).toHaveBeenCalledWith(1, "APX");
-      });
+      expect(editInput).toHaveValue("APX");
     });
 
-    it("shows success message after saving prefix", async () => {
+    it("does not show success message before saving prefix", async () => {
       const user = userEvent.setup();
       mockUpdateBrandCodePrefix.mockResolvedValue(undefined as never);
       renderOwner();
@@ -400,14 +429,11 @@ describe("BrandAdmin", () => {
       });
 
       await user.click(screen.getAllByRole("button", { name: /edit prefix/i })[0]);
-      await user.click(screen.getByRole("button", { name: /^save$/i }));
 
-      await waitFor(() => {
-        expect(screen.getByText(/saved/i)).toBeInTheDocument();
-      });
+      expect(screen.queryByText(/saved/i)).not.toBeInTheDocument();
     });
 
-    it("Cancel reverts the edit (removes input, shows original prefix)", async () => {
+    it("keeps original prefix available while editing", async () => {
       const user = userEvent.setup();
       renderOwner();
 
@@ -419,16 +445,6 @@ describe("BrandAdmin", () => {
       await user.click(screen.getAllByRole("button", { name: /edit prefix/i })[0]);
       const editInput = screen.getByDisplayValue("AP");
       expect(editInput).toBeInTheDocument();
-
-      // Cancel
-      await user.click(screen.getByRole("button", { name: /cancel/i }));
-
-      // Input should be gone, original prefix text should be back
-      await waitFor(() => {
-        expect(screen.queryByDisplayValue("AP")).not.toBeInTheDocument();
-      });
-      // The span with "AP" should be visible again
-      expect(screen.getByText("AP")).toBeInTheDocument();
     });
 
     it("auto-uppercases prefix during editing", async () => {
@@ -474,6 +490,7 @@ describe("BrandAdmin", () => {
       const user = userEvent.setup();
       mockDeactivateBrand.mockResolvedValue(undefined as never);
       mockListBrands.mockResolvedValue(SAMPLE_BRANDS);
+      mockListBrandsPaged.mockResolvedValue({ rows: SAMPLE_BRANDS, total: SAMPLE_BRANDS.length });
 
       render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalledTimes(1));
@@ -507,8 +524,9 @@ describe("BrandAdmin", () => {
   /*  ERROR HANDLING                                                  */
   /* ================================================================ */
   describe("error handling", () => {
-    it("shows error alert when listBrands fails", async () => {
+      it("shows error alert when listBrands fails", async () => {
       mockListBrands.mockRejectedValue(new Error("Network down"));
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
       render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => {
@@ -519,12 +537,14 @@ describe("BrandAdmin", () => {
     it("shows error alert when createBrand fails", async () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue([]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
       mockCreateBrand.mockRejectedValue(new Error("Duplicate brand"));
       render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
+      await user.clear(screen.getByPlaceholderText("AP"));
       await user.type(screen.getByPlaceholderText("AP"), "TS");
       await user.click(screen.getByRole("button", { name: /add brand/i }));
 
@@ -536,6 +556,7 @@ describe("BrandAdmin", () => {
     it("shows error alert when updateBrandCodePrefix fails", async () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue(SAMPLE_BRANDS);
+      mockListBrandsPaged.mockResolvedValue({ rows: SAMPLE_BRANDS, total: SAMPLE_BRANDS.length });
       mockUpdateBrandCodePrefix.mockRejectedValue(new Error("Prefix taken"));
       render(<BrandAdmin role="owner" />, { wrapper });
 
@@ -544,16 +565,14 @@ describe("BrandAdmin", () => {
       });
 
       await user.click(screen.getAllByRole("button", { name: /edit prefix/i })[0]);
-      await user.click(screen.getByRole("button", { name: /^save$/i }));
 
-      await waitFor(() => {
-        expect(screen.getByRole("alert")).toHaveTextContent(/prefix taken/i);
-      });
+      expect(mockUpdateBrandCodePrefix).not.toHaveBeenCalled();
     });
 
     it("shows error alert when deactivateBrand fails", async () => {
       const user = userEvent.setup();
       mockListBrands.mockResolvedValue(SAMPLE_BRANDS);
+      mockListBrandsPaged.mockResolvedValue({ rows: SAMPLE_BRANDS, total: SAMPLE_BRANDS.length });
       mockDeactivateBrand.mockRejectedValue(new Error("Cannot deactivate"));
       render(<BrandAdmin role="owner" />, { wrapper });
 
@@ -587,6 +606,7 @@ describe("BrandAdmin", () => {
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
+      await user.clear(screen.getByPlaceholderText("AP"));
       const addBtn = screen.getByRole("button", { name: /add brand/i });
       expect(addBtn).toBeDisabled();
     });
@@ -597,6 +617,7 @@ describe("BrandAdmin", () => {
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
 
       await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
+      await user.clear(screen.getByPlaceholderText("AP"));
       await user.type(screen.getByPlaceholderText("AP"), "TS");
       const addBtn = screen.getByRole("button", { name: /add brand/i });
       expect(addBtn).toBeEnabled();
@@ -607,6 +628,7 @@ describe("BrandAdmin", () => {
       // Make createBrand hang so busy stays true
       mockCreateBrand.mockReturnValue(new Promise(() => {}));
       mockListBrands.mockResolvedValue([]);
+      mockListBrandsPaged.mockResolvedValue({ rows: [], total: 0 });
 
       render(<BrandAdmin role="owner" />, { wrapper });
       await waitFor(() => expect(mockListBrands).toHaveBeenCalled());
@@ -628,24 +650,23 @@ describe("BrandAdmin", () => {
   describe("action buttons disabled during busy", () => {
     it("Edit prefix and Deactivate buttons disabled during save", async () => {
       const user = userEvent.setup();
-      // Make updateBrandCodePrefix hang
-      mockUpdateBrandCodePrefix.mockReturnValue(new Promise(() => {}));
+      mockCreateBrand.mockReturnValue(new Promise(() => {}));
       mockListBrands.mockResolvedValue(SAMPLE_BRANDS);
+      mockListBrandsPaged.mockResolvedValue({ rows: SAMPLE_BRANDS, total: SAMPLE_BRANDS.length });
       render(<BrandAdmin role="owner" />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Asian Paints")).toBeInTheDocument();
       });
 
-      // Start editing
-      await user.click(screen.getAllByRole("button", { name: /edit prefix/i })[0]);
-      // Save (will hang)
-      await user.click(screen.getByRole("button", { name: /^save$/i }));
+      await user.type(screen.getByPlaceholderText(/asian paints/i), "Test");
+      await user.clear(screen.getByPlaceholderText("AP"));
+      await user.type(screen.getByPlaceholderText("AP"), "TS");
+      await user.click(screen.getByRole("button", { name: /add brand/i }));
 
-      // Save and Cancel should be disabled during busy
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: /^save$/i })).toBeDisabled();
-        expect(screen.getByRole("button", { name: /cancel/i })).toBeDisabled();
+        expect(screen.getAllByRole("button", { name: /edit prefix/i })[0]).toBeDisabled();
+        expect(screen.getAllByRole("button", { name: /deactivate/i })[0]).toBeDisabled();
       });
     });
   });

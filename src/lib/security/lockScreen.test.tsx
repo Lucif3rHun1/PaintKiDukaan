@@ -62,4 +62,29 @@ describe("LockScreen account switcher", () => {
     });
     expect(useSecurity.getState().session.user?.name).toBe("Asha");
   });
+
+  it("does not count infrastructure failures as wrong PIN attempts", async () => {
+    globalThis.__tauriInvokeMock.mockRejectedValue(new Error("Tauri IPC bridge is unavailable"));
+    render(<LockScreen />);
+
+    await userEvent.type(screen.getByLabelText("Six digit PIN"), "123456{Enter}");
+
+    expect(await screen.findByText("Tauri IPC bridge is unavailable")).toBeInTheDocument();
+    expect(screen.queryByText(/Failed attempts:/)).not.toBeInTheDocument();
+  });
+
+  it("counts a wrong PIN response", async () => {
+    globalThis.__tauriInvokeMock.mockRejectedValue({
+      code: "wrong_pin",
+      message: "Incorrect PIN",
+      user_message: "Incorrect PIN",
+    });
+    render(<LockScreen />);
+
+    await userEvent.type(screen.getByLabelText("Six digit PIN"), "123456{Enter}");
+
+    expect(await screen.findByText("Incorrect PIN")).toBeInTheDocument();
+    const attempts = screen.getAllByRole("alert").find((element) => element.textContent?.includes("Failed attempts: 1/5"));
+    expect(attempts).toBeDefined();
+  });
 });

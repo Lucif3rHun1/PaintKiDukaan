@@ -43,6 +43,13 @@ globalThis.ResizeObserver = class ResizeObserver {
   disconnect = vi.fn();
 } as unknown as typeof ResizeObserver;
 
+HTMLDialogElement.prototype.showModal = function showModal() {
+  this.setAttribute("open", "");
+};
+HTMLDialogElement.prototype.close = function close() {
+  this.removeAttribute("open");
+};
+
 // Silence console noise in tests
 vi.spyOn(console, "warn").mockImplementation(() => {});
 vi.spyOn(console, "error").mockImplementation(() => {});

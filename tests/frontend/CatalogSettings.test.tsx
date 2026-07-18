@@ -15,9 +15,13 @@ const ipcMocks = vi.hoisted(() => ({
 }));
 
 const unitsApiMocks = vi.hoisted(() => ({
-  listUnits: vi.fn(),
-  createUnit: vi.fn(),
-  deactivateUnit: vi.fn(),
+  listSaleUnits: vi.fn(),
+  createSaleUnit: vi.fn(),
+  updateSaleUnit: vi.fn(),
+  deactivateSaleUnit: vi.fn(),
+  listPurchaseUnits: vi.fn(),
+  createPurchaseUnit: vi.fn(),
+  updatePurchaseUnit: vi.fn(),
 }));
 
 const locationsApiMocks = vi.hoisted(() => ({
@@ -59,7 +63,15 @@ const SAMPLE_LOCATIONS = [
 ];
 
 const SAMPLE_UNITS = [
-  { id: 1, code: "KG", label: "Kilogram", dimension: "mass" as const, is_active: true },
+  {
+    id: 1,
+    code: "kg",
+    label: "Kilogram",
+    quantity_precision: 3,
+    is_active: true,
+    created_at: "2025-01-01",
+    updated_at: "2025-01-01",
+  },
 ];
 
 beforeEach(() => {
@@ -76,9 +88,13 @@ beforeEach(() => {
   ipcMocks.listCustomerTypes.mockReset().mockResolvedValue([]);
   ipcMocks.addCustomerType.mockReset().mockResolvedValue([]);
   ipcMocks.removeCustomerType.mockReset().mockResolvedValue([]);
-  unitsApiMocks.listUnits.mockReset().mockResolvedValue([]);
-  unitsApiMocks.createUnit.mockReset().mockResolvedValue(SAMPLE_UNITS[0]);
-  unitsApiMocks.deactivateUnit.mockReset().mockResolvedValue(undefined);
+  unitsApiMocks.listSaleUnits.mockReset().mockResolvedValue([]);
+  unitsApiMocks.createSaleUnit.mockReset().mockResolvedValue(1);
+  unitsApiMocks.updateSaleUnit.mockReset().mockResolvedValue(undefined);
+  unitsApiMocks.deactivateSaleUnit.mockReset().mockResolvedValue(undefined);
+  unitsApiMocks.listPurchaseUnits.mockReset().mockResolvedValue([]);
+  unitsApiMocks.createPurchaseUnit.mockReset().mockResolvedValue(1);
+  unitsApiMocks.updatePurchaseUnit.mockReset().mockResolvedValue(undefined);
 });
 
 describe("LocationsSettings", () => {
@@ -111,6 +127,7 @@ describe("LocationsSettings", () => {
 
     await screen.findByText("Warehouse");
     await user.click(screen.getByRole("button", { name: "Remove Warehouse" }));
+    await user.click(screen.getByRole("button", { name: "Remove", hidden: false }));
 
     await waitFor(() => {
       expect(ipcMocks.removeLocation).toHaveBeenCalledWith("Warehouse");
@@ -164,64 +181,67 @@ describe("CustomerTypesSettings", () => {
 });
 
 describe("CatalogUnitsSettings", () => {
-  it("renders empty state", async () => {
+  it("renders sale and purchase empty states", async () => {
     render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
-    expect(await screen.findByText("No units configured")).toBeInTheDocument();
+    expect(await screen.findByText("No sale units")).toBeInTheDocument();
+    expect(await screen.findByText("No purchase units")).toBeInTheDocument();
   });
 
-  it("renders unit rows", async () => {
-    unitsApiMocks.listUnits.mockResolvedValue(SAMPLE_UNITS);
+  it("renders sale unit rows", async () => {
+    unitsApiMocks.listSaleUnits.mockResolvedValue(SAMPLE_UNITS);
     render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
-    expect(await screen.findByText("KG")).toBeInTheDocument();
+    expect(await screen.findByText("kg")).toBeInTheDocument();
     expect(screen.getByText("Kilogram")).toBeInTheDocument();
   });
 
-  it("creates a unit via the gated form", async () => {
+  it("creates a sale unit", async () => {
     const user = userEvent.setup();
     render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
-    await screen.findByText("No units configured");
+    await screen.findByText("No sale units");
 
-    await user.click(screen.getByRole("button", { name: "Add Unit" }));
-
-    const codeInput = screen.getByPlaceholderText("e.g. L, KG");
-    const labelInput = screen.getByPlaceholderText("e.g. Liter, Kilogram");
+    const codeInput = screen.getByPlaceholderText("e.g. ltr");
+    const labelInput = screen.getByPlaceholderText("e.g. Litre");
     await user.type(codeInput, "ML");
     await user.type(labelInput, "Millilitre");
-    await user.click(screen.getByRole("button", { name: "Create Unit" }));
+    await user.click(screen.getByRole("button", { name: "Add sale unit" }));
 
     await waitFor(() => {
-      expect(unitsApiMocks.createUnit).toHaveBeenCalledWith("ML", "Millilitre", "count");
+      expect(unitsApiMocks.createSaleUnit).toHaveBeenCalledWith({
+        code: "ml",
+        label: "Millilitre",
+        quantity_precision: 0,
+      });
     });
   });
 
-  it("auto-uppercases code", async () => {
+  it("normalizes sale unit code to lowercase", async () => {
     const user = userEvent.setup();
     render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
-    await screen.findByText("No units configured");
-    await user.click(screen.getByRole("button", { name: "Add Unit" }));
+    await screen.findByText("No sale units");
 
-    const codeInput = screen.getByPlaceholderText("e.g. L, KG");
+    const codeInput = screen.getByPlaceholderText("e.g. ltr");
     await user.type(codeInput, "abc");
-    expect(codeInput).toHaveValue("ABC");
+    await user.type(screen.getByPlaceholderText("e.g. Litre"), "Unit");
+    await user.click(screen.getByRole("button", { name: "Add sale unit" }));
+    await waitFor(() => expect(unitsApiMocks.createSaleUnit).toHaveBeenCalledWith(expect.objectContaining({ code: "abc" })));
   });
 
-  it("deactivates a unit", async () => {
+  it("deactivates a sale unit", async () => {
     const user = userEvent.setup();
-    unitsApiMocks.listUnits.mockResolvedValue(SAMPLE_UNITS);
+    unitsApiMocks.listSaleUnits.mockResolvedValue(SAMPLE_UNITS);
     render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
-    await screen.findByText("KG");
+    await screen.findByText("kg");
 
-    await user.click(screen.getByRole("button", { name: "Deactivate" }));
+    await user.click(screen.getByRole("switch", { name: "Deactivate Kilogram" }));
 
     await waitFor(() => {
-      expect(unitsApiMocks.deactivateUnit).toHaveBeenCalledWith(1);
+      expect(unitsApiMocks.deactivateSaleUnit).toHaveBeenCalledWith(1);
     });
   });
 
-  it("disables Create when fields empty", async () => {
+  it("disables Add when sale unit fields are empty", async () => {
     render(<CatalogUnitsSettings />, { wrapper: createWrapper() });
-    await screen.findByText("No units configured");
-    await userEvent.click(screen.getByRole("button", { name: "Add Unit" }));
-    expect(screen.getByRole("button", { name: "Create Unit" })).toBeDisabled();
+    await screen.findByText("No sale units");
+    expect(screen.getByRole("button", { name: "Add sale unit" })).toBeDisabled();
   });
 });

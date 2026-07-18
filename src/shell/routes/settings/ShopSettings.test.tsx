@@ -21,6 +21,7 @@ const setSetting = vi.mocked(ipc.setSetting);
 
 describe("Shop settings state", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     getSetting.mockResolvedValue(null);
     setSetting.mockResolvedValue(undefined);
   });
@@ -53,7 +54,7 @@ describe("Shop settings state", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     // Then: inline validation blocks persistence.
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter a valid 15-character GSTIN");
+    expect(screen.getByText("Enter a valid 15-character GSTIN or leave it blank.")).toBeInTheDocument();
     expect(setSetting).not.toHaveBeenCalled();
   });
 
@@ -70,7 +71,7 @@ describe("Shop settings state", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     // Then: inline validation blocks persistence.
-    expect(screen.getByRole("alert")).toHaveTextContent("Use a whole number from 0 to 4");
+    expect(screen.getByText("Use a whole number from 0 to 4.")).toBeInTheDocument();
     expect(setSetting).not.toHaveBeenCalled();
   });
 });

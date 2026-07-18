@@ -1,18 +1,20 @@
 export function Field({
   label,
+  htmlFor,
   required,
   error,
   hint,
   children,
 }: {
   label: string;
+  htmlFor?: string;
   required?: boolean;
   error?: string;
   hint?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label className="block">
+    <label className="block" htmlFor={htmlFor}>
       <span className="mb-1 block text-sm font-medium text-foreground">
         {label}
         {required && <span aria-hidden="true" className="text-destructive"> *</span>}

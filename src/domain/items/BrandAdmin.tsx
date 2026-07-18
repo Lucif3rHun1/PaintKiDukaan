@@ -5,18 +5,15 @@
  * (e.g. AP → APACE001). Owners can add brands, tweak the prefix, and
  * deactivate brands that have no items referencing them.
  *
- * Renders via <DataList> server source (cmd_list_brands_paged).
  */
 import { useEffect, useMemo, useState } from "react";
 import { Tag } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { listBrands, listBrandsPaged, createBrand, updateBrandCodePrefix, deactivateBrand } from "./api";
+import { listBrands, createBrand, updateBrandCodePrefix, deactivateBrand } from "./api";
 import type { Brand } from "../types";
 import { extractError } from "../../lib/extractError";
 import { toTitleCase } from "../../lib/format/titleCase";
-import { Alert, Button, Card, DataList, EmptyState, PageHeader } from "../../components/ui";
-import type { ColumnDef } from "../../components/ui";
-import { invalidateList } from "../../lib/query";
+import { Alert, Button, Card, DataTable, EmptyState, PageHeader, SearchInput } from "../../components/ui";
+import type { LegacyColumnDef } from "../../components/ui";
 
 interface Props {
   role: "owner" | "cashier" | "stocker";
@@ -24,7 +21,8 @@ interface Props {
 
 export function BrandAdmin({ role }: Props) {
   const isOwner = role === "owner";
-  const queryClient = useQueryClient();
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingPrefix, setEditingPrefix] = useState("");
   const [loading, setLoading] = useState(false);
@@ -36,20 +34,11 @@ export function BrandAdmin({ role }: Props) {
   const [newName, setNewName] = useState("");
   const [newPrefix, setNewPrefix] = useState("");
 
-  const serverSource = useMemo(() => ({
-    endpoint: "cmd_list_brands_paged",
-    pageSize: 100,
-    initialSort: { field: "name", dir: "asc" as const },
-    clientFn: listBrandsPaged,
-  }), []);
-
   const refresh = () => {
     setLoading(true);
     setError(null);
     listBrands()
-      .then(() => {
-        void invalidateList(queryClient, "cmd_list_brands_paged");
-      })
+      .then(setBrands)
       .catch((e: unknown) => setError(extractError(e)))
       .finally(() => setLoading(false));
   };
@@ -88,7 +77,6 @@ export function BrandAdmin({ role }: Props) {
       setNewName("");
       setNewPrefix("");
       refresh();
-      void invalidateList(queryClient, "cmd_list_brands_paged");
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -129,7 +117,6 @@ export function BrandAdmin({ role }: Props) {
       setSuccess("Saved.");
       setEditingId(null);
       refresh();
-      void invalidateList(queryClient, "cmd_list_brands_paged");
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -144,7 +131,6 @@ export function BrandAdmin({ role }: Props) {
       await deactivateBrand(id);
       setSuccess("Brand deactivated.");
       refresh();
-      void invalidateList(queryClient, "cmd_list_brands_paged");
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -162,17 +148,19 @@ export function BrandAdmin({ role }: Props) {
 
   const addDisabled = busy || !newName.trim() || !newPrefix.trim();
 
-  const brandColumns: ColumnDef<Brand>[] = [
+  const filteredBrands = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    if (!query) return brands;
+    return brands.filter((brand) =>
+      brand.name.toLocaleLowerCase().includes(query) || brand.prefix.toLocaleLowerCase().includes(query),
+    );
+  }, [brands, search]);
+
+  const brandColumns: LegacyColumnDef<Brand>[] = [
     {
       id: "name",
       header: "Name",
-      flex: true,
-      minWidth: "10rem",
-      maxWidth: "20rem",
       cell: (b) => <span className="truncate text-foreground">{toTitleCase(b.name)}</span>,
-      sortField: "name",
-      sortable: true,
-      searchable: true,
     },
     {
       id: "prefix",
@@ -190,8 +178,6 @@ export function BrandAdmin({ role }: Props) {
         ) : (
           <span className="font-mono text-foreground">{b.prefix}</span>
         ),
-      sortField: "prefix",
-      sortable: true,
     },
     {
       id: "next_seq",
@@ -202,6 +188,27 @@ export function BrandAdmin({ role }: Props) {
         <span className="font-mono tabular-nums text-muted-foreground">
           {String(b.next_seq).padStart(3, "0")}
         </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      align: "right",
+      width: "14rem",
+      cell: (brand) => editingId === brand.id ? (
+        <div className="flex justify-end gap-2">
+          <Button type="button" size="sm" onClick={saveEdit} disabled={busy}>Save</Button>
+          <Button type="button" size="sm" variant="secondary" onClick={cancelEdit} disabled={busy}>Cancel</Button>
+        </div>
+      ) : (
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={() => startEdit(brand)} disabled={busy} size="sm" variant="secondary">
+            Edit prefix
+          </Button>
+          <Button type="button" onClick={() => handleDeactivate(brand.id)} disabled={busy} size="sm" variant="destructive">
+            Deactivate
+          </Button>
+        </div>
       ),
     },
   ];
@@ -270,42 +277,24 @@ export function BrandAdmin({ role }: Props) {
         </Button>
       </Card>
 
-      <DataList
-        source={serverSource}
+      <SearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Search brands…"
+      />
+      <DataTable
+        data={filteredBrands}
         columns={brandColumns}
         keyExtractor={(b) => b.id}
-        searchPlaceholder="Search brands…"
-        emptyMessage="No brands configured"
-        emptyCta={
+        caption="Brands"
+        loading={loading}
+        emptyState={
           <EmptyState
             icon={Tag}
             title="No brands configured"
             description="Add a brand above to enable auto-generated barcodes."
           />
         }
-        height={400}
-        rowActions={(b) => (
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              onClick={() => startEdit(b)}
-              disabled={busy}
-              size="sm"
-              variant="secondary"
-            >
-              Edit prefix
-            </Button>
-            <Button
-              type="button"
-              onClick={() => handleDeactivate(b.id)}
-              disabled={busy}
-              size="sm"
-              variant="destructive"
-            >
-              Deactivate
-            </Button>
-          </div>
-        )}
       />
 
       <p className="text-xs leading-4 text-muted-foreground">

@@ -34,6 +34,14 @@ import { isAnyFormDirty } from "./pos/hooks";
 import { setHash } from "./lib/navigate";
 import type { Customer, CustomerType, Vendor } from "./domain/types";
 
+export function requestGracefulQuit(requestConfirmation: () => void): void {
+  if (isAnyFormDirty()) {
+    requestConfirmation();
+    return;
+  }
+  void getCurrentWindow().close();
+}
+
 /* Route pages are split into per-route Vite chunks via React.lazy so the
  * initial bundle ships only the shell + Dashboard. The `.then(m => ({ default: m.X }))`
  * wrapper is required because most pages use named exports. */
@@ -228,6 +236,7 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [showNavGuard, setShowNavGuard] = useState(false);
   const [pendingNav, setPendingNav] = useState<{ tab: AppShellTab; hash?: string } | null>(null);
+  const [pendingQuit, setPendingQuit] = useState(false);
   const [wipeConfirm, setWipeConfirm] = useState(false);
   const [wipeLoading, setWipeLoading] = useState(false);
 
@@ -241,15 +250,14 @@ export default function App() {
     }
   }, [phase]);
 
-  // audit(v0.2.0 CRITICAL #3): listen for graceful-quit from the backend.
-  // On X-click, lib.rs emits this event then waits 3s as a safety net.
-  // We exit immediately so the FE has a chance to flush dirty drafts
-  // (TODO: route through isAnyFormDirty + UnsavedChangesModal before exit).
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
       unlisten = await listen("app://graceful-quit-requested", () => {
-        void getCurrentWindow().close();
+        requestGracefulQuit(() => {
+          setPendingQuit(true);
+          setShowNavGuard(true);
+        });
       });
     })();
     return () => {
@@ -950,19 +958,26 @@ export default function App() {
         open={showNavGuard}
         onSaveDraft={() => {
           const nav = pendingNav;
+          const shouldQuit = pendingQuit;
           setShowNavGuard(false);
           setPendingNav(null);
+          setPendingQuit(false);
+          if (shouldQuit) void getCurrentWindow().close();
           if (nav) executeNav(nav.tab, nav.hash);
         }}
         onDiscard={() => {
           const nav = pendingNav;
+          const shouldQuit = pendingQuit;
           setShowNavGuard(false);
           setPendingNav(null);
+          setPendingQuit(false);
+          if (shouldQuit) void getCurrentWindow().close();
           if (nav) executeNav(nav.tab, nav.hash);
         }}
         onCancel={() => {
           setShowNavGuard(false);
           setPendingNav(null);
+          setPendingQuit(false);
         }}
       />
     </AppShell>

@@ -117,7 +117,9 @@ export function LockScreen() {
         }
       }
 
-      setFailedAttempts((current) => current + 1);
+      if (isAppError(error) && error.code === "wrong_pin") {
+        setFailedAttempts((current) => current + 1);
+      }
       setBackendError(extractError(error));
     }
   }

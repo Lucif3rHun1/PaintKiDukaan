@@ -94,14 +94,16 @@ export function ShopInfoSettings() {
       <Card depth="flat">
         <Section title="Shop information" description="Name, phone, GSTIN, and address shown on invoices and receipts.">
           <div className="grid gap-4 rounded-lg bg-surface-sunken p-4 text-sm">
-          <Field label="Shop name" required>
-            <input value={shopName} onChange={(e) => setShopName(e.target.value)} className="input" />
+          <Field label="Shop name" htmlFor="shop-name" required>
+            <input id="shop-name" aria-label="Shop name" value={shopName} onChange={(e) => setShopName(e.target.value)} className="input" />
           </Field>
-          <Field label="Phone">
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} className="input" />
+          <Field label="Phone" htmlFor="shop-phone">
+            <input id="shop-phone" aria-label="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="input" />
           </Field>
-          <Field label="GSTIN" error={gstinError ?? undefined} hint="Optional. Must be a valid 15-character GSTIN when entered.">
+          <Field label="GSTIN" htmlFor="shop-gstin" error={gstinError ?? undefined} hint="Optional. Must be a valid 15-character GSTIN when entered.">
             <input
+              id="shop-gstin"
+              aria-label="GSTIN"
               value={gstin}
               onChange={(e) => {
                 setGstin(e.target.value);
@@ -111,8 +113,8 @@ export function ShopInfoSettings() {
               aria-invalid={gstinError ? true : undefined}
             />
           </Field>
-          <Field label="Address">
-            <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={3} className="input" />
+          <Field label="Address" htmlFor="shop-address">
+            <textarea id="shop-address" aria-label="Address" value={address} onChange={(e) => setAddress(e.target.value)} rows={3} className="input" />
           </Field>
           <div className="flex justify-end">
             <Button onClick={save} loading={saving}>Save</Button>
@@ -211,14 +213,16 @@ export function CurrencySettings() {
       <Card depth="flat">
         <Section title="Currency" description="Currency code, symbol, and decimal display precision.">
           <div className="grid max-w-md gap-4 rounded-lg bg-surface-sunken p-4 text-sm">
-          <Field label="Currency code">
-            <input value={code} onChange={(e) => setCode(e.target.value)} className="input" />
+          <Field label="Currency code" htmlFor="currency-code">
+            <input id="currency-code" aria-label="Currency code" value={code} onChange={(e) => setCode(e.target.value)} className="input" />
           </Field>
-          <Field label="Symbol">
-            <input value={symbol} onChange={(e) => setSymbol(e.target.value)} className="input" />
+          <Field label="Symbol" htmlFor="currency-symbol">
+            <input id="currency-symbol" aria-label="Symbol" value={symbol} onChange={(e) => setSymbol(e.target.value)} className="input" />
           </Field>
-          <Field label="Decimal places" error={decimalsError ?? undefined} hint="Whole number from 0 to 4.">
+          <Field label="Decimal places" htmlFor="currency-decimals" error={decimalsError ?? undefined} hint="Whole number from 0 to 4.">
             <input
+              id="currency-decimals"
+              aria-label="Decimal places"
               type="number"
               min={0}
               max={4}
