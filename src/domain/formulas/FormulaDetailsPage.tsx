@@ -254,7 +254,7 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-        <Card as="section" className="space-y-3 p-4">
+        <Card as="section" depth="flat" className="space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Details</h2>
           <dl className="grid grid-cols-2 gap-3 text-sm">
             <Row label="Shade ID">
@@ -285,7 +285,7 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
           </dl>
         </Card>
 
-        <Card as="section" className="space-y-3 p-4">
+        <Card as="section" depth="flat" className="space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Sales</h2>
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
@@ -353,7 +353,7 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 text-foreground">{children}</dd>
     </div>
   );

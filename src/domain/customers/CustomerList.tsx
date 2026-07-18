@@ -227,24 +227,25 @@ export function CustomerList({
   });
 
   return (
-  <Skeleton name="customers-list" loading={customerMetrics.isLoading} select="viewport">
-    <div className="space-y-3">
+  <Skeleton name="customers-list" loading={customerMetrics.isLoading} select="viewport" className="min-h-0 flex-1 [&>[data-boneyard-content]]:h-full">
+    <div className="flex h-full min-h-0 flex-col gap-3">
       {/* ── Metric cards ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card as="section" className="space-y-1 p-4">
+        <Card as="section" depth="raised" className="space-y-1 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Total</p>
           <p className="text-2xl font-semibold tabular-nums text-foreground">{customerMetrics.data?.total ?? "—"}</p>
         </Card>
-        <Card as="section" className="space-y-1 p-4">
+        <Card as="section" depth="raised" className="space-y-1 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Active</p>
           <p className="text-2xl font-semibold tabular-nums text-success">{customerMetrics.data?.active ?? "—"}</p>
         </Card>
-        <Card as="section" className="space-y-1 p-4">
+        <Card as="section" depth="raised" className="space-y-1 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Inactive</p>
           <p className="text-2xl font-semibold tabular-nums text-muted-foreground">{customerMetrics.data?.inactive ?? "—"}</p>
         </Card>
         <Card
           as="section"
+          depth="raised"
           className={
             (customerMetrics.data?.flagged ?? 0) > 0
               ? "space-y-1 border-warning/40 bg-warning/5 p-4"
@@ -291,6 +292,7 @@ export function CustomerList({
           ) : null
         }
         fill
+        className="surface-sunken shadow-none"
       />
 
       <ConfirmDialog

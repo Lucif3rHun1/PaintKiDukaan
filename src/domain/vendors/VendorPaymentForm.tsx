@@ -3,7 +3,7 @@
  */
 import { useState } from "react";
 import { recordVendorPayment } from "./api";
-import { Alert, Button, Field, MoneyInput, DatePicker, Select } from "../../components/ui";
+import { Alert, Button, Card, Field, MoneyInput, DatePicker, Select } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { getPref, setPref } from "../../lib/storage";
 import { toast } from "../../lib/feedback/toast";
@@ -32,7 +32,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     if (!(amount > 0)) {
@@ -60,6 +60,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
 
   return (
     <form onSubmit={submit} className="grid gap-4">
+      <Card depth="flat" className="gap-4 p-4">
       <Field label="Amount" required>
         <MoneyInput value={amount} onChange={setAmount} min={0} required />
       </Field>
@@ -86,7 +87,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
-          className="input"
+          className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
       </Field>
 
@@ -109,6 +110,7 @@ export function VendorPaymentForm({ vendor, onSaved, onCancel }: Props) {
           {busy ? "Saving…" : "Record payment"}
         </Button>
       </div>
+      </Card>
     </form>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { Alert, Button, Field, MoneyInput } from "../../components/ui";
+import { Alert, Button, Card, Field, MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { extractError } from "../../lib/extractError";
@@ -107,8 +107,8 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
         </h2>
       </header>
 
-      <section className="space-y-3 rounded-md border border-border bg-muted/40 p-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <Card as="section" depth="flat" className="space-y-3 p-4">
+        <h3 className="text-base font-semibold text-foreground">
           Identity
         </h3>
         <div className="space-y-3">
@@ -140,10 +140,10 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
             />
           </Field>
         </div>
-      </section>
+      </Card>
 
-      <section className="space-y-3 rounded-md border border-border bg-muted/40 p-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <Card as="section" depth="flat" className="space-y-3 p-4">
+        <h3 className="text-base font-semibold text-foreground">
           Mix
         </h3>
         <label className="flex items-center gap-2 text-sm">
@@ -192,7 +192,7 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
               />
             )}
             {fieldErrors.base_item_id ? (
-              <span className="text-[10px] text-destructive">{fieldErrors.base_item_id}</span>
+              <span role="alert" className="text-xs text-destructive">{fieldErrors.base_item_id}</span>
             ) : null}
           </div>
         ) : null}
@@ -208,7 +208,7 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
             required
           />
         </Field>
-      </section>
+      </Card>
 
       {error ? (
         <Alert variant="destructive">{error}</Alert>
@@ -230,5 +230,4 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
     </form>
   );
 }
-
 

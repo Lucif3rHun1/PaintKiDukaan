@@ -1,10 +1,21 @@
 import { useState } from "react";
-import { Alert, Button, Field, Money, MoneyInput, DatePicker, Select } from "../../components/ui";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Alert,
+  Button,
+  Card,
+  DatePicker,
+  Field,
+  Money,
+  MoneyInput,
+  Select,
+  Skeleton,
+} from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import { getPref, setPref } from "../../lib/storage";
-import { recordCustomerPayment } from "./api";
-import type { AppError, Customer, CustomerOutstanding, RecordCustomerPaymentArgs } from "../types";
+import { customerOutstanding, recordCustomerPayment } from "./api";
+import type { Customer, CustomerOutstanding, RecordCustomerPaymentArgs } from "../types";
 
 interface Props {
   customer: Customer;
@@ -31,8 +42,16 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
   const [outstanding, setOutstanding] = useState<CustomerOutstanding | null>(
     null,
   );
+  const {
+    data: currentBalance,
+    isPending: isBalancePending,
+    isError: isBalanceError,
+  } = useQuery({
+    queryKey: ["customer-outstanding", customer.id],
+    queryFn: () => customerOutstanding(customer.id),
+  });
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     if (!(amount > 0)) {
@@ -67,7 +86,7 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
 
   if (outstanding) {
     return (
-      <div className="space-y-4">
+      <Card depth="raised" className="space-y-4 p-4">
         <h2 className="text-lg font-semibold">Payment recorded</h2>
         <p className="text-sm text-foreground">
           New outstanding:{" "}
@@ -80,15 +99,37 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
             Close
           </Button>
         </div>
-      </div>
+      </Card>
     );
   }
 
   return (
     <form onSubmit={submit} className="grid gap-4">
-      <Field label="Amount" required>
-        <MoneyInput value={amount} onChange={setAmount} min={0} required />
-      </Field>
+      <Card depth="flat" className="gap-4 p-4">
+      <div className="flex items-end justify-between border-b border-border pb-4">
+        <p className="text-sm text-muted-foreground">Outstanding balance</p>
+        <div aria-live="polite" className="text-2xl font-semibold text-foreground">
+          {isBalancePending ? (
+            <Skeleton className="h-7 w-28" />
+          ) : isBalanceError ? (
+            <span className="text-sm font-normal text-muted-foreground">Unavailable</span>
+          ) : (
+            <Money paise={currentBalance.outstanding} />
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-surface-sunken p-4">
+        <Field label="Amount" required>
+          <MoneyInput
+            value={amount}
+            onChange={setAmount}
+            min={0}
+            required
+            className="[&>span]:text-lg [&_input]:py-3 [&_input]:text-2xl [&_input]:font-semibold"
+          />
+        </Field>
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="Mode" required>
@@ -112,7 +153,7 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
-          className="input"
+          className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
       </Field>
 
@@ -135,6 +176,7 @@ export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
           {busy ? "Saving…" : "Record payment"}
         </Button>
       </div>
+      </Card>
     </form>
   );
 }

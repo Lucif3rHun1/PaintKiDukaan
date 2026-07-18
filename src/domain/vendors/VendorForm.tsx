@@ -2,7 +2,7 @@
  * VendorForm — create / edit.
  */
 import { useState } from "react";
-import { Alert, Button, Field } from "../../components/ui";
+import { Alert, Button, Card, Field } from "../../components/ui";
 import { createVendor, updateVendor } from "./api";
 import { extractError } from "../../lib/extractError";
 import type { NewVendor, Vendor, VendorUpdate } from "../types";
@@ -28,7 +28,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
     setError(null);
@@ -70,6 +70,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
 
   return (
     <form onSubmit={submit} className="grid gap-4">
+      <Card depth="flat" className="gap-4 p-4">
       <Field label="Name" required>
         <input
           value={name}
@@ -79,7 +80,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
-          className="input"
+          className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
       </Field>
 
@@ -92,7 +93,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
-          className="input"
+          className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
       </Field>
 
@@ -106,7 +107,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
-          className="input"
+          className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
       </Field>
 
@@ -115,7 +116,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          className="input"
+          className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
       </Field>
 
@@ -136,6 +137,7 @@ export function VendorForm({ mode, initial, onSaved, onCancel }: Props) {
           {busy ? "Saving…" : "Save"}
         </Button>
       </div>
+      </Card>
     </form>
   );
 }

@@ -14,7 +14,7 @@ import { listBrands, listBrandsPaged, createBrand, updateBrandCodePrefix, deacti
 import type { Brand } from "../types";
 import { extractError } from "../../lib/extractError";
 import { toTitleCase } from "../../lib/format/titleCase";
-import { DataList, EmptyState } from "../../components/ui";
+import { Alert, Button, Card, DataList, EmptyState, PageHeader } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { invalidateList } from "../../lib/query";
 
@@ -154,9 +154,9 @@ export function BrandAdmin({ role }: Props) {
 
   if (!isOwner) {
     return (
-      <div className="rounded border border-border bg-card p-6 text-sm text-muted-foreground">
+      <Alert title="Owner access required">
         Owners only. Switch to an owner account to manage brands.
-      </div>
+      </Alert>
     );
   }
 
@@ -208,23 +208,17 @@ export function BrandAdmin({ role }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Brands</h3>
-      </div>
+      <PageHeader title="Brands" description="Manage barcode prefixes and brand availability." />
 
       {error && (
-        <p role="alert" className="rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">{error}</Alert>
       )}
       {success && (
-        <p className="rounded border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
-          {success}
-        </p>
+        <Alert variant="success">{success}</Alert>
       )}
 
       {/* Add brand form */}
-      <div className="flex items-end gap-3 rounded border border-border bg-card p-3">
+      <Card depth="flat" className="flex-row items-end gap-3 p-3">
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-muted-foreground">Brand name</span>
           <input
@@ -267,15 +261,14 @@ export function BrandAdmin({ role }: Props) {
             className="w-20 rounded border border-border bg-card px-2 py-1.5 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
           />
         </label>
-        <button
+        <Button
           type="button"
           onClick={addBrand}
           disabled={addDisabled}
-          className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           Add brand
-        </button>
-      </div>
+        </Button>
+      </Card>
 
       <DataList
         source={serverSource}
@@ -293,27 +286,29 @@ export function BrandAdmin({ role }: Props) {
         height={400}
         rowActions={(b) => (
           <div className="flex justify-end gap-2">
-            <button
+            <Button
               type="button"
               onClick={() => startEdit(b)}
               disabled={busy}
-              className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-card disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              size="sm"
+              variant="secondary"
             >
               Edit prefix
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={() => handleDeactivate(b.id)}
               disabled={busy}
-              className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive outline-none transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              size="sm"
+              variant="destructive"
             >
               Deactivate
-            </button>
+            </Button>
           </div>
         )}
       />
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs leading-4 text-muted-foreground">
         The code prefix combines with 3 chars of the item name + a 3-digit
         sequential number to form auto-generated barcodes (e.g. AP + ACE + 001
         → APACE001). The next-sequence counter increments atomically each time

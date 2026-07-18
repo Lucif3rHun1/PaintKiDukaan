@@ -392,7 +392,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             size="md"
           />
           {categories.filter((c) => c.is_active).length === 0 ? (
-            <span className="mt-1 block text-[10px] text-warning">
+            <span className="mt-1 block text-xs text-warning">
               No categories configured — add categories in Settings.
             </span>
           ) : null}
@@ -423,7 +423,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
               size="md"
             />
             {saleUnits.filter((u) => u.is_active).length === 0 ? (
-              <span className="mt-1 block text-[10px] text-warning">
+              <span className="mt-1 block text-xs text-warning">
                 No sale units configured — add in Settings.
               </span>
             ) : null}
@@ -442,7 +442,7 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
             className="input"
           />
             {sellUnitCode ? (
-              <span className="mt-1 block text-[10px] text-muted">
+              <span className="mt-1 block text-xs text-muted-foreground">
                 {sellUnitCode}
               </span>
             ) : null}
@@ -513,11 +513,11 @@ export function ItemForm({ mode, initial, onSaved, onCancel }: Props) {
           </div>
         </div>
         {mode === "create" && predictedBarcode && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Predicted: <span className="font-mono text-muted-foreground">{predictedBarcode}</span> — actual barcode assigned on save
           </p>
         )}
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Manage shelf labels in the <span className="text-muted-foreground">Barcodes</span> tab
         </p>
       </Section>

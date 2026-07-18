@@ -1,10 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Alert, Money, Button } from "../../components/ui";
+import { Alert, Money, Button, Card, Skeleton } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { vendorOutstanding } from "./api";
 import { VendorForm } from "./VendorForm";
-import { VendorPaymentForm } from "./VendorPaymentForm";
 import type { Vendor, VendorOutstanding } from "../types";
 
 interface Props {
@@ -20,7 +19,6 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
   );
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [paying, setPaying] = useState(false);
 
   useEffect(() => {
     setVendorData(vendor);
@@ -51,21 +49,8 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
     );
   }
 
-  if (paying) {
-    return (
-      <VendorPaymentForm
-        vendor={vendorData}
-        onSaved={(out) => {
-          setOutstanding(out);
-          setPaying(false);
-        }}
-        onCancel={() => setPaying(false)}
-      />
-    );
-  }
-
   return (
-    <div>
+    <Card depth="flat" className="gap-0 p-4">
       <div className="mb-4 flex items-start justify-between">
         <div>
           <h2 className="text-xl font-semibold">{toTitleCase(vendorData.name)}</h2>
@@ -85,7 +70,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
             </Button>
           )}
           {onRecordPayment && (
-            <Button size="sm" onClick={() => setPaying(true)}>
+            <Button size="sm" onClick={() => onRecordPayment(vendorData)}>
               Record payment
             </Button>
           )}
@@ -98,16 +83,16 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
 
       <dl className="mb-4 grid grid-cols-3 gap-3 text-sm">
         <Row label="Opening" value={<Money paise={vendorData.opening_balance ?? 0} />} />
-        <Row label="Total purchases" value={outstanding ? <Money paise={outstanding.total_purchases} /> : "…"} />
-        <Row label="Total payments" value={outstanding ? <Money paise={outstanding.total_payments} /> : "…"} />
+        <Row label="Total purchases" value={outstanding ? <Money paise={outstanding.total_purchases} /> : <Skeleton className="w-20" />} />
+        <Row label="Total payments" value={outstanding ? <Money paise={outstanding.total_payments} /> : <Skeleton className="w-20" />} />
       </dl>
 
-      <div className="mb-4 rounded-lg border border-border bg-muted p-4">
+      <Card depth="raised" className="mb-4 gap-1 p-4">
         <p className="text-xs uppercase text-muted-foreground">Outstanding</p>
-          <p className="text-2xl font-semibold text-foreground">
-          {outstanding ? <Money paise={outstanding.outstanding} /> : "…"}
-        </p>
-      </div>
+        <div className="text-2xl font-semibold text-foreground">
+          {outstanding ? <Money paise={outstanding.outstanding} /> : <Skeleton className="h-7 w-28" />}
+        </div>
+      </Card>
 
       {vendorData.notes && (
         <div className="mb-4">
@@ -117,7 +102,7 @@ export function VendorDetail({ vendor, onEdit, onRecordPayment }: Props) {
           </p>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 

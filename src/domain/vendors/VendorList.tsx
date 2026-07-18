@@ -3,10 +3,10 @@
  * Renders via <DataList> server source (cmd_list_vendors_paged).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Archive, Banknote, Phone, Truck } from "lucide-react";
+import { Archive, Banknote, CircleCheck, Phone, Truck } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ActionMenu, Button, DataList, EmptyState, Money } from '../../components/ui';
+import { ActionMenu, Button, DataList, EmptyState, MetricCard, Money } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { ConfirmDialog } from "../../shell/components/ConfirmDialog";
 import { toast } from "../../lib/feedback/toast";
@@ -221,28 +221,19 @@ export function VendorList({
   });
 
   return (
-  <Skeleton name="vendors-list" loading={vendorMetrics.isLoading} select="viewport">
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight">Vendors</h2>
-          <p className="text-sm text-muted-foreground">
-            {vendorMetrics.data?.total ?? "—"} {(vendorMetrics.data?.total ?? 0) === 1 ? "vendor" : "vendors"}
-          </p>
-        </div>
-        {canCreate ? (
-          <Button
-            type="button"
-            variant="primary"
-            size="md"
-            icon={Truck}
-            onClick={onCreate}
-            shortcut="F6"
-          >
-            New Vendor
-          </Button>
-        ) : null}
-      </header>
+  <Skeleton name="vendors-list" loading={vendorMetrics.isLoading} select="viewport" className="min-h-0 flex-1 [&>[data-boneyard-content]]:h-full">
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <MetricCard icon={Truck} label="Total">
+          {vendorMetrics.data?.total ?? "—"}
+        </MetricCard>
+        <MetricCard icon={CircleCheck} label="Active" tone="success">
+          {vendorMetrics.data?.active ?? "—"}
+        </MetricCard>
+        <MetricCard icon={Archive} label="Inactive">
+          {vendorMetrics.data?.inactive ?? "—"}
+        </MetricCard>
+      </div>
 
       <DataList
         source={serverSource}
@@ -269,7 +260,15 @@ export function VendorList({
         )}
         onRowClick={onSelect ? (v) => onSelect(v) : undefined}
         rowClassName={rowClassName}
+        actions={
+          canCreate ? (
+            <Button type="button" variant="primary" size="sm" icon={Truck} onClick={onCreate} shortcut="F6">
+              New Vendor
+            </Button>
+          ) : null
+        }
         fill
+        className="surface-sunken shadow-none"
       />
 
       <ConfirmDialog

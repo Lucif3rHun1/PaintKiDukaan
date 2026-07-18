@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listCategoriesPaged, createCategory, deactivateCategory } from "../categories/api";
 import type { Category } from "../types";
-import { DataList } from "../../components/ui";
+import { Alert, Button, Card, DataList, PageHeader } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { toTitleCase } from "../../lib/format/titleCase";
@@ -86,9 +86,9 @@ export function CategoryAdmin({ role }: Props) {
 
   if (!isOwner) {
     return (
-      <div className="rounded border border-border bg-card p-6 text-sm text-muted-foreground">
+      <Alert title="Owner access required">
         Owners only. Switch to an owner account to manage categories.
-      </div>
+      </Alert>
     );
   }
 
@@ -110,28 +110,24 @@ export function CategoryAdmin({ role }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Categories</h3>
-      </div>
+      <PageHeader title="Categories" description="Group items for filtering and reporting." />
 
       {error && (
-        <p role="alert" className="rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">{error}</Alert>
       )}
       {success && (
-        <p className="rounded border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
-          {success}
-        </p>
+        <Alert variant="success">{success}</Alert>
       )}
 
       {/* Add category form */}
-      <form
+      <Card
+        as="form"
+        depth="flat"
         onSubmit={(e) => {
           e.preventDefault();
           void addCategory();
         }}
-        className="flex items-end gap-3 rounded border border-border bg-card p-3"
+        className="flex-row items-end gap-3 p-3"
       >
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-muted-foreground">Category name</span>
@@ -144,14 +140,13 @@ export function CategoryAdmin({ role }: Props) {
             className="rounded border border-border bg-card px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
           />
         </label>
-        <button
+        <Button
           type="submit"
           disabled={addDisabled}
-          className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           Add category
-        </button>
-      </form>
+        </Button>
+      </Card>
 
       <DataList
         source={serverSource}
@@ -161,18 +156,19 @@ export function CategoryAdmin({ role }: Props) {
         emptyMessage="No categories configured."
         height={400}
         rowActions={(c) => (
-          <button
+          <Button
             type="button"
             onClick={() => handleDeactivate(c.id)}
             disabled={busy}
-            className="rounded border border-destructive/20 px-2 py-0.5 text-xs text-destructive outline-none transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            size="sm"
+            variant="destructive"
           >
             Deactivate
-          </button>
+          </Button>
         )}
       />
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs leading-4 text-muted-foreground">
         Categories group items for filtering and reporting. Deactivating a category
         hides it from new items but does not affect existing ones.
       </p>

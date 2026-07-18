@@ -36,6 +36,7 @@ import {
   DataList,
   DownloadMenu,
   EmptyState,
+  InlineDialog,
   MetricCard,
   Money,
   Select,
@@ -138,10 +139,6 @@ export function ItemList({ role }: Props) {
     },
     clientFn: listItemsPaged,
   }), [lowStockOnly, activeFilter, sortField, sortDirection]);
-
-  // Export needs all items. Fetch the full unfiltered list when the user clicks Export.
-  const [exportRows, setExportRows] = useState<Item[]>([]);
-  const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
     listLocations(false)
@@ -282,19 +279,13 @@ export function ItemList({ role }: Props) {
   const handleBulkArchive = useCallback(async () => {
     if (selectedIds.size === 0) return;
     try {
-      const items = exportRows.filter((item) => selectedIds.has(item.id));
-      if (items.length === 0) {
-        // No cached export — fetch full list once.
-        const { listItems } = await import("./api");
-        const all = await listItems({ limit: 5000 });
-        await Promise.all(
-          (all ?? [])
-            .filter((it) => selectedIds.has(it.id))
-            .map((it) => updateItem(it.id, { is_active: false }))
-        );
-      } else {
-        await Promise.all(items.map((item) => updateItem(item.id, { is_active: false })));
-      }
+      const { listItems } = await import("./api");
+      const all = await listItems({ limit: 5000 });
+      await Promise.all(
+        (all ?? [])
+          .filter((item) => selectedIds.has(item.id))
+          .map((item) => updateItem(item.id, { is_active: false }))
+      );
       toast.success(`Archived ${selectedIds.size} item${selectedIds.size === 1 ? "" : "s"}`);
       setSelectedIds(new Set());
       queryClient.invalidateQueries({ queryKey: ["items"] });
@@ -304,26 +295,7 @@ export function ItemList({ role }: Props) {
     } catch (e) {
       toast.error(extractError(e));
     }
-  }, [exportRows, selectedIds, queryClient, stockHealth]);
-
-  const toggleSelected = useCallback((id: number) => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  // Select all / Deselect all for the current filtered view.
-  const allFilteredSelected = exportRows.length > 0 && exportRows.every((item) => selectedIds.has(item.id));
-
-  const toggleSelectAll = useCallback(() => {
-    setSelectedIds((current) => {
-      if (allFilteredSelected) return new Set<number>();
-      return new Set(exportRows.map((item) => item.id));
-    });
-  }, [allFilteredSelected, exportRows]);
+  }, [selectedIds, queryClient, stockHealth]);
 
   const exportHeaders = [
     "SKU", "Barcode", "Name", "Brand", "Brand Prefix", "Category",
@@ -335,25 +307,33 @@ export function ItemList({ role }: Props) {
     "Stock", "Active",
   ];
 
-  const buildExportRows = useCallback(async (): Promise<Item[]> => {
+  const loadExportRows = useCallback(async (): Promise<(string | number)[][]> => {
     const { listItems } = await import("./api");
     const all = await listItems({ limit: 5000 });
-    return all ?? [];
-  }, []);
-
-  const handleExport = useCallback(async () => {
-    setExportBusy(true);
-    try {
-      const rows = await buildExportRows();
-      setExportRows(rows);
-    } catch (e) {
-      toast.error(extractError(e));
-    } finally {
-      setExportBusy(false);
-    }
-  }, [buildExportRows]);
-
-  // ponytail: removed auto-fetch of exportRows on mount — export now fetches on-demand via "Prepare export" button.
+    return (all ?? []).map((item) => {
+      const fullName = brandNameById.get(item.brand_id ?? -1) ?? item.brand ?? "";
+      const prefix = brandPrefixById.get(item.brand_id ?? -1) ?? "";
+      return [
+        item.sku_code,
+        item.barcode ?? "",
+        item.name,
+        fullName,
+        prefix,
+        item.category ?? "",
+        item.sell_unit ?? "",
+        item.units_per_pack ?? 1,
+        (item.retail_price_paise / 100).toFixed(2),
+        ...(role === "owner" ? [(item.cost_paise / 100).toFixed(2)] : []),
+        item.promo_price_paise != null ? (item.promo_price_paise / 100).toFixed(2) : "",
+        item.min_stock,
+        item.primary_location_id != null ? (locationNameById.get(item.primary_location_id) ?? "") : "",
+        item.sub_location_id != null ? (subLocationNameById.get(item.sub_location_id) ?? "") : "",
+        item.position ?? "",
+        item.current_qty,
+        item.is_active ? "Yes" : "No",
+      ];
+    });
+  }, [brandNameById, brandPrefixById, locationNameById, role, subLocationNameById]);
 
   const itemColumns: ColumnDef<Item>[] = useMemo(() => {
     const cols: ColumnDef<Item>[] = [
@@ -361,7 +341,7 @@ export function ItemList({ role }: Props) {
         id: "sku",
         header: "SKU",
         width: "9rem",
-        cell: (i) => <span className="inline-block max-w-[8rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]" title={i.sku_code}>{i.sku_code}</span>,
+        cell: (i) => <span className="inline-block max-w-[8rem] truncate rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs tabular-nums" title={i.sku_code}>{i.sku_code}</span>,
         className: "px-3 py-2",
         sortField: "sku_code",
         sortable: true,
@@ -551,37 +531,9 @@ export function ItemList({ role }: Props) {
     );
   }
 
-  const exportDataReady = exportRows.length > 0;
-  const computedExportRows = useMemo(() => {
-    if (!exportDataReady) return [];
-    return exportRows.map((item) => {
-      const fullName = brandNameById.get(item.brand_id ?? -1) ?? item.brand ?? "";
-      const prefix = brandPrefixById.get(item.brand_id ?? -1) ?? "";
-      return [
-        item.sku_code,
-        item.barcode ?? "",
-        item.name,
-        fullName,
-        prefix,
-        item.category ?? "",
-        item.sell_unit ?? "",
-        item.units_per_pack ?? 1,
-        (item.retail_price_paise / 100).toFixed(2),
-        ...(role === "owner" ? [(item.cost_paise / 100).toFixed(2)] : []),
-        item.promo_price_paise != null ? (item.promo_price_paise / 100).toFixed(2) : "",
-        item.min_stock,
-        item.primary_location_id != null ? (locationNameById.get(item.primary_location_id) ?? "") : "",
-        item.sub_location_id != null ? (subLocationNameById.get(item.sub_location_id) ?? "") : "",
-        item.position ?? "",
-        item.current_qty,
-        item.is_active ? "Yes" : "No",
-      ];
-    });
-  }, [exportDataReady, exportRows, brandNameById, brandPrefixById, locationNameById, subLocationNameById]);
-
   return (
-  <Skeleton name="items-list" loading={false} select="viewport">
-    <div className="space-y-3">
+  <Skeleton name="items-list" loading={false} select="viewport" className="min-h-0 flex-1 flex flex-col [&>[data-boneyard-content]]:min-h-0 [&>[data-boneyard-content]]:flex-1 [&>[data-boneyard-content]]:flex [&>[data-boneyard-content]]:flex-col">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {/* ── Metrics cards (server source) ── */}
       <div
         className={`grid grid-cols-2 gap-3 ${
@@ -648,36 +600,36 @@ export function ItemList({ role }: Props) {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {/* Primary: CRUD + export */}
             {canEdit ? (
               <>
-                <Button type="button" size="sm" icon={PackagePlus} onClick={openCreate} shortcut="F6" className="!text-xs">Add Item</Button>
-                <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)} className="!text-xs">Import</Button>
-                {exportDataReady ? (
-                  <DownloadMenu headers={exportHeaders} rows={computedExportRows} filename="items-export" title="Items Export" />
-                ) : (
-                  <Button type="button" size="sm" variant="secondary" loading={exportBusy} onClick={() => void handleExport()} className="!text-xs">Prepare export</Button>
-                )}
-                {role === "owner" ? (
-                  <Button type="button" size="sm" variant="secondary" icon={Sparkles} loading={normalizeBusy} onClick={async () => {
-                    if (!confirm("Normalise all item names to title-case?")) return;
-                    setNormalizeBusy(true);
-                    try { const res = await normalizeItemNames(); toast.success(`Normalised ${res.updated} item name${res.updated === 1 ? "" : "s"}`); void stockHealth.refetch(); }
-                    catch (e) { toast.error(extractError(e)); }
-                    finally { setNormalizeBusy(false); }
-                  }} className="!text-xs">Normalise Names</Button>
-                ) : null}
+                <Button type="button" size="sm" variant="primary" icon={PackagePlus} onClick={openCreate} shortcut="F6">Add Item</Button>
+                <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)}>Import</Button>
+                <DownloadMenu headers={exportHeaders} rows={[]} loadRows={loadExportRows} onError={(error) => toast.error(extractError(error))} filename="items-export" title="Items Export" label="Export" />
+                <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
               </>
             ) : null}
-            <Button type="button" size="sm" variant="secondary" icon={ArrowDownToLine} onClick={() => (setHash("#/inward"))} className="!text-xs">Inward</Button>
-            {exportDataReady ? (
-              allFilteredSelected ? (
-                <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Deselect all ({stockHealth.data?.total_active_items ?? exportRows.length})</Button>
-              ) : (
-                <Button type="button" size="sm" variant="secondary" onClick={toggleSelectAll} className="!text-xs">Select all ({stockHealth.data?.total_active_items ?? exportRows.length})</Button>
-              )
+            {/* Inward — separate flow */}
+            <Button type="button" size="sm" variant="secondary" icon={ArrowDownToLine} onClick={() => setHash("#/inward")}>Inward</Button>
+            {/* Maintenance */}
+            {role === "owner" ? (
+              <>
+                <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
+                <Button type="button" size="sm" variant="ghost" icon={Sparkles} loading={normalizeBusy} onClick={async () => {
+                  if (!confirm("Normalise all item names to title-case?")) return;
+                  setNormalizeBusy(true);
+                  try { const res = await normalizeItemNames(); toast.success(`Normalised ${res.updated} item name${res.updated === 1 ? "" : "s"}`); void stockHealth.refetch(); }
+                  catch (e) { toast.error(extractError(e)); }
+                  finally { setNormalizeBusy(false); }
+                }}>Normalise Names</Button>
+              </>
             ) : null}
+            {/* Danger: bulk archive (selection-only) */}
             {selectedIds.size > 0 && canEdit ? (
-              <Button type="button" size="sm" variant="danger" icon={Archive} onClick={() => void handleBulkArchive()} className="!text-xs">Archive {selectedIds.size}</Button>
+              <>
+                <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
+                <Button type="button" size="sm" variant="destructive" icon={Archive} onClick={() => void handleBulkArchive()}>Archive {selectedIds.size}</Button>
+              </>
             ) : null}
           </div>
         }
@@ -703,15 +655,14 @@ export function ItemList({ role }: Props) {
       <CsvImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={() => { toast.success("Items imported successfully"); void stockHealth.refetch(); void invalidateList(queryClient, "cmd_list_items_paged"); }} />
 
       {stockAdjustItem ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-80 rounded-lg border border-border bg-card p-4 shadow-xl">
-            <h3 className="mb-3 text-sm font-semibold">Adjust Stock</h3>
-            <p className="mb-3 text-xs text-muted-foreground">{stockAdjustItem.name} — current: {stockAdjustItem.current_qty}</p>
-            <div className="mb-3 flex gap-1 rounded-md border border-border bg-muted/40 p-0.5">
-              <button type="button" className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${stockAdjustDir === "add" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setStockAdjustDir("add")}><ArrowUpFromLine className="mr-1 inline h-3 w-3" />Add</button>
-              <button type="button" className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${stockAdjustDir === "reduce" ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setStockAdjustDir("reduce")} disabled={stockAdjustItem.current_qty <= 0}><TrendingDown className="mr-1 inline h-3 w-3" />Reduce</button>
+        <InlineDialog open onClose={() => { setStockAdjustItem(null); setStockAdjustQty(""); setStockAdjustDir("add"); }} title="Adjust stock" size="sm">
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{stockAdjustItem.name} — current: <span className="tabular-nums text-foreground">{stockAdjustItem.current_qty}</span></p>
+            <div className="flex gap-1 rounded-md border border-border bg-surface-sunken p-1">
+              <Button type="button" className="flex-1" variant={stockAdjustDir === "add" ? "default" : "ghost"} aria-pressed={stockAdjustDir === "add"} onClick={() => setStockAdjustDir("add")} icon={ArrowUpFromLine}>Add</Button>
+              <Button type="button" className="flex-1" variant={stockAdjustDir === "reduce" ? "destructive" : "ghost"} aria-pressed={stockAdjustDir === "reduce"} onClick={() => setStockAdjustDir("reduce")} disabled={stockAdjustItem.current_qty <= 0} icon={TrendingDown}>Reduce</Button>
             </div>
-            <input type="number" value={stockAdjustQty} onChange={(e) => setStockAdjustQty(e.target.value)} placeholder={stockAdjustDir === "add" ? "Qty to add" : `Max ${stockAdjustItem.current_qty}`} max={stockAdjustDir === "reduce" ? stockAdjustItem.current_qty : undefined} className="mb-3 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm" autoFocus onKeyDown={(e) => { if (e.key === "Enter") void handleStockAdjust(); if (e.key === "Escape") { setStockAdjustItem(null); setStockAdjustQty(""); setStockAdjustDir("add"); } }} />
+            <input type="number" value={stockAdjustQty} onChange={(e) => setStockAdjustQty(e.target.value)} placeholder={stockAdjustDir === "add" ? "Qty to add" : `Max ${stockAdjustItem.current_qty}`} max={stockAdjustDir === "reduce" ? stockAdjustItem.current_qty : undefined} className="input tabular-nums" autoFocus onKeyDown={(e) => { if (e.key === "Enter") void handleStockAdjust(); if (e.key === "Escape") { setStockAdjustItem(null); setStockAdjustQty(""); setStockAdjustDir("add"); } }} />
             <div className="flex justify-end gap-2">
               <Button type="button" size="sm" variant="secondary" onClick={() => { setStockAdjustItem(null); setStockAdjustQty(""); setStockAdjustDir("add"); }}>Cancel</Button>
               {stockAdjustDir === "add" && stockAdjustItem.barcode ? (
@@ -720,7 +671,7 @@ export function ItemList({ role }: Props) {
               <Button type="button" size="sm" onClick={() => void handleStockAdjust()}>{stockAdjustDir === "add" ? "Add Stock" : "Reduce Stock"}</Button>
             </div>
           </div>
-        </div>
+        </InlineDialog>
       ) : null}
 
       <ConfirmDialog
@@ -744,11 +695,14 @@ function StockDisplay({
   currentQty: number;
   minQty: number;
 }) {
-  const color =
-    currentQty <= 0
-      ? "text-red-500"
-      : currentQty <= minQty
-        ? "text-amber-500"
-        : "text-emerald-500";
-  return <span className={`text-sm font-medium ${color}`}>{currentQty}</span>;
+  const isOut = currentQty <= 0;
+  const isLow = !isOut && currentQty <= minQty;
+  const color = isOut ? "text-destructive" : isLow ? "text-warning" : "text-success";
+  const label = isOut ? "Out of stock" : isLow ? "Low stock" : "In stock";
+  return (
+    <span className={`inline-flex items-center justify-end gap-1 text-sm font-medium tabular-nums ${color}`} title={label}>
+      {(isOut || isLow) ? <TriangleAlert aria-hidden="true" className="size-3.5" /> : null}
+      <span className="sr-only">{label}: </span>{currentQty}
+    </span>
+  );
 }

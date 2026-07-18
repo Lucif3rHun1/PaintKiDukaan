@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Field, Select } from "../../components/ui";
+import { Alert, Button, Card, Field, Select } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { createCustomer, updateCustomer } from "./api";
 import type {
@@ -47,7 +47,7 @@ export function CustomerForm({
     }
   }, [mode, initial, types, typeId]);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
     setError(null);
@@ -85,6 +85,7 @@ export function CustomerForm({
 
   return (
     <form onSubmit={submit} className="grid gap-4">
+      <Card depth="flat" className="gap-4 p-4">
       <Field label="Name" required>
         <input
           value={name}
@@ -94,7 +95,7 @@ export function CustomerForm({
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
-          className="input"
+          className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
       </Field>
 
@@ -110,7 +111,7 @@ export function CustomerForm({
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
-          className="input"
+          className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
       </Field>
 
@@ -136,7 +137,7 @@ export function CustomerForm({
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
-          className="input"
+          className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           disabled={role != null && role !== "owner"}
         />
       </Field>
@@ -158,6 +159,7 @@ export function CustomerForm({
           {busy ? "Saving…" : "Save"}
         </Button>
       </div>
+      </Card>
     </form>
   );
 }

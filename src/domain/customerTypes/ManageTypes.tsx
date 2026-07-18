@@ -10,7 +10,7 @@ import {
   listCustomerTypesPaged,
   renameCustomerType,
 } from "./api";
-import { Alert, DataList } from "../../components/ui";
+import { Alert, Badge, Button, Card, DataList, PageHeader } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { invalidateList } from "../../lib/query";
@@ -92,28 +92,28 @@ export function ManageTypes() {
       width: "7rem",
       cell: (t) =>
         t.is_active ? (
-          <span className="rounded bg-success/20 px-2 text-xs text-success">active</span>
+          <Badge variant="success">Active</Badge>
         ) : (
-          <span className="rounded bg-muted px-2 text-xs text-muted-foreground">inactive</span>
+          <Badge variant="muted">Inactive</Badge>
         ),
     },
   ];
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Customer types</h2>
+      <PageHeader title="Customer types" description="Manage reusable customer classifications." />
 
-      <form onSubmit={add} className="flex gap-2">
+      <Card as="form" depth="flat" onSubmit={add} className="flex-row gap-2 p-3">
         <input
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           placeholder="New type name"
           className="flex-1 rounded border border-border px-3 py-2 text-sm"
         />
-        <button type="submit" className="btn-primary">
+        <Button type="submit">
           Add
-        </button>
-      </form>
+        </Button>
+      </Card>
 
       {error ? <Alert variant="destructive">{error}</Alert> : null}
 
@@ -126,37 +126,46 @@ export function ManageTypes() {
         rowActions={(t) =>
           editing === t.id ? (
             <>
-              <button
+              <Button
+                type="button"
                 onClick={() => saveEdit(t.id)}
-                className="mr-2 rounded bg-primary px-2 py-1 text-xs text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                className="mr-2"
+                size="sm"
               >
                 Save
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
                 onClick={() => setEditing(null)}
-                className="rounded border border-border px-2 py-1 text-xs outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                size="sm"
+                variant="secondary"
               >
                 Cancel
-              </button>
+              </Button>
             </>
           ) : (
             <>
-              <button
+              <Button
+                type="button"
                 onClick={() => {
                   setEditing(t.id);
                   setEditName(t.name);
                 }}
-                className="mr-2 rounded border border-border px-2 py-1 text-xs outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                className="mr-2"
+                size="sm"
+                variant="secondary"
               >
                 Rename
-              </button>
+              </Button>
               {t.is_active ? (
-                <button
+                <Button
+                  type="button"
                   onClick={() => deactivate(t.id)}
-                  className="rounded border border-border px-2 py-1 text-xs text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                  size="sm"
+                  variant="destructive"
                 >
                   Deactivate
-                </button>
+                </Button>
               ) : null}
             </>
           )

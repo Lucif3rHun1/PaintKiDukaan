@@ -4,12 +4,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { customerOutstanding } from "./api";
 import { extractError } from "../../lib/extractError";
-import { formatRupeesFromPaise } from "../../lib/money";
 import { toTitleCase } from "../../lib/format/titleCase";
+import { useState, type ReactNode } from "react";
 import type { Customer } from "../types";
-import { CustomerLedgerView } from "./CustomerLedgerView";
+import { CustomerCreditInvoiceForm, CustomerLedgerView } from "./CustomerLedgerView";
 import { Button } from "../../components/ui/Button";
-import { Alert } from "../../components/ui";
+import { Alert, Badge, Card, MoneyStatic, Skeleton } from "../../components/ui";
 
 interface Props {
   customer: Customer;
@@ -18,22 +18,31 @@ interface Props {
 }
 
 export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
+  const [creatingCreditInvoice, setCreatingCreditInvoice] = useState(false);
   const { data: outstanding, error: outstandingErr } = useQuery({
     queryKey: ["customer-outstanding", customer.id],
     queryFn: () => customerOutstanding(customer.id),
   });
   const error = outstandingErr ? extractError(outstandingErr) : null;
 
+  if (creatingCreditInvoice) {
+    return (
+      <CustomerCreditInvoiceForm
+        customer={customer}
+        onSaved={() => setCreatingCreditInvoice(false)}
+        onCancel={() => setCreatingCreditInvoice(false)}
+      />
+    );
+  }
+
   return (
-    <div>
+    <Card depth="flat" className="gap-0 p-4">
       <div className="mb-4 flex items-start justify-between pr-12">
         <div>
           <h2 className="text-xl font-semibold">{toTitleCase(customer.name)}</h2>
           <p className="font-mono text-sm text-muted-foreground">{customer.phone}</p>
           {customer.is_flagged && (
-            <span className="mt-1 inline-block rounded bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
-              flagged
-            </span>
+            <Badge variant="warning" size="sm" className="mt-1">Flagged</Badge>
           )}
         </div>
         <div className="flex gap-2">
@@ -60,31 +69,33 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
           label="Credit limit"
           value={
             customer.credit_limit != null
-            ? formatRupeesFromPaise(customer.credit_limit)
+            ? <MoneyStatic paise={customer.credit_limit} className="justify-start" />
             : "—"
           }
         />
-        <Row label="Opening" value={formatRupeesFromPaise(customer.opening_balance_paise)} />
+        <Row label="Opening" value={<MoneyStatic paise={customer.opening_balance_paise} className="justify-start" />} />
         <Row
           label="Total sales"
-          value={outstanding ? formatRupeesFromPaise(outstanding.total_sales) : "…"}
+          value={outstanding ? <MoneyStatic paise={outstanding.total_sales} className="justify-start" /> : <Skeleton className="w-20" />}
         />
         <Row
           label="Total paid (in sales)"
-          value={outstanding ? formatRupeesFromPaise(outstanding.total_paid) : "…"}
+          value={outstanding ? <MoneyStatic paise={outstanding.total_paid} className="justify-start" /> : <Skeleton className="w-20" />}
         />
         <Row
           label="Customer payments"
-          value={outstanding ? formatRupeesFromPaise(outstanding.total_payments) : "…"}
+          value={outstanding ? <MoneyStatic paise={outstanding.total_payments} className="justify-start" /> : <Skeleton className="w-20" />}
         />
       </dl>
 
-      <div className="mb-4 rounded-lg border border-border bg-muted p-4">
+      <Card depth="raised" className="mb-4 gap-1 p-4">
         <p className="text-xs uppercase text-muted-foreground">Outstanding</p>
-        <p className="text-2xl font-semibold tabular-nums text-foreground">
-          {outstanding ? formatRupeesFromPaise(outstanding.outstanding) : "…"}
-        </p>
-      </div>
+        {outstanding ? (
+          <MoneyStatic paise={outstanding.outstanding} className="justify-start text-2xl font-semibold" />
+        ) : (
+          <Skeleton className="h-7 w-28" />
+        )}
+      </Card>
 
       {customer.notes && (
         <div className="mb-4">
@@ -95,12 +106,15 @@ export function CustomerDetail({ customer, onEdit, onRecordPayment }: Props) {
         </div>
       )}
 
-      <CustomerLedgerView customer={customer} />
-    </div>
+      <CustomerLedgerView
+        customer={customer}
+        onCreateCreditInvoice={() => setCreatingCreditInvoice(true)}
+      />
+    </Card>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt className="text-xs uppercase text-muted-foreground">{label}</dt>

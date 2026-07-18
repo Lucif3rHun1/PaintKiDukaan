@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import {
   Alert,
+  Badge,
   Button,
+  Card,
   DataTable,
-  InlineDialog,
+  EmptyState,
   Money,
   MoneyInput,
+  Skeleton,
   DatePicker,
   Select,
 } from "../../components/ui";
@@ -18,7 +21,6 @@ import { formatItemName } from "../items/display";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import type {
-  AppError,
   Brand,
   Customer,
   CustomerLedger,
@@ -29,12 +31,12 @@ import type {
 
 interface Props {
   customer: Customer;
+  onCreateCreditInvoice: () => void;
 }
 
-export function CustomerLedgerView({ customer }: Props) {
+export function CustomerLedgerView({ customer, onCreateCreditInvoice }: Props) {
   const [ledger, setLedger] = useState<CustomerLedger | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
 
   function load() {
     setError(null);
@@ -51,13 +53,13 @@ export function CustomerLedgerView({ customer }: Props) {
     <div>
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Ledger</h3>
-        <button
+        <Button
           type="button"
-          onClick={() => setShowForm(true)}
-          className="btn-primary text-xs"
+          onClick={onCreateCreditInvoice}
+          size="sm"
         >
-          + Credit invoice
-        </button>
+          Credit invoice
+        </Button>
       </div>
 
       {error && (
@@ -65,31 +67,21 @@ export function CustomerLedgerView({ customer }: Props) {
       )}
 
       {!ledger ? (
-        <p className="text-sm text-muted-foreground">Loading ledger…</p>
+        <Skeleton variant="card" />
       ) : (
         <>
-          <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+          <Card depth="raised" className="mb-2 flex-row items-center justify-between p-3 text-xs text-muted-foreground">
             <span>
               Opening <Money paise={ledger.opening_balance_paise} />
             </span>
             <span>
               Closing <Money paise={ledger.closing_balance_paise} />
             </span>
-          </div>
+          </Card>
           <LedgerTable rows={ledger.rows} />
         </>
       )}
 
-      {showForm && (
-        <CreditInvoiceModal
-          customer={customer}
-          onSaved={() => {
-            setShowForm(false);
-            load();
-          }}
-          onCancel={() => setShowForm(false)}
-        />
-      )}
     </div>
   );
 }
@@ -106,15 +98,9 @@ const columns: ColumnDef<CustomerLedgerTransaction>[] = [
   {
     header: "Type",
     cell: (row) => (
-      <span
-        className={`rounded px-1.5 py-0.5 text-xs ${
-          row.kind === "sale"
-            ? "bg-warning/20 text-warning"
-            : "bg-success/20 text-success"
-        }`}
-      >
+      <Badge variant={row.kind === "sale" ? "warning" : "success"} size="sm">
         {row.kind === "sale" ? "Sale" : "Payment"}
-      </span>
+      </Badge>
     ),
   },
   {
@@ -159,21 +145,20 @@ function LedgerTable({ rows }: { rows: CustomerLedgerTransaction[] }) {
       columns={columns}
       keyExtractor={(_, idx) => idx}
       emptyState={
-        <p className="px-3 py-3 text-center text-muted-foreground">
-          No activity yet.
-        </p>
+        <EmptyState title="No activity yet" description="Sales, payments, and credit invoices will appear here." />
       }
+      className="surface-sunken shadow-none"
     />
   );
 }
 
-interface CreditInvoiceModalProps {
+interface CustomerCreditInvoiceFormProps {
   customer: Customer;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalProps) {
+export function CustomerCreditInvoiceForm({ customer, onSaved, onCancel }: CustomerCreditInvoiceFormProps) {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState("");
   const [lines, setLines] = useState<LocalLine[]>([{ item_id: 0, qty: 1, unit_price_paise: 0 }]);
@@ -248,15 +233,13 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
   }
 
   return (
-    <InlineDialog
-      open
-      onClose={onCancel}
-      title="Add credit invoice"
-      description={customer.name}
-      size="lg"
-    >
+    <div>
+      <div className="mb-4 pr-12">
+        <h2 className="text-xl font-semibold text-foreground">Add credit invoice</h2>
+        <p className="text-sm text-muted-foreground">{customer.name}</p>
+      </div>
       <form onSubmit={submit} className="max-h-[60vh] overflow-y-auto pr-1">
-        <div className="space-y-4">
+        <Card depth="flat" className="space-y-4 p-4">
           <div className="grid grid-cols-2 gap-4">
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-foreground">Date *</span>
@@ -268,7 +251,7 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="e.g. Shade matching charges"
-                className="input"
+                className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
             </label>
           </div>
@@ -301,7 +284,7 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
                       value={line.qty}
                       onChange={(e) => updateLine(idx, { qty: Number(e.target.value) })}
                       required
-                      className="input"
+                      className="input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       placeholder="Qty"
                     />
                   </div>
@@ -315,14 +298,16 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
                   </div>
                   <div className="col-span-1">
                     {lines.length > 1 && (
-                      <button
+                      <Button
                         type="button"
                         onClick={() => removeLine(idx)}
-                        className="inline-flex h-10 w-full items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        variant="destructive"
+                        size="icon"
+                        className="w-full"
                         aria-label={`Remove line ${idx + 1}`}
                       >
                         <X className="h-4 w-4" />
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -358,9 +343,9 @@ function CreditInvoiceModal({ customer, onSaved, onCancel }: CreditInvoiceModalP
               {busy ? "Saving…" : "Create credit invoice"}
             </Button>
           </div>
-        </div>
+        </Card>
       </form>
-    </InlineDialog>
+    </div>
   );
 }
 
