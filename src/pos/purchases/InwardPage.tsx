@@ -2,10 +2,10 @@
 // Entry pad at top (search → packaging → qty → cost → amount → retail → Enter)
 // pushes a read-only line into the draft. Save finalizes all accumulated lines.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, PackagePlus, Printer, Truck, X } from "lucide-react";
-import { Badge, EmptyState, Select, Skeleton } from "../../components/ui";
+import { Alert, Badge, EmptyState, Select, Skeleton } from "../../components/ui";
 
 import { Button, InlineDialog, Money, MoneyInput, PageHeader, QtyInput } from "../../components/ui";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
@@ -214,19 +214,16 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     if (draftData.draftLines.length > 0 || (notes?.trim() ?? "") !== "") markDirty();
   }, [draftData, draftLoading, notes, markDirty]);
 
-  const draftRestored = useRef(false);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
   useEffect(() => {
-    if (draftRestored.current) return;
-    const inHash = window.location.hash;
-    if (!inHash.includes("restore=1") || !savedDraft || draftLoading || draft.length > 0) return;
-    draftRestored.current = true;
-    window.history.replaceState(null, "", window.location.pathname + "#" + inHash.split("?")[0]);
+    if (!savedDraft || draftLoading || draft.length > 0) return;
     try {
       const data = parsePurchaseDraft(savedDraft.data_json);
       if (!data) { void resetDraft(); return; }
       if (data.draftLines) setDraft(data.draftLines);
       if (data.vendorId !== undefined) setVendorId(data.vendorId);
       if (data.notes !== undefined) setNotes(data.notes);
+      setShowDraftBanner(true);
     } catch {
       void resetDraft();
     }
@@ -671,6 +668,24 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           ) : null
         }
       />
+
+      {showDraftBanner && (
+        <Alert variant="info" className="mb-4">
+          <span>Draft restored from your previous session.</span>
+          <button
+            onClick={() => {
+              setDraft([]);
+              setVendorId(null);
+              setNotes("");
+              void resetDraft();
+              setShowDraftBanner(false);
+            }}
+            className="ml-2 text-sm underline hover:no-underline"
+          >
+            Start fresh
+          </button>
+        </Alert>
+      )}
 
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border surface-translucent px-4 py-2.5">
 
