@@ -352,6 +352,15 @@ pub enum ReportsError {
     Other(#[from] anyhow::Error),
 }
 
+impl From<ReportsError> for AppError {
+    fn from(error: ReportsError) -> Self {
+        match error {
+            ReportsError::Db(error) => AppError::Db(error),
+            ReportsError::Other(error) => AppError::Internal(error.to_string()),
+        }
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Tauri command surface.
 // -----------------------------------------------------------------------------
@@ -368,7 +377,7 @@ pub fn cmd_daily_sales(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    daily_sales(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(daily_sales(db, &from_date, &to_date)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -379,7 +388,7 @@ pub fn cmd_stock_report(state: tauri::State<'_, AppState>) -> AppResult<StockRep
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    stock_report(db).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(stock_report(db)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -390,7 +399,7 @@ pub fn cmd_outstanding_report(state: tauri::State<'_, AppState>) -> AppResult<Ou
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    outstanding_report(db).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(outstanding_report(db)?)
 }
 
 // -----------------------------------------------------------------------------
@@ -457,7 +466,7 @@ pub fn cmd_purchase_summary(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    purchase_summary(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(purchase_summary(db, &from_date, &to_date)?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -494,7 +503,7 @@ pub fn cmd_expense_summary(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    expense_summary(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(expense_summary(db, &from_date, &to_date)?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -551,7 +560,7 @@ pub fn cmd_top_items_sold(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    top_items_sold(db, &from_date, &to_date, limit).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(top_items_sold(db, &from_date, &to_date, limit)?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -604,7 +613,7 @@ pub fn cmd_top_customers(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    top_customers(db, &from_date, &to_date, limit).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(top_customers(db, &from_date, &to_date, limit)?)
 }
 
 pub fn top_items_purchased(
@@ -653,8 +662,7 @@ pub fn cmd_top_items_purchased(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    top_items_purchased(db, &from_date, &to_date, limit)
-        .map_err(|e| AppError::Internal(e.to_string()))
+    Ok(top_items_purchased(db, &from_date, &to_date, limit)?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -707,7 +715,7 @@ pub fn cmd_top_vendors(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    top_vendors(db, &from_date, &to_date, limit).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(top_vendors(db, &from_date, &to_date, limit)?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -764,7 +772,7 @@ pub fn cmd_stock_health_summary(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    stock_health_summary(db).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(stock_health_summary(db)?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -818,7 +826,7 @@ pub fn cmd_dead_stock(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    dead_stock(db, days_idle).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(dead_stock(db, days_idle)?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -865,7 +873,7 @@ pub fn cmd_inventory_aging(state: tauri::State<'_, AppState>) -> AppResult<Inven
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    inventory_aging(db).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(inventory_aging(db)?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -917,7 +925,7 @@ pub fn cmd_payment_summary(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    payment_summary(db, &from_date, &to_date).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(payment_summary(db, &from_date, &to_date)?)
 }
 
 // -----------------------------------------------------------------------------
@@ -996,7 +1004,7 @@ pub fn cmd_comparison_metrics(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    comparison_metrics(db, &ref_date).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(comparison_metrics(db, &ref_date)?)
 }
 
 // -----------------------------------------------------------------------------
@@ -1034,7 +1042,7 @@ pub fn cmd_inventory_turnover(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    inventory_turnover(db).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(inventory_turnover(db)?)
 }
 
 // -----------------------------------------------------------------------------
@@ -1110,7 +1118,7 @@ pub fn cmd_receivable_aging(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    receivable_aging(db).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(receivable_aging(db)?)
 }
 
 #[derive(Debug, Serialize)]

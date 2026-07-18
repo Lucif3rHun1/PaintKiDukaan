@@ -106,6 +106,24 @@ pub enum DayCloseError {
     Other(#[from] anyhow::Error),
 }
 
+impl From<DayCloseError> for AppError {
+    fn from(error: DayCloseError) -> Self {
+        match error {
+            DayCloseError::BadOpening => AppError::Validation("Bad opening balance".into()),
+            DayCloseError::BadDelta => AppError::Validation("Bad cash delta".into()),
+            DayCloseError::BadCounted => AppError::Validation("Bad counted cash".into()),
+            DayCloseError::BadBackupDecision(s) => {
+                AppError::Validation(format!("Bad backup decision: {s}"))
+            }
+            DayCloseError::AlreadyClosed { date } => {
+                AppError::Conflict(format!("Day {date} already closed"))
+            }
+            DayCloseError::Db(error) => AppError::Db(error),
+            DayCloseError::Other(error) => AppError::Internal(error.to_string()),
+        }
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Pure helpers.
 // -----------------------------------------------------------------------------
@@ -438,7 +456,7 @@ pub fn cmd_cash_sales_for(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    cash_sales_for(db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(cash_sales_for(db, user_id, &date)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -453,7 +471,7 @@ pub fn cmd_last_opening_for(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    last_opening_for(db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(last_opening_for(db, user_id, &date)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -468,7 +486,7 @@ pub fn cmd_backup_gate_check(
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
     let now = now_epoch_ms.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-    backup_gate_check(db, now).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(backup_gate_check(db, now)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -495,7 +513,7 @@ pub fn cmd_trigger_day_close<R: tauri::Runtime>(
         .lock()
         .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
-    trigger_day_close(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(trigger_day_close(db, user.id, req)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -510,7 +528,7 @@ pub fn cmd_lock_state(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    lock_state(db, user_id, &date).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(lock_state(db, user_id, &date)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -524,7 +542,7 @@ pub fn cmd_list_day_close(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    list(db, limit.unwrap_or(60)).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(list(db, limit.unwrap_or(60))?)
 }
 
 const DAY_CLOSE_SORT_WHITELIST: &[&str] =
@@ -611,7 +629,7 @@ pub fn cmd_get_day_close(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    get(db, id).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(get(db, id)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -622,7 +640,7 @@ pub fn cmd_admin_reopen_day(state: tauri::State<'_, AppState>, id: i64) -> AppRe
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    admin_reopen(db, id).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(admin_reopen(db, id)?)
 }
 
 // -----------------------------------------------------------------------------

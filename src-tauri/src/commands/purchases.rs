@@ -553,7 +553,23 @@ pub fn cmd_create_inward(
         .lock()
         .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
-    create_inward(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(create_inward(db, user.id, req)?)
+}
+
+impl From<PurchaseError> for AppError {
+    fn from(e: PurchaseError) -> Self {
+        match e {
+            PurchaseError::EmptyLines => AppError::Validation("purchase must have at least one line".into()),
+            PurchaseError::BadQty(i) => AppError::Validation(format!("line {}: qty must be > 0", i + 1)),
+            PurchaseError::BadCost(i) => AppError::Validation(format!("line {}: cost must be >= 0", i + 1)),
+            PurchaseError::BadUnitType(i) => AppError::Validation(format!("line {}: unit type must be pcs, mtr, or kg", i + 1)),
+            PurchaseError::ItemNotFound(i, id) => AppError::NotFound(format!("item {id} on line {}", i + 1)),
+            PurchaseError::LocationNotFound(i, id) => AppError::NotFound(format!("location {id} on line {}", i + 1)),
+            PurchaseError::BadUnitsPerBox(i) => AppError::Validation(format!("line {}: units per package must be > 0", i + 1)),
+            PurchaseError::Db(err) => AppError::Db(err),
+            PurchaseError::Other(err) => AppError::Internal(err.to_string()),
+        }
+    }
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -564,7 +580,7 @@ pub fn cmd_last_cost(state: tauri::State<'_, AppState>, item_id: i64) -> AppResu
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    last_cost_for_item(db, item_id).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(last_cost_for_item(db, item_id)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -580,13 +596,12 @@ pub fn cmd_list_purchases(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    list(
+    Ok(list(
         db,
         from_date.as_deref(),
         to_date.as_deref(),
         limit.unwrap_or(100),
-    )
-    .map_err(|e| AppError::Internal(e.to_string()))
+    )?)
 }
 
 const PURCHASES_SORT_WHITELIST: &[&str] =
@@ -736,7 +751,7 @@ pub fn cmd_get_purchase(state: tauri::State<'_, AppState>, id: i64) -> AppResult
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    get(db, id).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(get(db, id)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -751,8 +766,7 @@ pub fn cmd_movements_for_item(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    movements_for_item(db, item_id, limit.unwrap_or(200))
-        .map_err(|e| AppError::Internal(e.to_string()))
+    Ok(movements_for_item(db, item_id, limit.unwrap_or(200))?)
 }
 
 // -----------------------------------------------------------------------------
@@ -775,7 +789,7 @@ pub fn cmd_adjust_stock(
         .lock()
         .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
-    adjust_stock(db, user.id, req).map_err(|e| AppError::Internal(e.to_string()))
+    Ok(adjust_stock(db, user.id, req)?)
 }
 
 // -----------------------------------------------------------------------------
