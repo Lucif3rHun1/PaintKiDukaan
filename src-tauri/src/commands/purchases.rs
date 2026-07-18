@@ -553,7 +553,10 @@ pub fn cmd_create_inward(
         .lock()
         .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
-    Ok(create_inward(db, user.id, req)?)
+    create_inward(db, user.id, req).map_err(|e| {
+        log::error!("cmd_create_inward failed: {e}");
+        AppError::from(e)
+    })
 }
 
 impl From<PurchaseError> for AppError {

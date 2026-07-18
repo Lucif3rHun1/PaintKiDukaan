@@ -198,6 +198,13 @@ impl From<rusqlite::Error> for AppError {
             {
                 AppError::Conflict(msg.clone().unwrap_or_else(|| "constraint".into()))
             }
+            // Ponytail: surface busy/locked as a retry-friendly conflict
+            rusqlite::Error::SqliteFailure(err, _)
+                if err.code == rusqlite::ErrorCode::DatabaseBusy
+                    || err.code == rusqlite::ErrorCode::DatabaseLocked =>
+            {
+                AppError::Conflict("database is busy — please try again".into())
+            }
             other => AppError::Db(other),
         }
     }
