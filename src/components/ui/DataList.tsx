@@ -173,7 +173,7 @@ function flattenRows<T>(
 }
 
 function alignClass(align?: "left" | "right" | "center"): string {
-  if (align === "right") return "text-right";
+  if (align === "right") return "text-right tabular-nums";
   if (align === "center") return "text-center";
   return "text-left";
 }
@@ -427,7 +427,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
   }
 
   return (
-    <div className={cn("flex min-h-0 flex-col gap-3", fill && "min-h-[calc(100vh-22rem)] flex-1", className)} data-testid={testId}>
+    <div className={cn("flex min-h-0 flex-col gap-3", fill && "flex-1", className)} data-testid={testId}>
       {headerMetrics ? <div className="flex flex-wrap gap-3">{headerMetrics}</div> : null}
       {(toolbar || actions) ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -436,7 +436,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
         </div>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-[260px] flex-1 items-center gap-2">
+        <div className="flex min-w-0 basis-full items-center gap-2 sm:min-w-[260px] sm:flex-1 sm:basis-auto">
           <SearchInput
             value={search}
             onChange={(v) => setSearch(v)}
@@ -445,7 +445,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
             data-shortcut="search"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {headerActions}
           {onExport ? (
             <Button type="button" size="sm" variant="secondary" onClick={() => onExport(rows)} disabled={rows.length === 0}>
@@ -474,7 +474,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
         aria-rowcount={rows.length}
         aria-label={caption ?? "Data list"}
         onKeyDown={onKeyDown}
-        className="relative w-full overflow-auto rounded border border-border bg-card [box-shadow:0_1px_2px_0_rgb(0_0_0_/_0.04),0_4px_12px_-2px_rgb(0_0_0_/_0.06)]"
+        className="surface-flat relative w-full overflow-auto rounded-lg border border-border"
         style={
           fill
             ? { flex: "1 1 0", minHeight: 0 }
@@ -489,7 +489,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
               role="columnheader"
               style={cellStyle(col)}
               className={cn(
-                "flex items-center px-3 py-2 font-medium transition-colors",
+                "flex items-center px-3 py-2 font-medium transition-colors duration-fast motion-reduce:transition-none",
                 alignClass(col.align),
                 col.sortable && col.sortField && "cursor-pointer select-none hover:text-foreground hover:bg-muted/50",
                 col.className,
@@ -592,7 +592,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
                     height: vRow.size,
                   }}
                   className={cn(
-                    "flex items-center border-b border-border transition-colors",
+                    "flex items-center border-b border-border text-sm transition-colors duration-fast motion-reduce:transition-none",
                     onRowClick && "cursor-pointer hover:bg-muted",
                     isFocused && "bg-muted/60 ring-1 ring-ring",
                     rowExtra,
@@ -621,7 +621,7 @@ function DataListInner<T>(props: Omit<DataListProps<T>, "source"> & { source: In
         </div>
       </div>
       {footer}
-      {isFetching && !isLoading ? <p className="text-xs text-muted-foreground">Refreshing…</p> : null}
+      {isFetching && !isLoading ? <p role="status" className="text-xs text-muted-foreground">Refreshing…</p> : null}
     </div>
   );
 }

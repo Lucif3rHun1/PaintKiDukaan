@@ -5,11 +5,11 @@ export interface SkeletonRowProps {
 
 export function SkeletonRow({ count = 3, className }: SkeletonRowProps) {
   return (
-    <div className={["space-y-2", className].filter(Boolean).join(" ")}>
+    <div aria-hidden="true" className={["overflow-hidden rounded-md border border-border", className].filter(Boolean).join(" ")}>
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="h-8 animate-pulse rounded bg-muted motion-reduce:animate-none"
+          className="h-9 animate-pulse border-b border-border bg-surface-sunken last:border-b-0 motion-reduce:animate-none"
         />
       ))}
     </div>

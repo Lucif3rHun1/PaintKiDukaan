@@ -40,12 +40,12 @@ function ToastItem({ toast: t }: { toast: Toast }) {
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg transition-[transform,opacity] ease-out will-change-transform motion-reduce:translate-x-0 motion-reduce:scale-100 motion-reduce:opacity-100 motion-reduce:transition-none",
+        "surface-overlay flex items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-overlay transition-[transform,opacity] ease-standard motion-reduce:translate-x-0 motion-reduce:scale-100 motion-reduce:opacity-100 motion-reduce:transition-none",
         t.exiting
-          ? "translate-x-0 scale-[0.97] opacity-0 duration-fast"
+          ? "translate-x-0.5 scale-[0.98] opacity-0 duration-fast"
           : entered
             ? "translate-x-0 scale-100 opacity-100 duration-normal"
-            : "translate-x-full scale-100 opacity-0 duration-normal",
+            : "translate-x-0.5 scale-100 opacity-0 duration-normal",
         bg[t.variant],
       )}
     >
@@ -54,7 +54,7 @@ function ToastItem({ toast: t }: { toast: Toast }) {
       <button
         onClick={() => toast.dismiss(t.id)}
         aria-label="Dismiss"
-        className="ml-1 rounded p-0.5 text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+        className="ml-1 inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground outline-none transition-[color,background-color,transform] duration-fast ease-standard hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none"
       >
         <X className="h-3 w-3" />
       </button>

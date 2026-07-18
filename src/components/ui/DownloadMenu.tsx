@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FileDown } from "lucide-react";
 import { buildPdf } from "../../lib/pdf";
 import { downloadSpreadsheet } from "../../lib/spreadsheet";
+import { Button } from "./Button";
 import { cn } from "./cn";
 
 export interface DownloadMenuProps {
@@ -11,6 +12,9 @@ export interface DownloadMenuProps {
   title?: string;
   subtitle?: string;
   className?: string;
+  label?: string;
+  loadRows?: () => Promise<(string | number)[][]>;
+  onError?: (error: unknown) => void;
 }
 
 export function DownloadMenu({
@@ -20,10 +24,14 @@ export function DownloadMenu({
   title = filename,
   subtitle,
   className,
+  label = "Download",
+  loadRows,
+  onError,
 }: DownloadMenuProps) {
   const [open, setOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const enterFrameRef = useRef<number | null>(null);
 
@@ -74,31 +82,41 @@ export function DownloadMenu({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open, closeMenu]);
 
-  const sheetRows = rows.map((row) => row.map((cell) => String(cell ?? "")));
-  const download = (format: "csv" | "xlsx" | "pdf") => {
-    if (format === "pdf") {
-      buildPdf(headers, rows, title, subtitle);
-    } else {
-      downloadSpreadsheet(headers, sheetRows, filename, format);
+  const download = async (format: "csv" | "xlsx" | "pdf") => {
+    setLoading(true);
+    try {
+      const currentRows = loadRows ? await loadRows() : rows;
+      if (format === "pdf") {
+        buildPdf(headers, currentRows, title, subtitle);
+      } else {
+        const sheetRows = currentRows.map((row) => row.map((cell) => String(cell ?? "")));
+        downloadSpreadsheet(headers, sheetRows, filename, format);
+      }
+      closeMenu();
+    } catch (error) {
+      onError?.(error);
+    } finally {
+      setLoading(false);
     }
-    closeMenu();
   };
 
   return (
     <div ref={ref} className={cn("relative inline-flex", className)}>
-      <button
+      <Button
         type="button"
+        size="sm"
+        variant="secondary"
+        icon={FileDown}
+        loading={loading}
         onClick={() => {
           if (open) closeMenu();
           else openMenu();
         }}
-        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
-        Download
-      </button>
+        {loading ? "Preparing…" : label}
+      </Button>
       {open || isClosing ? (
         <div
           role="menu"
@@ -121,8 +139,9 @@ export function DownloadMenu({
               key={label}
               type="button"
               role="menuitem"
+              disabled={loading}
               className="flex w-full rounded-md px-3 py-1.5 text-left hover:bg-muted focus:bg-muted focus:outline-none"
-              onClick={() => download(label.toLowerCase() as "csv" | "xlsx" | "pdf")}
+              onClick={() => void download(label.toLowerCase() as "csv" | "xlsx" | "pdf")}
             >
               {label}
             </button>

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Card } from "./Card";
 import { EmptyState } from "./EmptyState";
-import { Skeleton } from "./Skeleton";
+import { SkeletonRow } from "./SkeletonRow";
 import { Money } from "./Money";
 import { cn } from "./cn";
 
@@ -65,7 +65,7 @@ export function TopItemsCard({
   const tone = toneClasses[badgeTone];
 
   return (
-    <Card className={className}>
+    <Card className={className} size="sm">
       <Card.Header className={cn("flex items-center justify-between", !subtitle && !headerAction && "py-3")}>
         <div>
           <h3 className="text-sm font-semibold">{title}</h3>
@@ -75,18 +75,14 @@ export function TopItemsCard({
       </Card.Header>
       <Card.Body className="p-0">
         {loading ? (
-          <div className="space-y-2 p-4">
-            {Array.from({ length: skeletonRows }).map((_, i) => (
-              <Skeleton key={i} className="h-4 w-full" />
-            ))}
-          </div>
+          <div className="p-3"><SkeletonRow count={skeletonRows} /></div>
         ) : !items || items.length === 0 ? (
           emptyState ? (
-            <div className="p-6">
+            <div className="px-3">
               <EmptyState icon={emptyState.icon} title={emptyState.title} description={emptyState.description} />
             </div>
           ) : (
-            <p className="py-6 text-center text-xs text-muted-foreground">No data</p>
+            <EmptyState title="No data" className="py-8 sm:py-8" />
           )
         ) : (
           <ul className={cn("divide-y divide-border")}>
@@ -98,7 +94,7 @@ export function TopItemsCard({
                 <div className="flex min-w-0 flex-1 items-center gap-3">
                   <span
                     className={cn(
-                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium",
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums",
                       tone,
                     )}
                   >

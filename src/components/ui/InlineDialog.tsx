@@ -15,6 +15,7 @@ export interface InlineDialogProps {
 }
 
 const sizes = { sm: "max-w-sm", md: "max-w-lg", lg: "max-w-2xl" };
+const CLOSE_DELAY_MS = 120;
 
 export function InlineDialog({
   open,
@@ -41,10 +42,9 @@ export function InlineDialog({
 
   useEffect(() => {
     if (!open) return;
-    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
-    return () => {
-      previouslyFocusedRef.current?.focus?.();
-    };
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
   }, [open]);
 
   useEffect(() => {
@@ -70,10 +70,14 @@ export function InlineDialog({
   }, [open]);
 
   useEffect(() => {
-    if (open || !isClosing || !dialogRef.current?.open) return;
+    const dialog = dialogRef.current;
+    if (open || !isClosing || !dialog?.open) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      dialogRef.current.close();
+      dialog.close();
+      return;
     }
+    const timeout = window.setTimeout(() => dialog.close(), CLOSE_DELAY_MS);
+    return () => window.clearTimeout(timeout);
   }, [isClosing, open]);
 
   useEffect(() => {
@@ -93,6 +97,7 @@ export function InlineDialog({
         if (event.target === event.currentTarget) requestClose();
       }}
       onClose={() => {
+        previouslyFocusedRef.current?.focus();
         if (!isClosing) onClose();
       }}
       onTransitionEnd={(event) => {
@@ -111,10 +116,10 @@ export function InlineDialog({
       aria-describedby={description ? descriptionId : undefined}
       aria-label={ariaLabel}
       className={cn(
-        "rounded-xl border border-border bg-card p-0 transition-[opacity,transform] duration-normal ease-out will-change-transform backdrop:bg-foreground/60 backdrop:transition-opacity backdrop:duration-normal backdrop:ease-out motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:backdrop:transition-none motion-reduce:backdrop:opacity-100",
+        "surface-overlay rounded-xl border border-border p-0 text-foreground shadow-overlay transition-[opacity,transform] backdrop:bg-foreground/60 backdrop:transition-opacity backdrop:duration-normal backdrop:ease-standard motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:backdrop:transition-none motion-reduce:backdrop:opacity-100",
         isClosing
-          ? "scale-[0.97] opacity-0 backdrop:opacity-0"
-          : "scale-100 opacity-100 backdrop:opacity-100",
+          ? "scale-[0.98] opacity-0 duration-fast ease-exit backdrop:opacity-0"
+          : "scale-100 opacity-100 duration-normal ease-enter backdrop:opacity-100",
         sizes[size],
         className,
       )}
@@ -134,7 +139,7 @@ export function InlineDialog({
       <div className="relative p-6">
         <button
           onClick={requestClose}
-          className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground outline-none transition-[color,background-color,transform] duration-fast ease-standard hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none"
           aria-label="Close"
         >
           <X className="h-5 w-5" />

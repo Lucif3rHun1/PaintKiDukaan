@@ -15,14 +15,14 @@ export function Field({
     <label className="block">
       <span className="mb-1 block text-sm font-medium text-foreground">
         {label}
-        {required && <span className="text-destructive"> *</span>}
+        {required && <span aria-hidden="true" className="text-destructive"> *</span>}
       </span>
       {children}
       {hint && !error && (
-        <span className="mt-1 block text-[10px] text-muted-foreground">{hint}</span>
+        <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
       )}
       {error && (
-        <span className="mt-1 block text-[10px] text-destructive">{error}</span>
+        <span role="alert" className="mt-1 block text-xs text-destructive">{error}</span>
       )}
     </label>
   );

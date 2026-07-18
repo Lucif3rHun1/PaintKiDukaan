@@ -20,13 +20,14 @@ export function Skeleton({
   if (width !== undefined) style.width = width;
   if (height !== undefined) style.height = height;
 
-  const bar = "bg-muted";
-  const surface = "border-border bg-card";
+  const bar = "bg-surface-sunken";
+  const surface = "border-border bg-surface-panel";
 
   if (variant === "circle") {
     return (
       <div
         style={style}
+        aria-hidden="true"
         className={cn("h-10 w-10 animate-pulse motion-reduce:animate-none rounded-full", bar, className)}
       />
     );
@@ -35,7 +36,8 @@ export function Skeleton({
     return (
       <div
         style={style}
-        className={cn("space-y-3 rounded-xl border p-4", surface, className)}
+        aria-hidden="true"
+        className={cn("space-y-3 rounded-lg border p-4", surface, className)}
       >
         <div className={cn("h-4 w-3/4 animate-pulse motion-reduce:animate-none rounded", bar)} />
         <div className={cn("h-3 w-1/2 animate-pulse motion-reduce:animate-none rounded", bar)} />
@@ -45,7 +47,7 @@ export function Skeleton({
   }
   if (variant === "text-3-lines") {
     return (
-      <div style={style} className={cn("space-y-2", className)}>
+      <div style={style} aria-hidden="true" className={cn("space-y-2", className)}>
         <div className={cn("h-3 w-full animate-pulse motion-reduce:animate-none rounded", bar)} />
         <div className={cn("h-3 w-5/6 animate-pulse motion-reduce:animate-none rounded", bar)} />
         <div className={cn("h-3 w-2/3 animate-pulse motion-reduce:animate-none rounded", bar)} />
@@ -55,6 +57,7 @@ export function Skeleton({
   return (
     <div
       style={style}
+      aria-hidden="true"
       className={cn("h-3 w-full animate-pulse motion-reduce:animate-none rounded", bar, className)}
     />
   );

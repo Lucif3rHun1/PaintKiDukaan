@@ -13,9 +13,9 @@ function AppErrorFallback({ error, resetErrorBoundary }: AppErrorFallbackProps) 
     <main
       role="alert"
       aria-live="assertive"
-      className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100"
+      className="flex min-h-screen items-center justify-center bg-background px-4 text-foreground"
     >
-      <div className="surface-translucent w-full max-w-md rounded-2xl border border-white/10 p-8 shadow-2xl">
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-overlay">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-destructive/15">
             <AlertOctagon className="h-5 w-5 text-destructive" />
@@ -24,7 +24,7 @@ function AppErrorFallback({ error, resetErrorBoundary }: AppErrorFallbackProps) 
             <h1 className="text-lg font-semibold tracking-tight">
               PaintKiDukaan hit an unexpected error
             </h1>
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-muted-foreground">
               The window stopped responding. You can try to recover or restart
               the app.
             </p>
@@ -37,7 +37,7 @@ function AppErrorFallback({ error, resetErrorBoundary }: AppErrorFallbackProps) 
           <button
             type="button"
             onClick={resetErrorBoundary}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white outline-none transition-colors hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400"
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring"
           >
             <RotateCcw className="h-4 w-4" />
             Try to recover
@@ -45,7 +45,7 @@ function AppErrorFallback({ error, resetErrorBoundary }: AppErrorFallbackProps) 
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/15 px-4 text-sm font-medium text-zinc-100 outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-white/40"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Power className="h-4 w-4" />
             Reload

@@ -345,13 +345,13 @@ export function SpreadsheetImportDialog({
                     <span className="inline-block h-1.5 w-1.5 rounded-full bg-foreground/40" />
                     {rows.length} row{rows.length !== 1 ? "s" : ""}
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 dark:bg-success/20 px-2.5 py-0.5 text-xs font-medium text-success">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
                     {activeCount} to import
                   </span>
                   {issueCount > 0 && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 dark:bg-red-950/30 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-500" />
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/10 dark:bg-destructive/20 px-2.5 py-0.5 text-xs font-medium text-destructive">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive" />
                       {issueCount} with issues
                     </span>
                   )}
@@ -364,12 +364,12 @@ export function SpreadsheetImportDialog({
                 </div>
                 <div className="flex items-center gap-2">
                   {requiredCols.length > 0 && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
-                      <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+                    <span className="inline-flex items-center gap-1 text-xs text-warning">
+                      <span className="inline-block h-2 w-2 rounded-full bg-warning" />
                       = required
                     </span>
                   )}
-                  <span className="inline-flex items-center gap-1 text-[10px] text-destructive">
+                  <span className="inline-flex items-center gap-1 text-xs text-destructive">
                     <span className="inline-block h-2 w-2 rounded-full bg-destructive/40" />
                     = has issue
                   </span>
@@ -407,18 +407,18 @@ export function SpreadsheetImportDialog({
                             className={cn(
                               "px-3 py-2 text-left font-medium",
                               isReq
-                                ? "text-amber-700 dark:text-amber-400"
+                                ? "text-warning"
                                 : "text-muted-foreground",
                             )}
                           >
                             <span className="inline-flex items-center gap-1">
                               {displayName}
                               {isReq && (
-                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-warning" />
                               )}
                             </span>
                             {colType && colType !== "string" && (
-                              <span className="mt-0.5 block text-[10px] font-normal text-muted-foreground/60">
+                              <span className="mt-0.5 block text-xs font-normal text-muted-foreground/60">
                                 {colType}
                               </span>
                             )}
@@ -459,7 +459,7 @@ export function SpreadsheetImportDialog({
                             {actualRowErrors > 0 && !isSkipped ? (
                               <span className="inline-flex items-center gap-0.5">
                                 {ri + 1}
-                                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/40 px-1 text-[9px] font-bold text-red-700 dark:text-red-400">
+                                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive/10 dark:bg-destructive/20 px-1 text-xs font-bold text-destructive">
                                   {actualRowErrors}
                                 </span>
                               </span>
@@ -490,9 +490,9 @@ export function SpreadsheetImportDialog({
                                 className={cn(
                                   "px-3 py-1.5",
                                   hasError && missing && !errMsg
-                                    ? "bg-amber-50 dark:bg-amber-950/30"
+                                    ? "bg-warning/10 dark:bg-warning/20"
                                     : hasError
-                                      ? "bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
+                                      ? "bg-destructive/10 dark:bg-destructive/20 border border-destructive/20 dark:border-destructive/40"
                                       : "",
                                   isSkipped
                                     ? "text-muted-foreground"
@@ -542,7 +542,7 @@ export function SpreadsheetImportDialog({
                                   >
                                     <span className="flex-1 truncate">
                                       {val ? val : missing ? (
-                                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 italic">
+                                        <span className="inline-flex items-center gap-1 text-warning italic">
                                           <AlertCircle className="h-3 w-3" />
                                           required
                                         </span>

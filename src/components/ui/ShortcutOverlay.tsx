@@ -35,6 +35,7 @@ function formatShortcut(s: ShortcutItem): string {
 
 export function ShortcutOverlay({ open, onClose, groups }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const [isClosing, setIsClosing] = useState(true);
   const [entered, setEntered] = useState(false);
@@ -44,6 +45,13 @@ export function ShortcutOverlay({ open, onClose, groups }: Props) {
     setIsClosing(true);
     onClose();
   }, [isClosing, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+  }, [open]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -121,6 +129,7 @@ export function ShortcutOverlay({ open, onClose, groups }: Props) {
       }}
       onClose={() => {
         setEntered(false);
+        previouslyFocusedRef.current?.focus();
         if (open) onClose();
       }}
       aria-labelledby={titleId}
@@ -138,8 +147,10 @@ export function ShortcutOverlay({ open, onClose, groups }: Props) {
           }
         }}
         className={cn(
-          "surface-translucent mx-4 w-full max-w-2xl rounded-lg border border-border p-6 text-card-foreground shadow-2xl transition-[opacity,transform] duration-normal ease-out will-change-transform motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
-          isClosing ? "scale-[0.97] opacity-0" : "scale-100 opacity-100",
+          "surface-overlay mx-4 w-full max-w-2xl rounded-lg border border-border p-6 text-foreground shadow-overlay transition-[opacity,transform] motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
+          isClosing
+            ? "scale-[0.98] opacity-0 duration-fast ease-exit"
+            : "scale-100 opacity-100 duration-normal ease-enter",
         )}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -148,7 +159,7 @@ export function ShortcutOverlay({ open, onClose, groups }: Props) {
             data-shortcut-focus
             type="button"
             onClick={requestClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground outline-none transition-[color,background-color,transform] duration-fast ease-standard hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -170,7 +181,7 @@ export function ShortcutOverlay({ open, onClose, groups }: Props) {
               <div className="space-y-1.5">
                 {group.items.map((item, i) => (
                   <div key={i} className="flex items-center justify-between gap-4 text-sm">
-                    <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                    <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
                       {formatShortcut(item)}
                     </kbd>
                     <span className="text-muted-foreground">{item.label}</span>
@@ -181,7 +192,7 @@ export function ShortcutOverlay({ open, onClose, groups }: Props) {
           ))}
         </div>
 
-        <div className="mt-6 text-[10px] text-muted-foreground">
+        <div className="mt-6 text-xs text-muted-foreground">
           Press <kbd className="rounded border border-border bg-muted px-1 py-px font-mono">?</kbd> again to close.
         </div>
       </div>

@@ -56,7 +56,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
         onChangeRef.current(internalValue);
       }, debounceMs);
       return () => window.clearTimeout(timer);
-    }, [internalValue, debounceMs, onChange]);
+    }, [internalValue, debounceMs]);
 
     const IconComp =
       icon === undefined
@@ -93,7 +93,10 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
           onChange={handleChange}
           placeholder={placeholder}
           aria-label={ariaLabel ?? placeholder}
-          className={cn("input w-full pl-9", inputClassName)}
+          className={cn(
+            "input peer w-full pl-9 focus:border-input focus:ring-0 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 motion-reduce:transition-none",
+            inputClassName,
+          )}
           onKeyDown={onKeyDown}
           {...props}
         />

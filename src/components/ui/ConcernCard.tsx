@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { Card } from "./Card";
 import { EmptyState } from "./EmptyState";
-import { Skeleton } from "./Skeleton";
-import { cn } from "./cn";
+import { SkeletonRow } from "./SkeletonRow";
+import { Badge } from "./Badge";
 
 export type ConcernStatusTone = "destructive" | "warning" | "info" | "success";
 
@@ -32,11 +32,11 @@ export interface ConcernCardProps<T extends ConcernCardItem = ConcernCardItem> {
   className?: string;
 }
 
-const toneClasses: Record<ConcernStatusTone, string> = {
-  destructive: "bg-destructive/15 text-destructive",
-  warning: "bg-warning/15 text-warning",
-  info: "bg-info/15 text-info",
-  success: "bg-success/15 text-success",
+const toneVariants: Record<ConcernStatusTone, "danger" | "warning" | "info" | "success"> = {
+  destructive: "danger",
+  warning: "warning",
+  info: "info",
+  success: "success",
 };
 
 /**
@@ -58,7 +58,7 @@ export function ConcernCard<T extends ConcernCardItem>({
   className,
 }: ConcernCardProps<T>) {
   return (
-    <Card className={className}>
+    <Card className={className} size="sm">
       <Card.Header className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold">{title}</h3>
@@ -68,37 +68,28 @@ export function ConcernCard<T extends ConcernCardItem>({
       </Card.Header>
       <Card.Body className="p-0">
         {loading ? (
-          <div className="space-y-2 p-4">
-            {Array.from({ length: skeletonRows }).map((_, i) => (
-              <Skeleton key={i} className="h-4 w-full" />
-            ))}
-          </div>
+          <div className="p-3"><SkeletonRow count={skeletonRows} /></div>
         ) : !items || items.length === 0 ? (
           emptyState ? (
-            <div className="p-6">
+            <div className="px-3">
               <EmptyState icon={emptyState.icon} title={emptyState.title} description={emptyState.description} />
             </div>
           ) : (
-            <p className="py-6 text-center text-xs text-muted-foreground">No concerns</p>
+            <EmptyState title="No concerns" className="py-8 sm:py-8" />
           )
         ) : (
           <ul className="divide-y divide-border">
             {items.map((item, i) => {
-              const tone = toneClasses[statusFn(item)];
+              const variant = toneVariants[statusFn(item)];
               return (
                 <li
                   key={item.id ?? `${item.name}-${i}`}
                   className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
                 >
                   <span className="min-w-0 flex-1 truncate font-medium">{item.name}</span>
-                  <span
-                    className={cn(
-                      "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums",
-                      tone,
-                    )}
-                  >
+                  <Badge variant={variant} size="sm">
                     {renderStatus(item)}
-                  </span>
+                  </Badge>
                 </li>
               );
             })}

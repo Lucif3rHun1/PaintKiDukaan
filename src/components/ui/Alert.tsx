@@ -5,18 +5,18 @@ import { X } from "lucide-react"
 import { cn } from "./cn"
 
 const alertVariants = cva(
-  "group/alert relative grid w-full gap-0.5 rounded-lg border px-2.5 py-2 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
+  "group/alert relative grid w-full gap-0.5 rounded-lg border px-3 py-2.5 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-14 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-card text-card-foreground",
+        default: "border-border bg-surface-panel text-foreground",
         destructive:
-          "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
+          "border-destructive/30 bg-surface-risk text-destructive *:data-[slot=alert-description]:text-foreground",
         warning:
-          "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200",
-        info: "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200",
+          "border-warning/30 bg-warning/10 text-warning *:data-[slot=alert-description]:text-foreground",
+        info: "border-info/30 bg-info/10 text-info *:data-[slot=alert-description]:text-foreground",
         success:
-          "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
+          "border-success/30 bg-success/10 text-success *:data-[slot=alert-description]:text-foreground",
       },
     },
     defaultVariants: {
@@ -68,7 +68,7 @@ function Alert({
         <button
           type="button"
           onClick={onDismiss}
-          className="absolute top-2 right-2 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="absolute right-1 top-1 inline-flex size-8 items-center justify-center rounded-md opacity-70 outline-none transition-opacity duration-fast after:absolute after:-inset-1 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
         >
           <X className="size-4" />
           <span className="sr-only">Dismiss</span>
@@ -111,7 +111,7 @@ function AlertAction({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-action"
-      className={cn("absolute top-2 right-2", className)}
+      className={cn("absolute right-2 top-2", className)}
       {...props}
     />
   )

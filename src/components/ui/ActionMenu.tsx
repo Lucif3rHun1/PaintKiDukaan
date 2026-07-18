@@ -39,16 +39,18 @@ interface MenuPos {
 }
 
 const MENU_WIDTH = 192; // w-48
-const MENU_ITEM_PX = 36;
+const MENU_ITEM_PX = 40;
 const MENU_VPAD = 8;
 const VIEWPORT_GUTTER = 8;
-const MENU_ORIGIN: Record<MenuPos["placement"], string> = {
-  "bottom-left": "origin-top-left",
-  "bottom-right": "origin-top-right",
-  "top-left": "origin-bottom-left",
-  "top-right": "origin-bottom-right",
+const CLOSE_DELAY_MS = 120;
+const MENU_CLOSED_OFFSET: Record<MenuPos["placement"], string> = {
+  "bottom-left": "-translate-y-0.5",
+  "bottom-right": "-translate-y-0.5",
+  "top-left": "translate-y-0.5",
+  "top-right": "translate-y-0.5",
 };
 
+// allow: SIZE_OK — positioning, dismissal, and keyboard state must remain one menu state machine.
 export function ActionMenu({ label, actions, items, className }: Props) {
   const [open, setOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -63,7 +65,8 @@ export function ActionMenu({ label, actions, items, className }: Props) {
     placement: "bottom-right",
   });
 
-  const allActions = (items ?? actions ?? []).filter((a) => !a.disabled);
+  const visibleActions = items ?? actions ?? [];
+  const enabledActions = visibleActions.filter((action) => !action.disabled);
 
   const closeMenu = useCallback(() => {
     if (!open) return;
@@ -124,7 +127,7 @@ export function ActionMenu({ label, actions, items, className }: Props) {
       if (!trigger) return;
       const rect = trigger.getBoundingClientRect();
       const menuHeight = Math.min(
-        allActions.length * MENU_ITEM_PX + MENU_VPAD,
+        visibleActions.length * MENU_ITEM_PX + MENU_VPAD,
         240,
       );
       const wouldOverflowBottom =
@@ -155,7 +158,7 @@ export function ActionMenu({ label, actions, items, className }: Props) {
       window.removeEventListener("scroll", dismissOnScroll, true);
       window.removeEventListener("resize", dismissOnScroll);
     };
-  }, [open, allActions.length, closeMenu]);
+  }, [open, visibleActions.length, closeMenu]);
 
   // Keyboard navigation while the menu is open.
   useEffect(() => {
@@ -167,37 +170,45 @@ export function ActionMenu({ label, actions, items, className }: Props) {
         triggerRef.current?.focus();
         return;
       }
-      if (allActions.length === 0) return;
+      if (enabledActions.length === 0) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setActiveIndex((i) => (i + 1) % allActions.length);
+        setActiveIndex((i) => (i + 1) % enabledActions.length);
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setActiveIndex((i) => (i - 1 + allActions.length) % allActions.length);
+        setActiveIndex((i) => (i - 1 + enabledActions.length) % enabledActions.length);
       }
-      if (e.key === "Enter" && allActions[activeIndex]) {
+      if (e.key === "Enter" && enabledActions[activeIndex]) {
         e.preventDefault();
-        const action = allActions[activeIndex];
+        const action = enabledActions[activeIndex];
         action.onSelect?.();
         action.onClick?.();
         closeMenu();
+        triggerRef.current?.focus();
       }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, activeIndex, allActions, closeMenu]);
+  }, [open, activeIndex, enabledActions, closeMenu]);
 
   useEffect(() => {
     if (open) setActiveIndex(0);
   }, [open]);
+
+  useEffect(() => {
+    if (!isClosing) return;
+    const timeout = window.setTimeout(() => setIsClosing(false), CLOSE_DELAY_MS);
+    return () => window.clearTimeout(timeout);
+  }, [isClosing]);
 
   // Outside-click dismiss. With a portal-rendered menu, both refs must be
   // checked — the trigger and the menu are siblings in the DOM, not parent/child.
   useEffect(() => {
     if (!open) return;
     function outside(e: MouseEvent) {
-      const target = e.target as Node;
+      const target = e.target;
+      if (!(target instanceof Node)) return;
       if (triggerRef.current?.contains(target)) return;
       if (menuRef.current?.contains(target)) return;
       closeMenu();
@@ -218,7 +229,7 @@ export function ActionMenu({ label, actions, items, className }: Props) {
         }}
         onBlur={closeOnBlur}
         className={cn(
-          "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+          "inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground outline-none transition-[color,background-color,transform] duration-fast ease-standard hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none",
           className,
         )}
         aria-label={label ?? "Actions"}
@@ -250,30 +261,36 @@ export function ActionMenu({ label, actions, items, className }: Props) {
               }
             }}
             className={cn(
-              "z-[1000] max-h-60 overflow-auto rounded-lg border border-border bg-card text-foreground shadow-xl ring-1 ring-black/5 transition-[opacity,transform] duration-fast ease-out will-change-transform motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:scale-100",
-              MENU_ORIGIN[pos.placement],
-              isVisible ? "scale-100 opacity-100" : "scale-[0.97] opacity-0",
+              "surface-overlay z-50 max-h-60 overflow-auto rounded-lg border border-border text-foreground shadow-overlay transition-[opacity,transform] duration-fast motion-reduce:translate-y-0 motion-reduce:transition-none motion-reduce:opacity-100",
+              isVisible
+                ? "translate-y-0 opacity-100 ease-enter"
+                : cn(MENU_CLOSED_OFFSET[pos.placement], "opacity-0 ease-exit"),
             )}
           >
-            {allActions.length === 0 ? (
+            {visibleActions.length === 0 ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">No actions</div>
             ) : (
-              allActions.map((action, i) => (
+              visibleActions.map((action) => {
+                const enabledIndex = enabledActions.indexOf(action);
+                return (
                 <button
                   key={action.label}
                   type="button"
                   role="menuitem"
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
+                    "flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left text-sm outline-none transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none",
                     action.danger
                       ? "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10"
                       : "text-foreground hover:bg-muted focus-visible:bg-muted",
-                    i === activeIndex &&
+                    enabledIndex === activeIndex &&
                       (action.danger
                         ? "bg-destructive/10"
                         : "bg-muted"),
                   )}
-                  onMouseEnter={() => setActiveIndex(i)}
+                  disabled={action.disabled}
+                  onMouseEnter={() => {
+                    if (enabledIndex >= 0) setActiveIndex(enabledIndex);
+                  }}
                   onClick={() => {
                     action.onSelect?.();
                     action.onClick?.();
@@ -292,7 +309,8 @@ export function ActionMenu({ label, actions, items, className }: Props) {
                   )}
                   {action.label}
                 </button>
-              ))
+                );
+              })
             )}
           </div>,
           document.body,

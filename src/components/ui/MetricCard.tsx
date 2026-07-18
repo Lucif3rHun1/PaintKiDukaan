@@ -41,18 +41,25 @@ export function MetricCard({
   footer,
 }: MetricCardProps) {
   return (
-    <Card className="flex flex-col">
+    <Card className="h-full" depth="raised" size="sm">
       <Card.Body className="flex flex-1 flex-col gap-2">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{label}</span>
+          <span className="text-pretty">{label}</span>
           <div className={cnTone("flex h-6 w-6 items-center justify-center rounded-md", toneIconBgClasses[tone])}>
-            <Icon className="h-3.5 w-3.5" />
+            <Icon aria-hidden="true" className="h-3.5 w-3.5" />
           </div>
         </div>
         {loading ? (
           <Skeleton className="h-8 w-28" />
         ) : (
-          <div className={cnTone(toneTextClasses[tone])}>{children}</div>
+          <div
+            className={cnTone(
+              "text-2xl font-bold leading-7 tabular-nums",
+              toneTextClasses[tone],
+            )}
+          >
+            {children}
+          </div>
         )}
         {footer && <div className="mt-auto pt-2">{footer}</div>}
       </Card.Body>

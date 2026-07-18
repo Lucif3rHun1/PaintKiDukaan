@@ -57,7 +57,7 @@ export function BarcodeThumb({
     return (
       <span
         style={{ width: containerWidth, height: containerHeight }}
-        className={`inline-flex items-center justify-center rounded border border-dashed border-border bg-muted text-[10px] text-muted-foreground ${className}`}
+        className={`inline-flex items-center justify-center rounded border border-dashed border-border bg-muted text-xs text-muted-foreground ${className}`}
         aria-label="No barcode"
       >
         —

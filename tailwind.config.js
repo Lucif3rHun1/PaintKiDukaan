@@ -5,12 +5,15 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "Roboto", '"Helvetica Neue"', "Arial", "sans-serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        xs: "var(--radius-xs)",
+        sm: "var(--radius-sm)",
+        md: "var(--radius-md)",
+        lg: "var(--radius-lg)",
+        xl: "var(--radius-xl)",
       },
       transitionDuration: {
         fast: "var(--duration-fast)",
@@ -18,9 +21,13 @@ export default {
         slow: "var(--duration-slow)",
       },
       transitionTimingFunction: {
-        spring: "var(--ease-spring)",
-        out: "var(--ease-out)",
-        "in-out": "var(--ease-in-out)",
+        standard: "var(--ease-standard)",
+        enter: "var(--ease-enter)",
+        exit: "var(--ease-exit)",
+      },
+      boxShadow: {
+        raised: "0 1px 2px hsl(var(--shadow-color) / 0.06), inset 0 1px 0 hsl(var(--edge-highlight) / 0.12)",
+        overlay: "0 8px 20px hsl(var(--shadow-color) / 0.16)",
       },
       colors: {
         background: "hsl(var(--background))",
@@ -76,6 +83,15 @@ export default {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
+        surface: {
+          canvas: "hsl(var(--surface-canvas))",
+          panel: "hsl(var(--surface-panel))",
+          sunken: "hsl(var(--surface-sunken))",
+          raised: "hsl(var(--surface-raised))",
+          overlay: "hsl(var(--surface-overlay))",
+          selected: "hsl(var(--surface-selected))",
+          risk: "hsl(var(--surface-risk))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar))",
           foreground: "hsl(var(--sidebar-foreground))",

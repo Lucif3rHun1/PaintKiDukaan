@@ -1,11 +1,12 @@
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
+import type { KeyboardEvent } from "react"
 
 import { cn } from "./cn"
 
 const badgeVariants = cva(
-  "group/badge inline-flex shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow] duration-fast ease-spring active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
+  "group/badge inline-flex shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-transparent px-2 py-0.5 text-xs font-medium tabular-nums whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] duration-fast ease-standard active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
   {
     variants: {
       variant: {
@@ -20,19 +21,19 @@ const badgeVariants = cva(
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
         success:
-          "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+          "border-success/30 bg-success/10 text-success",
         warning:
-          "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
+          "border-warning/30 bg-warning/10 text-warning",
         danger:
-          "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300",
+          "border-destructive/30 bg-destructive/10 text-destructive",
         muted:
           "border-transparent bg-muted text-muted-foreground",
-        info: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300",
+        info: "border-info/30 bg-info/10 text-info",
         neutral:
           "border-transparent bg-secondary text-secondary-foreground",
       },
       size: {
-        sm: "h-5 px-1.5 text-[0.7rem]",
+        sm: "h-5 px-1.5 text-xs",
         md: "h-5 px-2 text-xs",
       },
     },
@@ -63,6 +64,14 @@ function Badge({
         onClick,
         role: onClick ? "button" : undefined,
         tabIndex: onClick ? 0 : undefined,
+        onKeyDown: onClick
+          ? (event: KeyboardEvent<HTMLSpanElement>) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault()
+                event.currentTarget.click()
+              }
+            }
+          : undefined,
       },
       props
     ),

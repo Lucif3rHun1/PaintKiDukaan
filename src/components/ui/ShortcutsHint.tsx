@@ -59,7 +59,7 @@ export function ShortcutsHint({ shortcuts = [], group: _group, className }: Prop
             key={s.key}
             className="flex items-center justify-between gap-4"
           >
-            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
               {s.ctrl ? "Ctrl+" : ""}
               {s.meta ? "⌘" : ""}
               {s.shift ? "Shift+" : ""}

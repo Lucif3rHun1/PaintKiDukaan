@@ -45,7 +45,7 @@ export interface DataTableProps<T> {
 
 
 function alignClass(align?: "left" | "right" | "center"): string {
-  if (align === "right") return "text-right";
+  if (align === "right") return "text-right tabular-nums";
   if (align === "center") return "text-center";
   return "text-left";
 }
@@ -71,14 +71,14 @@ export function DataTable<T>({
   const isEmpty = !loading && !hasError && data.length === 0;
 
   return (
-    <div className={cn("overflow-x-auto rounded border border-border", className)}>
-      <table className={cn("w-full text-sm", tableClassName)}>
+    <div className={cn("surface-flat overflow-x-auto rounded-lg border border-border", className)}>
+      <table className={cn("min-w-full text-sm", tableClassName)}>
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <thead
           className={cn(
             "text-left text-xs uppercase text-muted-foreground",
             stickyHeader && "sticky top-0 z-10",
-            headerClassName ?? (stickyHeader ? "bg-card" : "border-b border-border bg-card"),
+            headerClassName ?? (stickyHeader ? "bg-surface-panel" : "border-b border-border bg-surface-panel"),
           )}
         >
           <tr className={stickyHeader ? "border-b border-border" : undefined}>
@@ -140,7 +140,7 @@ export function DataTable<T>({
                 <tr
                   key={keyExtractor(row, index)}
                   className={cn(
-                    "border-b border-border transition-colors last:border-b-0",
+                    "border-b border-border transition-colors duration-fast last:border-b-0 motion-reduce:transition-none",
                     onRowClick && "cursor-pointer hover:bg-muted",
                     !onRowClick && "hover:bg-muted/50",
                     rowExtra,
@@ -159,7 +159,7 @@ export function DataTable<T>({
                   <td
                     key={col.id ?? (typeof col.header === "string" ? col.header : undefined) ?? `cell-${i}`}
                     style={col.width ? { width: col.width, minWidth: col.width } : undefined}
-                    className={cn("px-3 py-2", alignClass(col.align), col.className)}
+                    className={cn("h-9 px-3 py-2", alignClass(col.align), col.className)}
                   >
                       {col.cell(row, index)}
                     </td>

@@ -24,14 +24,14 @@ export function Section({
   const rightSlot = actions ?? action;
   return (
     <section className={cn("space-y-3", className)}>
-      <div className="flex items-center justify-between">
-        <div>
-          <Heading className="text-lg font-semibold text-foreground">{title}</Heading>
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-start">
+        <div className="min-w-0">
+          <Heading className="text-balance text-lg font-semibold text-foreground">{title}</Heading>
           {description && (
-            <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+            <p className="mt-0.5 max-w-3xl text-pretty text-xs leading-4 text-muted-foreground">{description}</p>
           )}
         </div>
-        {rightSlot}
+        {rightSlot ? <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">{rightSlot}</div> : null}
       </div>
       {children}
     </section>

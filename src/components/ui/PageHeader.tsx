@@ -12,12 +12,12 @@ export interface PageHeaderProps {
 }
 
 const accentClasses: Record<PageHeaderAccent, string> = {
-  blue: "border-l-page-blue bg-page-blue/5",
-  green: "border-l-page-green bg-page-green/5",
-  amber: "border-l-page-amber bg-page-amber/5",
-  purple: "border-l-page-purple bg-page-purple/5",
-  red: "border-l-page-red bg-page-red/5",
-  slate: "border-l-page-slate bg-page-slate/5",
+  blue: "border-b-2 border-b-page-blue",
+  green: "border-b-2 border-b-page-green",
+  amber: "border-b-2 border-b-page-amber",
+  purple: "border-b-2 border-b-page-purple",
+  red: "border-b-2 border-b-page-red",
+  slate: "border-b border-border",
 };
 
 export function PageHeader({
@@ -30,13 +30,13 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "rounded-xl border border-l bg-card px-4 py-3 text-card-foreground shadow-sm shadow-foreground/5",
+        "px-4 py-3 text-foreground",
         accentClasses[accent],
       )}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground text-balance">{title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground text-balance">{title}</h1>
           {description ? (
             <p className="max-w-3xl text-sm leading-6 text-muted-foreground text-pretty">{description}</p>
           ) : null}

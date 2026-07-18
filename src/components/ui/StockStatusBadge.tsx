@@ -11,7 +11,7 @@ export function StockStatusBadge({
   if (qty <= 0) {
     return (
       <Badge variant="danger" size="sm">
-        <TriangleAlert className="mr-1 h-3 w-3" />
+        <TriangleAlert aria-hidden="true" />
         Out of stock
       </Badge>
     );
@@ -19,7 +19,7 @@ export function StockStatusBadge({
   if (reorderLevel != null && qty <= reorderLevel) {
     return (
       <Badge variant="warning" size="sm">
-        <TriangleAlert className="mr-1 h-3 w-3" />
+        <TriangleAlert aria-hidden="true" />
         Low · {qty}
       </Badge>
     );
