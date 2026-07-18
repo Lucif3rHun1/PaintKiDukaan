@@ -32,6 +32,7 @@ import { getDraft, convertToFbill, listSalesPaged, salesPeriodSummary } from "..
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { formatDateForDisplay, shiftDaysLocal, todayLocalYyyymmdd } from "../../lib/date";
+import { formatRupeesFromPaise } from "../../lib/money";
 import type { Sale } from "../types";
 import type { Draft } from "../../domain/types";
 import { setHash } from "../../lib/navigate";
@@ -51,15 +52,34 @@ interface Props {
 
 const PAGE_SIZE = 25;
 
+function draftItemCount(draft: Draft): number {
+  try {
+    const data: unknown = JSON.parse(draft.data_json);
+    if (typeof data !== "object" || data === null || !("lines" in data)) return 0;
+    return Array.isArray(data.lines) ? data.lines.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function SalesListPage({ onCreate }: Props) {
   const queryClient = useQueryClient();
   const [from, setFrom] = useState(() => shiftDaysLocal(6));
   const [to, setTo] = useState(() => todayLocalYyyymmdd());
   const [draft, setDraft] = useState<Draft | null>(null);
   useEffect(() => {
-    for (const key of ["sale-final", "sale-fbill", "sale-quotation"]) {
-      void getDraft(key).then((d) => { if (d) setDraft(d); });
-    }
+    let cancelled = false;
+    void Promise.all(
+      ["sale-final", "sale-fbill", "sale-quotation"].map((key) => getDraft(key)),
+    ).then((drafts) => {
+      if (cancelled) return;
+      setDraft(
+        drafts.find(
+          (candidate): candidate is Draft => candidate !== null && draftItemCount(candidate) > 0,
+        ) ?? null,
+      );
+    });
+    return () => { cancelled = true; };
   }, []);
 
   const summary = useQuery({
@@ -238,10 +258,14 @@ export function SalesListPage({ onCreate }: Props) {
   });
 
   const sm = summary.data;
+  const totalSales = Math.max(0, sm?.total_paise ?? 0);
+  const collected = Math.min(totalSales, Math.max(0, sm?.paid_paise ?? 0));
+  const onCredit = totalSales - collected;
+  const collectedPercent = totalSales > 0 ? Math.round((collected / totalSales) * 100) : 0;
 
   return (
-  <Skeleton name="sales-list" loading={summary.isLoading} select="viewport">
-    <div className="space-y-3">
+  <Skeleton name="sales-list" loading={summary.isLoading} select="viewport" className="min-h-0 flex-1 [&>[data-boneyard-content]]:h-full">
+    <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard
           icon={Receipt}
@@ -254,10 +278,27 @@ export function SalesListPage({ onCreate }: Props) {
         </MetricCard>
         <MetricCard
           icon={Banknote}
-          label="Total value"
+          label="Total sales"
           loading={summary.isLoading}
           tone="success"
-          footer={<span className="text-xs text-muted-foreground">paid + due</span>}
+          footer={sm ? (
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <div
+                role="progressbar"
+                aria-label="Collected share"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={collectedPercent}
+                className="h-1.5 overflow-hidden rounded-full bg-muted"
+              >
+                <div className="h-full rounded-full bg-success" style={{ width: `${collectedPercent}%` }} />
+              </div>
+              <div className="flex flex-wrap justify-between gap-2">
+                <span>Collected {formatRupeesFromPaise(collected)}</span>
+                <span>On credit {formatRupeesFromPaise(onCredit)}</span>
+              </div>
+            </div>
+          ) : null}
         >
           {sm ? (
             <Money paise={sm.total_paise} className="tabular-nums" />
@@ -304,26 +345,16 @@ export function SalesListPage({ onCreate }: Props) {
         toolbar={
           <>
             <PeriodDropdown value={{ from, to }} onChange={(f, t) => { setFrom(f); setTo(t); }} allowCustom />
-            {draft && (() => {
-              let label = "Untitled draft";
-              let itemCount = 0;
-              try {
-                const data = JSON.parse(draft.data_json) as Record<string, unknown>;
-                const lines = data.lines as { item_id?: number }[] | undefined;
-                itemCount = lines?.length ?? 0;
-                if (!data.customerId) label = "Walk-in";
-              } catch { /* corrupt draft */ }
-              return (
-                <button type="button" onClick={() => { setHash("#/sales/new?restore=1"); }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                  Open draft ({itemCount} item{itemCount !== 1 ? "s" : ""})
-                </button>
-              );
-            })()}
+            {draft && draftItemCount(draft) > 0 && (
+              <Button type="button" variant="outline" size="sm" onClick={() => { setHash("#/sales/new?restore=1"); }}>
+                <Badge variant="warning" size="sm">Draft</Badge>
+                Open ({draftItemCount(draft)} item{draftItemCount(draft) !== 1 ? "s" : ""})
+              </Button>
+            )}
           </>
         }
         actions={
-          <Button type="button" variant="primary" size="sm" icon={Plus} onClick={onCreate} shortcut="F6">
+          <Button type="button" size="sm" icon={Plus} onClick={onCreate} shortcut="F6">
             New Sale
           </Button>
         }

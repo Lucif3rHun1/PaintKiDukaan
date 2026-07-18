@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
-import { Button, MoneyInput } from "../../components/ui";
+import { Badge, Button, MoneyInput } from "../../components/ui";
 import type { PaymentMode, PaymentSplit } from "../types";
 import { getPref, setPref } from "../../lib/storage";
 
@@ -134,10 +134,9 @@ export function SplitPayment({ total, splits, onChange, balanceTenderAvailable }
           <Button
             key={mode.value}
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             aria-pressed={splits.some((split) => split.mode === mode.value)}
-            className="rounded-full border border-border bg-background px-3"
             onClick={() => addOrFocusSplit(mode.value)}
           >
             {mode.label}
@@ -147,10 +146,9 @@ export function SplitPayment({ total, splits, onChange, balanceTenderAvailable }
           <Button
             key="balance"
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             aria-pressed={splits.some((split) => split.mode === "balance")}
-            className="rounded-full border border-info/40 bg-info/10 px-3 text-info"
             onClick={() => addOrFocusSplit("balance")}
             title="Settles against the customer's outstanding ledger instead of paying out cash"
           >
@@ -164,9 +162,9 @@ export function SplitPayment({ total, splits, onChange, balanceTenderAvailable }
           key={index}
           className="grid grid-cols-[auto_9rem_auto] items-center gap-2"
         >
-          <span className="inline-flex items-center rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+          <Badge variant={split.mode === "balance" ? "info" : "muted"} size="sm">
             {PAYMENT_MODE_LABELS[split.mode]}
-          </span>
+          </Badge>
           <div data-payment-amount>
             <MoneyInput
               value={split.amount}
@@ -175,13 +173,12 @@ export function SplitPayment({ total, splits, onChange, balanceTenderAvailable }
             />
           </div>
           <Button
-            variant="ghost"
-            size="sm"
+            variant="destructive"
+            size="icon-sm"
             icon={X}
             type="button"
             onClick={() => removeSplit(index)}
             aria-label="Remove payment"
-            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           />
         </div>
       ))}

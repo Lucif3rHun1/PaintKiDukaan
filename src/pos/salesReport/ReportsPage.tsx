@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  Badge,
   Card,
   DataTable,
   DownloadMenu,
@@ -122,15 +123,16 @@ function AnalyticsCard({ title, headers, rows }: { title: string; headers: strin
 
 function ComparisonChip({ label, metric, format }: { label: string; metric: ComparisonMetric; format: (v: number) => string }) {
   const pct = metric.change_pct;
-  const arrow = pct > 0 ? "↑" : pct < 0 ? "↓" : "→";
-  const color = pct > 0 ? "text-success" : pct < 0 ? "text-destructive" : "text-muted-foreground";
+  const direction = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
+  const variant = pct > 0 ? "success" : pct < 0 ? "danger" : "muted";
+  const arrowLabel = pct > 0 ? "increased" : pct < 0 ? "decreased" : "unchanged";
   return (
     <div className="flex flex-col items-center gap-0.5 text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-semibold text-foreground tabular-nums">{format(metric.current)}</span>
-      <span className={`text-xs tabular-nums ${color}`}>
-        {arrow} {Math.abs(pct).toFixed(1)}% vs yesterday
-      </span>
+      <Badge variant={variant} size="sm">
+        {direction === "up" ? "↑" : direction === "down" ? "↓" : "→"} {Math.abs(pct).toFixed(1)}% {arrowLabel}
+      </Badge>
     </div>
   );
 }

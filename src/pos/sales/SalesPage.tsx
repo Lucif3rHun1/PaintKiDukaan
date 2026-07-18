@@ -123,6 +123,15 @@ function clampQty(unitType: string, raw: number): number {
   return Math.max(1, Math.round(raw));
 }
 
+export function hasMeaningfulDraftContent(lines: readonly CartLine[]): boolean {
+  return lines.some(
+    (l) =>
+      l.item_id != null ||
+      l.formula_id != null ||
+      (l.item_name ?? l.display_name ?? "").trim().length > 0,
+  );
+}
+
 function formatQty(qty: number, unitType: string): string {
   if (isDecimalUnit(unitType)) {
     return qty.toFixed(3).replace(/\.?0+$/, "") || "0";
@@ -746,7 +755,9 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                 )}
               >
                 {k === "final" ? "Bill" : k === "fbill" ? "FBill" : "Quotation"}
-                {isGuarded ? " 🔒" : ""}
+                {isGuarded ? (
+                  <Lock className="ml-1 size-3.5" aria-label="Custom lines must be resolved before switching" />
+                ) : null}
               </button>
             );
           })}
@@ -787,7 +798,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
         <div className="grid gap-4 lg:grid-cols-3">
           {/* Left + middle: customer + cart */}
           <div className="lg:col-span-2 space-y-4">
-            <Card>
+            <Card depth="flat">
               <Card.Header>
                 <h2 className="text-sm font-semibold text-foreground">Customer</h2>
                 <p className="mt-0.5 text-xs text-muted-foreground">
@@ -874,7 +885,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
               </Card.Body>
             </Card>
 
-            <Card>
+            <Card depth="flat">
               <Card.Header className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-foreground">Cart</h2>
                 <span className="text-xs text-muted-foreground">
@@ -967,9 +978,9 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                                   options={saleUnits.map((u) => ({ value: u.code, label: u.label }))}
                                 />
                               ) : (
-                                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                <Badge variant="muted" size="sm" className="shrink-0">
                                   {uLabel}
-                                </span>
+                                </Badge>
                               )}
                             </div>
                             <div className="hidden items-center justify-end gap-1 text-xs text-muted-foreground sm:flex">
@@ -998,14 +1009,13 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                               )}
                             </div>
                             <Button
-                              variant="ghost"
-                              size="sm"
+                              variant="destructive"
+                              size="icon-sm"
                               icon={X}
                               type="button"
                               onClick={() => removeLine(i)}
                               aria-label={`Remove ${l.item_name ?? "item"} from cart`}
                               title="Remove line"
-                              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                             />
                           </div>
                           {l.line_discount > 0 ? (
@@ -1028,7 +1038,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
 
           {/* Right: bill summary */}
           <div className="space-y-4">
-            <Card>
+            <Card depth="raised">
               <Card.Header>
                 <h2 className="text-sm font-semibold text-foreground">
                   Bill summary
@@ -1106,7 +1116,6 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
               <Card.Footer className="flex flex-col gap-2">
                 <Button
                   type="submit"
-                  variant="primary"
                   size="lg"
                   icon={Save}
                   loading={busy}
@@ -1145,7 +1154,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
               </Card.Footer>
             </Card>
 
-            <Card>
+            <Card depth="flat">
               <Card.Header className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-foreground">
                   Recent bills

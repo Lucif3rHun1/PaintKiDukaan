@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Printer, Share2 } from "lucide-react";
 
-import { Badge, Button, Card, EmptyState, Money } from "../../components/ui";
-import { formatRupeesFromPaise } from "../../lib/money";
+import { Badge, Button, Card, EmptyState, Money, Skeleton } from "../../components/ui";
 import { extractError } from "../../lib/extractError";
 import { getSale } from "../api";
 import { loadString } from "../../shell/routes/settings/components/SettingsFields";
@@ -17,7 +16,6 @@ import { toast } from "../../lib/feedback/toast";
 import { formatDateForDisplay } from "../../lib/date";
 import type { Sale } from "../types";
 import { saleStatus } from "./saleStatus";
-import { Skeleton } from "boneyard-js/react";
 
 interface Props {
   id: number;
@@ -134,8 +132,9 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
 
   if (loading) {
     return (
-      <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
-        Loading sale…
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]" role="status" aria-label="Loading sale">
+        <Skeleton variant="card" className="h-64" />
+        <Skeleton variant="card" className="h-64" />
       </div>
     );
   }
@@ -166,7 +165,6 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
   const isFbill = sale.status === "fbill";
 
   return (
-  <Skeleton name="sale-detail" loading={loading} select="viewport">
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -185,7 +183,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
           {isQuotation && onConvert ? (
             <Button
               type="button"
-              variant="primary"
+              variant="default"
               size="md"
               disabled={busy}
               onClick={() => onConvert(sale)}
@@ -207,7 +205,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
           {isFbill && onEdit ? (
             <Button
               type="button"
-              variant="primary"
+              variant="default"
               size="md"
               disabled={busy}
               onClick={() => onEdit(sale)}
@@ -249,7 +247,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-        <Card as="section" className="space-y-3 p-4">
+        <Card as="section" depth="flat" className="space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Items</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -268,7 +266,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
                     <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
                       No items on this invoice.
                       <div className="mt-1 text-xs">
-                        (Header totals {formatRupeesFromPaise(sale.total)} were saved, but the line
+                        (Header totals <Money paise={sale.total} /> were saved, but the line
                         items did not load. This can happen after a partial data update — try
                         reloading.)
                       </div>
@@ -310,7 +308,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
         </Card>
 
         <div className="space-y-4">
-          <Card as="section" className="space-y-3 p-4">
+          <Card as="section" depth="flat" className="space-y-3 p-4">
             <h2 className="text-sm font-semibold text-foreground">Details</h2>
             <dl className="space-y-2 text-sm">
               <div className="flex items-center justify-between gap-3">
@@ -330,7 +328,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
             </dl>
           </Card>
 
-          <Card as="section" className="space-y-3 p-4">
+          <Card as="section" depth="raised" className="space-y-3 bg-surface-raised p-4">
             <h2 className="text-sm font-semibold text-foreground">Totals</h2>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between gap-3">
@@ -358,9 +356,10 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
                   <span className="text-muted-foreground">
                     {balance > 0 ? "Balance due" : "Overpaid"}
                   </span>
-                  <span className={balance > 0 ? "text-destructive" : "text-success"}>
-                    {formatRupeesFromPaise(Math.abs(balance))}
-                  </span>
+                  <Money
+                    paise={Math.abs(balance)}
+                    className={balance > 0 ? "text-destructive" : "text-success"}
+                  />
                 </div>
               ) : null}
             </div>
@@ -383,6 +382,5 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
         </div>
       </div>
     </div>
-  </Skeleton>
   );
 }

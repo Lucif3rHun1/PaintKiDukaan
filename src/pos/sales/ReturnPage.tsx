@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Save, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Save, Search, Trash2 } from "lucide-react";
 
 import { Alert, Button, Card, KbdHint, Money, MoneyInput, PageHeader, QtyInput } from "../../components/ui";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
@@ -377,7 +377,7 @@ export default function ReturnPage({ user, onBack }: Props) {
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="space-y-4">
-            <Card as="section" className="space-y-3 p-4">
+            <Card as="section" depth="flat" className="space-y-3 p-4">
               <h2 className="text-lg font-semibold text-foreground">Linked invoices</h2>
               <p className="text-xs text-muted-foreground">
                 {linkedInvoices.length === 0
@@ -403,7 +403,7 @@ export default function ReturnPage({ user, onBack }: Props) {
               />
             </Card>
 
-            <Card as="section" className="space-y-4 p-4">
+            <Card as="section" depth="flat" className="space-y-4 p-4">
               <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
                 <h2 className="text-lg font-semibold text-foreground">Cart</h2>
                 <span className="text-xs text-muted-foreground">
@@ -446,7 +446,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                         </td>
                         <td className="py-2">
                           <div className="text-sm font-medium text-foreground">{toTitleCase(line.item_name)}</div>
-                          <div className="font-mono text-[10px] text-muted-foreground">#{line.item_id}</div>
+                           <div className="font-mono text-xs text-muted-foreground">#{line.item_id}</div>
                         </td>
                         <td className="py-2">
                           <div className="flex flex-col gap-1">
@@ -456,7 +456,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                               onChange={(v) => updateLineQty(index, v)}
                             />
                             {line.unit_code ? (
-                              <span className="text-[11px] text-muted-foreground">{line.unit_code}</span>
+                               <span className="text-xs text-muted-foreground">{line.unit_code}</span>
                             ) : null}
                           </div>
                         </td>
@@ -473,14 +473,14 @@ export default function ReturnPage({ user, onBack }: Props) {
                           <Money paise={Math.max(0, Math.round(line.qty * line.price))} />
                         </td>
                         <td className="py-2 text-right">
-                          <button
-                            type="button"
-                            aria-label="Remove line"
-                            onClick={() => removeLine(index)}
-                            className="rounded px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                           <Button
+                             type="button"
+                             aria-label="Remove line"
+                             onClick={() => removeLine(index)}
+                             variant="destructive"
+                             size="icon-sm"
+                             icon={Trash2}
+                           />
                         </td>
                       </tr>
                     ))}
@@ -503,7 +503,7 @@ export default function ReturnPage({ user, onBack }: Props) {
           </div>
 
           <div className="space-y-4">
-            <Card as="section" className="space-y-4 p-4">
+            <Card as="section" depth="flat" className="space-y-4 p-4">
               <h2 className="text-lg font-semibold text-foreground">Return summary</h2>
 
               <label className="block space-y-1 text-sm">
@@ -533,7 +533,7 @@ export default function ReturnPage({ user, onBack }: Props) {
               ) : null}
             </Card>
 
-            <Card as="section" className="space-y-4 p-4">
+            <Card as="section" depth="raised" className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">Refund tenders</h2>
                 <p className="text-xs text-muted-foreground">Splits represent money returned to the customer.</p>
@@ -553,7 +553,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                   <div className="flex items-center justify-between gap-4 text-xs">
                     <span className="text-muted-foreground">Refund matched</span>
                     {refundAmount === subtotal
-                      ? <span className="text-success">✓ Full refund</span>
+                      ? <span className="inline-flex items-center gap-1 text-success"><CheckCircle2 className="size-3.5" aria-hidden="true" /> Full refund</span>
                       : <span className="text-muted-foreground">{formatRupeesFromPaise(refundAmount)} of {formatRupeesFromPaise(subtotal)}</span>
                     }
                   </div>
@@ -570,7 +570,7 @@ export default function ReturnPage({ user, onBack }: Props) {
         </div>
       </div>
 
-      <div className="sticky bottom-0 z-30 -mx-4 mt-4 border-t border-border bg-card/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:-mx-6">
+      <div className="surface-translucent sticky bottom-0 -mx-4 mt-4 border-t border-border px-4 py-3 sm:-mx-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-1 text-sm">
             <div className="flex items-center justify-between gap-6">
@@ -590,7 +590,6 @@ export default function ReturnPage({ user, onBack }: Props) {
             icon={Save}
             size="lg"
             shortcut="F9"
-            className="bg-success hover:bg-success/90 focus-visible:ring-success/30"
           >
             Save return
           </Button>

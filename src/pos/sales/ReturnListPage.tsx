@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus, RotateCcw } from "lucide-react";
 import { PeriodDropdown } from "../../components/ui";
 
-import { Button, Card, DataList, EmptyState, Money } from '../../components/ui';
+import { Badge, Button, Card, DataList, EmptyState, Money } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { invalidateList } from "../../lib/query";
 import { getDraft, listReturnsPaged, returnsPeriodSummary } from "../api";
@@ -128,11 +128,11 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
   <Skeleton name="return-list" loading={summary.isLoading} select="viewport">
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 sm:max-w-2xl">
-        <Card as="section" className="space-y-1 p-4">
+        <Card as="section" depth="raised" className="space-y-1 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Returns</p>
           <p className="text-2xl font-semibold tabular-nums text-foreground">{sm?.count ?? "—"}</p>
         </Card>
-        <Card as="section" className="space-y-1 p-4">
+        <Card as="section" depth="raised" className="space-y-1 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Total refund</p>
           {sm ? (
             <Money paise={sm.total_refund_paise} className="text-2xl font-semibold tabular-nums" />
@@ -174,16 +174,16 @@ export function ReturnListPage({ onCreate, onSelect }: Props) {
                 if (data.reason) label = String(data.reason);
               } catch { /* corrupt draft */ }
               return (
-                <button type="button" onClick={() => { setHash("#/sales/return/new?restore=1"); }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                  Open draft ({itemCount} item{itemCount !== 1 ? "s" : ""})
-                </button>
+                <Button type="button" variant="outline" size="sm" onClick={() => { setHash("#/sales/return/new?restore=1"); }}>
+                  <Badge variant="warning" size="sm">Draft</Badge>
+                  Open ({itemCount} item{itemCount !== 1 ? "s" : ""})
+                </Button>
               );
             })()}
           </>
         }
         actions={
-          <Button type="button" variant="primary" size="sm" icon={Plus} onClick={onCreate} shortcut="F6">
+          <Button type="button" size="sm" icon={Plus} onClick={onCreate} shortcut="F6">
             New Return
           </Button>
         }

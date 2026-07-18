@@ -127,7 +127,7 @@ export function InvoiceSearchInput({
                   <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <div className="min-w-0">
                     <div className="font-mono tabular-nums text-foreground truncate">{sale.no}</div>
-                    <div className="text-[11px] text-muted-foreground truncate">
+                    <div className="truncate text-xs text-muted-foreground">
                       {sale.customer_name ?? "Walk-in"} · {sale.items.length} item
                       {sale.items.length === 1 ? "" : "s"} · {sale.date}
                     </div>
@@ -143,7 +143,7 @@ export function InvoiceSearchInput({
       </ul>
 
       {linked.length === 0 && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Link 1+ invoices to scope items, or leave empty to refund any item.
         </p>
       )}

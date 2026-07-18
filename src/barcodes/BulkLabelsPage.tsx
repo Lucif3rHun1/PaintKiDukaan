@@ -31,13 +31,12 @@ import {
 import { buildTsplBytes, buildTsplString, calcLabelCapacity, calcOptimalFont, calcOptimalFontFill } from "../pos/tspl";
 import { TsplLabelPreview } from "../pos/TsplLabelPreview";
 import { DEFAULT_TSPL_CONFIG, normalizeTsplConfig, type TsplConfig } from "../pos/tsplConfig";
-import { Button, Skeleton } from "../components/ui";
+import { Alert, Badge, Button, Card, Skeleton } from "../components/ui";
 import { useShortcut } from "../lib/shortcuts";
 import { useFocusShortcut } from "../lib/shortcuts/useFocusShortcut";
 import { extractError } from "../lib/extractError";
 import { generateSimpleSequence, type SequenceType } from "./sequence";
 import { useLabelBatchSeed } from "./seed";
-import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 
 type PrinterType = "thermal" | "laser-a4";
 type LaserPerSheet = 21 | 65;
@@ -621,26 +620,25 @@ export function BulkLabelsPage() {
   const labelCapacity = useMemo(() => calcLabelCapacity(rollW, rollH, cols, tsplConfig), [rollW, rollH, cols, tsplConfig]);
 
   return (
-  <BoneSkeleton name="bulk-labels" loading={false} select="viewport">
     <div className="grid gap-4 lg:grid-cols-12">
       {/* LEFT: compose — 5 cols */}
-      <section className="space-y-3 rounded-lg border border-border bg-card/60 p-4 lg:col-span-5">
+      <Card as="section" depth="flat" className="space-y-3 bg-card p-4 lg:col-span-5">
         <header className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-foreground">Compose label</h3>
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          <Badge variant="muted" className="font-mono text-xs">
             {LOCKED_FORMAT}
-          </span>
+          </Badge>
         </header>
 
-        <div className="flex gap-1 rounded-md border border-border p-0.5">
-          <button type="button" onClick={() => setActiveTab("items")}
-            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${activeTab === "items" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+        <div className="flex gap-1 rounded-md border border-border bg-surface-sunken p-0.5">
+          <Button type="button" size="sm" variant={activeTab === "items" ? "default" : "ghost"} onClick={() => setActiveTab("items")}
+            className="flex-1 transition-[color,background-color,border-color,box-shadow] duration-fast">
             Items
-          </button>
-          <button type="button" onClick={() => setActiveTab("custom")}
-            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${activeTab === "custom" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          </Button>
+          <Button type="button" size="sm" variant={activeTab === "custom" ? "default" : "ghost"} onClick={() => setActiveTab("custom")}
+            className="flex-1 transition-[color,background-color,border-color,box-shadow] duration-fast">
             Custom
-          </button>
+          </Button>
         </div>
 
         {/* Item picker */}
@@ -687,7 +685,7 @@ export function BulkLabelsPage() {
               disabled={loadingItems}
             />
             {showItemDropdown && (
-              <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-md border bg-popover shadow-md">
+              <Card depth="overlay" className="absolute z-50 mt-1 max-h-60 w-full gap-0 overflow-y-auto rounded-md bg-surface-overlay py-0 shadow-overlay">
                 {filteredItems.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-muted-foreground">
                     {items.length === 0 ? "No items found" : "No matches"}
@@ -696,12 +694,11 @@ export function BulkLabelsPage() {
                   filteredItems.map((i) => {
                     const inBatch = batch.filter((r) => r.itemId === i.id).length;
                     return (
-                    <button
+                    <Button
                       key={i.id}
                       type="button"
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer ${
-                        i.id === selectedItemId ? "bg-accent text-accent-foreground" : ""
-                      }`}
+                      variant="ghost"
+                      className={`h-auto w-full justify-start rounded-none px-3 py-2 text-left text-sm transition-[color,background-color,border-color,box-shadow] duration-fast ${i.id === selectedItemId ? "bg-surface-selected text-foreground" : ""}`}
                       onClick={() => {
                         setSelectedItemId(i.id);
                         setItemSearchQuery("");
@@ -710,15 +707,15 @@ export function BulkLabelsPage() {
                     >
                       <span>{formatItemName(i, brandsQuery.data ?? [])}</span>
                       {inBatch > 0 && (
-                        <span className="ml-1.5 inline-block rounded bg-primary/15 px-1 text-[10px] font-medium text-primary">
+                        <Badge variant="default" size="sm" className="ml-1.5 text-xs">
                           {inBatch} in batch
-                        </span>
+                        </Badge>
                       )}
-                    </button>
+                    </Button>
                     );
                   })
                 )}
-              </div>
+              </Card>
             )}
           </div>
           {itemError && <p className="text-xs text-destructive">{itemError}</p>}
@@ -789,15 +786,15 @@ export function BulkLabelsPage() {
 
         {activeTab === "custom" && (
         <>
-        <div className="flex gap-1 rounded-md border border-border p-0.5">
-          <button type="button" onClick={() => setCustomMode("freetext")}
-            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${customMode === "freetext" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+        <div className="flex gap-1 rounded-md border border-border bg-surface-sunken p-0.5">
+          <Button type="button" size="sm" variant={customMode === "freetext" ? "default" : "ghost"} onClick={() => setCustomMode("freetext")}
+            className="flex-1 transition-[color,background-color,border-color,box-shadow] duration-fast">
             Free Text
-          </button>
-          <button type="button" onClick={() => setCustomMode("sequence")}
-            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${customMode === "sequence" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          </Button>
+          <Button type="button" size="sm" variant={customMode === "sequence" ? "default" : "ghost"} onClick={() => setCustomMode("sequence")}
+            className="flex-1 transition-[color,background-color,border-color,box-shadow] duration-fast">
             Sequence
-          </button>
+          </Button>
         </div>
 
         {customMode === "freetext" && (() => {
@@ -822,11 +819,11 @@ export function BulkLabelsPage() {
                 rows={4}
                 className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none"
               />
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Capacity: {labelCapacity.maxCharsPerLine} chars/line, {labelCapacity.maxLines} lines max at font {tsplConfig.font}
               </p>
               {textOverflows && (
-                <p className="text-[10px] text-destructive">
+                <p className="text-xs text-destructive">
                   Text exceeds label capacity ({labelCapacity.maxCharsPerLine} chars/line, {labelCapacity.maxLines} lines max)
                 </p>
               )}
@@ -920,15 +917,20 @@ export function BulkLabelsPage() {
           {printer === "thermal" && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Labels per row</label>
-              <Select
-                value={String(labelsPerRow)}
-                onChange={(e) => setLabelsPerRow(Number(e.target.value) || 1)}
-                options={[1, 2, 3, 4].map((value) => ({
-                  value: String(value),
-                  label: String(value),
-                }))}
-                size="md"
-              />
+              <div className="flex gap-1" role="radiogroup" aria-label="Labels per row">
+                {[1, 2, 3, 4].map((n) => (
+                  <Button
+                    key={n}
+                    type="button"
+                    size="sm"
+                    variant={labelsPerRow === n ? "default" : "outline"}
+                    aria-pressed={labelsPerRow === n}
+                    onClick={() => setLabelsPerRow(n)}
+                  >
+                    {n}
+                  </Button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -945,18 +947,18 @@ export function BulkLabelsPage() {
             const clamp = (v: number) => Math.round(Math.min(max, Math.max(min, v)) * 10) / 10;
             return (
               <div className="space-y-1">
-                <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+                <span className="text-xs font-medium text-muted-foreground">{label}</span>
                 <div className="flex items-center">
-                  <button type="button" onClick={() => onChange(clamp(value - step))}
-                    className="flex h-7 w-7 items-center justify-center rounded-l border border-border bg-muted text-sm font-bold text-muted-foreground hover:text-foreground active:scale-95">−</button>
+                  <Button type="button" size="icon-sm" variant="secondary" onClick={() => onChange(clamp(value - step))}
+                    className="rounded-r-none transition-[color,background-color,border-color,box-shadow] duration-fast">−</Button>
                   <input
                     type="number" value={value} step={step} min={min} max={max}
                     onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(clamp(v)); }}
                     className="h-7 w-14 border-y border-border bg-background text-center font-mono text-xs text-foreground outline-none focus:border-primary"
                   />
-                  <button type="button" onClick={() => onChange(clamp(value + step))}
-                    className="flex h-7 w-7 items-center justify-center rounded-r border border-border bg-muted text-sm font-bold text-muted-foreground hover:text-foreground active:scale-95">+</button>
-                  {unit && <span className="ml-1.5 text-[10px] text-muted-foreground">{unit}</span>}
+                  <Button type="button" size="icon-sm" variant="secondary" onClick={() => onChange(clamp(value + step))}
+                    className="rounded-l-none transition-[color,background-color,border-color,box-shadow] duration-fast">+</Button>
+                  {unit && <span className="ml-1.5 text-xs text-muted-foreground">{unit}</span>}
                 </div>
               </div>
             );
@@ -984,14 +986,15 @@ export function BulkLabelsPage() {
           }
 
           return (
-            <div className="space-y-3 rounded-lg border border-border bg-background p-3">
+            <Card depth="flat" className="space-y-3 bg-surface-sunken p-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-foreground">
                   Label configurator
                   <span className="ml-1.5 font-normal text-muted-foreground">{cellWmm} × {rollH} mm</span>
                 </span>
-                <button type="button" onClick={() => updateTsplConfig(() => DEFAULT_TSPL_CONFIG)}
-                  className="text-[10px] text-muted-foreground hover:text-foreground">Reset</button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => updateTsplConfig(() => DEFAULT_TSPL_CONFIG)}>
+                  Reset
+                </Button>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1004,9 +1007,8 @@ export function BulkLabelsPage() {
                   onChange={(v) => updateTsplConfig((c) => ({ ...c, xmul: v, ymul: v }))}
                 />
                 <div className="space-y-1">
-                  <span className="text-[10px] font-medium text-muted-foreground">Auto-fit</span>
-                  <button type="button" onClick={autoFit}
-                    className="flex h-7 items-center rounded border border-border bg-muted px-2 text-[10px] font-semibold text-muted-foreground hover:text-foreground active:scale-95">Auto</button>
+                  <span className="text-xs font-medium text-muted-foreground">Auto-fit</span>
+                  <Button type="button" size="sm" variant="secondary" onClick={autoFit}>Auto</Button>
                 </div>
                 <Spinner
                   label="Spacing" value={tsplConfig.spacingMm} step={0.5} min={0} max={10}
@@ -1078,10 +1080,10 @@ export function BulkLabelsPage() {
                 if (!rawLabel) return null;
                 return (
                   <details className="group">
-                    <summary className="cursor-pointer select-none text-[10px] text-muted-foreground hover:text-foreground">
+                    <summary className="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
                       Raw TSPL ▸
                     </summary>
-                    <pre className="mt-1 max-h-48 overflow-auto rounded border border-border bg-muted/30 p-2 font-mono text-[10px] text-foreground leading-relaxed">
+                    <pre className="mt-1 max-h-48 overflow-auto rounded border border-border bg-surface-sunken p-2 font-mono text-xs leading-relaxed text-foreground">
                       {buildTsplString(
                         [rawLabel],
                         rollW, rollH, cols, tsplConfig,
@@ -1090,7 +1092,7 @@ export function BulkLabelsPage() {
                   </details>
                 );
               })()}
-            </div>
+            </Card>
           );
         })()}
 
@@ -1098,7 +1100,7 @@ export function BulkLabelsPage() {
         {activeTab === "items" && (
           <Button
             type="button"
-            variant="primary"
+            variant="default"
             onClick={addToList}
             disabled={!selectedItem?.barcode}
             shortcut="F6"
@@ -1121,7 +1123,7 @@ export function BulkLabelsPage() {
           return (
           <Button
             type="button"
-            variant="primary"
+            variant="default"
             onClick={addCustomFreeText}
             disabled={!customText.trim() || textOverflows}
             className="w-full"
@@ -1133,7 +1135,7 @@ export function BulkLabelsPage() {
         {activeTab === "custom" && customMode === "sequence" && (
           <Button
             type="button"
-            variant="primary"
+            variant="default"
             onClick={addCustomSequence}
             disabled={seqCount < 1}
             className="w-full"
@@ -1145,7 +1147,7 @@ export function BulkLabelsPage() {
         {hasPrintedBatch && batch.length > 0 && (
           <Button
             type="button"
-            variant="danger"
+            variant="destructive"
             onClick={clearBatch}
             className="w-full"
           >
@@ -1154,34 +1156,28 @@ export function BulkLabelsPage() {
         )}
 
 
-        {actionMsg && (
-          <p className="rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{actionMsg}</p>
-        )}
-      </section>
+        {actionMsg && <Alert>{actionMsg}</Alert>}
+      </Card>
 
       {/* RIGHT: batch + actions + preview + history — 7 cols */}
       <section className="space-y-4 lg:col-span-7">
         {/* Batch table */}
-        <div className="rounded-lg border border-border bg-card/60 p-4">
+        <Card depth="flat" className="space-y-3 bg-card p-4">
           <div className="mb-2 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-foreground">
                 Batch <span className="text-muted-foreground">({batch.length})</span>
               </h3>
               {seedSource && (
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   Seeded from {seedSource}. Review, then Print.
                 </p>
               )}
             </div>
             {batch.length > 0 && (
-              <button
-                type="button"
-                onClick={clearBatch}
-                className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted"
-              >
+              <Button type="button" size="sm" variant="secondary" onClick={clearBatch}>
                 Clear all
-              </button>
+              </Button>
             )}
           </div>
 
@@ -1210,25 +1206,21 @@ export function BulkLabelsPage() {
                               containerWidth={80}
                               containerHeight={28}
                             />
-                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                            <div className="mt-0.5 font-mono text-xs text-muted-foreground">
                               {row.label.barcode}
                             </div>
                           </>
                         ) : (
-                          <div className="font-mono text-[10px] text-muted-foreground">
+                          <div className="font-mono text-xs text-muted-foreground">
                             {[row.label.line1, row.label.line2, row.label.line3].filter(Boolean).join(" · ") || "(empty)"}
                           </div>
                         )}
                       </td>
                       <td className="py-1.5 text-foreground">{row.itemName}</td>
                       <td className="py-1.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => removeRow(row.id)}
-                          className="rounded border border-destructive/20 px-2 py-0.5 text-[10px] text-destructive/80 hover:bg-destructive/10 hover:text-destructive"
-                        >
+                        <Button type="button" size="sm" variant="destructive" onClick={() => removeRow(row.id)}>
                           Remove
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -1239,24 +1231,14 @@ export function BulkLabelsPage() {
 
           {/* Action buttons */}
           <div className="mt-2.5 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleDownload}
-              disabled={batch.length === 0 || busy}
-              className="rounded-md border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-            >
+            <Button type="button" variant="secondary" onClick={handleDownload} disabled={batch.length === 0 || busy}>
               Download PDF
-            </button>
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={batch.length === 0 || busy}
-              className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
+            </Button>
+            <Button type="button" variant="default" onClick={handlePrint} disabled={batch.length === 0 || busy}>
               {hasPrintedBatch ? "Reprint" : defaultPrinterName ? "Print" : "Print / Download PDF"}
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
 
         {/* Live TSPL batch preview */}
         {(() => {
@@ -1275,7 +1257,7 @@ export function BulkLabelsPage() {
           const hiddenCount   = flatLabels.length - visibleStrips.length * cols;
 
           return (
-            <div className="rounded-lg border border-border bg-card/60 p-4">
+            <Card depth="raised" className="space-y-3 bg-surface-raised p-4">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-foreground">
                   Print preview
@@ -1314,18 +1296,18 @@ export function BulkLabelsPage() {
                     </div>
                   ))}
                   {hiddenCount > 0 && (
-                    <p className="py-1 text-center text-[10px] text-muted-foreground">
+                    <p className="py-1 text-center text-xs text-muted-foreground">
                       +{hiddenCount} more label{hiddenCount === 1 ? "" : "s"} not shown
                     </p>
                   )}
                 </div>
               )}
-            </div>
+            </Card>
           );
         })()}
 
         {/* History */}
-        <div className="rounded-lg border border-border bg-card/60 p-4">
+        <Card depth="flat" className="space-y-3 bg-card p-4">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-foreground">Recent prints</h3>
             <Button
@@ -1335,7 +1317,7 @@ export function BulkLabelsPage() {
               onClick={() => void loadHistory()}
               disabled={historyLoading || busy}
               shortcut="F5"
-              className="!text-[10px] !h-7"
+              className="h-7 text-xs"
             >
               Refresh
             </Button>
@@ -1357,32 +1339,25 @@ export function BulkLabelsPage() {
                       <p className="truncate text-xs font-medium text-foreground">
                         {row.itemName}
                       </p>
-                      <p className="font-mono text-[10px] text-muted-foreground">
+                      <p className="font-mono text-xs text-muted-foreground">
                         {row.barcode} · qty {row.qty}{row.printer ? ` · ${row.printer}` : ""}{row.labelSize ? ` · ${row.labelSize}` : ""}
                       </p>
                       {(row.line1 || row.line2) && (
-                        <p className="font-mono text-[10px] text-muted-foreground truncate max-w-[240px]">
+                        <p className="max-w-[240px] truncate font-mono text-xs text-muted-foreground">
                           {[row.line1, row.line2].filter(Boolean).join(" · ")}
                         </p>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => loadRecordConfig(row)}
-                      disabled={busy}
-                      className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/20 px-2 py-1 text-[10px] text-primary/80 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Printer className="h-3 w-3" />
+                    <Button type="button" size="sm" variant="secondary" icon={Printer} onClick={() => loadRecordConfig(row)} disabled={busy}>
                       Load config
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
             )}
           </div>
-        </div>
+        </Card>
       </section>
     </div>
-  </BoneSkeleton>
   );
 }

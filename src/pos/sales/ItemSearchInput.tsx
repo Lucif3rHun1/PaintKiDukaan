@@ -14,7 +14,7 @@ import { formatHitName } from "../../domain/items/display";
 import { listFormulas } from "../../domain/formulas/api";
 import { listLocations } from "../../domain/locations/api";
 import { useBarcodeScan } from "../../shell/hooks/useBarcodeScan";
-import { Button, MoneyInput } from "../../components/ui";
+import { Badge, Button, MoneyInput } from "../../components/ui";
 import { cn } from "../../components/ui/cn";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { formatRupeesFromPaise } from "../../lib/money";
@@ -478,15 +478,17 @@ export function ItemSearchInput({
             }}
             className="input h-10 w-full pl-9 pr-20"
           />
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="xs"
+            icon={ScanBarcode}
             onClick={() => inputRef.current?.focus()}
             title="Focus the scan input (Ctrl/Cmd-K)"
-            className="absolute right-2 top-1/2 inline-flex h-7 -translate-y-1/2 items-center gap-1 rounded-md border border-border bg-muted/60 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="absolute right-2 top-1/2 -translate-y-1/2"
           >
-            <ScanBarcode className="h-3.5 w-3.5" aria-hidden="true" />
             Scan
-          </button>
+          </Button>
         </div>
         {onCreateItem ? (
           <Button
@@ -519,7 +521,7 @@ export function ItemSearchInput({
         <div
           role="status"
           aria-live="polite"
-          className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground"
+          className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
         >
           <ScanBarcode className="h-3 w-3" aria-hidden="true" />
           <span className="font-mono">{scanHint}</span>
@@ -530,7 +532,7 @@ export function ItemSearchInput({
           id="item-search-listbox"
           ref={listboxRef}
           role={results.length > 0 ? "listbox" : undefined}
-          className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-card shadow-xl"
+          className="surface-overlay absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border shadow-overlay"
         >
           {searching ? (
             <div className="p-3 text-xs text-muted-foreground">Searching…</div>
@@ -560,9 +562,9 @@ export function ItemSearchInput({
                         <span className="truncate font-medium text-foreground">
                           {toTitleCase(display)}
                         </span>
-                        <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                        <Badge variant="info" size="sm" className="shrink-0">
                           {hit.with_base ? (hit.base_item_name ? `base: ${hit.base_item_name}` : "with base") : "no base"}
-                        </span>
+                        </Badge>
                       </div>
                       <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                         <span className="font-mono">shade {hit.id_code}</span>
@@ -612,14 +614,14 @@ export function ItemSearchInput({
                         {display?.showBrand ? formatHitName(hit) : toTitleCase(hit.name)}
                       </span>
                       {fullyRefunded && (
-                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        <Badge variant="muted" size="sm" className="shrink-0">
                           Fully refunded
-                        </span>
+                        </Badge>
                       )}
                       {scopeInfo && (
-                        <span className="shrink-0 rounded-md bg-info/10 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-info">
+                        <Badge variant="info" size="sm" className="shrink-0">
                           Refundable {scopeInfo.refundable}
-                        </span>
+                        </Badge>
                       )}
                     </div>
                   </div>
@@ -634,7 +636,7 @@ export function ItemSearchInput({
               <p className="mb-2 text-xs text-muted-foreground">No items found</p>
               {quickSuggestions.length > 0 ? (
                 <div className="mb-2 rounded-md border border-border bg-muted/30">
-                  <p className="px-2.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Similar items — click to pre-fill</p>
+                   <p className="px-2.5 pt-1.5 text-xs font-medium text-muted-foreground">Similar items — click to pre-fill</p>
                   {quickSuggestions.map((s) => {
                     return (
                       <button

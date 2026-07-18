@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { PackagePlus, Truck } from "lucide-react";
 import { PeriodDropdown } from "../../components/ui";
 
-import { Button, Card, DataList, EmptyState, Money } from '../../components/ui';
+import { Badge, Button, Card, DataList, EmptyState, Money } from '../../components/ui';
 import type { ColumnDef } from "../../components/ui";
 import { invalidateList } from "../../lib/query";
 import { getDraft, listPurchasesPaged, purchasePeriodSummary } from "../api";
@@ -172,16 +172,16 @@ export function InwardListPage({ onCreate, onSelect }: Props) {
                 if (data.notes) label = String(data.notes);
               } catch { /* corrupt draft */ }
               return (
-                <button type="button" onClick={() => { setHash("#/inward/new?restore=1"); }} className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                  Open draft ({itemCount} item{itemCount !== 1 ? "s" : ""})
+                <button type="button" onClick={() => { setHash("#/inward/new?restore=1"); }} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1">
+                  <Badge variant="warning" size="sm">Draft</Badge>
+                  Open ({itemCount} item{itemCount !== 1 ? "s" : ""})
                 </button>
               );
             })()}
           </>
         }
         actions={
-          <Button type="button" variant="primary" size="sm" icon={PackagePlus} onClick={onCreate} shortcut="F6">
+          <Button type="button" size="sm" icon={PackagePlus} onClick={onCreate} shortcut="F6">
             New Inward
           </Button>
         }

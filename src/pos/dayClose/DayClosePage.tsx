@@ -5,7 +5,9 @@ const VARIANCE_TOLERANCE_PAISE = 500; // ₹5
 
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import {
+  Alert,
   Button,
   Card,
   DataList,
@@ -14,6 +16,9 @@ import {
   Skeleton,
   DatePicker,
   Field,
+  InlineDialog,
+  MoneyInput,
+  PageHeader,
 } from "../../components/ui";
 import type { ColumnDef } from "../../components/ui";
 import {
@@ -28,7 +33,6 @@ import type { BackupGate, CashSalesSummary, DayClose } from "../types";
 import { todayLocalYyyymmdd, formatDateForDisplay } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 import { useDirtyForm } from "../hooks/useDirtyForm";
-import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 
 const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
 
@@ -257,11 +261,18 @@ export default function DayClosePage({ user }: Props) {
       Math.abs(lc.variance) <= VARIANCE_TOLERANCE_PAISE;
     return (
       <div className="space-y-4">
-        <div className="rounded-lg bg-success/10 border border-success/20 px-4 py-3 text-sm text-success">
-          ✓ Day closed successfully
+        <PageHeader
+          title="Day Closed"
+          description={`Reconciliation completed for ${formatDateForDisplay(lc.date)}.`}
+          accent="green"
+        />
+
+        <div className="flex items-center gap-2 rounded-lg border border-success/20 bg-success/10 px-4 py-3 text-sm font-medium text-success">
+          <CheckCircle2 aria-hidden="true" className="size-5 shrink-0" />
+          <span>Day closed successfully</span>
         </div>
 
-        <Card>
+        <Card depth="raised" className="px-4">
           <h2 className="mb-3 text-sm font-semibold">
             <span className="tabular-nums whitespace-nowrap">{formatDateForDisplay(lc.date)}</span>
           </h2>
@@ -302,7 +313,7 @@ export default function DayClosePage({ user }: Props) {
           </div>
         </Card>
 
-        <Button variant="primary" onClick={() => setView("list")} className="w-full">
+        <Button onClick={() => setView("list")} className="w-full">
           Back to closes
         </Button>
       </div>
@@ -312,13 +323,21 @@ export default function DayClosePage({ user }: Props) {
   if (view === "form") {
     return (
       <div className="space-y-4">
-        <button
-          type="button"
-          onClick={() => { setView("list"); setFormError(null); resetDirty(); }}
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-        >
-          ← Back
-        </button>
+        <PageHeader
+          title="Close Day"
+          description="Count the drawer and reconcile today's cash movements."
+          accent="slate"
+          actions={
+            <Button
+              type="button"
+              variant="ghost"
+              icon={ArrowLeft}
+              onClick={() => { setView("list"); setFormError(null); resetDirty(); }}
+            >
+              Back
+            </Button>
+          }
+        />
 
         {alreadyClosed && (
           <div className="rounded-lg bg-muted border border-border px-4 py-3 text-sm text-muted-foreground" role="alert">
@@ -327,27 +346,24 @@ export default function DayClosePage({ user }: Props) {
         )}
 
         {gate?.needs_prompt && (
-          <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-2 text-sm text-amber-800 dark:text-amber-200">
-            Backup overdue — close anyway or back up first.
-          </div>
+          <Alert variant="warning" title="Backup overdue">Close anyway or back up first.</Alert>
         )}
 
         {/* Card 1: date, opening, sales */}
-        <Card>
+        <Card depth="flat" className="px-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Date">
               <DatePicker value={date} onChange={setDate} />
             </Field>
             <Field label="Opening cash">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={openingRupees}
-                onChange={(e) => setOpeningRupees(e.target.value)}
-                className="input w-full"
-                data-testid="opening-cash"
-              />
+              <div data-testid="opening-cash">
+                <MoneyInput
+                  value={openingPaise}
+                  onChange={(paise) => setOpeningRupees(String(paise / 100))}
+                  min={0}
+                  className="w-full"
+                />
+              </div>
             </Field>
           </div>
 
@@ -363,24 +379,25 @@ export default function DayClosePage({ user }: Props) {
         </Card>
 
         {/* Card 2: count drawer + adjustments */}
-        <Card>
+        <Card depth="flat" className="px-4">
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-foreground">Count Drawer</h3>
               <p className="text-xs text-muted-foreground">How much cash is in the drawer?</p>
             </div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setUseDenom(!useDenom)}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             >
               {useDenom ? "Type amount" : "Count notes"}
-            </button>
+            </Button>
           </div>
 
           {useDenom ? (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-5 gap-2 lg:grid-cols-10">
                 {DENOMINATIONS.map((d) => (
                   <label key={d} className="space-y-0.5 text-center">
                     <span className="text-xs text-muted-foreground">₹{d}</span>
@@ -404,51 +421,41 @@ export default function DayClosePage({ user }: Props) {
             </>
           ) : (
             <Field label="Counted cash">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={countedRupees}
-                onChange={(e) => setCountedRupees(e.target.value)}
-                className="input w-full"
-                data-testid="counted-cash"
-              />
+              <div data-testid="counted-cash">
+                <MoneyInput
+                  value={countedPaise}
+                  onChange={(paise) => setCountedRupees(String(paise / 100))}
+                  min={0}
+                  className="w-full"
+                />
+              </div>
             </Field>
           )}
 
           <div className="mt-3 grid grid-cols-2 gap-3">
             <Field label="Cash in" hint="Received outside sales">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={cashInRupees}
-                onChange={(e) => setCashInRupees(e.target.value)}
-                className="input w-full"
+              <MoneyInput
+                value={cashInPaise}
+                onChange={(paise) => setCashInRupees(String(paise / 100))}
+                min={0}
+                className="w-full"
               />
             </Field>
             <Field label="Cash out" hint="Spent from drawer">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={cashOutRupees}
-                onChange={(e) => setCashOutRupees(e.target.value)}
-                className="input w-full"
+              <MoneyInput
+                value={cashOutPaise}
+                onChange={(paise) => setCashOutRupees(String(paise / 100))}
+                min={0}
+                className="w-full"
               />
             </Field>
           </div>
         </Card>
 
         {/* Card 3: reconciliation + notes + submit */}
-        <Card>
+        <Card depth="raised" className="px-4">
           <div
-            className="mb-3 flex items-center justify-between rounded-lg px-4 py-3"
-            style={{
-              backgroundColor: withinTolerance
-                ? "hsl(var(--success) / 0.1)"
-                : "hsl(var(--destructive) / 0.1)",
-            }}
+            className={`mb-3 flex items-center justify-between rounded-lg px-4 py-3 ${withinTolerance ? "bg-success/10" : "bg-destructive/10"}`}
           >
             <span className="text-sm font-medium">Variance</span>
             <Money
@@ -469,11 +476,10 @@ export default function DayClosePage({ user }: Props) {
 
           <div className="mt-3">
             <Field label="Notes" hint="Optional">
-              <input
-                type="text"
+              <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="input w-full"
+                className="input min-h-20 w-full resize-y"
                 placeholder="Any remarks about today's close"
               />
             </Field>
@@ -485,53 +491,76 @@ export default function DayClosePage({ user }: Props) {
             </div>
           )}
 
-          {confirming ? (
-            <div className="mt-4 space-y-2">
-              <p className="text-sm text-muted-foreground">Confirm close for {formatDateForDisplay(date)}?</p>
-              <div className="flex flex-wrap gap-2">
-                {gate?.needs_prompt ? (
-                  <>
-                    <Button variant="primary" onClick={() => submit("back_up")} loading={submitting}>
-                      Back up &amp; close
-                    </Button>
-                    <Button variant="secondary" onClick={() => submit("skip")} loading={submitting}>
-                      Skip backup &amp; close
-                    </Button>
-                    <Button variant="ghost" onClick={() => setConfirming(false)}>
-                      Cancel
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button variant="primary" onClick={() => submit("fresh")} loading={submitting} data-testid="close-day">
-                      Confirm close
-                    </Button>
-                    <Button variant="ghost" onClick={() => setConfirming(false)}>
-                      Cancel
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            <Button
-              variant="primary"
-              onClick={() => setConfirming(true)}
-              disabled={alreadyClosed}
-              className="mt-4 w-full"
-              data-testid="close-day"
-            >
-              Close day
-            </Button>
-          )}
+          <Button
+            onClick={() => setConfirming(true)}
+            disabled={alreadyClosed}
+            className="mt-4 w-full"
+            data-testid="close-day"
+          >
+            Close day
+          </Button>
         </Card>
+
+        <InlineDialog
+          open={confirming}
+          onClose={() => setConfirming(false)}
+          title="Confirm day close"
+          description={`Review the reconciliation for ${formatDateForDisplay(date)} before closing.`}
+          size="md"
+        >
+          <div className="space-y-4">
+            <div className="rounded-lg bg-surface-sunken p-4 text-sm">
+              <SummaryRow label="Date" value={<span className="tabular-nums">{formatDateForDisplay(date)}</span>} />
+              <SummaryRow label="Expected" value={<Money paise={expected} className="font-medium" />} />
+              <SummaryRow label="Counted" value={<Money paise={countedPaise} className="font-medium" />} />
+              <SummaryRow
+                label="Variance"
+                value={
+                  <Money
+                    paise={variance}
+                    className={withinTolerance ? "font-semibold text-success" : "font-semibold text-destructive"}
+                  />
+                }
+              />
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+              {gate?.needs_prompt ? (
+                <>
+                  <Button onClick={() => submit("back_up")} loading={submitting}>
+                    Back up &amp; close
+                  </Button>
+                  <Button variant="secondary" onClick={() => submit("skip")} loading={submitting}>
+                    Skip backup &amp; close
+                  </Button>
+                </>
+              ) : (
+                <Button onClick={() => submit("fresh")} loading={submitting} data-testid="close-day">
+                  Confirm close
+                </Button>
+              )}
+              <Button variant="ghost" onClick={() => setConfirming(false)} disabled={submitting}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </InlineDialog>
       </div>
     );
   }
 
   return (
-  <BoneSkeleton name="day-close" loading={!gate && view === 'list'} select="viewport">
     <div className="space-y-4">
+      <PageHeader
+        title="Day Close"
+        description="Review recent reconciliations or close the current business day."
+        accent="slate"
+        actions={
+          <Button onClick={openForm} data-testid="close-day">
+            Close day
+          </Button>
+        }
+      />
+
       {listError && (
         <div className="rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive">
           {listError}
@@ -539,16 +568,10 @@ export default function DayClosePage({ user }: Props) {
       )}
 
       {gate?.needs_prompt && (
-        <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-2 text-sm text-amber-800 dark:text-amber-200">
-          Backup overdue — recommend backing up before closing.
-        </div>
+        <Alert variant="warning" title="Backup overdue">Recommend backing up before closing.</Alert>
       )}
 
-      <Button variant="primary" onClick={openForm} className="w-full" data-testid="close-day">
-        Close day
-      </Button>
-
-      <Card>
+      <Card depth="flat" className="px-4">
         <h2 className="mb-2 text-sm font-semibold">Recent closes</h2>
         <DataList
           source={serverSource}
@@ -559,7 +582,6 @@ export default function DayClosePage({ user }: Props) {
         />
       </Card>
     </div>
-  </BoneSkeleton>
   );
 }
 

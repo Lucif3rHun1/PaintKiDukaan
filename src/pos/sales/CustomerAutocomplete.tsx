@@ -137,7 +137,7 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
         />
       </div>
       {open && (showSuggestions || hasResults || query.trim()) && (
-        <div className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-card shadow-lg">
+        <div className="surface-overlay absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border shadow-overlay">
           {showSuggestions && allowWalkIn && (
             <>
               <button
@@ -205,7 +205,7 @@ function CustomerOption({ customer, onSelect, showBalance, showType }: { custome
           <span className="ml-2 text-xs text-muted-foreground">({customer.type_name})</span>
         )}
         {showBalance && customer.opening_balance_paise !== 0 && (
-          <span className={`ml-2 text-xs font-medium ${customer.opening_balance_paise > 0 ? "text-destructive" : "text-emerald-600"}`}>
+          <span className={`ml-2 text-xs font-medium ${customer.opening_balance_paise > 0 ? "text-destructive" : "text-success"}`}>
             {formatRupeesFromPaise(Math.abs(customer.opening_balance_paise))} {customer.opening_balance_paise > 0 ? "due" : "credit"}
           </span>
         )}

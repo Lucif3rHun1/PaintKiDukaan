@@ -117,7 +117,7 @@ export function ReturnDetailPage({ id, onBack }: Props) {
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-        <Card as="section" className="space-y-3 p-4">
+        <Card as="section" depth="flat" className="space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Items</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -140,7 +140,7 @@ export function ReturnDetailPage({ id, onBack }: Props) {
                   <tr key={`${line.sale_item_id}-${index}`} className="border-b border-border align-middle">
                     <td className="py-2">
                       <div className="text-sm font-medium text-foreground">{line.item_name}</div>
-                      <div className="font-mono text-[10px] text-muted-foreground">#{line.sale_item_id}</div>
+                      <div className="font-mono text-xs text-muted-foreground">#{line.sale_item_id}</div>
                     </td>
                     <td className="py-2 tabular-nums">{line.qty}</td>
                     <td className="py-2">
@@ -157,7 +157,7 @@ export function ReturnDetailPage({ id, onBack }: Props) {
         </Card>
 
         <div className="space-y-4">
-          <Card as="section" className="space-y-3 p-4">
+          <Card as="section" depth="flat" className="space-y-3 p-4">
             <h2 className="text-sm font-semibold text-foreground">Details</h2>
             <dl className="space-y-2 text-sm">
               <div className="flex items-center justify-between gap-3">
@@ -183,7 +183,7 @@ export function ReturnDetailPage({ id, onBack }: Props) {
             </dl>
           </Card>
 
-          <Card as="section" className="space-y-3 p-4">
+          <Card as="section" depth="raised" className="space-y-3 p-4">
             <h2 className="text-sm font-semibold text-foreground">Refund breakdown</h2>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between gap-3">

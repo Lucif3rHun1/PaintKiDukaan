@@ -187,7 +187,7 @@ export function InwardDetailPage({ id, onBack }: Props) {
                   <tr key={`${line.item_id}-${index}`} className="border-b border-border align-middle">
                     <td className="py-2">
                       <div className="text-sm font-medium text-foreground">{line.item_name}</div>
-                      <div className="font-mono text-[10px] text-muted-foreground">#{line.item_id}</div>
+                      <div className="font-mono text-xs text-muted-foreground">#{line.item_id}</div>
                     </td>
                     <td className="py-2 tabular-nums">{line.qty}</td>
                     <td className="py-2">

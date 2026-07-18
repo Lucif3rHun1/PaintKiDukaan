@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, PackagePlus, Printer, Truck, X } from "lucide-react";
-import { EmptyState, Skeleton } from "../../components/ui";
+import { Badge, EmptyState, Select, Skeleton } from "../../components/ui";
 
 import { Button, InlineDialog, Money, MoneyInput, PageHeader, QtyInput } from "../../components/ui";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
@@ -163,6 +163,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   const [draft, setDraft] = useState<DraftLine[]>([]);
   const [entry, setEntry] = useState<DraftLine>(() => emptyEntry(0));
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
   const [vendorId, setVendorId] = useState<number | null>(getPref("inward:lastVendor", null));
   const [vendorQuery, setVendorQuery] = useState("");
   const [vendorMenuOpen, setVendorMenuOpen] = useState(false);
@@ -175,6 +176,12 @@ export default function InwardPage({ user: _user, onExit }: Props) {
     const timer = setTimeout(() => setStatus(null), 4000);
     return () => clearTimeout(timer);
   }, [status]);
+
+  useEffect(() => {
+    if (!highlightedRowId) return;
+    const timer = setTimeout(() => setHighlightedRowId(null), 1600);
+    return () => clearTimeout(timer);
+  }, [highlightedRowId]);
 
   const [items, setItems] = useState<Item[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -423,10 +430,6 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       toast.warning("Quantity must be positive");
       return;
     }
-    if (entry.cost_price <= 0) {
-      toast.warning("Cost price must be greater than zero");
-      return;
-    }
     if (entry.retail_price <= 0) {
       toast.warning("Retail price must be greater than zero");
       return;
@@ -439,7 +442,9 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       });
       setEditingIndex(null);
     } else {
-      setDraft((p) => [...p, { ...entry, row_id: newRowId(), item_query: "" }]);
+      const rowId = newRowId();
+      setDraft((p) => [...p, { ...entry, row_id: rowId, item_query: "" }]);
+      setHighlightedRowId(rowId);
     }
     setEntry(emptyEntry(defaultLocationId));
   }
@@ -667,7 +672,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
         }
       />
 
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card/95 px-4 py-2.5 backdrop-blur">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border surface-translucent px-4 py-2.5">
 
         {/* Vendor typeahead — search + add combined into one input */}
         <div className="relative min-w-[200px] flex-1 sm:flex-none sm:w-64">
@@ -727,7 +732,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             </svg>
           )}
           {vendorMenuOpen && filteredVendors.length > 0 ? (
-            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-card shadow-lg">
+            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-card shadow-overlay">
               {filteredVendors.slice(0, 8).map((v) => {
                 const outstanding = vendorOutstandings[v.id] ?? 0;
                 const parts = [v.name];
@@ -803,7 +808,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
           onClick={() => void submit()}
           disabled={draft.length === 0}
           shortcut="F9"
-          className="!h-8 !bg-primary !px-3 !text-xs hover:!bg-primary/90 focus-visible:ring-primary/30"
+          className="!h-8 !px-3 !text-xs"
           data-testid="inward-submit"
         >
           Save
@@ -825,8 +830,8 @@ export default function InwardPage({ user: _user, onExit }: Props) {
               </span>
             )}
           </h2>
-          <span className="text-xs text-muted-foreground">
-            {editingIndex != null ? "Enter to update" : "Enter to add"}
+          <span className="hidden text-xs text-muted-foreground sm:inline">
+            Tab through fields · {editingIndex != null ? "Enter to update" : "Enter to add"}
           </span>
         </div>
         {!initialLoading && (
@@ -843,14 +848,20 @@ export default function InwardPage({ user: _user, onExit }: Props) {
 
         {/* ── Entry form card (when item selected) ── */}
         {entry.item_id > 0 && (
-          <div className="border-b border-primary/20 bg-primary/5 px-4 py-3" data-testid="inward-entry">
+          <form
+            className="border-b border-primary/20 bg-primary/5 px-4 py-3"
+            data-testid="inward-entry"
+            onSubmit={(event) => {
+              event.preventDefault();
+              commitEntry();
+            }}
+          >
             <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-foreground">
-                {editingIndex != null ? "Editing: " : "Selected: "}{itemName(entry.item_id)}
-                <span className="ml-2 inline-block rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
-                  {itemSellUnit(entry.item_id)}
-                </span>
-              </p>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <p className="truncate text-sm font-semibold text-foreground">{itemName(entry.item_id)}</p>
+                {editingIndex != null && <Badge variant="info">Editing</Badge>}
+                <Badge variant="muted">{itemSellUnit(entry.item_id)}</Badge>
+              </div>
               {editingIndex != null && (
                 <button
                   type="button"
@@ -865,21 +876,17 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Package</label>
-                <select
-                  value={entry.purchase_unit_id ?? ""}
+                <Select
+                  value={String(entry.purchase_unit_id ?? "")}
                   onChange={(e) => {
                     const v = Number(e.target.value);
                     if (v > 0) handleEntryPkgChange(v);
                   }}
-                  className="h-9 w-full rounded border border-border bg-card px-2 text-sm"
+                  size="sm"
                   disabled={entryPkgOptions.length === 0}
-                >
-                  {entryPkgOptions.map((o) => (
-                    <option key={o.purchase_unit_id} value={o.purchase_unit_id}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                  options={entryPkgOptions.map((o) => ({ value: String(o.purchase_unit_id), label: o.label }))}
+                  className="!h-9"
+                />
               </div>
 
               <div>
@@ -890,12 +897,12 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                   step={entry.unit_type === "pcs" ? 1 : 0.001}
                   value={entry.qty}
                   onChange={(e) => setEntry((p) => ({ ...p, qty: Math.max(0, Number(e.target.value)) }))}
-                  className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
+                  className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums outline-none transition-colors duration-fast focus:border-primary focus:ring-2 focus:ring-primary/20 motion-reduce:transition-none"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Units/pkg</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Qty/pkg</label>
                 <input
                   type="number"
                   min={1}
@@ -910,55 +917,49 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                       void setItemPackaging(entry.item_id, entry.purchase_unit_id, entry.qty_per_purchase_unit).catch(() => { /* packaging save failed; non-critical */ });
                     }
                   }}
-                  className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums"
+                  className="h-9 w-full rounded border border-border bg-card px-2 text-right text-sm tabular-nums outline-none transition-colors duration-fast focus:border-primary focus:ring-2 focus:ring-primary/20 motion-reduce:transition-none"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Cost/unit (₹)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  placeholder="0.00"
-                  value={entry.cost_price > 0 ? (entry.cost_price / 100).toFixed(2) : ""}
-                  onChange={(e) => setEntry((p) => ({ ...p, cost_price: Math.round(Math.max(0, Number(e.target.value)) * 100) }))}
-                  className="h-9 w-full rounded border border-amber-300/60 bg-amber-50/40 px-2 text-right text-sm tabular-nums placeholder:text-muted-foreground/60 dark:border-amber-700/30 dark:bg-amber-950/20"
+                <MoneyInput
+                  value={entry.cost_price}
+                  onChange={(costPrice) => setEntry((p) => ({ ...p, cost_price: costPrice }))}
+                  className="[&_input]:h-9"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Total</label>
-                <div className="flex h-9 items-center justify-end rounded border border-border bg-muted/30 px-2 text-sm font-medium tabular-nums">
-                  <Money paise={entryAmountPaise} />
+                <div className="surface-raised flex h-9 items-center justify-end rounded-md border border-primary/20 px-2 text-base font-semibold tabular-nums" aria-live="polite">
+                  <Money paise={entryAmountPaise} className="text-primary" />
                 </div>
               </div>
 
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">MRP/unit (₹)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  placeholder="0.00"
-                  value={entry.retail_price > 0 ? (entry.retail_price / 100).toFixed(2) : ""}
-                  onChange={(e) => setEntry((p) => ({ ...p, retail_price: Math.round(Math.max(0, Number(e.target.value)) * 100), retail_overridden: true }))}
-                  className="h-9 w-full rounded border border-emerald-300/60 bg-emerald-50/40 px-2 text-right text-sm tabular-nums placeholder:text-muted-foreground/60 dark:border-emerald-700/30 dark:bg-emerald-950/20"
+                <MoneyInput
+                  value={entry.retail_price}
+                  onChange={(retailPrice) => setEntry((p) => ({ ...p, retail_price: retailPrice, retail_overridden: true }))}
+                  required
+                  className="[&_input]:h-9 [&_input]:border-success/40 [&_input]:bg-success/5"
                 />
               </div>
             </div>
 
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3">
               <Button
-                variant="primary"
                 size="sm"
-                type="button"
-                onClick={commitEntry}
+                type="submit"
+                icon={PackagePlus}
+                shortcut="Enter"
+                className="h-10 w-full"
               >
-                {editingIndex != null ? "Update" : "Add to inward"}
+                {editingIndex != null ? "Update inward line" : "Add to inward"}
               </Button>
             </div>
-          </div>
+          </form>
         )}
 
         {/* ── Committed lines table ── */}
@@ -991,11 +992,20 @@ export default function InwardPage({ user: _user, onExit }: Props) {
                     <tr
                       key={l.row_id}
                       onClick={() => startEdit(idx)}
-                      className="cursor-pointer border-b border-border align-top transition-colors hover:bg-muted/60"
+                      className={`group cursor-pointer border-b border-border align-top transition-colors duration-slow hover:bg-muted/60 motion-reduce:transition-none ${
+                        highlightedRowId === l.row_id ? "bg-success/10" : ""
+                      }`}
                       data-testid="inward-line"
+                      title="Click to edit"
                     >
                       <td className="px-4 py-2">
-                        <p className="text-sm font-medium text-foreground">{itemName(l.item_id)}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-foreground">{itemName(l.item_id)}</p>
+                          {highlightedRowId === l.row_id && <Badge variant="success">Added</Badge>}
+                          <span className="ml-auto hidden text-xs text-muted-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100 motion-reduce:transition-none lg:inline">
+                            Click to edit
+                          </span>
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         <span className="inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">

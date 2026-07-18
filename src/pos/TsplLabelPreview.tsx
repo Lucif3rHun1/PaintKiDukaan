@@ -6,6 +6,7 @@
 
 import JsBarcode from "jsbarcode";
 import { useEffect, useRef } from "react";
+import { Card } from "../components/ui/Card";
 import {
   centerX,
   DEFAULT_TSPL_CONFIG,
@@ -140,7 +141,7 @@ export function TsplLabelPreview({
   }, [label, cellW, totalH, config, d]);
 
   return (
-    <div className="rounded border border-border bg-white shadow-sm"
+    <Card depth="flat" className="rounded bg-card p-0 shadow-none"
       style={{ width: displayWidth, minHeight: displayHeight }}>
       <canvas
         ref={canvasRef}
@@ -148,6 +149,6 @@ export function TsplLabelPreview({
         height={totalH}
         style={{ width: displayWidth, height: displayHeight, display: "block" }}
       />
-    </div>
+    </Card>
   );
 }
