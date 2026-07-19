@@ -7,8 +7,11 @@ import { initSessionLog } from "./lib/security/sessionLog";
 import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
 import { applyInitialTheme } from "./lib/theme";
 import { queryClient } from "./lib/query/queryClient";
-import { PrimitiveShowcase } from "./dev/PrimitiveShowcase";
 import "./index.css";
+
+const PrimitiveShowcase = React.lazy(() =>
+  import("./dev/PrimitiveShowcase").then((module) => ({ default: module.PrimitiveShowcase })),
+);
 
 const isPrimitiveShowcase = import.meta.env.DEV && window.location.hash === "#/__showcase";
 
@@ -27,7 +30,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           {isPrimitiveShowcase ? (
-            <PrimitiveShowcase />
+            <React.Suspense fallback={null}>
+              <PrimitiveShowcase />
+            </React.Suspense>
           ) : (
             <App />
           )}

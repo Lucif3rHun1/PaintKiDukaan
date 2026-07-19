@@ -233,7 +233,7 @@ function ThemeControls({ mode, resolved, setMode }: { readonly mode: ThemeMode; 
   return (
     <div className="flex flex-wrap items-center gap-2" aria-label={`Theme controls. Resolved theme: ${resolved}`}>
       {(["system", "light", "dark"] as const).map((option) => (
-        <Button key={option} size="sm" variant={mode === option ? "default" : "outline"} onClick={() => setMode(option)} aria-pressed={mode === option}>
+        <Button key={option} size="sm" className="min-h-10" variant={mode === option ? "default" : "outline"} onClick={() => setMode(option)} aria-pressed={mode === option}>
           {option[0].toUpperCase() + option.slice(1)}
         </Button>
       ))}

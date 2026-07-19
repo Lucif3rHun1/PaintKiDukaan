@@ -10,7 +10,7 @@ export interface RadioProps {
 
 export function Radio({ checked, onChange, label, name, className }: RadioProps) {
   return (
-    <label className={cn("flex items-center gap-2 text-sm cursor-pointer", className)}>
+    <label className={cn("flex min-h-10 items-center gap-2 text-sm cursor-pointer", className)}>
       <span
         className={cn(
           "flex h-4 w-4 items-center justify-center rounded-full border-2 transition-colors",

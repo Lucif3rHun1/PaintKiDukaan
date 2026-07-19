@@ -115,7 +115,7 @@ export function DataTable<T>({
                     </p>
                   </div>
                   {onRetry ? (
-                    <Button type="button" size="sm" variant="secondary" icon={RotateCcw} onClick={onRetry}>
+                    <Button type="button" variant="secondary" icon={RotateCcw} onClick={onRetry}>
                       Retry
                     </Button>
                   ) : null}

@@ -1084,8 +1084,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            198,
-            "ACL has {} entries, expected 198",
+            205,
+            "ACL has {} entries, expected 205",
             COMMAND_ACL.len()
         );
     }

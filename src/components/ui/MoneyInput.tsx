@@ -81,7 +81,7 @@ export function MoneyInput({
         required={required}
         min={min}
         className={cn(
-          "w-full rounded border px-2 py-1.5 text-right text-sm tabular-nums outline-none transition-colors disabled:cursor-not-allowed",
+          "min-h-10 w-full rounded border px-2 py-1.5 text-right text-sm tabular-nums outline-none transition-colors disabled:cursor-not-allowed",
           tone === "dark"
             ? "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
             : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-muted disabled:text-muted-foreground",
