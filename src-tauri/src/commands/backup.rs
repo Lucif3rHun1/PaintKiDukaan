@@ -130,12 +130,32 @@ pub(crate) fn do_backup<R: tauri::Runtime>(
         .map(Zeroizing::new)
     {
         Some(p) => p,
-        None => state
-            .recovery_passphrase
-            .lock()
-            .map_err(|e| format!("backup failed: recovery-passphrase mutex poisoned: {e}"))?
-            .clone()
-            .ok_or_else(|| "backup failed: no recovery passphrase on file. Re-run onboarding or use Settings → System to reset.".to_string())?,
+        None => {
+            // Try in-memory recovery passphrase first (set during onboarding
+            // or via Settings → System → Change recovery passphrase).
+            let from_state = state
+                .recovery_passphrase
+                .lock()
+                .map_err(|e| format!("backup failed: recovery-passphrase mutex poisoned: {e}"))?
+                .clone();
+            match from_state {
+                Some(p) => p,
+                None => {
+                    // Fallback: the passphrase is an in-memory-only field that
+                    // isn't persisted to disk. After an app restart it's None
+                    // unless the user re-enters it. Use the DEK (available after
+                    // unlock) so backup doesn't fail silently after restart.
+                    let db_guard =
+                        state.db.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+                    let db = db_guard
+                        .as_ref()
+                        .ok_or_else(|| "backup failed: database not unlocked".to_string())?;
+                    let dek_hex: String =
+                        db.dek().iter().map(|b| format!("{:02x}", b)).collect();
+                    Zeroizing::new(dek_hex)
+                }
+            }
+        }
     };
 
     let result = (|| -> Result<BackupMetadata, String> {
@@ -161,8 +181,13 @@ pub(crate) fn do_backup<R: tauri::Runtime>(
         let temp_snapshot = NamedTempFile::new().map_err(|e| err_str(BackupError::Io(e)))?;
         let temp_path = temp_snapshot.path().to_path_buf();
 
-        // TODO(slice-A): Read DEK from AppState.db once Slice A exposes Db::dek().
-        let dek: Option<[u8; 32]> = None;
+        // Read DEK from AppState.db so the snapshot is encrypted at the
+        // SQLCipher level even when the recovery passphrase is missing.
+        let dek: Option<[u8; 32]> = state
+            .db
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|db| *db.dek()));
         snapshot::snapshot_via_backup_api(&live_db, dek.as_ref(), &temp_path).map_err(err_str)?;
 
         let metadata = encrypt_snapshot(&temp_path, &envelope_path, &passphrase).map_err(err_str)?;

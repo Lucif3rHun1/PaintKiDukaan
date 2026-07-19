@@ -268,6 +268,14 @@ pub fn set_recovery_passphrase(
     keywrap::rewrap_recovery(&mut row, dek, &new_passphrase)?;
     write_keywrap_to_keystore(&db_path, &row)?;
 
+    // Update the in-memory passphrase so backup works immediately
+    // without requiring an app restart.
+    *state
+        .recovery_passphrase
+        .lock()
+        .map_err(|e| AppError::Internal(format!("recovery-passphrase mutex poisoned: {e}")))? =
+        Some(Zeroizing::new(new_passphrase));
+
     Ok(())
 }
 
