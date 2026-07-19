@@ -235,3 +235,113 @@ impl From<AppError> for String {
         e.to_string()
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_message_contains_actual_error_detail() {
+        let err = AppError::NotFound("item".into());
+        assert!(err.safe_message().contains("not found: item"));
+        // user_message should be different (generic)
+        assert_ne!(err.safe_message(), err.user_message());
+    }
+
+    #[test]
+    fn db_error_safe_message_shows_actual_sqlite_error() {
+        // Use a non-busy, non-constraint error to hit the AppError::Db path
+        let sqlite_err = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: rusqlite::ffi::ErrorCode::Unknown,
+                extended_code: 1,
+            },
+            Some("some sqlite error".into()),
+        );
+        let app_err = AppError::from(sqlite_err);
+        // safe_message (Display) should contain the actual error, not generic text
+        let msg = app_err.safe_message();
+        assert!(msg.contains("database error"), "safe_message should show Display impl: {msg}");
+        assert!(msg.contains("some sqlite error"), "safe_message should contain actual detail: {msg}");
+        // user_message should be the generic toast text
+        assert_eq!(app_err.user_message(), "Something went wrong with the local database. Please try again.");
+    }
+
+    #[test]
+    fn sqlite_busy_maps_to_conflict() {
+        let ffi_err = rusqlite::ffi::Error {
+            code: rusqlite::ffi::ErrorCode::DatabaseBusy,
+            extended_code: 5,
+        };
+        let err = AppError::from(rusqlite::Error::SqliteFailure(ffi_err, None));
+        match err {
+            AppError::Conflict(msg) => {
+                assert!(msg.contains("busy"), "expected busy message: {msg}");
+            }
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sqlite_locked_maps_to_conflict() {
+        let ffi_err = rusqlite::ffi::Error {
+            code: rusqlite::ffi::ErrorCode::DatabaseLocked,
+            extended_code: 6,
+        };
+        let err = AppError::from(rusqlite::Error::SqliteFailure(ffi_err, None));
+        match err {
+            AppError::Conflict(msg) => {
+                assert!(msg.contains("busy"), "expected busy message: {msg}");
+            }
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn constraint_violation_maps_to_conflict() {
+        let ffi_err = rusqlite::ffi::Error {
+            code: rusqlite::ffi::ErrorCode::ConstraintViolation,
+            extended_code: 19,
+        };
+        let err = AppError::from(rusqlite::Error::SqliteFailure(
+            ffi_err,
+            Some("UNIQUE constraint failed".into()),
+        ));
+        match err {
+            AppError::Conflict(msg) => assert!(msg.contains("UNIQUE")),
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_rows_maps_to_not_found() {
+        let err = AppError::from(rusqlite::Error::QueryReturnedNoRows);
+        match err {
+            AppError::NotFound(_) => {}
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn code_returns_correct_strings() {
+        assert_eq!(AppError::Db(rusqlite::Error::QueryReturnedNoRows).code(), "db");
+        assert_eq!(AppError::NotFound("x".into()).code(), "not_found");
+        assert_eq!(AppError::Conflict("x".into()).code(), "conflict");
+        assert_eq!(AppError::WrongPin.code(), "wrong_pin");
+        assert_eq!(AppError::LockedOut { until: 0 }.code(), "locked_out");
+        assert_eq!(AppError::Unauthorized("x".into()).code(), "unauthorized");
+        assert_eq!(AppError::Forbidden("x".into()).code(), "forbidden");
+        assert_eq!(AppError::Internal("x".into()).code(), "internal");
+    }
+
+    #[test]
+    fn locked_out_message_includes_until_in_serialized_form() {
+        let err = AppError::LockedOut { until: 99999999999999 };
+        let json = serde_json::to_value(&err).unwrap();
+        assert_eq!(json["code"], "locked_out");
+        assert!(json["locked_until"].is_number());
+        // user_message contains human-friendly text
+        assert!(err.user_message().contains("Locked out"));
+    }
+}
