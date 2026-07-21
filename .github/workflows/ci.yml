@@ -3,28 +3,34 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
 permissions:
   contents: read
 
+env:
+  NODE_VERSION: 22
+  PNPM_VERSION: 11
+  RUST_VERSION: stable
+
 jobs:
+  # ============================================================
+  # Fast checks (run on every push/PR) - ubuntu only
+  # ============================================================
   typecheck:
     name: typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - uses: pnpm/action-setup@a7487c7e89a18df90c9c226b1ef14be93d1f1d06 # v4.1.0
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
-          version: 11
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
 
@@ -35,28 +41,24 @@ jobs:
       run:
         working-directory: src-tauri
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      # Pin Rust version; update when upgrading MSRV or needing new language features
-      - uses: dtolnay/rust-toolchain@1.96.0
-
-      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-
-      - run: cargo check
+      - run: cargo check --message-format=short
 
   sql-schema:
     name: sql-schema
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: pnpm/action-setup@a7487c7e89a18df90c9c226b1ef14be93d1f1d06 # v4.1.0
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
-          version: 11
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check:sql
@@ -65,33 +67,312 @@ jobs:
     name: audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - uses: pnpm/action-setup@a7487c7e89a18df90c9c226b1ef14be93d1f1d06 # v4.1.0
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
-          version: 11
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-
       - name: npm audit
         run: pnpm audit --audit-level=high
-
-      # Pin Rust version; update when upgrading MSRV or needing new language features
-      - uses: dtolnay/rust-toolchain@1.96.0
-
-      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-
       - name: Install cargo-audit
         working-directory: src-tauri
         run: cargo install cargo-audit
-
       - name: cargo audit
         working-directory: src-tauri
         run: cargo audit
+
+  # ============================================================
+  # Cross-OS Tauri builds (run on push to main, not on PRs to save time)
+  # On tag pushes (v*), this does the full signed release build
+  # ============================================================
+  build:
+    name: build (${{ matrix.artifact_name }})
+    needs: [typecheck, rust-check, sql-schema, audit]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            openssl_triplet: x64-windows-static
+            asset_glob: "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe*"
+            artifact_name: windows-x86_64
+            is_release: false
+          # Windows ARM64
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            openssl_triplet: arm64-windows-static
+            asset_glob: "target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe*"
+            artifact_name: windows-aarch64
+            is_release: false
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset_glob: "target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz*"
+            artifact_name: macos-aarch64
+            is_release: false
+          # macOS x86_64 (Intel)
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            asset_glob: "target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz*"
+            artifact_name: macos-x86_64
+            is_release: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Verify release version (only on tag pushes)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/check-release-version.cjs
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - name: Setup ARM64 MSVC tools (Windows ARM64)
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          choco install visualstudio2022-workload-vctools -y --params "--quiet --wait" 2>$null
+          $vcInstallDir = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          if ($vcInstallDir) {
+            $arm64Bin = Join-Path $vcInstallDir "VC\Tools\MSVC\*\bin\Hostx64\arm64"
+            $arm64Path = Get-Item $arm64Bin | Select-Object -First 1 -ExpandProperty FullName
+            if ($arm64Path) {
+              echo "$arm64Path" >> $env:GITHUB_PATH
+              Write-Host "Added ARM64 MSVC tools to PATH: $arm64Path"
+            }
+          }
+
+      - name: Cache vcpkg binary packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ matrix.openssl_triplet }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            vcpkg-${{ matrix.openssl_triplet }}-
+
+      - name: Install OpenSSL via vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\vcpkg-binary-cache" | Out-Null
+          $env:VCPKG_BINARY_SOURCES = "clear;files,$env:RUNNER_TEMP\vcpkg-binary-cache,readwrite"
+          vcpkg install openssl:${{ matrix.openssl_triplet }}
+          echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\${{ matrix.openssl_triplet }}" >> $env:GITHUB_ENV
+          echo "OPENSSL_STATIC=1" >> $env:GITHUB_ENV
+
+      - name: Install minisign (non-Windows)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v minisign >/dev/null 2>&1; then
+            echo "minisign already present: $(command -v minisign)"
+            minisign -v
+            exit 0
+          fi
+          WORK="$RUNNER_TEMP/minisign-install"
+          mkdir -p "$WORK"
+          cd "$WORK"
+          case "$(uname -s)" in
+            Darwin)
+              curl -sSL --fail -o macos.zip https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-macos.zip
+              unzip -o macos.zip >/dev/null
+              install -m 0755 minisign /usr/local/bin/minisign
+              ;;
+            Linux)
+              curl -sSL --fail -o linux.tgz https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-linux.tar.gz
+              tar -xzf linux.tgz
+              case "$(uname -m)" in
+                x86_64)       BIN=minisign-linux/x86_64/minisign ;;
+                aarch64|arm64) BIN=minisign-linux/aarch64/minisign ;;
+                *) echo "::error::unsupported arch: $(uname -m)"; exit 1 ;;
+              esac
+              install -m 0755 "$BIN" /usr/local/bin/minisign
+              ;;
+            *) echo "::error::unsupported runner OS: $(uname -s)"; exit 1 ;;
+          esac
+          /usr/local/bin/minisign -v
+          echo "ok: minisign installed at $(command -v minisign)"
+
+      - name: Verify updater secrets decrypt before build (non-Windows, tag pushes only)
+        if: runner.os != 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+        run: |
+          set -euo pipefail
+          if ! command -v minisign >/dev/null 2>&1; then
+            echo "::error::minisign binary not found in PATH after install step — cannot validate secrets."
+            exit 1
+          fi
+          echo "secret byte-lengths: key=${#TAURI_SIGNING_PRIVATE_KEY} pw=${#TAURI_SIGNING_PRIVATE_KEY_PASSWORD} pub=${#TAURI_UPDATER_PUBKEY}"
+          WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
+          KEY="$WORK/updater.key"
+          PUB="$WORK/updater.pub"
+          printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > "$KEY"
+          printf '%s' "$TAURI_UPDATER_PUBKEY" | base64 -d > "$PUB"
+          chmod 600 "$KEY"
+          echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" > "$WORK/pw"
+          echo "probe" > "$WORK/probe"
+          if ! minisign -S -s "$KEY" -m "$WORK/probe" -p "$PUB" < "$WORK/pw" 2>"$WORK/sign.err"; then
+            echo "::error::minisign signing failed — TAURI_SIGNING_PRIVATE_KEY_PASSWORD does not decrypt the key in TAURI_SIGNING_PRIVATE_KEY. Stderr:"
+            cat "$WORK/sign.err"
+            exit 1
+          fi
+          if ! minisign -V -p "$PUB" -m "$WORK/probe" 2>"$WORK/verify.err"; then
+            echo "::error::minisign verify failed — TAURI_UPDATER_PUBKEY does not match the private key. Stderr:"
+            cat "$WORK/verify.err"
+            exit 1
+          fi
+          echo "ok: updater secrets decrypt and pubkey matches."
+
+      - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+        run: pnpm tauri build --target ${{ matrix.target }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          if-no-files-found: error
+          path: ${{ matrix.asset_glob }}
+          retention-days: 7
+
+  # ============================================================
+  # Publish latest.json (only on successful tag push builds)
+  # ============================================================
+  latest-json:
+    name: publish latest.json
+    needs: [build]
+    if: always() && needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Generate latest.json (Minisign-signed, Tauri 2 plugin format)
+        shell: bash
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          version="${GITHUB_REF_NAME#v}"
+          notes="Release ${version}"
+          pub_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # Find all .sig files next to bundles
+          shopt -s nullglob
+          sig_files=(release-artifacts/**/*.sig)
+          shopt -u nullglob
+
+          if [ ${#sig_files[@]} -eq 0 ]; then
+            echo "::error::No .sig files found in release-artifacts — cannot generate latest.json"
+            exit 1
+          fi
+
+          # Build platform entries
+          platforms_json="{}"
+          for sig in "${sig_files[@]}"; do
+            bundle="${sig%.sig}"
+            platform_dir=$(dirname "$sig")
+            platform_name=$(basename "$platform_dir")
+
+            # Determine platform key for Tauri updater
+            case "$platform_name" in
+              windows-x86_64)   platform="windows-x86_64" ;;
+              windows-aarch64)  platform="windows-aarch64" ;;
+              macos-aarch64)    platform="darwin-aarch64" ;;
+              macos-x86_64)     platform="darwin-x86_64" ;;
+              *) echo "::warning::Unknown platform dir: $platform_name"; continue ;;
+            esac
+
+            # Read signature (base64)
+            signature=$(base64 -w0 < "$sig")
+
+            # Compute SHA-256 of bundle
+            sha256=$(sha256sum "$bundle" | cut -d' ' -f1)
+
+            # Bundle URL (GitHub release asset)
+            bundle_name=$(basename "$bundle")
+            bundle_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${bundle_name}"
+
+            # Size in bytes
+            size=$(stat -c%s "$bundle" 2>/dev/null || stat -f%z "$bundle")
+
+            # Add to platforms JSON
+            platforms_json=$(jq -n --argjson p "$platforms_json" \
+              --arg platform "$platform" \
+              --arg signature "$signature" \
+              --arg sha256 "$sha256" \
+              --arg url "$bundle_url" \
+              --argjson size "$size" \
+              '$p + {($platform): {signature: $signature, sha256: $sha256, url: $url, size: $size}}')
+          done
+
+          # Final latest.json
+          jq -n \
+            --arg version "$version" \
+            --arg notes "$notes" \
+            --arg pub_date "$pub_date" \
+            --argjson platforms "$platforms_json" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: $platforms}' \
+            > latest.json
+
+          cat latest.json
+
+      - name: Upload latest.json as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest.json
+          path: latest.json
+          retention-days: 90
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/**/*
+            latest.json
+          generate_release_notes: true
+          draft: false
+          prerelease: false
