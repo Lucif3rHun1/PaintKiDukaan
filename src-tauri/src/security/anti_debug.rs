@@ -349,7 +349,7 @@ fn linux_ptrace_traceme() -> bool {
             true // debugger attached
         } else {
             // Detach so we don't stay in traced state.
-            libc_ptrace(linux::PTRACE_DETACH, 0, std::ptr::null(), std::ptr::null());
+            libc_ptrace(PTRACE_DETACH, 0, std::ptr::null(), std::ptr::null());
             false
         }
     }
@@ -379,6 +379,7 @@ unsafe fn libc_ptrace(request: i32, pid: i32, addr: *const (), data: *const ()) 
     // On x86_64 Linux, syscall number for ptrace is 101.
     #[cfg(target_arch = "x86_64")]
     {
+        let ret: i64;
         std::arch::asm!(
             "syscall",
             in("rax") 101i64,
@@ -386,7 +387,7 @@ unsafe fn libc_ptrace(request: i32, pid: i32, addr: *const (), data: *const ()) 
             in("rsi") pid,
             in("rdx") addr,
             in("r10") data,
-            lateout("rax") let ret: i64,
+            lateout("rax") ret,
             out("rcx") _,
             out("r11") _,
         );
