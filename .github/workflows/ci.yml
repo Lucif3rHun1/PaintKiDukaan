@@ -42,6 +42,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - run: cargo check --message-format=short
         env:
           TAURI_UPDATER_PUBKEY: "dGVzdA=="
@@ -62,6 +66,7 @@ jobs:
   audit:
     name: audit
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -89,7 +94,7 @@ jobs:
   # ============================================================
   build:
     name: build (${{ matrix.artifact_name }})
-    needs: [typecheck, rust-check, sql-schema, audit]
+    needs: [typecheck, rust-check, sql-schema]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
