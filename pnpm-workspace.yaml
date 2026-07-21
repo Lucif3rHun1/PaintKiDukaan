@@ -7,3 +7,4 @@ minimumReleaseAgeExclude:
 overrides:
   xlsx: npm:@e965/xlsx@^0.20.3
   vite: ^6.4.3
+  vitest: ^3.2.6
