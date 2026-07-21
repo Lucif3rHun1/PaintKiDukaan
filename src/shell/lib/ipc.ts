@@ -12,7 +12,7 @@
  */
 import { invoke } from "../../lib/ipc";
 import { tauriInvoke } from "../../lib/security/tauri";
-import type { SecurityPolicy } from "../../domain/types";
+import type { SecurityPolicy, UpdatePromptKind } from "../../domain/types";
 import type { NewPrinterInput, PrinterRecord, DiscoveredPrinter } from "../routes/settings/printing-types";
 export type { DiscoveredPrinter };
 
@@ -120,6 +120,12 @@ export interface BackupStatus {
   backup_age_hours: number;
   targets: BackupTarget[];
 }
+
+export const cmdUpdateCheck = () => invoke<UpdatePromptKind>("cmd_update_check");
+export const cmdUpdateApply = () => invoke<void>("cmd_update_apply");
+export const cmdUpdatePending = () => invoke<UpdatePromptKind>("cmd_update_pending");
+export const cmdCurrentTarget = () => invoke<string>("cmd_current_target");
+export const cmdQuitApp = () => invoke<void>("cmd_quit_app");
 
 export const ipc = {
   appBootstrap: () => invoke<Bootstrap>("app_bootstrap"),

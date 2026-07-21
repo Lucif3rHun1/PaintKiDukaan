@@ -12,6 +12,7 @@ use serde::Serialize;
 use serde_json::Value;
 use zeroize::Zeroizing;
 
+use crate::commands::updater::UpdateCoordinator;
 use crate::db;
 use crate::db::keywrap::PinRole;
 
@@ -167,6 +168,11 @@ pub struct AppState {
     /// can show "Tray: unavailable" instead of a silent drop on platforms
     /// where the tray subsystem fails to register.
     pub tray_status: Mutex<&'static str>,
+    /// Mandatory auto-update coordinator (audit 2026-07-21). Boot hook
+    /// spawns the first check via `start_auto_check`; IPC surface reads
+    /// `current()` from `cmd_update_pending` and drives `apply()` from
+    /// `cmd_update_apply`.
+    pub updater: Arc<UpdateCoordinator>,
 }
 
 impl Default for AppState {
@@ -183,6 +189,7 @@ impl Default for AppState {
             last_test_restore_unix_ms: Mutex::new(None),
             recovery_passphrase: Mutex::new(None),
             tray_status: Mutex::new("uninitialized"),
+            updater: Arc::new(UpdateCoordinator::new()),
         }
     }
 }

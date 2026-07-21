@@ -25,7 +25,7 @@ import {
 import logo32 from "../assets/logo-32.png";
 import logo64 from "../assets/logo-64.png";
 const LOGO_64 = logo64;
-import { Button, cn, Toaster } from "../components/ui";
+import { Button, cn, Toaster, UpdateBanner } from "../components/ui";
 import { DraftBadge } from "../components/ui/DraftBadge";
 import { KbdHint } from "../components/ui/KbdHint";
 import { useMediaQuery } from "../lib/hooks/useMediaQuery";
@@ -38,6 +38,7 @@ import { roleCanAccessShellTarget } from "./access";
 import { useSecurity, type Role } from "../lib/security/state";
 import { ipc } from "./lib/ipc";
 import { useGlobalShortcuts } from "../lib/shortcuts/useGlobalShortcuts";
+import type { UpdaterController } from "./hooks/useUpdater";
 
 export type AppShellTab =
   | "dashboard"
@@ -68,6 +69,7 @@ interface AppShellProps {
   onLogout?: () => void;
   onSwitchUser?: () => void;
   children: ReactNode;
+  updater: UpdaterController;
 }
 
 interface SidebarLink {
@@ -203,7 +205,7 @@ const SIDEBAR_SHORTCUTS: Record<string, string> = {
 };
 
 
-export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, onLogout, onSwitchUser, children }: AppShellProps) {
+export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, onLogout, onSwitchUser, children, updater }: AppShellProps) {
   const wide = useMediaQuery("(min-width: 1280px)");
   const collapsed = !wide;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
@@ -488,6 +490,7 @@ export function AppShell({ activeTab, user, bootstrapError, onNavigate, onLock, 
       </div>
       <Toaster />
       <ShortcutOverlay open={showShortcuts} onClose={() => setShowShortcuts(false)} groups={shortcutGroups} />
+      <UpdateBanner pending={updater.pending} apply={updater.apply} />
     </div>
   );
 }

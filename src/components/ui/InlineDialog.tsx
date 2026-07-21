@@ -5,7 +5,8 @@ import { pushModalScope, popModalScope } from "../../lib/shortcuts";
 
 export interface InlineDialogProps {
   open: boolean;
-  onClose: () => void;
+  onClose?: () => void;
+  dismissible?: boolean;
   title?: string;
   description?: string;
   size?: "sm" | "md" | "lg";
@@ -20,6 +21,7 @@ const CLOSE_DELAY_MS = 120;
 export function InlineDialog({
   open,
   onClose,
+  dismissible = true,
   title,
   description,
   size = "md",
@@ -35,10 +37,10 @@ export function InlineDialog({
   const [isClosing, setIsClosing] = useState(true);
 
   const requestClose = useCallback(() => {
-    if (isClosing) return;
+    if (isClosing || !dismissible) return;
     setIsClosing(true);
-    onClose();
-  }, [isClosing, onClose]);
+    onClose?.();
+  }, [dismissible, isClosing, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,14 +93,14 @@ export function InlineDialog({
       ref={dialogRef}
       onCancel={(event) => {
         event.preventDefault();
-        requestClose();
+        if (dismissible) requestClose();
       }}
       onClick={(event) => {
-        if (event.target === event.currentTarget) requestClose();
+        if (dismissible && event.target === event.currentTarget) requestClose();
       }}
       onClose={() => {
         previouslyFocusedRef.current?.focus();
-        if (!isClosing) onClose();
+        if (dismissible && !isClosing) onClose?.();
       }}
       onTransitionEnd={(event) => {
         if (
@@ -137,13 +139,15 @@ export function InlineDialog({
         </div>
       )}
       <div className="relative p-6">
-        <button
-          onClick={requestClose}
-          className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground outline-none transition-[color,background-color,transform] duration-fast ease-standard hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none"
-          aria-label="Close"
-        >
-          <X className="h-5 w-5" />
-        </button>
+        {dismissible ? (
+          <button
+            onClick={requestClose}
+            className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground outline-none transition-[color,background-color,transform] duration-fast ease-standard hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        ) : null}
         {children}
       </div>
     </dialog>

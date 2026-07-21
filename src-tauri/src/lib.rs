@@ -340,6 +340,11 @@ pub fn run() {
             }
 
             log::info!("Setup complete");
+
+            let app_state = handle.state::<commands::auth::AppState>();
+            let updater = app_state.inner().updater.clone();
+            updater.start_auto_check(handle.clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -569,12 +574,11 @@ pub fn run() {
             // Scanner (Slice D)
             scan::set_scan_target,
             scan::scan_target,
+            commands::updater::cmd_update_check,
+            commands::updater::cmd_update_apply,
+            commands::updater::cmd_update_pending,
             // Tauri plugin updater shims
-            commands::updater::cmd_check_update,
-            commands::updater::cmd_download_update,
-            commands::updater::cmd_install_update,
             commands::updater::cmd_current_target,
-            commands::updater::cmd_retry_update,
             commands::updater::cmd_quit_app,
             commands::updater::cmd_request_data_wipe,
             // Session logs (Slice D)

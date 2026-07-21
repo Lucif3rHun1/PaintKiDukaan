@@ -9,6 +9,11 @@ import type { Sale } from "../pos/types";
 
 export type Role = "owner" | "cashier" | "stocker";
 
+export type UpdatePromptKind =
+  | { kind: "upToDate" }
+  | { kind: "updateAvailable"; version: string; notes: string | null }
+  | { kind: "checkFailed"; reason: string };
+
 /**
  * Which PIN was used to unlock the database.
  * - "real": normal owner PIN → full access to real data

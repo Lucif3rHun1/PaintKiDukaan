@@ -1,124 +1,249 @@
-//! Thin IPC shim around tauri-plugin-updater.
+//! Tauri 2 updater — auto-update flow (audit 2026-07-21).
 //!
-//! The plugin owns download, SHA-256 / Minisign verification, and install.
-//! These commands exist only to keep the frontend IPC surface stable.
+//! Architecture: the `UpdateCoordinator` owns the long-lived per-app
+//! state for the boot-time auto-check and the apply/pending surface.
+//! One source of truth — boot hook, retry loop, and IPC commands all
+//! read/write the same `UpdatePromptKind`.
+//!
+//! **Auto-update is mandatory.** There is no "skip / remind me later"
+//! branch. When `UpdateAvailable` is the current state, the frontend
+//! blocks the user from continuing until `cmd_update_apply` succeeds.
+//!
+//! New surface:
+//! - [`cmd_update_check`]   → [`UpdatePromptKind`]
+//! - [`cmd_update_apply`]   → `()`
+//! - [`cmd_update_pending`] → [`UpdatePromptKind`] (read-only, no fresh check)
+//!
+//! [`cmd_update_check`] routes through the same coordinator and so
+//! inherits retry + state preservation.
+//!
+//! The orthogonal commands [`cmd_current_target`], [`cmd_quit_app`], and
+//! [`cmd_request_data_wipe`] are kept registered; they are not part of
+//! the update prompt flow but share the same IPC surface.
 
-use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
+
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use tauri::Manager;
+use tauri::async_runtime::spawn;
+use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::commands::auth::AppState;
 use crate::error::AppError;
 use crate::security::ipc_auth;
 
-#[derive(Serialize, Deserialize)]
-pub struct UpdateInfo {
-    pub available: bool,
-    pub current_version: String,
-    pub latest_version: String,
-    pub pub_date: Option<String>,
-    pub notes: Option<String>,
-    pub platforms: Vec<String>,
+/// Auto-update prompt state. **Mandatory** — there is no
+/// "skip / remind me later" branch; an available update must be
+/// installed before the user can continue working.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum UpdatePromptKind {
+    UpToDate,
+    UpdateAvailable { version: String, notes: Option<String> },
+    CheckFailed { reason: String },
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct DownloadResult {
-    pub path: PathBuf,
-    pub bytes: u64,
-    pub sha256: String,
+/// Per-app coordinator. Stored as `Arc<UpdateCoordinator>` in Tauri-
+/// managed state; `Clone` is a cheap `Arc` clone so the boot hook can
+/// hand a reference to its spawned task.
+#[derive(Debug, Clone)]
+pub struct UpdateCoordinator {
+    state: Arc<Mutex<UpdatePromptKind>>,
+    applying: Arc<Mutex<bool>>,
 }
 
-static CACHED_UPDATE: Mutex<Option<(tauri_plugin_updater::Update, Vec<u8>)>> = Mutex::new(None);
-
-#[tauri::command]
-pub async fn cmd_check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
-    ipc_auth::authorize("cmd_check_update", app.state::<AppState>().inner())?;
-    let update = app
-        .updater()
-        .map_err(|e| e.to_string())?
-        .check()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(match update {
-        Some(u) => UpdateInfo {
-            available: true,
-            current_version: u.current_version,
-            latest_version: u.version,
-            pub_date: u.date.map(|d| d.to_string()),
-            notes: u.body,
-            platforms: vec![],
-        },
-        None => {
-            let current = env!("CARGO_PKG_VERSION").to_string();
-            UpdateInfo {
-                available: false,
-                current_version: current.clone(),
-                latest_version: current,
-                pub_date: None,
-                notes: None,
-                platforms: vec![],
-            }
+impl UpdateCoordinator {
+    pub fn new() -> Self {
+        Self {
+            state: Arc::new(Mutex::new(UpdatePromptKind::UpToDate)),
+            applying: Arc::new(Mutex::new(false)),
         }
-    })
-}
-
-#[tauri::command]
-pub async fn cmd_download_update(
-    app: tauri::AppHandle,
-    _url: String,
-    _expected_sha256: String,
-) -> Result<DownloadResult, String> {
-    ipc_auth::authorize("cmd_download_update", app.state::<AppState>().inner())?;
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    let update = updater
-        .check()
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no update available".to_string())?;
-    let bytes = update
-        .download(|_chunk, _total| {}, || {})
-        .await
-        .map_err(|e| e.to_string())?;
-    let sha256 = hex::encode(Sha256::digest(&bytes));
-
-    // W1.1 hardening: defense-in-depth hash check before the bytes ever reach
-    // the plugin install path. The plugin already verifies Minisign + SHA-256
-    // internally, but the caller-supplied `_expected_sha256` lets us fail fast
-    // with a precise Validation error rather than a generic plugin failure.
-    if !sha256.eq_ignore_ascii_case(_expected_sha256.trim()) {
-        return Err(AppError::Validation(format!(
-            "sha256 mismatch: expected {}, got {}",
-            _expected_sha256, sha256
-        ))
-        .into());
     }
 
-    let result = DownloadResult {
-        path: PathBuf::new(),
-        bytes: bytes.len() as u64,
-        sha256: sha256.clone(),
-    };
-    *CACHED_UPDATE.lock() = Some((update, bytes));
-    Ok(result)
+    pub fn current(&self) -> UpdatePromptKind {
+        self.state.lock().clone()
+    }
+
+    fn set(&self, kind: UpdatePromptKind) {
+        *self.state.lock() = kind;
+    }
+
+    /// Run a check (with exponential-backoff retry) and store the result.
+    /// Preserves a known `UpdateAvailable` across transient failures and
+    /// across a fresh `UpToDate` (the latter is treated as a stale read).
+    /// Returns the merged state.
+    pub async fn run_check(&self, app: &AppHandle) -> UpdatePromptKind {
+        let prev = self.current();
+        match do_check_with_retry(app).await {
+            Ok(kind) => {
+                let merge = if matches!(prev, UpdatePromptKind::UpdateAvailable { .. })
+                    && kind == UpdatePromptKind::UpToDate
+                {
+                    prev.clone()
+                } else {
+                    kind.clone()
+                };
+                self.set(merge.clone());
+                merge
+            }
+            Err(reason) => {
+                let new_state = if matches!(prev, UpdatePromptKind::UpdateAvailable { .. }) {
+                    prev.clone()
+                } else {
+                    UpdatePromptKind::CheckFailed { reason }
+                };
+                self.set(new_state.clone());
+                new_state
+            }
+        }
+    }
+
+    /// Download + install atomically. Single-shot: refuses re-entry
+    /// while an apply is already in flight.
+    pub async fn apply(&self, app: &AppHandle) -> Result<(), AppError> {
+        // errdefer-equivalent: clear the in-flight flag on every return path.
+        struct ApplyGuard<'a>(&'a Mutex<bool>);
+        impl Drop for ApplyGuard<'_> {
+            fn drop(&mut self) {
+                *self.0.lock() = false;
+            }
+        }
+        {
+            let mut flag = self.applying.lock();
+            if *flag {
+                return Err(AppError::Conflict("update already applying".into()));
+            }
+            *flag = true;
+        }
+        let _g = ApplyGuard(&self.applying);
+
+        let updater = app
+            .updater()
+            .map_err(|e| AppError::Internal(format!("updater handle: {e}")))?;
+        let update = updater
+            .check()
+            .await
+            .map_err(|e| AppError::Internal(format!("updater check: {e}")))?
+            .ok_or_else(|| AppError::NotFound("no update available".into()))?;
+        let bytes = update
+            .download(|_chunk, _total| {}, || {})
+            .await
+            .map_err(|e| AppError::Internal(format!("updater download: {e}")))?;
+        update
+            .install(&bytes)
+            .map_err(|e| AppError::Internal(format!("updater install: {e}")))?;
+        Ok(())
+    }
+
+    /// Spawn the boot-time check. Non-blocking; updates `state` in place
+    /// as retries progress. Also registers Tauri event listeners for the
+    /// updater-plugin channel (v1 event names kept for parity; v2 plugin
+    /// emits them only on the JS side, so the Rust listeners are best-
+    /// effort — see `subscribe_plugin_events`).
+    pub fn start_auto_check(self: Arc<Self>, app: AppHandle) {
+        subscribe_plugin_events(&app);
+        spawn(async move {
+            let _ = self.run_check(&app).await;
+        });
+    }
+}
+
+impl Default for UpdateCoordinator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+const RETRY_BACKOFFS_MS: [u64; 3] = [1_000, 3_000, 9_000];
+
+async fn do_check_with_retry(app: &AppHandle) -> Result<UpdatePromptKind, String> {
+    let mut last_err: Option<String> = None;
+    let backoffs = std::iter::once(&0u64).chain(RETRY_BACKOFFS_MS.iter());
+    let total_attempts = 1 + RETRY_BACKOFFS_MS.len();
+    for (i, backoff_ms) in backoffs.enumerate() {
+        if i > 0 {
+            tokio::time::sleep(Duration::from_millis(*backoff_ms)).await;
+        }
+        let result = match app.updater() {
+            Ok(u) => u.check().await,
+            Err(e) => Err(tauri_plugin_updater::Error::from(e)),
+        };
+        match result {
+            Ok(Some(u)) => {
+                return Ok(UpdatePromptKind::UpdateAvailable {
+                    version: u.version,
+                    notes: u.body,
+                });
+            }
+            Ok(None) => return Ok(UpdatePromptKind::UpToDate),
+            Err(e) => {
+                let msg = e.to_string();
+                log::warn!(
+                    "updater check attempt {}/{} failed: {}",
+                    i + 1,
+                    total_attempts,
+                    msg
+                );
+                last_err = Some(msg);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| "updater check failed".into()))
+}
+
+// ponytail: tauri-plugin-updater v2 only emits these events on the JS
+// side; the Rust listener wiring is structural so a future plugin upgrade
+// that exposes them gets picked up without a coordinator change. EventIds
+// are kept alive by storing them in a process-lifetime OnceLock.
+const UPDATER_PLUGIN_EVENTS: &[&str] = &[
+    "tauri://update-available",
+    "tauri://update-downloaded",
+    "tauri://update-install",
+    "tauri://update-error",
+];
+
+fn subscribe_plugin_events(app: &AppHandle) {
+    use std::sync::OnceLock;
+    static IDS: OnceLock<parking_lot::Mutex<Vec<tauri::EventId>>> = OnceLock::new();
+    let ids = IDS.get_or_init(|| parking_lot::Mutex::new(Vec::new()));
+    let mut guard = ids.lock();
+    for name in UPDATER_PLUGIN_EVENTS {
+        guard.push(app.listen(*name, move |event| {
+            log::info!(
+                "updater plugin event: id={} payload={:?}",
+                event.id(),
+                event.payload()
+            );
+        }));
+    }
 }
 
 #[tauri::command]
-pub async fn cmd_install_update(_path: PathBuf, app: tauri::AppHandle) -> Result<(), String> {
-    ipc_auth::authorize("cmd_install_update", app.state::<AppState>().inner())?;
-    let (update, bytes) = CACHED_UPDATE
-        .lock()
-        .take()
-        .ok_or_else(|| "no downloaded update".to_string())?;
-    update.install(&bytes).map_err(|e| e.to_string())?;
-    // W1.1 hardening: route through the single shutdown choke-point so the
-    // scanner hook thread is torn down before the process exits (otherwise
-    // `app.exit(0)` / `std::process::exit(0)` can leave `WH_KEYBOARD_LL`
-    // unhooked on Windows).
-    crate::graceful_shutdown(&app)
+pub async fn cmd_update_check(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<UpdatePromptKind, AppError> {
+    ipc_auth::authorize("update_check", state.inner())?;
+    Ok(state.inner().updater.run_check(&app).await)
+}
+
+#[tauri::command]
+pub async fn cmd_update_apply(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), AppError> {
+    ipc_auth::authorize("update_apply", state.inner())?;
+    state.inner().updater.apply(&app).await
+}
+
+#[tauri::command]
+pub fn cmd_update_pending(
+    state: tauri::State<'_, AppState>,
+) -> Result<UpdatePromptKind, AppError> {
+    ipc_auth::authorize("update_pending", state.inner())?;
+    Ok(state.inner().updater.current())
 }
 
 #[tauri::command]
@@ -127,17 +252,6 @@ pub fn cmd_current_target() -> &'static str {
     CACHE
         .get_or_init(|| tauri_plugin_updater::target().unwrap_or_else(|| "unknown".to_string()))
         .as_str()
-}
-
-#[tauri::command]
-pub async fn cmd_retry_update(app: tauri::AppHandle) -> Result<(), String> {
-    ipc_auth::authorize("cmd_retry_update", app.state::<AppState>().inner())?;
-    app.updater()
-        .map_err(|e| e.to_string())?
-        .check()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
 }
 
 #[tauri::command]

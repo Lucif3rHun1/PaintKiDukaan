@@ -29,6 +29,12 @@ function renderShell() {
       user={{ name: "Owner", role: "owner" }}
       onNavigate={vi.fn()}
       onLock={vi.fn()}
+      updater={{
+        pending: { kind: "upToDate" },
+        currentVersion: "0.3.2",
+        check: vi.fn(),
+        apply: vi.fn(),
+      }}
     >
       <div>Settings content</div>
     </AppShell>,

@@ -901,30 +901,30 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         name: "cmd_read_session_logs",
         min_role: Role::Owner,
     },
-    // ── Updater & app lifecycle (Owner-only) ─────────────────────────────
+    // ── Updater & app lifecycle ────────────────────────────────────────
     CommandAcl {
-        name: "cmd_check_update",
-        min_role: Role::Owner,
+        name: "cmd_update_check",
+        min_role: Role::Stocker,
     },
     CommandAcl {
-        name: "cmd_download_update",
-        min_role: Role::Owner,
+        name: "update_check",
+        min_role: Role::Stocker,
     },
     CommandAcl {
-        name: "cmd_install_update",
-        min_role: Role::Owner,
+        name: "update_apply",
+        min_role: Role::Stocker,
+    },
+    CommandAcl {
+        name: "update_pending",
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "cmd_current_target",
         min_role: Role::Owner,
     },
     CommandAcl {
-        name: "cmd_retry_update",
-        min_role: Role::Owner,
-    },
-    CommandAcl {
         name: "cmd_quit_app",
-        min_role: Role::Owner,
+        min_role: Role::Stocker,
     },
     CommandAcl {
         name: "cmd_request_data_wipe",
@@ -1074,6 +1074,7 @@ mod tests {
             recovery_passphrase: Mutex::new(None),
             last_test_restore_unix_ms: Mutex::new(None),
             tray_status: Mutex::new("uninitialized"),
+            updater: Arc::new(crate::commands::updater::UpdateCoordinator::new()),
         }
     }
 

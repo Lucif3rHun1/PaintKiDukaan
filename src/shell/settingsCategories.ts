@@ -26,6 +26,7 @@ const SETTINGS_ITEM_CATEGORY_BY_PREFIX = [
   ["#/settings/security", "system"],
   ["#/settings/owner-security", "system"],
   ["#/settings/theme", "system"],
+  ["#/settings/updates", "system"],
   ["#/settings/master-health", "system"],
 ] as const;
 

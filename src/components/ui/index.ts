@@ -49,3 +49,4 @@ export { BarcodeThumb } from "./BarcodeThumb";
 export { DraftBadge } from "./DraftBadge";
 export { ShortcutOverlay, type ShortcutItem, type ShortcutGroup } from "./ShortcutOverlay";
 export { UnsavedChangesModal } from "./UnsavedChangesModal";
+export { UpdateBanner } from "./UpdateBanner";

@@ -37,6 +37,7 @@ import { UnsavedChangesModal } from "./components/ui/UnsavedChangesModal";
 import { isAnyFormDirty } from "./pos/hooks";
 import { setHash } from "./lib/navigate";
 import type { Customer, CustomerType, Vendor } from "./domain/types";
+import { useUpdater } from "./shell/hooks/useUpdater";
 
 export function requestGracefulQuit(requestConfirmation: () => void): void {
   if (isAnyFormDirty()) {
@@ -218,6 +219,7 @@ export default function App() {
   const setPhase = useSecurity((s) => s.setPhase);
   const setSession = useSecurity((s) => s.setSession);
   const setLoginUsers = useSecurity((s) => s.setLoginUsers);
+  const updater = useUpdater(phase === "unlocked");
   const lastTouchAt = useRef(0);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [keystoreErrorReason, setKeystoreErrorReason] = useState<string | null>(null);
@@ -537,6 +539,7 @@ export default function App() {
       onNavigate={navigate}
       onLock={lockNow}
       onLogout={logoutForSwitch}
+      updater={updater}
     >
       {tab === "dashboard" && (
         <ErrorBoundary context="Dashboard">
@@ -818,7 +821,7 @@ export default function App() {
           <ErrorBoundary context="Settings">
             <Suspense fallback={<RouteFallback />}>
               <div>
-                <SettingsPage />
+                <SettingsPage updater={updater} />
               </div>
             </Suspense>
           </ErrorBoundary>

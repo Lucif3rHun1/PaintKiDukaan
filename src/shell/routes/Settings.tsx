@@ -9,6 +9,7 @@ import {
   MapPin,
   Monitor,
   PaintBucket,
+  RefreshCw,
   ScanLine,
   ShieldCheck,
   Tags,
@@ -25,6 +26,8 @@ import { SettingsCategory } from "./settings/SettingsCategory";
 import { ShopInfoSettings, CurrencySettings } from "./settings/ShopSettings";
 import { BackupSettings, MasterHealthSettings, OwnerSecuritySettings, SecuritySettings, ThemeSettings } from "./settings/SystemSettings";
 import { UsersSettings, DevicesSettings } from "./settings/TeamSettings";
+import { Updates } from "../settings/Updates";
+import type { UpdaterController } from "../hooks/useUpdater";
 
 type SettingsItemId =
   | "shop-info"
@@ -39,6 +42,7 @@ type SettingsItemId =
   | "security"
   | "owner-security"
   | "theme"
+  | "updates"
   | "master-health";
 
 interface SettingsItem {
@@ -47,7 +51,7 @@ interface SettingsItem {
   title: string;
   description: string;
   icon: LucideIcon;
-  Component: ComponentType;
+  Component: ComponentType<{ updater: UpdaterController }>;
 }
 
 interface ParsedSettingsRoute {
@@ -77,6 +81,7 @@ const SETTINGS_ITEMS: SettingsItem[] = [
   { id: "security", category: "system", title: "Security", description: "Idle auto-lock and lockout policy for this device.", icon: ShieldCheck, Component: SecuritySettings },
   { id: "owner-security", category: "system", title: "Owner PIN & recovery", description: "Change owner PIN and manage recovery password.", icon: ShieldCheck, Component: OwnerSecuritySettings },
   { id: "theme", category: "system", title: "Appearance", description: "Theme mode — system, light, or dark.", icon: Monitor, Component: ThemeSettings },
+  { id: "updates", category: "system", title: "Updates", description: "Check the installed version and apply required releases.", icon: RefreshCw, Component: Updates },
   { id: "master-health", category: "system", title: "Master health", description: "Run diagnostics across data, network, and operations.", icon: ClipboardList, Component: MasterHealthSettings },
 ];
 
@@ -128,7 +133,7 @@ function parseSettingsHash(hash: string): ParsedSettingsRoute {
   return { category: "shop", item: null, redirect: "#/settings/shop" };
 }
 
-export function Settings() {
+export function Settings({ updater }: { updater: UpdaterController }) {
   const hash = useSyncExternalStore(subscribeHashChange, getHashSnapshot, getServerHashSnapshot);
   const route = parseSettingsHash(hash);
 
@@ -157,7 +162,7 @@ export function Settings() {
     return (
       <div className="space-y-5">
         <SettingsSubPageHeader categoryLabel={category.label} itemTitle={item.title} description={item.description} backHref={`#/settings/${category.id}`} />
-        <Page />
+        <Page updater={updater} />
       </div>
     );
   }
