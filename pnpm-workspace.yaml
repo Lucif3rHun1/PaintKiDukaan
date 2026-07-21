@@ -4,3 +4,6 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@tanstack/react-virtual@3.14.5'
   - '@tanstack/virtual-core@3.17.3'
+overrides:
+  xlsx: npm:@e965/xlsx@^0.20.3
+  vite: ^6.4.3

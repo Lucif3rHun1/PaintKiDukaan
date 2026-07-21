@@ -70,7 +70,12 @@
     "tailwindcss": "^3.4.16",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.7.2",
-    "vite": "^5.4.11",
+    "vite": "^6.4.3",
     "vitest": "^1.6.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "xlsx": "npm:@e965/xlsx@^0.20.3"
+    }
   }
 }
