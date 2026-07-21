@@ -5,6 +5,7 @@
 //!   `opening_balance_paise` on create.
 //! - `customer_outstanding` = opening + Σ(sales.total - paid) - Σ(payments).
 
+use crate::commands::_util::case_fold_lower;
 use crate::commands::auth::AppState;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::db::Db;
@@ -115,7 +116,7 @@ pub fn create_customer_inline(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = current_user(state.inner())?;
     create_customer_inline_impl(db, &user, payload)
 }
 
@@ -303,8 +304,8 @@ pub fn list_customers(
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if !include_inactive { sql.push_str(" AND c.is_active = 1"); }
         if let Some(q) = &query {
-            sql.push_str(&format!(" AND (c.name LIKE ?{} OR c.phone LIKE ?{})", args.len() + 1, args.len() + 1));
-            args.push(Box::new(format!("%{}%", q)));
+            sql.push_str(&format!(" AND (LOWER(c.name) LIKE ?{} OR LOWER(c.phone) LIKE ?{})", args.len() + 1, args.len() + 1));
+            args.push(Box::new(format!("%{}%", case_fold_lower(q))));
         }
         sql.push_str(" ORDER BY c.name COLLATE NOCASE");
         let mut stmt = c.prepare(&sql)?;
@@ -518,7 +519,7 @@ pub fn get_customer(state: State<'_, AppState>, id: i64) -> AppResult<Option<Cus
 mod tests {
     use super::*;
     use crate::db::Db;
-    use crate::session::{set_current_user, User};
+    use crate::session::User;
 
     fn owner() -> User {
         User {
@@ -546,7 +547,7 @@ mod tests {
 
     #[test]
     fn create_customer_enforces_unique_phone() {
-        set_current_user(Some(cashier()));
+
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
             c.execute(
@@ -580,7 +581,7 @@ mod tests {
         // Cashier attempting to set is_flagged via update is rejected by the
         // role guard before we touch the DB. We exercise the real entry point
         // (update_customer_impl) rather than the require_role helper directly.
-        set_current_user(Some(cashier()));
+
         let db = Db::open_in_memory().unwrap();
         let id = db.with_raw(|c| {
             c.execute(
@@ -607,7 +608,7 @@ mod tests {
         assert!(matches!(res, Err(AppError::Forbidden(_))));
 
         // Owner may set it.
-        set_current_user(Some(owner()));
+
         let ok = update_customer_impl(
             &db,
             &owner(),
@@ -632,7 +633,7 @@ mod tests {
 
     #[test]
     fn opening_balance_only_owner_can_update() {
-        set_current_user(Some(cashier()));
+
         let db = Db::open_in_memory().unwrap();
         let id = db.with_raw(|c| {
             c.execute(
@@ -662,7 +663,7 @@ mod tests {
             "cashier updating opening_balance_paise must be Forbidden"
         );
 
-        set_current_user(Some(owner()));
+
         let ok = update_customer_impl(
             &db,
             &owner(),
@@ -687,7 +688,7 @@ mod tests {
 
     #[test]
     fn cashier_cannot_set_opening_balance_on_create() {
-        set_current_user(Some(cashier()));
+
         let db = Db::open_in_memory().unwrap();
         let res = create_customer_impl(
             &db,
@@ -710,7 +711,7 @@ mod tests {
         // Even if the caller somehow tried to set is_flagged or notes, those
         // fields don't exist on `CreateCustomerInline` so they cannot leak
         // through. We verify the safe defaults are applied.
-        set_current_user(Some(cashier()));
+
         let db = Db::open_in_memory().unwrap();
         let c = create_customer_inline_impl(
             &db,
@@ -731,7 +732,7 @@ mod tests {
 
     #[test]
     fn create_customer_inline_rejects_invalid_phone() {
-        set_current_user(Some(cashier()));
+
         let db = Db::open_in_memory().unwrap();
         let res = create_customer_inline_impl(
             &db,
@@ -747,7 +748,7 @@ mod tests {
 
     #[test]
     fn create_customer_inline_rejects_duplicate_phone() {
-        set_current_user(Some(cashier()));
+
         let db = Db::open_in_memory().unwrap();
         let _first = create_customer_inline_impl(
             &db,
@@ -773,7 +774,7 @@ mod tests {
 
     #[test]
     fn cashier_can_update_non_owner_fields() {
-        set_current_user(Some(cashier()));
+
         let db = Db::open_in_memory().unwrap();
         let id = create_customer_impl(
             &db,
@@ -814,7 +815,7 @@ mod tests {
 
     #[test]
     fn lookup_by_4_to_10_digit_phone_substring() {
-        set_current_user(Some(owner()));
+
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
             c.execute(
@@ -851,7 +852,7 @@ mod tests {
 
     #[test]
     fn list_customer_bills_returns_final_sales_ordered_by_date_desc() {
-        set_current_user(Some(cashier()));
+
         let db = Db::open_in_memory().unwrap();
         // Seed a user for FK constraints
         db.with_raw(|c| {
@@ -899,7 +900,7 @@ mod tests {
 
     #[test]
     fn customer_outstanding_command() {
-        set_current_user(Some(owner()));
+
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
             c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 0, 0)", []).unwrap();
@@ -952,7 +953,7 @@ pub fn create_customer_credit_invoice(
     args: crate::commands::customer_ledger::CreateCustomerCreditInvoice,
 ) -> AppResult<()> {
     ipc_auth::authorize_err("create_customer_credit_invoice", state.inner())?;
-    let user = current_user()?;
+    let user = current_user(state.inner())?;
     let guard = state
         .db
         .lock()
@@ -977,7 +978,7 @@ pub fn record_customer_payment(
     args: crate::commands::customer_ledger::RecordCustomerPayment,
 ) -> AppResult<CustomerOutstanding> {
     ipc_auth::authorize_err("record_customer_payment", state.inner())?;
-    let user = current_user()?;
+    let user = current_user(state.inner())?;
     let guard = state
         .db
         .lock()

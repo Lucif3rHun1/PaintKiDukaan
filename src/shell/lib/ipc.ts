@@ -4,7 +4,13 @@
  * Each command listed here corresponds to a `#[tauri::command]` in the Rust
  * shell. Types are kept loose (primitives) on purpose so adding fields does
  * not cascade through the frontend.
+ *
+ * NOTE: This file deliberately does NOT export `invoke`. Slice-D commands
+ * route through the unified `invoke` from `../../lib/ipc` for correlation
+ * IDs, error forwarding, and AppError typing. Consumers needing raw `invoke`
+ * import it directly from `@/lib/ipc` (or `../../lib/ipc`).
  */
+import { invoke } from "../../lib/ipc";
 import { tauriInvoke } from "../../lib/security/tauri";
 import type { SecurityPolicy } from "../../domain/types";
 import type { NewPrinterInput, PrinterRecord, DiscoveredPrinter } from "../routes/settings/printing-types";
@@ -113,10 +119,6 @@ export interface BackupStatus {
   last_test_restore_unix_ms: number | null;
   backup_age_hours: number;
   targets: BackupTarget[];
-}
-
-export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  return tauriInvoke<T>(cmd, args);
 }
 
 export const ipc = {

@@ -4,6 +4,7 @@
 //! returns different fields depending on the caller role. This is enforced
 //! server-side so a malicious frontend cannot see cost_paise as a cashier.
 
+use crate::commands::_util::case_fold_lower;
 use crate::commands::auth::AppState;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
@@ -562,8 +563,8 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> AppResult<V
         sql.push_str(" AND i.is_active = 1");
     }
     if let Some(q) = &filter.query {
-        sql.push_str(" AND (i.name LIKE ?1 OR i.sku_code LIKE ?1 OR i.barcode LIKE ?1)");
-        args.push(Box::new(format!("%{}%", q)));
+        sql.push_str(" AND (LOWER(i.name) LIKE ?1 OR LOWER(i.sku_code) LIKE ?1 OR LOWER(i.barcode) LIKE ?1)");
+        args.push(Box::new(format!("%{}%", case_fold_lower(q))));
     }
     if let Some(b) = &filter.brand {
         sql.push_str(&format!(" AND COALESCE(b.name, i.brand) = ?{}", args.len() + 1));

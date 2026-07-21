@@ -36,7 +36,7 @@ import {
 } from "../../components/ui";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
 import { CustomerAutocomplete } from "./CustomerAutocomplete";
-import { ItemSearchInput } from "./ItemSearchInput";
+import { ItemSearchInput } from "@/components/ui/ItemSearchInput";
 import { SplitPayment } from "./SplitPayment";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";

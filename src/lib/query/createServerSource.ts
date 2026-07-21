@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { ListPage, ListQuery, SortDirection } from "../../domain/types";
-import { invoke } from "../../domain/ipc";
+import { invoke } from "../ipc";
 import { useServerListQuery, type UseServerListQueryResult } from "./useServerListQuery";
 
 export interface ServerSourceOptions<T> {
@@ -50,4 +50,3 @@ export function useServerListArgs(
 }
 
 export type { ListPage };
-export { invoke };

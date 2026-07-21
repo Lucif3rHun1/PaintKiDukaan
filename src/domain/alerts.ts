@@ -1,4 +1,4 @@
-import { tauriInvoke } from "../lib/security/tauri";
+import { invoke } from "../lib/ipc";
 
 export type AlertKind =
   | "low_stock"
@@ -23,41 +23,26 @@ export interface Alert {
   resolved_at: number | null;
 }
 
-export function listAlerts(): Promise<Alert[]> {
-  return tauriInvoke<Alert[]>("cmd_list_alerts").catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error("[alerts.ts] listAlerts failed", err);
-    return [];
-  });
+// ponytail: errors propagate so TanStack Query's global handler auto-toasts.
+// Returning [] on failure would mask backend issues as "empty alerts".
+export async function listAlerts(): Promise<Alert[]> {
+  return await invoke<Alert[]>("cmd_list_alerts");
 }
 
-export function unreadAlertCount(): Promise<number> {
-  return tauriInvoke<number>("cmd_unread_alert_count").catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error("[alerts.ts] unreadAlertCount failed", err);
-    return 0;
-  });
+export async function unreadAlertCount(): Promise<number> {
+  return await invoke<number>("cmd_unread_alert_count");
 }
 
-export function markAlertRead(id: number): Promise<void> {
-  return tauriInvoke<void>("cmd_mark_alert_read", { id }).catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error("[alerts.ts] markAlertRead failed", err);
-  });
+export async function markAlertRead(id: number): Promise<void> {
+  await invoke<void>("cmd_mark_alert_read", { id });
 }
 
-export function markAllAlertsRead(): Promise<void> {
-  return tauriInvoke<void>("cmd_mark_all_alerts_read").catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error("[alerts.ts] markAllAlertsRead failed", err);
-  });
+export async function markAllAlertsRead(): Promise<void> {
+  await invoke<void>("cmd_mark_all_alerts_read");
 }
 
-export function refreshAlerts(): Promise<void> {
-  return tauriInvoke<void>("cmd_refresh_alerts").catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error("[alerts.ts] refreshAlerts failed", err);
-  });
+export async function refreshAlerts(): Promise<void> {
+  await invoke<void>("cmd_refresh_alerts");
 }
 
 export async function fetchAlertsWithCount(): Promise<{
@@ -70,5 +55,5 @@ export async function fetchAlertsWithCount(): Promise<{
 }
 
 // Shared cache key — AlertBell and Dashboard both read this. Keep in sync
-// with Dashboard's `queryKey: ["alerts"]` (see shell/routes/Dashboard.tsx).
-export const ALERTS_QUERY_KEY = ["alerts"] as const;
+// with Dashboard's invalidation prefix.
+export const ALERTS_QUERY_KEY = ["dashboard", "alerts"] as const;

@@ -5,6 +5,7 @@ import { buildReceiptPdfBlob, printReceipt as printReceiptPdf } from "../print";
 import type { DiscoveredPrinter } from "../../shell/routes/settings/printing-types";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
+import { toTitleCase } from "../../lib/format/titleCase";
 
 export interface ReceiptPrintSettings {
   /** Saved printer object selected for receipts. Null/empty falls back to PDF. */
@@ -61,9 +62,9 @@ export function buildReceiptData(sale: Sale, settings: ReceiptPrintSettings) {
       : undefined,
     sale_number: sale.no ?? "—",
     created_at: sale.date ?? "",
-    customer_name: sale.customer_name ?? null,
+    customer_name: sale.customer_name ? toTitleCase(sale.customer_name) : null,
     items: (sale.items ?? []).map((it) => ({
-      name: it.display_name ?? "Item",
+      name: toTitleCase(it.display_name ?? "Item"),
       sku: it.sku_code ?? null,
       qty: formatQty(it.qty ?? 0),
       unit: it.unit_type ?? "unit",
@@ -219,7 +220,7 @@ export function buildReturnReceiptData(ret: SaleReturn, settings: ReceiptPrintSe
     created_at: ret.date,
     customer_name: null,
     items: ret.lines.map((it) => ({
-      name: it.item_name,
+      name: toTitleCase(it.item_name),
       sku: null,
       qty: formatQty(it.qty),
       unit: "pcs",

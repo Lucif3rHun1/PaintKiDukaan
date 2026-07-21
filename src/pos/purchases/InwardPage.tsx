@@ -31,7 +31,7 @@ import { createInward, deleteDraft, lastCost, lastRetail, listPurchases } from "
 import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { formatDateForDisplay } from "../../lib/date";
-import { ItemSearchInput } from "../sales/ItemSearchInput";
+import { ItemSearchInput } from "@/components/ui/ItemSearchInput";
 import type { InwardLine, ItemSearchHit, NewPurchase, Purchase, PurchaseCreated } from "../types";
 import { setHash } from "../../lib/navigate";
 import { getPref, setPref } from "../../lib/storage";
@@ -169,6 +169,8 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   const [vendorMenuOpen, setVendorMenuOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [recent, setRecent] = useState<Purchase[]>([]);
+  const [recentError, setRecentError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -243,6 +245,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
   // ponytail: removed dead entrySearchRef — was never attached to DOM
 
   useEffect(() => {
+    setRecentError(null);
     Promise.allSettled([
       listPurchases().then((d) => setRecent(d ?? [])),
       listItems({ limit: 200 }).then((rows) => setItems(rows)),
@@ -262,24 +265,31 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       setInitialLoading(false);
       if (purchases.status === "rejected") {
         console.error("[InwardPage] failed to load recent purchases", purchases.reason);
+        const msg = extractError(purchases.reason);
+        setRecentError(msg);
+        toast.error(`Failed to load recent inwards: ${msg}`);
       }
       if (itemsResult.status === "rejected") {
         console.error("[InwardPage] failed to load items", itemsResult.reason);
         setItems([]);
+        toast.error(`Failed to load items: ${extractError(itemsResult.reason)}`);
       }
       if (vendorsResult.status === "rejected") {
         console.error("[InwardPage] failed to load vendors", vendorsResult.reason);
         setVendors([]);
+        toast.error(`Failed to load vendors: ${extractError(vendorsResult.reason)}`);
       }
       if (locationsResult.status === "rejected") {
         console.error("[InwardPage] failed to load locations", locationsResult.reason);
         setLocations([]);
+        toast.error(`Failed to load locations: ${extractError(locationsResult.reason)}`);
       }
       if (purchaseUnitsResult.status === "rejected") {
         console.error("[InwardPage] failed to load purchase units", purchaseUnitsResult.reason);
+        toast.error(`Failed to load purchase units: ${extractError(purchaseUnitsResult.reason)}`);
       }
     });
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     if (vendors.length === 0) return;
@@ -1074,7 +1084,25 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       </section>
 
       {/* ── Recent inwards ──────────────────────────────────── */}
-      {recent.length > 0 && (
+      {recentError ? (
+        <section className="rounded-lg border border-border bg-card">
+          <div className="border-b border-border px-4 py-2.5">
+            <h2 className="text-lg font-semibold text-foreground">Recent inwards</h2>
+          </div>
+          <div className="px-4 py-6">
+            <EmptyState
+              icon={Truck}
+              title="Couldn't load recent inwards"
+              description={recentError}
+              primary={
+                <Button type="button" onClick={() => setReloadKey((k) => k + 1)}>
+                  Retry
+                </Button>
+              }
+            />
+          </div>
+        </section>
+      ) : recent.length > 0 ? (
         <section className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-2.5">
           <h2 className="text-lg font-semibold text-foreground">Recent inwards</h2>
@@ -1115,7 +1143,7 @@ export default function InwardPage({ user: _user, onExit }: Props) {
             </table>
           </div>
         </section>
-      )}
+      ) : null}
 
       <InlineDialog
         open={addVendorOpen}

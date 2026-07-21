@@ -1,106 +1,32 @@
 /**
- * Thin Tauri-invoke wrapper. Throws `AppError` on non-OK responses so
- * components can render field-level errors from the `code`.
+ * Slice B (domain) IPC wrappers — items, customers, vendors, formulas,
+ * billing sequences. Auth / PDE / recovery wrappers live in
+ * lib/security/ipc.ts and lib/security/pin.ts; printer / settings live
+ * in lib/printer.ts and lib/settings.ts. Do NOT add auth or shell commands
+ * here — keep slice ownership strict.
  *
- * Correlation IDs are generated per invoke and forwarded to the backend
- * via the `_cid` arg (injected by tauri.ts) and `log_frontend` calls.
+ * Wrappers route through the unified `invoke` from lib/ipc.ts so they
+ * share correlation-ID, error-forwarding and AppError-typing behaviour.
+ *
+ * Note: this file used to ship its own local `invoke<T>` wrapper that
+ * duplicated lib/ipc.ts; that was removed during the IPC-layer
+ * consolidation. Callers must now import `invoke` from `../lib/ipc`.
  */
-import { tauriInvoke } from "../lib/security/tauri";
-import { extractError } from "../lib/extractError";
-import {
-  isAppError,
-  AppError,
-  type UnlockResult,
-  type PdeStatus,
-  type ProvisionDecoyDbArgs,
-  type ChangeDecoyPinArgs,
-  type ChangeDuressPinArgs,
-  type ChangePinArgs,
-  type SetRecoveryPassphraseArgs,
-  type CreateCustomerInlinePayload,
-  type CreateSaleReturnPayload,
-  type Customer,
-  type SaleReturn,
-  type Formula,
-  type FormulaFilter,
-  type NewFormula,
-  type UpdateFormula,
-  type FormulaSaleRow,
+import { invoke } from "../lib/ipc";
+import type {
+  CreateCustomerInlinePayload,
+  CreateSaleReturnPayload,
+  Customer,
+  SaleReturn,
+  Formula,
+  FormulaFilter,
+  NewFormula,
+  UpdateFormula,
+  FormulaSaleRow,
 } from "./types";
-import type { Sale } from "../pos/types";
 import { check, Update, type DownloadEvent } from "@tauri-apps/plugin-updater";
 
-export async function invoke<T>(
-  cmd: string,
-  args?: Record<string, unknown>,
-): Promise<T> {
-  try {
-    return await tauriInvoke<T>(cmd, args);
-  } catch (e) {
-    if (isAppError(e)) {
-      // Forward structured errors to backend log with correlation ID.
-      const err = e as AppError;
-      tauriInvoke("log_frontend", {
-        level: "error",
-        message: `[IPC:APP_ERROR] cmd=${cmd} code=${err.code} msg=${err.message}`,
-      }).catch((logErr: unknown) => {
-        // eslint-disable-next-line no-console
-        console.error("[domain/ipc.ts] failed to forward app error", logErr);
-      });
-      throw err;
-    }
-    const wrapped: AppError = {
-      code: "internal",
-      message: extractError(e),
-    };
-    tauriInvoke("log_frontend", {
-      level: "error",
-      message: `[IPC:WRAPPED] cmd=${cmd} ${wrapped.message}`,
-    }).catch((logErr: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error("[domain/ipc.ts] failed to forward wrapped error", logErr);
-    });
-    throw wrapped;
-  }
-}
-
-export async function unlockWithPinRole(
-  pin: string,
-): Promise<UnlockResult> {
-  return invoke<UnlockResult>("unlock", { pin });
-}
-
-export async function provisionDecoyDb(
-  args: ProvisionDecoyDbArgs,
-): Promise<void> {
-  await invoke<void>("provision_decoy_db", args as unknown as Record<string, unknown>);
-}
-
-export async function changeDecoyPin(
-  args: ChangeDecoyPinArgs,
-): Promise<void> {
-  await invoke<void>("change_decoy_pin", args as unknown as Record<string, unknown>);
-}
-
-export async function changeDuressPin(
-  args: ChangeDuressPinArgs,
-): Promise<void> {
-  await invoke<void>("change_duress_pin", args as unknown as Record<string, unknown>);
-}
-
-export async function changePin(args: ChangePinArgs): Promise<void> {
-  await invoke<void>("change_pin", args as unknown as Record<string, unknown>);
-}
-
-export async function setRecoveryPassphrase(
-  args: SetRecoveryPassphraseArgs,
-): Promise<void> {
-  await invoke<void>("set_recovery_passphrase", args as unknown as Record<string, unknown>);
-}
-
-export async function getPdeStatus(): Promise<PdeStatus> {
-  return invoke<PdeStatus>("get_pde_status");
-}
+// Sequence / billing helpers
 
 // Sequence / billing helpers
 export async function getNextInvoiceNumber(): Promise<string> {

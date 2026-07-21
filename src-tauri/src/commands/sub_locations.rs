@@ -28,7 +28,7 @@ pub fn list_sub_locations(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let _ = current_user(state.inner())?;
     db.with_raw(|c| {
         let (sql, query_params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match (location_id, include_inactive) {
             (Some(lid), true) => (
@@ -76,7 +76,7 @@ pub fn create_sub_location(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = current_user(state.inner())?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     let name = name.trim().to_string();
     if name.is_empty() {
@@ -158,7 +158,7 @@ pub fn update_sub_location(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = current_user(state.inner())?;
     require_role(&user, &[Role::Owner, Role::Stocker])?;
     db.with_tx(|tx| {
         // Fetch current row.
@@ -211,7 +211,7 @@ pub fn deactivate_sub_location(state: State<'_, AppState>, id: i64) -> AppResult
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = current_user(state.inner())?;
     require_role(&user, &[Role::Owner])?;
     db.with_tx(|tx| {
         // Check for items referencing this sub-location before deactivating.

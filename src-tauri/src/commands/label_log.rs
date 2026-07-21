@@ -78,7 +78,7 @@ pub fn record_label_print(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = current_user(state.inner())?;
     db.with_tx(|tx| {
         let exists: i64 = tx.query_row(
             "SELECT COUNT(*) FROM items WHERE id = ?1",
@@ -129,7 +129,7 @@ pub fn list_label_prints(
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let _ = current_user()?;
+    let _ = current_user(state.inner())?;
     let limit = limit.unwrap_or(50).clamp(1, 200);
     db.with_raw(|conn| {
         let base = "SELECT l.id, l.item_id, COALESCE(b.name || ' · ' || i.name, i.name), l.barcode, l.qty,

@@ -1,4 +1,5 @@
-import { tauriInvoke as invoke } from "./lib/security/tauri";
+import { ipc as shellIpc } from "./shell/lib/ipc";
+import { lock, logoutForSwitch as securityLogoutForSwitch, touchActivity } from "./lib/security/ipc";
 import { toast } from "./lib/feedback/toast";
 import { Button, PageHeader, SkeletonRow, Toaster } from "./components/ui";
 import { Alert } from "./components/ui/Alert";
@@ -24,6 +25,9 @@ import { CustomerPaymentForm } from "./domain/customers/CustomerPaymentForm";
 import { VendorForm } from "./domain/vendors/VendorForm";
 import { VendorPaymentForm } from "./domain/vendors/VendorPaymentForm";
 import { VendorDetail } from "./domain/vendors/VendorDetail";
+import { listItems } from "./domain/items/api";
+import { listCustomers } from "./domain/customers/api";
+import { listVendors } from "./domain/vendors/api";
 import { listCustomerTypes } from "./domain/customerTypes/api";
 /* ── POS UI (Slice C) ────────────────────────────────────── */
 import { AppShell, type AppShellTab } from "./shell/AppShell";
@@ -247,6 +251,11 @@ export default function App() {
         // eslint-disable-next-line no-console
         console.error("[App] failed to load customer types", e);
       });
+      // ponytail: warm the umbrella invalidation caches so first paint is instant.
+      // Errors swallowed — individual pages re-fetch on mount if these fail.
+      void queryClient.prefetchQuery({ queryKey: ["items"], queryFn: () => listItems({ limit: 5000 }) });
+      void queryClient.prefetchQuery({ queryKey: ["customers"], queryFn: () => listCustomers() });
+      void queryClient.prefetchQuery({ queryKey: ["vendors"], queryFn: () => listVendors() });
     }
   }, [phase]);
 
@@ -280,7 +289,7 @@ export default function App() {
       )), BOOTSTRAP_TIMEOUT_MS);
     });
 
-    Promise.race([invoke<Bootstrap>("app_bootstrap"), timeout])
+    Promise.race([shellIpc.appBootstrap(), timeout])
       .then((b) => {
         if (cancelled) return;
         console.log("[BOOT] Bootstrap result:", JSON.stringify(b));
@@ -358,7 +367,7 @@ export default function App() {
     const resetIdle = () => {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(async () => {
-        try { await invoke("lock"); } finally {
+        try { await lock(); } finally {
           setSession(LOCKED_SESSION);
           setPhase("locked");
         }
@@ -368,7 +377,7 @@ export default function App() {
       const now = Date.now();
       if (now - lastTouchAt.current >= THIRTY_SECONDS) {
         lastTouchAt.current = now;
-        void invoke("touch_activity").catch(() => undefined);
+        void touchActivity().catch(() => undefined);
       }
       resetIdle();
     };
@@ -394,7 +403,7 @@ export default function App() {
 
   /* ── Lock action ───────────────────────────────────────── */
   async function lockNow() {
-    try { await invoke("lock"); } finally {
+    try { await lock(); } finally {
       queryClient.clear();
       setSession(LOCKED_SESSION);
       setPhase("locked");
@@ -403,7 +412,7 @@ export default function App() {
 
   async function logoutForSwitch() {
     try {
-      setLoginUsers(await invoke<User[]>("logout_for_switch"));
+      setLoginUsers(await securityLogoutForSwitch());
     } finally {
       queryClient.clear();
       setSession(LOCKED_SESSION);
@@ -429,7 +438,7 @@ export default function App() {
   const doWipe = useCallback(async () => {
     setWipeLoading(true);
     try {
-      await invoke("wipe_and_reset");
+      await shellIpc.wipeAndReset();
       setKeystoreErrorReason(null);
       setWipeConfirm(false);
       setSession(LOCKED_SESSION);
@@ -727,8 +736,8 @@ export default function App() {
       )}
       {tab === "items" && (
         <div className="flex h-full flex-col gap-3">
-          <PageHeader title="Inventory" description="Manage products, stock levels, pricing, and locations." accent="slate" />
-          <ErrorBoundary context="Inventory">
+          <PageHeader title="Items" description="Manage products, stock levels, pricing, and locations." accent="slate" />
+          <ErrorBoundary context="Items">
             <Suspense fallback={<RouteFallback />}>
               <ItemList role={role} />
             </Suspense>
@@ -762,7 +771,7 @@ export default function App() {
       })() : null}
       {tab === "barcodes" && (
         <div className="space-y-3">
-          <PageHeader title="Barcode labels" description="Prepare and print product labels for supported printers." accent="slate" />
+          <PageHeader title="Barcode Labels" description="Prepare and print product labels for supported printers." accent="slate" />
           <ErrorBoundary context="Barcode Labels">
             <Suspense fallback={<RouteFallback />}>
               <BulkLabelsPage />
@@ -869,7 +878,7 @@ export default function App() {
       <InlineDialog
         open={!!vendorPaymentTarget}
         onClose={() => setVendorPaymentTarget(null)}
-        title="Record Vendor payment"
+        title="Record vendor payment"
       >
         {vendorPaymentTarget && (
           <VendorPaymentForm
@@ -943,7 +952,7 @@ export default function App() {
       <InlineDialog
         open={!!customerPaymentTarget}
         onClose={() => setCustomerPaymentTarget(null)}
-        title="Record Customer payment"
+        title="Record customer payment"
       >
         {customerPaymentTarget && (
           <CustomerPaymentForm

@@ -1,7 +1,7 @@
 /**
  * Customer-types domain API.
  */
-import { invoke } from "../ipc";
+import { invoke } from "../../lib/ipc";
 import type { CustomerType, ListPage, ListQuery, NewCustomerType } from "../types";
 
 export async function listCustomerTypes(

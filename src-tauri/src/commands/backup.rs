@@ -435,11 +435,6 @@ mod poc_tests {
             role: "owner".into(),
             is_active: true,
         });
-        crate::session::set_current_user(Some(crate::session::User {
-            id: 1,
-            name: "owner".into(),
-            role: crate::session::Role::Owner,
-        }));
     }
 
     #[test]

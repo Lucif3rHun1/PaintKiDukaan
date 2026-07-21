@@ -4,7 +4,7 @@ import { Alert, Button, Card, Field, MoneyInput } from "../../components/ui";
 import { toast } from "../../lib/feedback/toast";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { extractError } from "../../lib/extractError";
-import { ItemSearchInput } from "../../pos/sales/ItemSearchInput";
+import { ItemSearchInput } from "@/components/ui/ItemSearchInput";
 import { createFormula, updateFormula } from "./api";
 import type { Formula, NewFormula, UpdateFormula } from "./api";
 import type { ItemSearchHit } from "../../pos/types";
@@ -230,4 +230,3 @@ export function FormulaForm({ mode, initial, onSaved, onCancel }: Props) {
     </form>
   );
 }
-

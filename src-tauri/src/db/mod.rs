@@ -977,6 +977,214 @@ impl Db {
             )?;
         }
 
+        // M-INLINE-026: COLLATE NOCASE on name indexes & UNIQUE constraints.
+        // ASCII-only by default; non-ASCII names remain case-sensitive. No ICU.
+        {
+            // --- Drop & recreate name indexes with COLLATE NOCASE ---------------
+            let index_pairs: &[(&str, &str)] = &[
+                ("idx_users_is_active_name",       "CREATE INDEX IF NOT EXISTS idx_users_is_active_name ON users(is_active, name COLLATE NOCASE)"),
+                ("idx_devices_is_active_name",     "CREATE INDEX IF NOT EXISTS idx_devices_is_active_name ON devices(is_active, name COLLATE NOCASE)"),
+                ("idx_locations_is_active_name",   "CREATE INDEX IF NOT EXISTS idx_locations_is_active_name ON locations(is_active, name COLLATE NOCASE)"),
+                ("idx_customers_is_active_name",   "CREATE INDEX IF NOT EXISTS idx_customers_is_active_name ON customers(is_active, name COLLATE NOCASE)"),
+                ("idx_vendors_is_active_name",     "CREATE INDEX IF NOT EXISTS idx_vendors_is_active_name ON vendors(is_active, name COLLATE NOCASE)"),
+                ("idx_items_is_active_name",       "CREATE INDEX IF NOT EXISTS idx_items_is_active_name ON items(is_active, name COLLATE NOCASE)"),
+                ("idx_customers_flagged",          "CREATE INDEX IF NOT EXISTS idx_customers_flagged ON customers(is_flagged, name COLLATE NOCASE) WHERE is_active = 1"),
+                ("idx_formulas_name",              "CREATE INDEX IF NOT EXISTS idx_formulas_name ON formulas(name COLLATE NOCASE) WHERE is_active = 1"),
+            ];
+            for (idx_name, create_sql) in index_pairs {
+                let already_nocase: bool = conn
+                    .query_row(
+                        "SELECT sql FROM sqlite_master WHERE type='index' AND name=?1",
+                        [idx_name],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .map(|s| s.contains("COLLATE NOCASE"))
+                    .unwrap_or(false);
+                if !already_nocase {
+                    conn.execute_batch(&format!(
+                        "DROP INDEX IF EXISTS {idx_name}; {create_sql};"
+                    ))?;
+                }
+            }
+
+            // --- Rebuild tables whose UNIQUE constraint needs COLLATE NOCASE ----
+            // SQLite cannot ALTER a column's collation, so recreate the table.
+
+            // brands: UNIQUE is a partial index `uniq_brands_active_name`
+            {
+                let already_nocase: bool = conn
+                    .query_row(
+                        "SELECT sql FROM sqlite_master WHERE type='index' AND name='uniq_brands_active_name'",
+                        [],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .map(|s| s.contains("COLLATE NOCASE"))
+                    .unwrap_or(false);
+                if !already_nocase {
+                    conn.execute_batch(
+                        "PRAGMA foreign_keys = OFF;\
+                         DROP TABLE IF EXISTS brands_new;\
+                         CREATE TABLE brands_new (\
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                             name TEXT NOT NULL COLLATE NOCASE,\
+                             prefix TEXT,\
+                             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),\
+                             created_at INTEGER NOT NULL,\
+                             updated_at INTEGER NOT NULL,\
+                             created_by INTEGER REFERENCES users(id) ON DELETE NO ACTION,\
+                             updated_by INTEGER REFERENCES users(id) ON DELETE NO ACTION\
+                         );\
+                         INSERT INTO brands_new \
+                             SELECT id, name, prefix, is_active, created_at, updated_at, created_by, updated_by \
+                             FROM brands;\
+                         DROP TABLE brands;\
+                         ALTER TABLE brands_new RENAME TO brands;\
+                         CREATE UNIQUE INDEX uniq_brands_active_name ON brands(name COLLATE NOCASE) WHERE is_active = 1;\
+                         CREATE INDEX IF NOT EXISTS idx_brands_prefix ON brands(prefix) WHERE is_active = 1 AND prefix IS NOT NULL;\
+                         CREATE INDEX IF NOT EXISTS idx_brands_created ON brands(created_at DESC) WHERE is_active = 1;\
+                         PRAGMA foreign_keys = ON;",
+                    )?;
+                }
+            }
+
+            // customer_types: UNIQUE is a partial index `uniq_customer_types_active_name`
+            {
+                let already_nocase: bool = conn
+                    .query_row(
+                        "SELECT sql FROM sqlite_master WHERE type='index' AND name='uniq_customer_types_active_name'",
+                        [],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .map(|s| s.contains("COLLATE NOCASE"))
+                    .unwrap_or(false);
+                if !already_nocase {
+                    conn.execute_batch(
+                        "PRAGMA foreign_keys = OFF;\
+                         DROP TABLE IF EXISTS customer_types_new;\
+                         CREATE TABLE customer_types_new (\
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                             name TEXT NOT NULL COLLATE NOCASE,\
+                             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),\
+                             created_at INTEGER NOT NULL,\
+                             updated_at INTEGER NOT NULL,\
+                             created_by INTEGER REFERENCES users(id) ON DELETE NO ACTION,\
+                             updated_by INTEGER REFERENCES users(id) ON DELETE NO ACTION\
+                         );\
+                         INSERT INTO customer_types_new \
+                             SELECT id, name, is_active, created_at, updated_at, created_by, updated_by \
+                             FROM customer_types;\
+                         DROP TABLE customer_types;\
+                         ALTER TABLE customer_types_new RENAME TO customer_types;\
+                         CREATE UNIQUE INDEX uniq_customer_types_active_name ON customer_types(name COLLATE NOCASE) WHERE is_active = 1;\
+                         PRAGMA foreign_keys = ON;",
+                    )?;
+                }
+            }
+
+            // categories: UNIQUE is an inline column constraint
+            {
+                let already_nocase: bool = conn
+                    .query_row(
+                        "SELECT sql FROM sqlite_master WHERE type='table' AND name='categories'",
+                        [],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .map(|s| s.contains("COLLATE NOCASE"))
+                    .unwrap_or(false);
+                if !already_nocase {
+                    conn.execute_batch(
+                        "PRAGMA foreign_keys = OFF;\
+                         DROP TABLE IF EXISTS categories_new;\
+                         CREATE TABLE categories_new (\
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                             name TEXT NOT NULL COLLATE NOCASE UNIQUE,\
+                             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),\
+                             created_at INTEGER NOT NULL,\
+                             updated_at INTEGER NOT NULL\
+                         );\
+                         INSERT INTO categories_new \
+                             SELECT id, name, is_active, created_at, updated_at \
+                             FROM categories;\
+                         DROP TABLE categories;\
+                         ALTER TABLE categories_new RENAME TO categories;\
+                         PRAGMA foreign_keys = ON;",
+                    )?;
+                }
+            }
+
+            // sub_locations: UNIQUE is a composite column constraint (location_id, name)
+            {
+                let already_nocase: bool = conn
+                    .query_row(
+                        "SELECT sql FROM sqlite_master WHERE type='table' AND name='sub_locations'",
+                        [],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .map(|s| s.contains("COLLATE NOCASE"))
+                    .unwrap_or(false);
+                if !already_nocase {
+                    conn.execute_batch(
+                        "PRAGMA foreign_keys = OFF;\
+                         DROP TABLE IF EXISTS sub_locations_new;\
+                         CREATE TABLE sub_locations_new (\
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                             location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,\
+                             name TEXT NOT NULL COLLATE NOCASE,\
+                             position TEXT,\
+                             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),\
+                             created_at INTEGER NOT NULL,\
+                             updated_at INTEGER NOT NULL,\
+                             created_by INTEGER REFERENCES users(id) ON DELETE NO ACTION,\
+                             updated_by INTEGER REFERENCES users(id) ON DELETE NO ACTION,\
+                             UNIQUE(location_id, name COLLATE NOCASE)\
+                         );\
+                         INSERT INTO sub_locations_new \
+                             SELECT id, location_id, name, position, is_active, created_at, updated_at, created_by, updated_by \
+                             FROM sub_locations;\
+                         DROP TABLE sub_locations;\
+                         ALTER TABLE sub_locations_new RENAME TO sub_locations;\
+                         CREATE INDEX IF NOT EXISTS idx_sub_locations_location_active ON sub_locations(location_id) WHERE is_active = 1;\
+                         PRAGMA foreign_keys = ON;",
+                    )?;
+                }
+            }
+
+            // devices: UNIQUE is an inline column constraint
+            {
+                let already_nocase: bool = conn
+                    .query_row(
+                        "SELECT sql FROM sqlite_master WHERE type='table' AND name='devices'",
+                        [],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .map(|s| s.contains("COLLATE NOCASE"))
+                    .unwrap_or(false);
+                if !already_nocase {
+                    conn.execute_batch(
+                        "PRAGMA foreign_keys = OFF;\
+                         DROP TABLE IF EXISTS devices_new;\
+                         CREATE TABLE devices_new (\
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                             name TEXT NOT NULL COLLATE NOCASE UNIQUE,\
+                             last_seen_at INTEGER,\
+                             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),\
+                             created_at INTEGER NOT NULL,\
+                             updated_at INTEGER NOT NULL,\
+                             created_by INTEGER REFERENCES users(id) ON DELETE NO ACTION,\
+                             updated_by INTEGER REFERENCES users(id) ON DELETE NO ACTION\
+                         );\
+                         INSERT INTO devices_new \
+                             SELECT id, name, last_seen_at, is_active, created_at, updated_at, created_by, updated_by \
+                             FROM devices;\
+                         DROP TABLE devices;\
+                         ALTER TABLE devices_new RENAME TO devices;\
+                         CREATE INDEX IF NOT EXISTS idx_devices_is_active_name ON devices(is_active, name COLLATE NOCASE);\
+                         PRAGMA foreign_keys = ON;",
+                    )?;
+                }
+            }
+        }
+
         // -- Performance / safety (AFTER schema, outside txn) ------------
         conn.execute_batch(
             "PRAGMA busy_timeout = 5000;\

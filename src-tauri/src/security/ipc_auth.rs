@@ -972,7 +972,6 @@ pub fn authorize(cmd_name: &str, state: &AppState) -> Result<(), AppError> {
             .lock()
             .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
         *session = None;
-        crate::session::set_current_user(None);
         return Err(AppError::Unauthorized(
             "session expired due to inactivity".into(),
         ));

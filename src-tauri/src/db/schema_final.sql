@@ -57,7 +57,8 @@ CREATE TABLE users (
 CREATE INDEX idx_users_role_active ON users(role) WHERE is_active = 1;
 
 -- serves: "user picker" / "settings → user management list"
-CREATE INDEX idx_users_is_active_name ON users(is_active, name);
+-- name is COLLATE NOCASE so search "smith" matches "Smith" (ASCII only; no ICU)
+CREATE INDEX idx_users_is_active_name ON users(is_active, name COLLATE NOCASE);
 
 -- A2. Lockouts (audit log of past lockout events)
 CREATE TABLE lockouts (
@@ -74,7 +75,7 @@ CREATE INDEX idx_lockouts_user_id ON lockouts(user_id);
 -- A3. Devices (workstations/registers)
 CREATE TABLE devices (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  name         TEXT    NOT NULL UNIQUE,
+  name         TEXT    NOT NULL COLLATE NOCASE UNIQUE,
   last_seen_at INTEGER,                           -- epoch ms; NULL = never
   is_active    INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at   INTEGER NOT NULL,
@@ -84,7 +85,7 @@ CREATE TABLE devices (
 );
 
 -- serves: "device dropdown / active register list"
-CREATE INDEX idx_devices_is_active_name ON devices(is_active, name);
+CREATE INDEX idx_devices_is_active_name ON devices(is_active, name COLLATE NOCASE);
 
 -- A4. Settings (singleton row, id = 1)
 CREATE TABLE settings (
@@ -126,7 +127,7 @@ CREATE TABLE locations (
 );
 
 -- serves: "location dropdown"
-CREATE INDEX idx_locations_is_active_name ON locations(is_active, name);
+CREATE INDEX idx_locations_is_active_name ON locations(is_active, name COLLATE NOCASE);
 
 -- DB invariant: at most one location has is_default = 1
 CREATE UNIQUE INDEX uniq_one_default_location ON locations(is_default) WHERE is_default = 1;
@@ -135,14 +136,14 @@ CREATE UNIQUE INDEX uniq_one_default_location ON locations(is_default) WHERE is_
 CREATE TABLE sub_locations (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
-  name        TEXT    NOT NULL,
+  name        TEXT    NOT NULL COLLATE NOCASE,
   position    TEXT,
   is_active   INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
   created_by  INTEGER REFERENCES users(id) ON DELETE NO ACTION,
   updated_by  INTEGER REFERENCES users(id) ON DELETE NO ACTION,
-  UNIQUE(location_id, name)
+  UNIQUE(location_id, name COLLATE NOCASE)
 );
 
 -- serves: "list sublocations at this Shop"
@@ -164,7 +165,7 @@ CREATE TABLE units (
 -- B3.5. Item categories (managed in Settings → Catalog)
 CREATE TABLE categories (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT    NOT NULL UNIQUE,
+  name       TEXT    NOT NULL COLLATE NOCASE UNIQUE,
   is_active  INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -196,7 +197,7 @@ CREATE INDEX idx_uc_to   ON unit_conversions(to_unit_id)   WHERE is_active = 1;
 -- C1. Customer types (lookup)
 CREATE TABLE customer_types (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT    NOT NULL,
+  name       TEXT    NOT NULL COLLATE NOCASE,
   is_active  INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -205,7 +206,7 @@ CREATE TABLE customer_types (
 );
 
 -- unique-while-active so you can re-add a deactivated type later
-CREATE UNIQUE INDEX uniq_customer_types_active_name ON customer_types(name) WHERE is_active = 1;
+CREATE UNIQUE INDEX uniq_customer_types_active_name ON customer_types(name COLLATE NOCASE) WHERE is_active = 1;
 
 -- C2. Customers
 -- NOTE: email/address columns were removed in M009 — Rust code never
@@ -228,7 +229,7 @@ CREATE TABLE customers (
 );
 
 -- serves: "customer picker / search"
-CREATE INDEX idx_customers_is_active_name ON customers(is_active, name);
+CREATE INDEX idx_customers_is_active_name ON customers(is_active, name COLLATE NOCASE);
 
 -- serves: "lookup by phone at billing time"
 CREATE UNIQUE INDEX idx_customers_phone ON customers(phone) WHERE phone IS NOT NULL AND is_active = 1;
@@ -251,7 +252,7 @@ CREATE TABLE vendors (
 );
 
 -- serves: "vendor picker / search"
-CREATE INDEX idx_vendors_is_active_name ON vendors(is_active, name);
+CREATE INDEX idx_vendors_is_active_name ON vendors(is_active, name COLLATE NOCASE);
 
 -- serves: "lookup vendor by phone"
 CREATE INDEX idx_vendors_phone ON vendors(phone) WHERE phone IS NOT NULL AND is_active = 1;
@@ -263,7 +264,7 @@ CREATE INDEX idx_vendors_phone ON vendors(phone) WHERE phone IS NOT NULL AND is_
 -- D1. Brands
 CREATE TABLE brands (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT    NOT NULL,
+  name       TEXT    NOT NULL COLLATE NOCASE,
   prefix     TEXT,                                 -- barcode prefix (e.g. "APA" for APACE)
   is_active  INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at INTEGER NOT NULL,
@@ -273,7 +274,7 @@ CREATE TABLE brands (
 );
 
 -- unique-while-active
-CREATE UNIQUE INDEX uniq_brands_active_name ON brands(name) WHERE is_active = 1;
+CREATE UNIQUE INDEX uniq_brands_active_name ON brands(name COLLATE NOCASE) WHERE is_active = 1;
 
 -- D2. Per-brand barcode sequence (UPDATE...RETURNING for atomic mint)
 CREATE TABLE brand_sequences (
@@ -328,7 +329,7 @@ CREATE UNIQUE INDEX uniq_items_sku ON items(sku_code);
 CREATE UNIQUE INDEX uniq_items_barcode ON items(barcode) WHERE barcode IS NOT NULL;
 
 -- serves: "item picker / search by name"
-CREATE INDEX idx_items_is_active_name ON items(is_active, name);
+CREATE INDEX idx_items_is_active_name ON items(is_active, name COLLATE NOCASE);
 
 -- serves: "filter by brand in catalog"
 CREATE INDEX idx_items_brand_id ON items(brand_id) WHERE is_active = 1;
@@ -1204,12 +1205,12 @@ CREATE INDEX IF NOT EXISTS idx_purchases_bill_date ON purchases(bill_date DESC) 
 CREATE INDEX IF NOT EXISTS idx_purchases_bill_number ON purchases(bill_number) WHERE is_active = 1 AND bill_number IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_purchases_total ON purchases(total_paise DESC) WHERE is_active = 1;
 CREATE INDEX IF NOT EXISTS idx_customers_type ON customers(customer_type_id) WHERE is_active = 1;
-CREATE INDEX IF NOT EXISTS idx_customers_flagged ON customers(is_flagged, name) WHERE is_active = 1;
+CREATE INDEX IF NOT EXISTS idx_customers_flagged ON customers(is_flagged, name COLLATE NOCASE) WHERE is_active = 1;
 CREATE INDEX IF NOT EXISTS idx_customers_balance ON customers(opening_balance_paise DESC) WHERE is_active = 1;
 CREATE INDEX IF NOT EXISTS idx_customers_created ON customers(created_at DESC) WHERE is_active = 1;
 CREATE INDEX IF NOT EXISTS idx_vendors_balance ON vendors(opening_balance_paise DESC) WHERE is_active = 1;
 CREATE INDEX IF NOT EXISTS idx_vendors_created ON vendors(created_at DESC) WHERE is_active = 1;
 CREATE INDEX IF NOT EXISTS idx_brands_prefix ON brands(prefix) WHERE is_active = 1 AND prefix IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_brands_created ON brands(created_at DESC) WHERE is_active = 1;
-CREATE INDEX IF NOT EXISTS idx_formulas_name ON formulas(name) WHERE is_active = 1;
+CREATE INDEX IF NOT EXISTS idx_formulas_name ON formulas(name COLLATE NOCASE) WHERE is_active = 1;
 CREATE INDEX IF NOT EXISTS idx_day_close_day ON day_close(day DESC);

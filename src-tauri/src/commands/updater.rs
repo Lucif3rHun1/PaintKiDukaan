@@ -11,7 +11,9 @@ use sha2::{Digest, Sha256};
 use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
 
+use crate::commands::auth::AppState;
 use crate::error::AppError;
+use crate::security::ipc_auth;
 
 #[derive(Serialize, Deserialize)]
 pub struct UpdateInfo {
@@ -34,6 +36,7 @@ static CACHED_UPDATE: Mutex<Option<(tauri_plugin_updater::Update, Vec<u8>)>> = M
 
 #[tauri::command]
 pub async fn cmd_check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
+    ipc_auth::authorize("cmd_check_update", app.state::<AppState>().inner())?;
     let update = app
         .updater()
         .map_err(|e| e.to_string())?
@@ -69,6 +72,7 @@ pub async fn cmd_download_update(
     _url: String,
     _expected_sha256: String,
 ) -> Result<DownloadResult, String> {
+    ipc_auth::authorize("cmd_download_update", app.state::<AppState>().inner())?;
     let updater = app.updater().map_err(|e| e.to_string())?;
     let update = updater
         .check()
@@ -104,6 +108,7 @@ pub async fn cmd_download_update(
 
 #[tauri::command]
 pub async fn cmd_install_update(_path: PathBuf, app: tauri::AppHandle) -> Result<(), String> {
+    ipc_auth::authorize("cmd_install_update", app.state::<AppState>().inner())?;
     let (update, bytes) = CACHED_UPDATE
         .lock()
         .take()
@@ -126,6 +131,7 @@ pub fn cmd_current_target() -> &'static str {
 
 #[tauri::command]
 pub async fn cmd_retry_update(app: tauri::AppHandle) -> Result<(), String> {
+    ipc_auth::authorize("cmd_retry_update", app.state::<AppState>().inner())?;
     app.updater()
         .map_err(|e| e.to_string())?
         .check()
@@ -136,6 +142,7 @@ pub async fn cmd_retry_update(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn cmd_quit_app(app: tauri::AppHandle) -> Result<(), String> {
+    ipc_auth::authorize("cmd_quit_app", app.state::<AppState>().inner())?;
     crate::graceful_shutdown(&app);
 }
 
@@ -166,5 +173,6 @@ pub fn write_wipe_marker(app: &tauri::AppHandle, reason: &str) -> Result<(), Str
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn cmd_request_data_wipe(app: tauri::AppHandle, reason: String) -> Result<(), String> {
+    ipc_auth::authorize("cmd_request_data_wipe", app.state::<AppState>().inner())?;
     write_wipe_marker(&app, &reason)
 }

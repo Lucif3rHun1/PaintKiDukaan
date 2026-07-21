@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
-const app = readFileSync("src/App.tsx", "utf8");
+const app = readFileSync("src/shell/router.tsx", "utf8");
 const fnStart = app.indexOf("function readSalesSubRoute");
 if (fnStart < 0) throw new Error("readSalesSubRoute not found in App.tsx");
 const fnEnd = app.indexOf("\n}\n", fnStart) + 2;

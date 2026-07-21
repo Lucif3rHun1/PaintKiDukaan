@@ -697,7 +697,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
         )}
       >
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground">
-          {displayName.slice(0, 1)}
+          {(user?.name ?? "Owner").slice(0, 1).toUpperCase()}
         </div>
         {!collapsed ? (
           <>
@@ -726,7 +726,7 @@ function AccountMenu({ user, shopName, collapsed, onLock, onLogout, onSwitchUser
           {/* User header */}
           <div className="flex items-center gap-3 px-3 py-2.5">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-              {displayName.slice(0, 1)}
+              {(user?.name ?? "Owner").slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium text-foreground">{displayName}</div>

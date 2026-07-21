@@ -38,6 +38,7 @@ export const queryClient = new QueryClient({
       // ponytail: skip retry on auth errors (not_unlocked, unauthorized, forbidden)
       retry: (_count, error) => !isAuthError(error),
       refetchOnWindowFocus: false,
+      structuralSharing: true,
     },
     mutations: {
       retry: 0,

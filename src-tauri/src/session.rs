@@ -1,9 +1,9 @@
-//! Session / current-user stub + log rotation/scrubbing.
+//! Role/User types + log rotation/scrubbing.
 //!
-//! Slice A owns the real session store. While it is not merged, every command
-//! that needs a user gets one from `current_user` which reads from a process-
-//! local `OnceCell`. In production (after A merges) `current_user` will be
-//! re-exported from Slice A's `auth` module and these tests will be replaced.
+//! Slice A owns the canonical session store (`AppState.session`). `current_user`
+//! reads from there — no process-local dual store. `Role`/`User` here are
+//! convenience DTOs for role gating in slice B/C internal functions; the
+//! canonical `commands::auth::User` is what `AppState.session` holds.
 
 use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
@@ -11,7 +11,6 @@ use crate::obs;
 use crate::security::ipc_auth;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 const MAX_LOG_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_LOG_GENERATIONS: u32 = 3;
@@ -67,27 +66,22 @@ impl User {
     }
 }
 
-static CURRENT: Mutex<Option<User>> = Mutex::new(None);
-
-pub fn set_current_user(user: Option<User>) {
-    *CURRENT.lock().expect("session mutex") = user;
-}
-
-pub fn current_user() -> AppResult<User> {
-    CURRENT
+/// Read the current user from canonical `AppState.session`.
+/// Returns the slice-A `commands::auth::User` field shape converted into the
+/// slice-B/C `User` DTO (Role enum instead of String).
+pub fn current_user(state: &AppState) -> AppResult<User> {
+    let guard = state
+        .session
         .lock()
-        .expect("session mutex")
-        .clone()
-        .ok_or_else(|| AppError::Unauthorized("no user signed in".into()))
-}
-
-#[cfg(test)]
-pub fn __test_set_role(_db: &crate::db::Db, role: Role) {
-    set_current_user(Some(User {
-        id: 1,
-        name: "Test User".into(),
-        role,
-    }));
+        .map_err(|e| AppError::Internal(format!("session lock poisoned: {e}")))?;
+    let u = guard
+        .as_ref()
+        .ok_or_else(|| AppError::Unauthorized("no user signed in".into()))?;
+    Ok(User {
+        id: u.id,
+        name: u.name.clone(),
+        role: Role::from_db(&u.role),
+    })
 }
 
 pub fn require_role(user: &User, allowed: &[Role]) -> AppResult<()> {
@@ -102,10 +96,9 @@ pub fn require_role(user: &User, allowed: &[Role]) -> AppResult<()> {
 }
 
 /// Combines ACL authorization + session check. Returns authenticated User.
-/// Every command that currently calls only `current_user()` should switch to this.
 pub fn require_auth(cmd_name: &str, state: &AppState) -> AppResult<User> {
     ipc_auth::authorize_err(cmd_name, state)?;
-    current_user()
+    current_user(state)
 }
 
 fn log_dir() -> PathBuf {

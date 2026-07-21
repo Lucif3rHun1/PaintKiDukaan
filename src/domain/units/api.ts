@@ -1,4 +1,4 @@
-import { invoke } from "../ipc";
+import { invoke } from "../../lib/ipc";
 import type {
   SaleUnit,
   PurchaseUnit,

@@ -10,7 +10,7 @@ import {
 
 import { Card, Section, Button, Badge, Select, Alert } from "../../../components/ui";
 import { SkeletonRow } from "../../../components/ui/SkeletonRow";
-import { getPdeStatus, changeDecoyPin, changeDuressPin } from "../../../domain/ipc";
+import { getPdeStatus, changeDecoyPin, changeDuressPin } from "../../../lib/security/ipc";
 import { changePin, setRecoveryPassphrase } from "../../../lib/security/pin";
 import type { PdeStatus, SecurityPolicy } from "../../../domain/types";
 import { ipc, type MasterHealth } from "../../lib/ipc";

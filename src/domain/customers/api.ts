@@ -1,7 +1,7 @@
 /**
  * Customers domain API.
  */
-import { invoke } from "../ipc";
+import { invoke } from "../../lib/ipc";
 import type {
   CreateCustomerCreditInvoiceArgs,
   Customer,

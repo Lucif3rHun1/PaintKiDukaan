@@ -1,5 +1,6 @@
 //! Vendors CRUD + payments + outstanding balance.
 
+use crate::commands::_util::case_fold_lower;
 use crate::commands::auth::AppState;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
@@ -142,8 +143,8 @@ pub fn list_vendors(
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if !include_inactive { sql.push_str(" AND is_active = 1"); }
         if let Some(q) = &query {
-            sql.push_str(&format!(" AND (name LIKE ?{} OR phone LIKE ?{})", args.len() + 1, args.len() + 1));
-            args.push(Box::new(format!("%{}%", q)));
+            sql.push_str(&format!(" AND (LOWER(name) LIKE ?{} OR LOWER(phone) LIKE ?{})", args.len() + 1, args.len() + 1));
+            args.push(Box::new(format!("%{}%", case_fold_lower(q))));
         }
         sql.push_str(" ORDER BY name COLLATE NOCASE");
         let mut stmt = c.prepare(&sql)?;
@@ -377,26 +378,9 @@ fn compute_outstanding_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Vendo
 mod tests {
     use super::*;
     use crate::db::Db;
-    use crate::session::{set_current_user, User};
-
-    fn owner() -> User {
-        User {
-            id: 1,
-            name: "O".into(),
-            role: Role::Owner,
-        }
-    }
-    fn stocker() -> User {
-        User {
-            id: 2,
-            name: "S".into(),
-            role: Role::Stocker,
-        }
-    }
 
     #[test]
     fn create_and_outstanding() {
-        set_current_user(Some(stocker()));
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
             c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('S', 'stocker', X'00', X'00', 6, 1, 0, 0)", []).unwrap();
@@ -438,7 +422,7 @@ mod tests {
 
     #[test]
     fn record_vendor_payment_returns_updated_outstanding() {
-        set_current_user(Some(owner()));
+
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
             c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 1, 0, 0)", []).unwrap();

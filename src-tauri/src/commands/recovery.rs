@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager, State};
 use zeroize::Zeroizing;
 
 use crate::commands::auth::{
-    default_lockout_row, now_unix, read_keywrap_from_keystore, sync_session_to_static,
+    default_lockout_row, now_unix, read_keywrap_from_keystore,
     validate_owner_pin, write_keywrap_to_keystore, write_lockout_to_keystore, AppState, Session,
     User,
 };
@@ -184,7 +184,6 @@ pub(crate) fn first_launch_setup_at_path(
         is_active: true,
     };
     *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(user.clone());
-    sync_session_to_static(state);
     *state.recovery_passphrase.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(Zeroizing::new(passphrase));
 
     state
@@ -328,7 +327,6 @@ pub fn restore_from_recovery(
 
     *state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(db);
     *state.session.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = Some(user.clone());
-    sync_session_to_static(&state);
     *state.failed_attempts.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))? = 0;
     state
         .last_activity

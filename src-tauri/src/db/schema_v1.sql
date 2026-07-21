@@ -1,5 +1,9 @@
 PRAGMA foreign_keys = ON;
 
+-- This v1 schema does not use the idx_*_is_active_name or UNIQUE-on-name
+-- patterns from schema_final.sql. Fresh DBs bootstrap via schema_final.sql
+-- and skip the migration chain entirely. See M-INLINE-026 in mod.rs.
+
 -- Locations (Shop, Godown by default; owner can rename)
 CREATE TABLE locations (
   id INTEGER PRIMARY KEY,

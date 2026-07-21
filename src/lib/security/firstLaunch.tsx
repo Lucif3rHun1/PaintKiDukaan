@@ -33,15 +33,10 @@ import { FirstLaunchRestore } from "./firstLaunchRestore";
 import { fieldError } from "../validation";
 import { PdeSetupWizard } from "./pdeSetup";
 import { type Role, type Session, type User, useSecurity } from "./state";
+import { firstLaunchSetup, type FirstLaunchSetupResponse } from "./ipc";
 import { Alert, Button } from "../../components/ui";
 
-interface SetupResponse {
-  user?: { id?: number; name?: string; role?: Role } | null;
-  user_id?: number;
-  user_name?: string;
-  role?: Role;
-  locked?: boolean;
-}
+type SetupResponse = FirstLaunchSetupResponse;
 type Step = "path" | "shop" | "pin" | "passphrase" | "inventory" | "pde"
 type FreshStep = Exclude<Step, "path">
 

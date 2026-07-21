@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { tauriInvoke as invoke } from "./tauri";
 import logo from "../../assets/logo-128.png";
 import { AlertCircle, KeyRound, Timer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -10,6 +9,7 @@ import { isAppError } from "../../domain/types";
 import { extractError } from "../../lib/extractError";
 import { type UnlockInput, unlockSchema } from "./pin";
 import { type Role, type Session, type User, useSecurity } from "./state";
+import { loginUser, unlock } from "./ipc";
 import { Alert, Button } from "../../components/ui";
 
 interface UnlockResponse {
@@ -93,8 +93,8 @@ export function LockScreen() {
     setBackendError(null);
     try {
       const response = selectedUser && selectedUser.role !== "owner"
-        ? await invoke<UnlockResponse>("login_user", { name: selectedUser.name, pin: input.pin })
-        : await invoke<UnlockResponse>("unlock", input);
+        ? await loginUser(selectedUser.name, input.pin)
+        : await unlock(input);
       const session = normalizeSession(response);
       const security = useSecurity.getState();
       security.setSession(session);

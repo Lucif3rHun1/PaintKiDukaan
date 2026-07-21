@@ -1,4 +1,5 @@
 -- V3: brands table + per-brand barcode sequence.
+-- Does not share idx_*_is_active_name or UNIQUE-on-name patterns; see M-INLINE-026 in mod.rs.
 --
 -- Adds:
 --   * brands            — lookup of paint-brand short codes (e.g. "AP" → Asian Paints).

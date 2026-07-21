@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useDebounce } from "../hooks/useDebounce";
 import type { ListPage, ListQuery, Role, SortDirection } from "../../domain/types";
-import { invoke } from "../../domain/ipc";
+import { invoke } from "../ipc";
 
 const DEFAULT_DEBOUNCE_MS = 100;
 

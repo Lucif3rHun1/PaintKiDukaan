@@ -249,18 +249,9 @@ pub fn cmd_list_customer_types_paged(
 mod tests {
     use super::*;
     use crate::db::Db;
-    use crate::session::{set_current_user, User};
-
-    fn owner() -> User {
-        User {
-            id: 1,
-            name: "O".into(),
-            role: Role::Owner,
-        }
-    }
 
     fn fresh_db() -> Db {
-        set_current_user(Some(owner()));
+
         Db::open_in_memory().unwrap()
     }
 

@@ -9,6 +9,7 @@ import type { Sale } from "./types";
 import type { SaleReturn } from "../domain/types";
 import { formatRupeesFromPaise } from "../lib/money";
 import { amountInWords } from "../lib/amountInWords";
+import { toTitleCase } from "../lib/format/titleCase";
 
 export const LOCKED_FORMAT = "CODE128" as const;
 const BARCODE_OPTIONS = {
@@ -157,7 +158,7 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
   y += 4;
   doc.setFontSize(10);
   doc.setTextColor(...DARK);
-  doc.text(spec.sale.customer_name || "-", margin, y);
+  doc.text(spec.sale.customer_name ? toTitleCase(spec.sale.customer_name) : "-", margin, y);
   if (spec.customer_phone) {
     y += 4;
     doc.setFontSize(9);
@@ -203,7 +204,7 @@ export function buildReceiptPdf(spec: ReceiptSpec): jsPDF {
     itemIdx++;
     const qtyStr = `${it.qty}${it.unit_type ? " " + it.unit_type : ""}`;
     const lineValue = Math.max(0, Math.round(it.qty * it.price) - it.line_discount);
-    const nameLines: string[] = doc.splitTextToSize(it.display_name, nameColW);
+    const nameLines: string[] = doc.splitTextToSize(toTitleCase(it.display_name), nameColW);
     const skuLine = it.sku_code ? 1 : 0;
     const rowH = (nameLines.length + skuLine) * 4;
     if (y + rowH > pageH - margin) {
@@ -453,7 +454,7 @@ export function buildReturnReceiptPdf(spec: ReturnReceiptSpec): jsPDF {
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...DARK);
   for (const line of ret.lines) {
-    const nameLines: string[] = doc.splitTextToSize(line.item_name, nameColW);
+    const nameLines: string[] = doc.splitTextToSize(toTitleCase(line.item_name), nameColW);
     const rowH = nameLines.length * 4;
     if (y + rowH > pageH - margin) {
       doc.addPage();

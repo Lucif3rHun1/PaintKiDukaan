@@ -844,7 +844,7 @@ mod tests {
     #[test]
     fn create_inward_rejects_empty() {
         let db = crate::db::Db::open_in_memory().expect("mem db");
-        crate::session::__test_set_role(&db, crate::session::Role::Owner);
+
         let res = create_inward(
             &db,
             1,
@@ -862,7 +862,7 @@ mod tests {
     #[test]
     fn create_inward_rejects_bad_qty() {
         let db = crate::db::Db::open_in_memory().expect("mem db");
-        crate::session::__test_set_role(&db, crate::session::Role::Owner);
+
         let res = create_inward(
             &db,
             1,
@@ -887,7 +887,7 @@ mod tests {
     fn create_inward_inserts_purchase_items_and_movements_atomically() {
         // E25 + E26 + E28: full atomic flow with sticky cost + box conversion.
         let db = crate::db::Db::open_in_memory().expect("mem db");
-        crate::session::__test_set_role(&db, crate::session::Role::Owner);
+
 
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(
@@ -954,7 +954,7 @@ mod tests {
     #[test]
     fn create_inward_accepts_null_vendor_for_opening_stock() {
         let db = crate::db::Db::open_in_memory().expect("mem db");
-        crate::session::__test_set_role(&db, crate::session::Role::Owner);
+
 
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(

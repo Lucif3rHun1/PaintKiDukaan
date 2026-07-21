@@ -1,7 +1,7 @@
 /**
  * Vendors domain API.
  */
-import { invoke } from "../ipc";
+import { invoke } from "../../lib/ipc";
 import type {
   ListPage,
   ListQuery,

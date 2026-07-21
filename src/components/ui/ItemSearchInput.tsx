@@ -11,17 +11,17 @@ import {
 import { createItem, listItems, lookupItem } from "../../domain/items/api";
 import { listSaleUnits } from "../../domain/units/api";
 import { formatHitName } from "../../domain/items/display";
-import { listFormulas } from "../../domain/formulas/api";
+import { listFormulas } from "../../domain/ipc";
 import { listLocations } from "../../domain/locations/api";
-import { useBarcodeScan } from "../../shell/hooks/useBarcodeScan";
-import { Badge, Button, MoneyInput } from "../../components/ui";
-import { cn } from "../../components/ui/cn";
+import { useBarcodeScan } from "../../lib/hooks/useBarcodeScan";
+import { Badge, Button, MoneyInput } from "../ui";
+import { cn } from "../ui/cn";
 import { toTitleCase } from "../../lib/format/titleCase";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
-import type { FormulaSearchHit, Item, ItemLookup, Location, SaleUnit } from "../../domain/types";
-import type { ItemSearchHit } from "../types";
+import type { FormulaSearchHit, Location } from "../../domain/types";
+import type { Item, ItemLookup, ItemSearchHit, SaleUnit } from "../../lib/types";
 
 export interface SearchDisplayConfig {
   priceField?: "retail" | "cost";
@@ -236,12 +236,12 @@ export function ItemSearchInput({
           console.error("[ItemSearchInput] failed to search", e);
           setResults([]);
         })
-        .finally(() => { if (searchSeqRef.current === seq) setSearching(false); });
+        .finally(() => {
+          if (searchSeqRef.current === seq) setSearching(false);
+        });
     }, 200);
     return () => clearTimeout(timer);
   }, [query, acceptFormula]);
-
-
 
   useEffect(() => {
     let mounted = true;
@@ -259,7 +259,10 @@ export function ItemSearchInput({
   // ponytail: removed auto-focus on quick-create name field — it steals focus from the search input after first keystroke when no results found
 
   useEffect(() => {
-    if (quickSearchSkipRef.current) { quickSearchSkipRef.current = false; return; }
+    if (quickSearchSkipRef.current) {
+      quickSearchSkipRef.current = false;
+      return;
+    }
     if (!quickName.trim()) {
       setQuickSuggestions([]);
       return;
@@ -314,9 +317,9 @@ export function ItemSearchInput({
       barcode: item.barcode ?? "",
       name: item.name,
       brand: item.brand,
-        retail_price_paise: item.retail_price_paise,
-        cost_paise: item.cost_paise ?? 0,
-        unit_code: item.unit_code ?? "",
+      retail_price_paise: item.retail_price_paise,
+      cost_paise: item.cost_paise ?? 0,
+      unit_code: item.unit_code ?? "",
       unit_label: item.unit_label ?? "",
       sell_unit: item.sell_unit,
       current_qty: item.current_qty,
@@ -636,7 +639,7 @@ export function ItemSearchInput({
               <p className="mb-2 text-xs text-muted-foreground">No items found</p>
               {quickSuggestions.length > 0 ? (
                 <div className="mb-2 rounded-md border border-border bg-muted/30">
-                   <p className="px-2.5 pt-1.5 text-xs font-medium text-muted-foreground">Similar items — click to pre-fill</p>
+                  <p className="px-2.5 pt-1.5 text-xs font-medium text-muted-foreground">Similar items — click to pre-fill</p>
                   {quickSuggestions.map((s) => {
                     return (
                       <button
@@ -663,7 +666,10 @@ export function ItemSearchInput({
                   ref={quickNameRef}
                   type="text"
                   value={quickName}
-                  onChange={(e) => { quickSearchSkipRef.current = false; setQuickName(e.target.value); }}
+                  onChange={(e) => {
+                    quickSearchSkipRef.current = false;
+                    setQuickName(e.target.value);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();

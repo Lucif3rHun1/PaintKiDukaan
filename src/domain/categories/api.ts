@@ -1,4 +1,4 @@
-import { invoke } from "../ipc";
+import { invoke } from "../../lib/ipc";
 import type { Category, ListPage, ListQuery } from "../types";
 
 export async function listCategories(): Promise<Category[]> {

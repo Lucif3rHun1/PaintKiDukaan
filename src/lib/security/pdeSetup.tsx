@@ -13,7 +13,7 @@ import {
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
-import { provisionDecoyDb } from "../../domain/ipc";
+import { provisionDecoyDb } from "./ipc";
 import { extractError } from "../../lib/extractError";
 import {
   pdeSetupSchema,

@@ -284,19 +284,10 @@ fn text_datetime_to_ms(s: &str) -> i64 {
 mod tests {
     use super::*;
     use crate::db::Db;
-    use crate::session::{set_current_user, User};
-
-    fn owner() -> User {
-        User {
-            id: 1,
-            name: "O".into(),
-            role: Role::Owner,
-        }
-    }
 
     #[test]
     fn ledger_running_balance_computed_oldest_first() {
-        set_current_user(Some(owner()));
+
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
             c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 0, 0)", []).unwrap();

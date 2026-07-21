@@ -1,0 +1,845 @@
+# PaintKiDukaan Architecture Audit
+
+> **Codebase Design Analysis** — Deep Modules, Seams, and Leverage
+>
+> Generated: July 19, 2026 · Tools: codebase-design vocabulary + CodeGraph structural analysis
+>
+> <img src="https://img.shields.io/badge/Status-FINAL-brightgreen" alt="Status: Final" /> <img src="https://img.shields.io/badge/Files-88+Rust_42+UI-blue" alt="Files" /> <img src="https://img.shields.io/badge/Commands-~205-orange" alt="Commands" />
+
+---
+
+<style>
+  /* === Base === */
+  :root { --bg: #0f172a; --surface: #1e293b; --surface2: #334155; --border: #475569; --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8; --red: #f87171; --yellow: #fbbf24; --green: #4ade80; --orange: #fb923c; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, -apple-system, sans-serif; margin: 0; padding: 2rem; line-height: 1.6; }
+  h1 { font-size: 2.25rem; font-weight: 800; background: linear-gradient(135deg, var(--accent), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.5rem; font-weight: 700; color: var(--accent); border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; margin-top: 3rem; }
+  h3 { font-size: 1.125rem; font-weight: 600; color: var(--text); margin-top: 1.5rem; }
+  .subtitle { color: var(--muted); font-size: 1.1rem; margin-bottom: 0.25rem; }
+  .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { background: var(--surface2); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.875em; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+  pre code { background: none; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+  th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); }
+  th { background: var(--surface2); color: var(--accent); font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { font-size: 0.9rem; }
+  tr:hover td { background: rgba(56, 189, 248, 0.05); }
+
+  /* === Cards === */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+  .card-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .card-body { font-size: 0.9rem; color: var(--muted); }
+  .card-title { font-weight: 700; font-size: 1.05rem; color: var(--text); }
+
+  /* === Badges === */
+  .badge { display: inline-block; padding: 0.2em 0.6em; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+  .badge-high { background: rgba(248, 113, 113, 0.15); color: var(--red); border: 1px solid rgba(248, 113, 113, 0.3); }
+  .badge-medium { background: rgba(251, 191, 36, 0.15); color: var(--yellow); border: 1px solid rgba(251, 191, 36, 0.3); }
+  .badge-low { background: rgba(74, 222, 128, 0.15); color: var(--green); border: 1px solid rgba(74, 222, 128, 0.3); }
+  .badge-deep { background: rgba(74, 222, 128, 0.15); color: var(--green); border: 1px solid rgba(74, 222, 128, 0.3); }
+  .badge-shallow { background: rgba(251, 191, 36, 0.15); color: var(--yellow); border: 1px solid rgba(251, 191, 36, 0.3); }
+  .badge-severity-red { background: rgba(248, 113, 113, 0.15); color: var(--red); border: 1px solid rgba(248, 113, 113, 0.3); }
+  .badge-severity-yellow { background: rgba(251, 191, 36, 0.15); color: var(--yellow); border: 1px solid rgba(251, 191, 36, 0.3); }
+
+  /* === Diagram blocks === */
+  .diagram-block { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin: 1rem 0; overflow-x: auto; }
+  .diagram-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 0.5rem; font-weight: 600; }
+  .diagram-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  @media (max-width: 768px) { .diagram-grid { grid-template-columns: 1fr; } }
+
+  /* === Executive summary === */
+  .exec-summary { background: linear-gradient(135deg, rgba(248, 113, 113, 0.08), rgba(251, 191, 36, 0.05)); border: 2px solid rgba(248, 113, 113, 0.3); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; }
+  .exec-title { font-size: 1.25rem; font-weight: 800; color: var(--red); margin-bottom: 0.5rem; }
+
+  /* === Metric pills === */
+  .metric-row { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
+  .metric-pill { background: var(--surface2); border-radius: 8px; padding: 0.6rem 1rem; text-align: center; min-width: 120px; }
+  .metric-value { font-size: 1.5rem; font-weight: 800; color: var(--accent); }
+  .metric-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* === Scrollable container for mermaid === */
+  .mermaid { overflow-x: auto; }
+
+  /* === Heat map cells === */
+  .heat-high { color: var(--red); font-weight: 700; }
+  .heat-medium { color: var(--yellow); font-weight: 700; }
+  .heat-low { color: var(--green); font-weight: 700; }
+</style>
+
+---
+
+## Executive Summary
+
+<div class="exec-summary">
+  <div class="exec-title">🔴 HIGH PRIORITY: Extract Shared Types Module</div>
+  <p><strong>Module:</strong> <code>lib/types.ts</code> (new) — consolidate <code>Sale</code>, <code>PaymentMode</code>, <code>CustomerLedger</code>, <code>VendorOutstanding</code>, <code>Role</code>, <code>User</code>, <code>Session</code>, <code>Bootstrap</code></p>
+  <p><strong>Why:</strong> 8+ type definitions are duplicated across 3 files. The <code>Sale</code> type lives in <code>pos/types.ts</code> but <code>domain/types.ts</code> and <code>domain/ipc.ts</code> import it, creating a B→C cycle that violates the slice dependency graph. Every touch to Sale fields requires coordinated edits across both slices.</p>
+  <p><strong>Impact:</strong> Breaks 6 domain→pos import violations, eliminates 8 duplicate type definitions, and makes the slice boundaries enforceable by module resolution alone.</p>
+
+  <div class="diagram-grid">
+    <div>
+      <div class="diagram-label">Before — Cyclic Dependency</div>
+<pre><code>domain/types.ts ──imports Sale──→ pos/types.ts
+     ↑                                  │
+     └── imports PaymentMode ────────────┘
+         (B → C cycle)</code></pre>
+    </div>
+    <div>
+      <div class="diagram-label">After — Clean Layers</div>
+<pre><code>lib/types.ts (shared)
+  ├── Sale, PaymentMode
+  ├── CustomerLedger
+  ├── VendorOutstanding
+  └── Role, User, Session
+
+domain/types.ts ←── imports ── lib/types.ts
+pos/types.ts    ←── imports ── lib/types.ts
+(No B→C cycle)</code></pre>
+    </div>
+  </div>
+</div>
+
+---
+
+## Architecture Overview
+
+### Slice Dependency Graph
+
+<div class="mermaid">
+graph LR
+    subgraph SliceA["Slice A — Security"]
+        A1[auth]
+        A2[recovery]
+        A3[pin]
+        A4[state.ts]
+    end
+
+    subgraph SliceB["Slice B — Domain"]
+        B1[items]
+        B2[customers]
+        B3[vendors]
+        B4[types.ts]
+        B5[ipc.ts]
+    end
+
+    subgraph SliceC["Slice C — POS"]
+        C1[sales]
+        C2[purchases]
+        C3[day_close]
+        C4[reports]
+        C5[heldBills]
+    end
+
+    subgraph SliceD["Slice D — Shell"]
+        D1[settings]
+        D2[backup]
+        D3[hooks]
+        D4[routes]
+        D5[ipc.ts]
+    end
+
+    A1 -.->|"auth check"| B1
+    A1 -.->|"auth check"| C1
+    A1 -.->|"auth check"| D1
+    B1 -.->|"item data"| C1
+    B3 -.->|"vendor data"| C2
+    B4 -.->|"Sale type"| C1
+
+    B1 -.->|"⚠ B→C"| C5
+    C1 -.->|"⚠ C→D"| D5
+    A3 -.->|"⚠ A→D"| D5
+    A4 -.->|"⚠ A→B"| B4
+
+    style SliceA fill:#1e293b,stroke:#4ade80,stroke-width:2px
+    style SliceB fill:#1e293b,stroke:#38bdf8,stroke-width:2px
+    style SliceC fill:#1e293b,stroke:#fbbf24,stroke-width:2px
+    style SliceD fill:#1e293b,stroke:#f87171,stroke-width:2px
+</div>
+
+### Metrics by Slice
+
+| Slice | Purpose | Rust Files | Frontend Files | Commands | Test Files |
+|-------|---------|-----------|---------------|----------|------------|
+| **A — Security** | Auth, PIN, recovery, users | 4 | 8 (`lib/security/`) | ~15 | 3 |
+| **B — Domain** | CRUD entities, types, IPC | 12 | 22 (`domain/`) | ~60 | 5 |
+| **C — POS** | Transactions, reports, day close | 8 | 18 (`pos/`) | ~80 | 2 |
+| **D — Shell** | Settings, backup, routes, system | 6 | 30 (`shell/`) | ~50 | 6 |
+| **Shared** | UI components, lib utilities | — | 42 (`components/ui/`, `lib/`) | — | 0 |
+| **Total** | | **88** | **~120** | **~205** | **16** |
+
+---
+
+## Deep vs Shallow Module Analysis
+
+### Deep Modules (Good — Model These Patterns)
+
+A **deep module** has a narrow interface (few public methods) backed by substantial implementation depth. The caller benefits from a lot of behavior while knowing very little about how it works. That's the leverage sweet spot.
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">💰 <code>lib/money.ts</code></span>
+    <span class="badge badge-deep">✅ DEEP — Model This Pattern</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Implementation Depth</th><th>Leverage</th></tr>
+      <tr>
+        <td>3 functions:<br><code>formatINR()</code>, <code>parseINR()</code>, <code>compactINR()</code></td>
+        <td>Paise↔rupee conversion, Indian comma formatting (1,23,456), compact notation (₹1.2L), rounding rules, edge cases for zero/negative</td>
+        <td><strong>17+ files</strong> across all 4 slices</td>
+      </tr>
+    </table>
+    <p style="margin-top:0.5rem;">Callers pass paise integers and get formatted strings. Zero knowledge of the Indian numbering system needed. This is textbook depth: narrow interface, wide behavior.</p>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">📅 <code>lib/date.ts</code></span>
+    <span class="badge badge-deep">✅ DEEP — Model This Pattern</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Implementation Depth</th><th>Leverage</th></tr>
+      <tr>
+        <td>3 functions:<br><code>today()</code>, <code>formatDisplay()</code>, <code>parseDate()</code></td>
+        <td>IST timezone awareness, date-only parsing (no time component), display formatting, fiscal year boundaries</td>
+        <td><strong>12+ files</strong> across POS and domain</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">📝 <code>lib/amountInWords.ts</code></span>
+    <span class="badge badge-deep">✅ DEEP — Model This Pattern</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Implementation Depth</th><th>Leverage</th></tr>
+      <tr>
+        <td>1 function:<br><code>amountInWords()</code></td>
+        <td>Full Indian number system (crore, lakh, thousand, hundred), decimal paise handling, grammar rules for "and" placement, edge cases (zero, exact crores)</td>
+        <td><strong>Receipt printing</strong>, quotations, reports</td>
+      </tr>
+    </table>
+    <p style="margin-top:0.5rem;">Single function with deep algorithmic depth. Perfect abstraction boundary. Zero interface surface, maximum value.</p>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">⌨️ <code>lib/shortcuts.ts</code></span>
+    <span class="badge badge-deep">✅ DEEP — Model This Pattern</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Implementation Depth</th><th>Leverage</th></tr>
+      <tr>
+        <td><code>useShortcut()</code> hook + modal scope management</td>
+        <td>Keyboard event handling, modifier key support, scope isolation (modal vs page), conflict resolution between global and local shortcuts</td>
+        <td><strong>All interactive pages</strong></td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">📊 <code>lib/spreadsheet.ts</code></span>
+    <span class="badge badge-deep">✅ DEEP — Model This Pattern</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Implementation Depth</th><th>Leverage</th></tr>
+      <tr>
+        <td>CSV/XLSX parse, validate, download</td>
+        <td>File reading, encoding detection, column mapping, validation pipeline, error aggregation, XLSX generation</td>
+        <td><strong>Import dialogs</strong> across items, customers, vendors</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🔔 <code>lib/feedback/toast.ts</code></span>
+    <span class="badge badge-deep">✅ DEEP — Model This Pattern</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Implementation Depth</th><th>Leverage</th></tr>
+      <tr>
+        <td><code>toast.success()</code>, <code>toast.error()</code>, <code>toast.info()</code></td>
+        <td>External Zustand store, auto-dismiss timers, stacking, animation state, queue management</td>
+        <td><strong>Every mutation</strong> across all slices</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🎨 <code>lib/theme/index.tsx</code></span>
+    <span class="badge badge-deep">✅ DEEP — Model This Pattern</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Implementation Depth</th><th>Leverage</th></tr>
+      <tr>
+        <td><code>ThemeProvider</code>, <code>useTheme()</code></td>
+        <td>System preference tracking (matchMedia), localStorage persistence, CSS variable injection, dark/light toggle</td>
+        <td><strong>App shell</strong>, all themed components</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🔤 <code>lib/format/titleCase.ts</code></span>
+    <span class="badge badge-deep">✅ DEEP — Model This Pattern</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Implementation Depth</th><th>Leverage</th></tr>
+      <tr>
+        <td>1 function: <code>titleCase()</code></td>
+        <td>Unit-aware casing (preserves "cm", "mm", "kg"), abbreviation handling, Indian name edge cases</td>
+        <td><strong>All display forms</strong></td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+---
+
+### Shallow Modules (Problematic — Deepen or Remove)
+
+A **shallow module** has an interface almost as wide as its implementation. Pass-through re-exports, thin wrappers, and barrel files that add indirection without adding behavior. The caller learns the module's API but gains almost nothing in return.
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🧮 <code>domain/formulas/api.ts</code></span>
+    <span class="badge badge-shallow">🟡 SHALLOW — Deepen or Remove</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Depth</th><th>Problem</th></tr>
+      <tr>
+        <td>9 functions total:<br>6 re-exported from <code>domain/ipc.ts</code><br>3 defined locally</td>
+        <td>Near zero for the re-exports. Thin wrappers for the local 3.</td>
+        <td>Deletion test: callers could import from <code>domain/ipc.ts</code> directly. The real API lives there. This module adds a layer of indirection with no added behavior.</td>
+      </tr>
+    </table>
+    <p style="margin-top:0.5rem;"><strong>Fix:</strong> Either move the 6 <code>domain/ipc.ts</code> functions here (making <code>formulas/api.ts</code> the canonical entry point) or delete it and re-point imports.</p>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">📦 <code>domain/index.ts</code></span>
+    <span class="badge badge-shallow">🟡 SHALLOW — Deepen or Remove</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Depth</th><th>Problem</th></tr>
+      <tr>
+        <td>Barrel file mixing:<br>types + components + namespaces</td>
+        <td>Zero. Pure re-exports.</td>
+        <td>Conflates type definitions with component exports and namespace declarations. Tree-shaking-unfriendly. Forces consumers to depend on the entire domain module.</td>
+      </tr>
+    </table>
+    <p style="margin-top:0.5rem;"><strong>Fix:</strong> Delete the barrel. Let consumers import from specific files (<code>domain/items/api</code>, <code>domain/types</code>).</p>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🛒 <code>pos/api.ts</code></span>
+    <span class="badge badge-shallow">🟡 SHALLOW — Deepen or Remove</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Depth</th><th>Problem</th></tr>
+      <tr>
+        <td>30+ one-liner invoke wrappers<br>with <code>isTauri()</code> browser fallbacks</td>
+        <td>One line each: <code>invoke('cmd_name', {args})</code></td>
+        <td>Three different IPC patterns exist across the codebase (see <em>Three IPC Patterns</em> section). This file's pattern lacks error normalization and correlation IDs.</td>
+      </tr>
+    </table>
+    <p style="margin-top:0.5rem;"><strong>Fix:</strong> Standardize on the <code>domain/ipc.ts</code> pattern (AppError normalization + correlation IDs) across all slices.</p>
+  </div>
+</div>
+
+---
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">📁 <code>domain/categories/api.ts</code>, <code>units/api.ts</code>, <code>customerTypes/api.ts</code>, <code>locations/api.ts</code></span>
+    <span class="badge badge-shallow">🟡 SHALLOW — Deepen or Remove</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Interface</th><th>Depth</th><th>Problem</th></tr>
+      <tr>
+        <td>Thin invoke wrappers, 2-4 functions each</td>
+        <td>One line each: transport only</td>
+        <td>Correct for IPC transport layer, but inconsistent with the <code>domain/ipc.ts</code> pattern. Some use error normalization, some don't.</td>
+      </tr>
+    </table>
+    <p style="margin-top:0.5rem;"><strong>Fix:</strong> Adopt the <code>domain/ipc.ts</code> pattern consistently, or consolidate all IPC wrappers into a single typed invoke module.</p>
+  </div>
+</div>
+
+---
+
+## Seam Analysis (Cross-Slice Coupling)
+
+### Import Violations Map
+
+<div class="mermaid">
+graph TD
+    subgraph SliceA["Slice A — Security"]
+        sec_pin["security/pin.ts"]
+        sec_state["security/state.ts"]
+        sec_restore["security/firstLaunchRestore"]
+    end
+
+    subgraph SliceB["Slice B — Domain"]
+        dom_types["domain/types.ts"]
+        dom_ipc["domain/ipc.ts"]
+        dom_formula["domain/formulas/FormulaForm"]
+        dom_items_list["domain/items/ItemList"]
+        dom_items_form["domain/items/ItemForm"]
+        dom_vendors["domain/vendors/VendorList"]
+    end
+
+    subgraph SliceC["Slice C — POS"]
+        pos_types["pos/types.ts"]
+        pos_api["pos/api.ts"]
+    end
+
+    subgraph SliceD["Slice D — Shell"]
+        shell_ipc["shell/lib/ipc.ts"]
+        shell_settings["shell/routes/settings/SettingsFields"]
+        shell_print["shell/routes/settings/printing-types"]
+        shell_hooks["shell/hooks/"]
+    end
+
+    dom_types -->|"Sale, PaymentMode"| pos_types
+    dom_ipc -->|"Sale"| pos_types
+    dom_formula -->|"ItemSearchInput"| pos_api
+    dom_items_list -->|"printLabel, createInward"| pos_api
+    dom_items_form -->|"createInward"| pos_api
+    dom_vendors -->|"outstandingReport"| pos_api
+
+    sec_pin -->|"invoke"| shell_ipc
+    sec_restore -->|"ipc"| shell_ipc
+
+    sec_state -->|"PinRole"| dom_types
+
+    pos_api -->|"loadString"| shell_settings
+    pos_api -->|"ipc"| shell_ipc
+    pos_api -->|"DiscoveredPrinter"| shell_print
+    pos_api -->|"useBarcodeScan"| shell_hooks
+
+    style dom_types fill:#331c1c,stroke:#f87171
+    style pos_types fill:#332a1c,stroke:#fbbf24
+    style shell_ipc fill:#331c1c,stroke:#f87171
+    style sec_pin fill:#332a1c,stroke:#fbbf24
+    style sec_state fill:#332a1c,stroke:#fbbf24
+    style sec_restore fill:#332a1c,stroke:#fbbf24
+</div>
+
+### Violation Cards
+
+---
+
+<div class="card" style="border-left: 4px solid var(--red);">
+  <div class="card-header">
+    <span class="card-title">🔴 Slice B → Slice C (domain → pos): 6 Violations</span>
+    <span class="badge badge-severity-red">SEVERITY: HIGH</span>
+  </div>
+  <div class="card-body">
+    <p><strong>Violations:</strong></p>
+    <table>
+      <tr><th>Source File</th><th>Imports From</th><th>Symbols</th></tr>
+      <tr><td><code>domain/types.ts</code></td><td><code>pos/types.ts</code></td><td><code>Sale</code>, <code>PaymentMode</code></td></tr>
+      <tr><td><code>domain/ipc.ts</code></td><td><code>pos/types.ts</code></td><td><code>Sale</code></td></tr>
+      <tr><td><code>domain/formulas/FormulaForm.tsx</code></td><td><code>pos/sales/</code></td><td><code>ItemSearchInput</code></td></tr>
+      <tr><td><code>domain/items/ItemList.tsx</code></td><td><code>pos/print</code>, <code>pos/api</code></td><td><code>printLabel</code>, <code>createInward</code></td></tr>
+      <tr><td><code>domain/items/ItemForm.tsx</code></td><td><code>pos/api</code></td><td><code>createInward</code></td></tr>
+      <tr><td><code>domain/vendors/VendorList.tsx</code></td><td><code>pos/api</code></td><td><code>outstandingReport</code></td></tr>
+    </table>
+    <p style="margin-top:0.75rem;"><strong>Root cause:</strong> The <code>Sale</code> type is defined in <code>pos/types.ts</code>, but <code>domain</code> needs it for SaleReturn, FormulaSaleRow, and customer ledger calculations. Additionally, POS-specific UI components (<code>ItemSearchInput</code>) and actions (<code>createInward</code>, <code>printLabel</code>) leaked into domain pages.</p>
+    <p><strong>Fix:</strong> Move <code>Sale</code>, <code>PaymentMode</code> to <code>lib/types.ts</code> (shared). Move <code>ItemSearchInput</code> to <code>components/ui/</code>. Move <code>createInward</code> and <code>printLabel</code> calls behind a domain-level action that the POS layer provides via prop/callback.</p>
+  </div>
+</div>
+
+---
+
+<div class="card" style="border-left: 4px solid var(--red);">
+  <div class="card-header">
+    <span class="card-title">🔴 Slice C → Slice D (pos → shell): 6 Violations</span>
+    <span class="badge badge-severity-red">SEVERITY: HIGH</span>
+  </div>
+  <div class="card-body">
+    <p><strong>Violations:</strong></p>
+    <table>
+      <tr><th>Source Files</th><th>Import From</th><th>Symbols</th></tr>
+      <tr><td><code>pos/sales/</code>, <code>pos/purchases/</code></td><td><code>shell/routes/settings/SettingsFields.tsx</code></td><td><code>loadString</code></td></tr>
+      <tr><td><code>pos/sales/</code></td><td><code>shell/lib/ipc.ts</code></td><td><code>ipc</code></td></tr>
+      <tr><td><code>pos/sales/</code></td><td><code>shell/routes/settings/printing-types.ts</code></td><td><code>DiscoveredPrinter</code></td></tr>
+      <tr><td><code>pos/sales/</code></td><td><code>shell/hooks/</code></td><td><code>useBarcodeScan</code></td></tr>
+    </table>
+    <p style="margin-top:0.75rem;"><strong>Root cause:</strong> Settings/printer commands are registered in <code>shell/lib/ipc.ts</code>, but POS needs them for receipt printing and barcode scanning. <code>loadString</code> is a utility buried inside a settings component file.</p>
+    <p><strong>Fix:</strong> Extract <code>loadString</code> into <code>lib/settings.ts</code>. Move printer commands to <code>lib/printer.ts</code>. Move <code>useBarcodeScan</code> to <code>lib/hooks/</code>. This breaks all 6 violations by promoting shared utilities to the correct abstraction layer.</p>
+  </div>
+</div>
+
+---
+
+<div class="card" style="border-left: 4px solid var(--yellow);">
+  <div class="card-header">
+    <span class="card-title">🟡 Slice A → Slice D (security → shell): 2 Violations</span>
+    <span class="badge badge-severity-yellow">SEVERITY: MEDIUM</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Source File</th><th>Imports From</th><th>Symbols</th></tr>
+      <tr><td><code>lib/security/pin.ts</code></td><td><code>shell/lib/ipc.ts</code></td><td><code>invoke</code></td></tr>
+      <tr><td><code>lib/security/firstLaunchRestore.tsx</code></td><td><code>shell/lib/ipc.ts</code></td><td><code>ipc</code></td></tr>
+    </table>
+    <p style="margin-top:0.75rem;"><strong>Root cause:</strong> PIN management and recovery commands are registered in shell's IPC object, but they're security concerns.</p>
+    <p><strong>Fix:</strong> Security slice should own its own IPC module for PIN/recovery commands, or share a thin <code>lib/tauri.ts</code> invoke wrapper without depending on shell.</p>
+  </div>
+</div>
+
+---
+
+<div class="card" style="border-left: 4px solid var(--yellow);">
+  <div class="card-header">
+    <span class="card-title">🟡 Slice A → Slice B (security → domain): 1 Violation</span>
+    <span class="badge badge-severity-yellow">SEVERITY: LOW</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <tr><th>Source File</th><th>Imports From</th><th>Symbols</th></tr>
+      <tr><td><code>lib/security/state.ts</code></td><td><code>domain/types.ts</code></td><td><code>PinRole</code></td></tr>
+    </table>
+    <p style="margin-top:0.75rem;"><strong>Root cause:</strong> <code>PinRole</code> is a security concept living in the domain's massive types file.</p>
+    <p><strong>Fix:</strong> Move <code>PinRole</code> to <code>lib/security/types.ts</code>.</p>
+  </div>
+</div>
+
+---
+
+## God Modules
+
+### Before / After Decomposition Diagrams
+
+---
+
+<div class="card" style="border-left: 4px solid var(--red);">
+  <div class="card-header">
+    <span class="card-title">🔴 <code>App.tsx</code> — 985 Lines</span>
+    <span class="badge badge-high">HIGH PRIORITY</span>
+  </div>
+  <div class="card-body">
+    <p><strong>Current responsibilities:</strong> Routing (12+ sub-routes with regex), security phases, 8 modal states, 8 InlineDialogs, activity tracking (mouse/keyboard timers), graceful quit handler, nav configuration, role-based access control.</p>
+    <p><strong>Leverage:</strong> LOW. Huge interface, everything depends on it, impossible to test individual concerns.</p>
+
+    <div class="diagram-grid">
+      <div>
+        <div class="diagram-label">Before — Monolith</div>
+<pre><code>App.tsx (985 lines)
+  ├── Security phases (4 states)
+  ├── Routing (12+ regex routes)
+  ├── Nav config (8 items)
+  ├── Modal state (8 booleans)
+  ├── InlineDialogs (8 instances)
+  ├── Activity tracking (timers)
+  ├── Graceful quit handler
+  └── Role-based nav filtering</code></pre>
+      </div>
+      <div>
+        <div class="diagram-label">After — Decomposed</div>
+<pre><code>App.tsx (~150 lines)
+  ├── SecurityGate (phases)
+  ├── Router (routes + nav)
+  │   └── roleFilters.ts
+  ├── ModalManager (8 modals → store)
+  ├── ActivityTracker (timers)
+  └── QuitHandler (graceful exit)
+
+All sub-modules are independently
+testable and replaceable.</code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+---
+
+<div class="card" style="border-left: 4px solid var(--red);">
+  <div class="card-header">
+    <span class="card-title">🔴 <code>auth.rs</code> (Rust) — 1,725 Lines</span>
+    <span class="badge badge-high">HIGH PRIORITY</span>
+  </div>
+  <div class="card-body">
+    <p><strong>Current responsibilities:</strong> <code>AppState</code> struct, crypto initialization (argon2 + aes-gcm), SQLite key derivation, keystore management, session lifecycle (lock/unlock/timeout), 15+ Tauri commands, user CRUD, PIN management, recovery flow.</p>
+    <p><strong>Testability:</strong> HIGH friction. Global state, crypto init, and session management all mixed into one module. Unit testing any command requires mocking the entire AppState.</p>
+
+    <div class="diagram-grid">
+      <div>
+        <div class="diagram-label">Before — Monolith</div>
+<pre><code>auth.rs (1,725 lines)
+  ├── AppState (global struct)
+  ├── CryptoModule (argon2, aes-gcm)
+  ├── Keystore (key storage)
+  ├── SessionManager (lock/unlock)
+  ├── UserCommands (CRUD, 15+ cmds)
+  ├── PinCommands (set, change, verify)
+  ├── RecoveryCommands (backup, restore)
+  └── All mixed in one file</code></pre>
+      </div>
+      <div>
+        <div class="diagram-label">After — Split by Concern</div>
+<pre><code>auth/
+  ├── mod.rs         (thin re-exports)
+  ├── state.rs       (AppState)
+  ├── crypto.rs      (argon2, aes-gcm)
+  ├── keystore.rs    (key storage)
+  ├── session.rs     (lock/unlock/timeout)
+  ├── commands.rs    (thin Tauri handlers)
+  └── tests.rs       (integration tests)
+
+Each module testable in isolation.</code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+---
+
+<div class="card" style="border-left: 4px solid var(--yellow);">
+  <div class="card-header">
+    <span class="card-title">🟡 <code>domain/types.ts</code> — 628 Lines</span>
+    <span class="badge badge-medium">MEDIUM PRIORITY</span>
+  </div>
+  <div class="card-body">
+    <p><strong>Current responsibilities:</strong> ALL shared types for the entire application. Item, Customer, Vendor, Sale, Purchase, Payment, Role, User, Session, Bootstrap, CustomerLedger, VendorOutstanding, StockHealthSummary, and dozens more.</p>
+    <p><strong>Problem:</strong> Single point of change. <code>Role</code> type is defined here AND in <code>lib/security/state.ts</code> AND in <code>shell/lib/ipc.ts</code>. Touching any shared type risks cascading edits across all slices.</p>
+
+    <div class="diagram-grid">
+      <div>
+        <div class="diagram-label">Before — God Types File</div>
+<pre><code>domain/types.ts (628 lines)
+  ├── Item types (10 interfaces)
+  ├── Customer types (5 interfaces)
+  ├── Vendor types (4 interfaces)
+  ├── Sale types (8 interfaces)
+  ├── Purchase types (6 interfaces)
+  ├── Payment types (5 interfaces)
+  ├── Role/User/Session
+  ├── CustomerLedger
+  ├── VendorOutstanding
+  └── StockHealthSummary</code></pre>
+      </div>
+      <div>
+        <div class="diagram-label">After — Split by Domain</div>
+<pre><code>domain/types/
+  ├── index.ts      (barrel)
+  ├── item.ts       (Item, ItemVariant...)
+  ├── customer.ts   (Customer, CustomerType...)
+  ├── vendor.ts     (Vendor...)
+  ├── sale.ts       (Sale, PaymentMode...)
+  ├── purchase.ts   (Purchase, PurchaseItem...)
+  ├── payment.ts    (PaymentSplit...)
+  ├── party.ts      (Party union)
+  └── common.ts     (Role, Paginated...)</code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+---
+
+<div class="card" style="border-left: 4px solid var(--yellow);">
+  <div class="card-header">
+    <span class="card-title">🟡 <code>lib.rs</code> (Rust) — ~205 Commands in Single Handler</span>
+    <span class="badge badge-medium">MEDIUM PRIORITY</span>
+  </div>
+  <div class="card-body">
+    <p><strong>Problem:</strong> All ~205 Tauri commands registered in a single <code>tauri::generate_handler![]</code> macro invocation. Adding or removing a command requires editing this one massive list.</p>
+    <p><strong>Fix:</strong> Use module-based registration or a proc macro for auto-discovery. Each <code>commands/</code> submodule could export a <code>handlers()</code> function that collects its commands.</p>
+  </div>
+</div>
+
+---
+
+## Type Duplication
+
+| Type | Defined In | Identical? | Fix |
+|------|-----------|:----------:|-----|
+| `Role` | `domain/types.ts`, `lib/security/state.ts`, `shell/lib/ipc.ts` | ✅ Yes (all 3) | Consolidate to `domain/types.ts` |
+| `User` | `domain/types.ts`, `shell/lib/ipc.ts` | ✅ Yes | Consolidate to `domain/types.ts` |
+| `Session` | `lib/security/state.ts`, `shell/lib/ipc.ts` | ❌ Different (`pinRole` field) | Pick canonical, extend with optional field |
+| `Bootstrap` | `lib/security/state.ts`, `shell/lib/ipc.ts` | ❌ Different (`loading`/`error` variants) | Pick canonical |
+| `CustomerLedger` | `domain/types.ts`, `pos/types.ts` | ❌ Different shapes! | Reconcile — same concept, different backend commands |
+| `VendorOutstanding` | `domain/types.ts`, `pos/types.ts` | ❌ Different shapes! | Reconcile |
+| `StockHealthSummary` | `pos/types.ts`, `domain/items/api.ts` | ✅ Yes | Consolidate |
+
+**Impact:** 8+ duplicate definitions across 3 files. Changing `Role` requires finding and updating 3 separate declarations. The differing `Session` and `Bootstrap` types are silent bugs waiting to happen, callers may assume compatibility where none exists.
+
+---
+
+## Three IPC Patterns
+
+The codebase has three inconsistent approaches to calling Tauri commands from TypeScript:
+
+### Pattern 1: `domain/ipc.ts` — AppError Normalization + Correlation IDs ✅
+
+```typescript
+// domain/ipc.ts — THE STANDARD
+import { tauriInvoke } from '@/lib/security/tauri';
+import type { AppError } from '@tauri-apps/api/core';
+
+export async function invokeWithTypedError<T>(
+  cmd: string, args?: Record<string, unknown>
+): Promise<T> {
+  // Wraps tauriInvoke, normalizes errors to AppError,
+  // attaches correlation ID for debugging
+}
+```
+
+### Pattern 2: `pos/api.ts` — isTauri() Browser Fallbacks ⚠️
+
+```typescript
+// pos/api.ts — NO ERROR NORMALIZATION
+import { isTauri } from '@tauri-apps/api/core';
+
+export async function createSale(args: CreateSaleArgs): Promise<Sale> {
+  if (isTauri()) {
+    return invoke('cmd_create_sale', { args });
+  }
+  // Browser fallback — mock data or throw
+}
+```
+
+### Pattern 3: `shell/lib/ipc.ts` — Raw Invoke ⚠️
+
+```typescript
+// shell/lib/ipc.ts — NO ERROR NORMALIZATION, NO CORRELATION
+import { invoke } from '@tauri-apps/api/core';
+
+export const ipc = {
+  getSettings: () => invoke('cmd_get_settings'),
+  saveSettings: (s: Settings) => invoke('cmd_save_settings', { settings: s }),
+  // ...30+ raw wrappers
+};
+```
+
+**Fix:** Standardize on Pattern 1 (domain/ipc.ts). Its AppError normalization means callers get consistent error shapes. The correlation ID makes production debugging tractable. Pattern 2's `isTauri()` fallback is useful but should wrap Pattern 1, not replace it. Pattern 3 is the highest-risk: raw invoke with no error typing means any backend error surfaces as a string, losing context.
+
+---
+
+## Testability Friction
+
+| Module | Friction | Root Cause | Improvement Path |
+|--------|:--------:|------------|------------------|
+| `auth.rs` | 🔴 HIGH | Global `AppState` + crypto init + session management all coupled | Split into state, crypto, session, commands modules |
+| `db::open()` | 🔴 HIGH | SQLCipher initialization, key derivation, migration runner all in one function | Extract key derivation; test migrations separately with temp DBs |
+| `App.tsx` | 🟡 MEDIUM | God component: 12+ routes, 8 modals, activity tracking | Decompose into independently testable sub-components |
+| `session.rs` | 🟡 MEDIUM | Global `static Mutex` for session state | Inject session state as a parameter, test with in-memory state |
+| `security/mod.rs` | 🟡 MEDIUM | 33 Windows-only submodules compiled on all platforms | Use `cfg` attributes more granularly; extract platform-independent logic |
+| `sales.rs` | 🟡 MEDIUM | Business logic mixed with Tauri command handlers | Extract pure business logic into testable functions, keep commands as thin wrappers |
+| `day_close.rs` | 🟡 MEDIUM | Report generation coupled to DB queries | Separate query layer from report formatting |
+| `pos/api.ts` | 🟢 LOW | Wrapper functions are trivially testable, but `isTauri()` fallbacks add branching | Mock `isTauri()`, test both branches |
+
+**Key observation:** The Rust backend's testability friction is concentrated in modules that own global state. The frontend's friction is concentrated in God components. Both follow the same pattern: too many concerns in one unit.
+
+---
+
+## Recommendations Summary
+
+### Priority 1 — 🔴 Break the Dependency Cycles
+
+| # | Recommendation | Impact | Effort |
+|---|---------------|--------|--------|
+| 1 | **Extract shared types module** — Create `lib/types.ts` with `Sale`, `PaymentMode`, `CustomerLedger`, `VendorOutstanding`, `Role`, `User`, `Session`, `Bootstrap`. Eliminates 8+ duplicate type definitions and breaks the domain→pos B→C cycle. | Breaks 6 import violations, prevents cascading edits | Medium (one-time migration) |
+| 2 | **Extract `loadString` and printer commands from shell** — Move to `lib/settings.ts` and `lib/printer.ts`. Move `useBarcodeScan` to `lib/hooks/`. | Breaks 6 pos→shell C→D violations | Low (move + re-import) |
+| 3 | **Decompose App.tsx** — Extract routing to `Router`, modals to `ModalManager` (Zustand store), activity tracking to `ActivityTracker`, quit handler to `QuitHandler`. Target: <200 lines for the root component. | Unlocks testability, reduces merge conflicts | High (requires careful state extraction) |
+
+### Priority 2 — 🟡 Improve Quality
+
+| # | Recommendation | Impact | Effort |
+|---|---------------|--------|--------|
+| 4 | **Standardize IPC pattern** — Adopt `domain/ipc.ts` error normalization everywhere. Wrap `pos/api.ts` and `shell/lib/ipc.ts` with `AppError` handling and correlation IDs. | Consistent error handling, production debugging | Medium |
+| 5 | **Deepen `formulas/api.ts`** — Either move the canonical API functions here (making it the entry point) or delete it and re-point imports to `domain/ipc.ts`. | Removes one shallow module | Low |
+| 6 | **Split `domain/types.ts`** — By concern: `item-types.ts`, `customer-types.ts`, `sale-types.ts`, etc. Create barrel `domain/types/index.ts`. | Reduces change blast radius, enables tree-shaking | Medium |
+| 7 | **Decompose `auth.rs`** — Split into `state.rs`, `crypto.rs`, `keystore.rs`, `session.rs`, `commands.rs`. Each module owns one concern. | Unlocks unit testing, reduces cognitive load | High |
+
+### Priority 3 — 🟢 Build Safety Nets
+
+| # | Recommendation | Impact | Effort |
+|---|---------------|--------|--------|
+| 8 | **Add integration tests** for sales, day-close, and purchases flows. Currently zero coverage on the most critical business paths. | Prevents regression on revenue-critical code | High (requires test fixtures + DB setup) |
+| 9 | **Fix type duplication** — Consolidate `Role`, `User`, `Session`, `Bootstrap`, `CustomerLedger`, `VendorOutstanding`, `StockHealthSummary`. | Prevents silent type incompatibilities | Low-Medium |
+| 10 | **Move `PinRole` to security** — Relocate from `domain/types.ts` to `lib/security/types.ts`. | Cleans up the A→B violation | Trivial |
+
+---
+
+## Domain Glossary
+
+For cross-reference during implementation:
+
+| Term | Meaning |
+|------|---------|
+| **Party** | Union of Customer or Vendor (shared base fields) |
+| **Sale** | Complete transaction: items, payment splits, credit, taxes |
+| **Purchase** | Inbound inventory transaction from a vendor |
+| **Payment Split** | A single payment method entry within a sale/purchase (cash, UPI, credit) |
+| **Credit** | Outstanding balance owed by/to a party |
+| **Customer Ledger** | Running balance history for a customer |
+| **Vendor Outstanding** | Total amount owed to a vendor |
+| **Opening Balance** | Starting credit/debit for a party at session start |
+| **Paise** | All money stored as integer paise (₹1 = 100 paise) |
+| **Formula** | First-class paint mixing formula with shade lines and base |
+| **Shade ID** | Color identifier within a formula |
+| **Role** | `owner > cashier > stocker` — controls feature access |
+| **Day Close** | End-of-day reconciliation: cash count, payment summary, reports |
+
+---
+
+<p style="text-align: center; color: var(--muted); margin-top: 3rem; font-size: 0.8rem;">
+  Generated by Architecture Audit · codebase-design vocabulary · July 2026<br>
+  PaintKiDukaan · Tauri 2 · React 19 · Rust
+</p>

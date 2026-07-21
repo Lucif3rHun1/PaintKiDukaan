@@ -122,52 +122,46 @@ impl AppError {
     /// Human-facing message safe to show in a toast. Hides internals
     /// (SQL strings, raw paths, unix timestamps). Validation/conflict
     /// messages already come from caller-supplied strings, so pass them
-    /// through.
+    /// through. If messages later need i18n, lift into a `t()` lookup.
     pub fn user_message(&self) -> String {
         match self {
-            AppError::Db(_) => {
-                "Something went wrong with the local database. Please try again.".into()
-            }
-            AppError::NotFound(msg) => format!("{msg} not found."),
-            AppError::Validation(msg) => msg.clone(),
-            AppError::Conflict(msg) => msg.clone(),
-            AppError::Unauthorized(_) => "You're not signed in.".into(),
-            AppError::WrongPin => "Incorrect PIN or passphrase.".into(),
-            AppError::WrongRecoveryPassphrase => "Incorrect recovery passphrase.".into(),
-            AppError::TooManyAttempts => "Too many failed attempts. Try again later.".into(),
-            AppError::Forbidden(_) => "You don't have permission to do this.".into(),
-            AppError::Internal(_) => "An unexpected error occurred. Please try again.".into(),
-            AppError::Crypto(_) => "Encryption failed. Please try again.".into(),
-            AppError::NoKeywrap => "Master key missing. Restore from recovery to continue.".into(),
-            AppError::NoDb => "Database not set up yet.".into(),
-            AppError::NotUnlocked => "Database is locked. Unlock to continue.".into(),
-            AppError::InvalidPinFormat => "PIN must be exactly 6 digits.".into(),
+            AppError::WrongPin => "Incorrect PIN".into(),
+            AppError::WrongRecoveryPassphrase => "Incorrect recovery passphrase".into(),
+            AppError::TooManyAttempts => "Too many failed attempts. Please wait.".into(),
+            AppError::InvalidPinFormat => "PIN must be exactly 6 digits".into(),
+            AppError::NoDb => "Database not set up yet".into(),
+            AppError::NotUnlocked => "Please unlock the database first".into(),
+            AppError::Wiped => "Data was wiped. Restore from recovery passphrase.".into(),
+            AppError::NotFound(_) => "Not found".into(),
             AppError::LockedOut { until } => locked_out_message(*until),
-            AppError::Wiped => "Data was wiped. Enter your recovery passphrase to restore.".into(),
-            AppError::PathTraversal(_) => "Invalid file path.".into(),
-            AppError::LogInjection(_) => "Invalid input.".into(),
-            AppError::Io(_) => "Could not read or write a file. Please try again.".into(),
+            AppError::Validation(msg) | AppError::Conflict(msg) => msg.clone(),
+            // ponytail: internal variants collapse to a single toast — keep
+            // raw detail in `message`/logs only, never leak here.
+            AppError::Db(_)
+            | AppError::Internal(_)
+            | AppError::Crypto(_)
+            | AppError::Io(_)
+            | AppError::Forbidden(_)
+            | AppError::PathTraversal(_)
+            | AppError::LogInjection(_) => "Something went wrong.".into(),
+            AppError::Unauthorized(_) => "Session expired. Please sign in again.".into(),
+            AppError::NoKeywrap => "Master key missing. Restore from recovery passphrase.".into(),
             AppError::CleanupFailed(_) => "Cleanup failed. Please try again.".into(),
         }
     }
 }
 
 fn locked_out_message(until_unix_ms: u64) -> String {
+    use chrono::TimeZone;
     let now_ms = chrono::Utc::now().timestamp_millis() as u64;
     if until_unix_ms <= now_ms {
-        return "Try again now.".into();
+        return "Too many attempts. Try again now.".into();
     }
-    let remaining_ms = until_unix_ms - now_ms;
-    let remaining_secs = remaining_ms / 1000;
-    if remaining_secs < 60 {
-        format!("Locked out. Try again in {remaining_secs} seconds.")
-    } else if remaining_secs < 3600 {
-        let minutes = (remaining_secs + 30) / 60;
-        format!("Locked out. Try again in {minutes} minutes.")
-    } else {
-        let hours = (remaining_secs + 1800) / 3600;
-        format!("Locked out. Try again in {hours} hours.")
-    }
+    let dt = chrono::Local
+        .timestamp_millis_opt(until_unix_ms as i64)
+        .single()
+        .unwrap_or_else(chrono::Local::now);
+    format!("Too many attempts. Try again at {}.", dt.format("%H:%M"))
 }
 
 impl Serialize for AppError {
@@ -264,8 +258,7 @@ mod tests {
         let msg = app_err.safe_message();
         assert!(msg.contains("database error"), "safe_message should show Display impl: {msg}");
         assert!(msg.contains("some sqlite error"), "safe_message should contain actual detail: {msg}");
-        // user_message should be the generic toast text
-        assert_eq!(app_err.user_message(), "Something went wrong with the local database. Please try again.");
+        assert_eq!(app_err.user_message(), "Something went wrong.");
     }
 
     #[test]
@@ -341,7 +334,53 @@ mod tests {
         let json = serde_json::to_value(&err).unwrap();
         assert_eq!(json["code"], "locked_out");
         assert!(json["locked_until"].is_number());
-        // user_message contains human-friendly text
-        assert!(err.user_message().contains("Locked out"));
+        assert!(err.user_message().contains("Too many attempts"));
+    }
+
+    #[test]
+    fn wrong_pin_user_message() {
+        assert_eq!(AppError::WrongPin.user_message(), "Incorrect PIN");
+        assert_eq!(
+            AppError::WrongRecoveryPassphrase.user_message(),
+            "Incorrect recovery passphrase"
+        );
+        assert_eq!(
+            AppError::TooManyAttempts.user_message(),
+            "Too many failed attempts. Please wait."
+        );
+        assert_eq!(
+            AppError::InvalidPinFormat.user_message(),
+            "PIN must be exactly 6 digits"
+        );
+        assert_eq!(AppError::NoDb.user_message(), "Database not set up yet");
+        assert_eq!(
+            AppError::NotUnlocked.user_message(),
+            "Please unlock the database first"
+        );
+        assert_eq!(
+            AppError::Wiped.user_message(),
+            "Data was wiped. Restore from recovery passphrase."
+        );
+        assert_eq!(AppError::NotFound("item-42".into()).user_message(), "Not found");
+    }
+
+    #[test]
+    fn internal_variants_collapse_to_generic_toast() {
+        let sqlite_err = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: rusqlite::ffi::ErrorCode::Unknown,
+                extended_code: 1,
+            },
+            Some("super-secret sql".into()),
+        );
+        let db_err: AppError = sqlite_err.into();
+        assert_eq!(db_err.user_message(), "Something went wrong.");
+        assert_eq!(AppError::Internal("trace id 0xdead".into()).user_message(), "Something went wrong.");
+        assert_eq!(AppError::Crypto("argon2 fail".into()).user_message(), "Something went wrong.");
+        assert_eq!(AppError::Forbidden("admin only".into()).user_message(), "Something went wrong.");
+        assert_eq!(AppError::PathTraversal("../etc".into()).user_message(), "Something went wrong.");
+        assert_eq!(AppError::LogInjection("\\nINJECTED".into()).user_message(), "Something went wrong.");
+        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "disk full at /dev/sda1");
+        assert_eq!(AppError::Io(io_err).user_message(), "Something went wrong.");
     }
 }

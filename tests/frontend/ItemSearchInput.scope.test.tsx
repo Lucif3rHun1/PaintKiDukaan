@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ItemSearchInput } from "../../src/pos/sales/ItemSearchInput";
+import { ItemSearchInput } from "../../src/components/ui/ItemSearchInput";
 import type { ItemSearchHit } from "../../src/pos/types";
 
 vi.mock("../../src/pos/api", () => ({
@@ -18,7 +18,7 @@ vi.mock("../../src/domain/items/api", () => ({
   createItem: vi.fn(),
 }));
 
-vi.mock("../../src/shell/hooks/useBarcodeScan", () => ({
+vi.mock("../../src/lib/hooks/useBarcodeScan", () => ({
   useBarcodeScan: () => ({ scanHint: null }),
 }));
 

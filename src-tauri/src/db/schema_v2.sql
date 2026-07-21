@@ -1,4 +1,5 @@
 -- V2: apply locked grill decisions for inventory (Q1-Q17 + Q18)
+-- Does not share idx_*_is_active_name or UNIQUE-on-name patterns; see M-INLINE-026 in mod.rs.
 
 -- Q14: rename reorder_level -> min_qty
 ALTER TABLE items RENAME COLUMN reorder_level TO min_qty;

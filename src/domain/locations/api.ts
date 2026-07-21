@@ -2,7 +2,7 @@
  * Locations API. Slice B owns the table and the create/rename/deactivate
  * commands. Read by ItemForm and Settings (Slice D).
  */
-import { invoke } from "../ipc";
+import { invoke } from "../../lib/ipc";
 import type { Location, NewLocation, SubLocation } from "../types";
 
 export async function listLocations(

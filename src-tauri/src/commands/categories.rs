@@ -54,7 +54,7 @@ pub fn create_category(state: State<'_, AppState>, name: String) -> AppResult<Ca
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = current_user(state.inner())?;
     require_role(&user, &[Role::Owner])?;
     db.with_tx(|tx| {
         let collision: i64 = tx.query_row(
@@ -88,7 +88,7 @@ pub fn deactivate_category(state: State<'_, AppState>, id: i64) -> AppResult<()>
         .lock()
         .map_err(|_| AppError::Internal("lock poisoned".into()))?;
     let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = current_user()?;
+    let user = current_user(state.inner())?;
     require_role(&user, &[Role::Owner])?;
     db.with_tx(|tx| {
         let cat_name: String = tx

@@ -1226,7 +1226,6 @@ mod tests {
     use crate::commands::sales::{self, CartLine, NewSale, PaymentSplit};
 
     fn seed(db: &Db) {
-        crate::session::__test_set_role(db, crate::session::Role::Owner);
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(
                 "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('Owner','owner',X'00',X'00',6,1,0,0)",

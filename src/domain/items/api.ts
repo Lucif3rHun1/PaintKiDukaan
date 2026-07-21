@@ -2,7 +2,7 @@
  * Items domain API — typed wrapper around Tauri commands.
  * `lookup_item` returns a role-aware projection (owner/cashier/stocker).
  */
-import { invoke } from "../ipc";
+import { invoke } from "../../lib/ipc";
 import type {
   Brand,
   ImportResult,

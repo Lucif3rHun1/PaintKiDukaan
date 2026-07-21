@@ -159,19 +159,10 @@ pub fn deactivate_location(state: State<'_, AppState>, id: i64) -> AppResult<()>
 mod tests {
     use super::*;
     use crate::db::Db;
-    use crate::session::{set_current_user, User};
-
-    fn owner() -> User {
-        User {
-            id: 1,
-            name: "O".into(),
-            role: Role::Owner,
-        }
-    }
 
     #[test]
     fn create_rename_deactivate() {
-        set_current_user(Some(owner()));
+
         let db = Db::open_in_memory().unwrap();
         let loc = {
             let mut name = String::from("Rack A");

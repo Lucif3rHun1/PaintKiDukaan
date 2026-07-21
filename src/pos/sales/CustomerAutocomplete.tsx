@@ -54,7 +54,7 @@ export function CustomerAutocomplete({ selectedId, selectedCustomer, recentCusto
     }
     const id = ++requestIdRef.current;
     const timer = setTimeout(() => {
-      listCustomers(query, false)
+      listCustomers(query.trim().toLowerCase(), false)
         .then((d) => {
           if (id === requestIdRef.current) setResults(d ?? []);
         })

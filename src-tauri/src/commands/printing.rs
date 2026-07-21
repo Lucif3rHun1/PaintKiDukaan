@@ -146,6 +146,41 @@ fn sanitize(s: &str, max: usize) -> String {
         .collect::<String>()
 }
 
+fn to_title_case(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    for (word_index, word) in input.split_whitespace().enumerate() {
+        if word_index > 0 {
+            output.push(' ');
+        }
+        let mut letters = String::new();
+        let flush_letters = |letters: &mut String, output: &mut String| {
+            if letters.is_empty() {
+                return;
+            }
+            if letters.chars().count() <= 3 && letters.chars().all(|c| c.is_ascii_uppercase()) {
+                output.push_str(letters);
+            } else {
+                let mut chars = letters.chars();
+                if let Some(first) = chars.next() {
+                    output.extend(first.to_uppercase());
+                    output.extend(chars.flat_map(char::to_lowercase));
+                }
+            }
+            letters.clear();
+        };
+        for character in word.chars() {
+            if character.is_alphabetic() {
+                letters.push(character);
+            } else {
+                flush_letters(&mut letters, &mut output);
+                output.push(character);
+            }
+        }
+        flush_letters(&mut letters, &mut output);
+    }
+    output
+}
+
 /// Validate printer name: alphanumeric + space _ . - only, 1-64 chars, no path separators.
 fn validate_printer_name(name: &str) -> AppResult<()> {
     if name.contains('\\') || name.contains('/') || name.contains('\0') || name.contains("..") {
@@ -210,7 +245,10 @@ pub fn build_receipt(data: ReceiptData) -> Vec<u8> {
     e.two_col(&format!("BILL: {}", data.sale_number), &data.created_at);
     e.bold_off();
     if let Some(c) = data.customer_name {
-        e.line(&sanitize(&format!("Customer: {}", c), MAX_LINE_LEN));
+        e.line(&sanitize(
+            &format!("Customer: {}", to_title_case(&c)),
+            MAX_LINE_LEN,
+        ));
     }
     e.separator();
 
@@ -219,7 +257,7 @@ pub fn build_receipt(data: ReceiptData) -> Vec<u8> {
     e.line("ITEM");
     e.bold_off();
     for it in data.items {
-        e.line(&sanitize(&it.name, MAX_LINE_LEN));
+        e.line(&sanitize(&to_title_case(&it.name), MAX_LINE_LEN));
         if let Some(ref sku) = it.sku {
             if !sku.is_empty() {
                 e.line(&sanitize(&format!("SKU: {}", sku), MAX_LINE_LEN));
@@ -405,8 +443,8 @@ pub fn cmd_print_receipt(
     printer_name: String,
     receipt_data: ReceiptData,
 ) -> AppResult<()> {
-    validate_printer_name(&printer_name)?;
     ipc_auth::authorize("cmd_print_receipt", state.inner())?;
+    validate_printer_name(&printer_name)?;
     validate_input(&printer_name, &receipt_data)?;
     let bytes = build_receipt(receipt_data);
     log::info!(
@@ -458,8 +496,8 @@ pub fn cmd_print_raw(
     printer_name: String,
     data: Vec<u8>,
 ) -> AppResult<()> {
-    validate_printer_name(&printer_name)?;
     ipc_auth::authorize("cmd_print_raw", state.inner())?;
+    validate_printer_name(&printer_name)?;
     if printer_name.trim().is_empty() {
         return Err(AppError::Validation("printer name is required".into()));
     }
@@ -480,6 +518,11 @@ pub fn cmd_print_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn title_case_preserves_short_acronyms_and_punctuation() {
+        assert_eq!(to_title_case("  (ASIAN) PVC-paint usa  "), "(Asian) PVC-Paint Usa");
+    }
 
     #[test]
     fn receipt_starts_with_init_and_ends_with_cut() {

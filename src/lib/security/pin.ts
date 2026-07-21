@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { invoke } from "../../shell/lib/ipc";
+import { invoke } from "../ipc";
 
 export const pinSchema = z.string().regex(/^\d{6}$/, "PIN must be exactly 6 digits");
 export const recoveryPassphraseSchema = z

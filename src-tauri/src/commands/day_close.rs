@@ -653,7 +653,7 @@ mod tests {
     use crate::commands::sales::{self, CartLine, NewSale, PaymentSplit};
 
     fn seed_basic(db: &Db) -> i64 {
-        crate::session::__test_set_role(db, crate::session::Role::Owner);
+
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(
                 "INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at)
@@ -694,7 +694,7 @@ mod tests {
     #[test]
     fn backup_gate_never_backed_up() {
         let db = crate::db::Db::open_in_memory().expect("mem db");
-        crate::session::__test_set_role(&db, crate::session::Role::Owner);
+
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(
                 "INSERT OR REPLACE INTO settings (id, shop_name, last_backup_unix_ms, created_at, updated_at) VALUES (1, 'Test', NULL, 0, 0)",
@@ -712,7 +712,7 @@ mod tests {
     #[test]
     fn backup_gate_stale_over_24h() {
         let db = crate::db::Db::open_in_memory().expect("mem db");
-        crate::session::__test_set_role(&db, crate::session::Role::Owner);
+
         let now = chrono::Utc::now().timestamp_millis();
         let stale = chrono::DateTime::from_timestamp_millis(now - 26 * 3600 * 1000)
             .unwrap()
@@ -733,7 +733,7 @@ mod tests {
     #[test]
     fn backup_gate_fresh_under_24h() {
         let db = crate::db::Db::open_in_memory().expect("mem db");
-        crate::session::__test_set_role(&db, crate::session::Role::Owner);
+
         let now = chrono::Utc::now().timestamp_millis();
         let fresh = chrono::DateTime::from_timestamp_millis(now - 3600 * 1000)
             .unwrap()

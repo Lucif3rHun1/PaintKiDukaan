@@ -19,7 +19,7 @@ import { formatHitName } from "../../domain/items/display";
 import { formatRupeesFromPaise } from "../../lib/money";
 import { deleteDraft } from "../api";
 import { PageBadgeCtx, useAutosave, useDirtyForm } from "../hooks";
-import { ItemSearchInput } from "./ItemSearchInput";
+import { ItemSearchInput } from "@/components/ui/ItemSearchInput";
 import { InvoiceSearchInput } from "./InvoiceSearchInput";
 import { SplitPayment } from "./SplitPayment";
 import { extractError } from "../../lib/extractError";
