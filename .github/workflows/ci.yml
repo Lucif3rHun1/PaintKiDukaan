@@ -87,7 +87,6 @@ jobs:
         working-directory: src-tauri
         run: cargo install cargo-audit
       - name: cargo audit
-        working-directory: src-tauri
         run: cargo audit
 
   # ============================================================
