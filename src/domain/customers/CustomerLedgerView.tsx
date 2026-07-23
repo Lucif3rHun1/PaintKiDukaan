@@ -159,6 +159,7 @@ interface CustomerCreditInvoiceFormProps {
 }
 
 export function CustomerCreditInvoiceForm({ customer, onSaved, onCancel }: CustomerCreditInvoiceFormProps) {
+  // FIXME: aligns with C4 local-date convention — toISOString() uses UTC, not local date
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState("");
   const [lines, setLines] = useState<LocalLine[]>([{ item_id: 0, qty: 1, unit_price_paise: 0 }]);

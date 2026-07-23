@@ -5,6 +5,7 @@ import { buildReceiptPdfBlob, printReceipt as printReceiptPdf } from "../print";
 import type { DiscoveredPrinter } from "../../shell/routes/settings/printing-types";
 import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
+import { computeLineValue } from "@/lib/cartMath";
 import { toTitleCase } from "../../lib/format/titleCase";
 
 export interface ReceiptPrintSettings {
@@ -69,7 +70,7 @@ export function buildReceiptData(sale: Sale, settings: ReceiptPrintSettings) {
       qty: formatQty(it.qty ?? 0),
       unit: it.unit_type ?? "unit",
       unit_price: formatRupeesForThermal(it.price ?? 0),
-      line_total: formatRupeesForThermal(Math.round((it.qty ?? 0) * (it.price ?? 0)) - (it.line_discount ?? 0)),
+      line_total: formatRupeesForThermal(computeLineValue(it.qty ?? 0, it.price ?? 0, it.line_discount ?? 0)),
       line_discount: it.line_discount ? formatRupeesForThermal(it.line_discount) : undefined,
     })),
     subtotal: formatRupeesForThermal(subtotal),

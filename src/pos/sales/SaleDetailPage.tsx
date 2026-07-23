@@ -14,6 +14,7 @@ import { buildReceiptPdfBlob } from "../print";
 import { safeShareSalePdfById } from "./printOrDownload";
 import { toast } from "../../lib/feedback/toast";
 import { formatDateForDisplay } from "../../lib/date";
+import { computeLineValue } from "@/lib/cartMath";
 import type { Sale } from "../types";
 import { saleStatus } from "./saleStatus";
 
@@ -274,7 +275,7 @@ export function SaleDetailPage({ id, onBack, onConvert, onEdit }: Props) {
                   </tr>
                 ) : null}
                 {(sale.items ?? []).map((line, idx) => {
-                  const lineValue = Math.max(0, line.qty * line.price - line.line_discount);
+                  const lineValue = computeLineValue(line.qty, line.price, line.line_discount);
                   return (
                     <tr key={`${line.item_id}-${idx}`} className="border-b border-border align-middle">
                       <td className="py-2 text-center text-xs text-muted-foreground tabular-nums">{idx + 1}</td>

@@ -62,6 +62,7 @@ import { setHash } from "../../lib/navigate";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { createInward } from "../../pos/api";
 import type { NewPurchase } from "../../pos/types";
+import { canDo } from "../../lib/security/acl";
 import { Skeleton } from "boneyard-js/react";
 
 interface Props {
@@ -425,7 +426,7 @@ export function ItemList({ role }: Props) {
               { label: "Print Barcode", icon: Barcode, onSelect: () => void handlePrint(i), disabled: !i.barcode },
               ...(!isStocker ? [{ label: "Add Inward", icon: ArrowDownToLine, onSelect: () => (setHash("#/inward")) }] : []),
               ...(!isStocker ? [{ label: "Record Outward", icon: ArrowUpFromLine, onSelect: () => (setHash("#/sales")) }] : []),
-              ...(canEdit ? [{ label: i.is_active ? "Archive" : "Restore", icon: Archive, danger: i.is_active, onSelect: () => setArchiveConfirmItem(i) }] : []),
+              ...(canDo(role, "archive_item") ? [{ label: i.is_active ? "Archive" : "Restore", icon: Archive, danger: i.is_active, onSelect: () => setArchiveConfirmItem(i) }] : []),
             ]}
           />
         ),
@@ -597,7 +598,7 @@ export function ItemList({ role }: Props) {
             {canEdit ? (
               <>
                 <Button type="button" size="sm" variant="primary" icon={PackagePlus} onClick={openCreate} shortcut="F6">Add Item</Button>
-                <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)}>Import</Button>
+                {canDo(role, "import_items") ? <Button type="button" size="sm" variant="secondary" icon={FileUp} onClick={() => setImportOpen(true)}>Import</Button> : null}
                 <DownloadMenu headers={exportHeaders} rows={[]} loadRows={loadExportRows} onError={(error) => toast.error(extractError(error))} filename="items-export" title="Items Export" label="Export" />
                 <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
               </>
@@ -618,7 +619,7 @@ export function ItemList({ role }: Props) {
               </>
             ) : null}
             {/* Danger: bulk archive (selection-only) */}
-            {selectedIds.size > 0 && canEdit ? (
+            {selectedIds.size > 0 && canDo(role, "archive_item") ? (
               <>
                 <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
                 <Button type="button" size="sm" variant="destructive" icon={Archive} onClick={() => void handleBulkArchive()}>Archive {selectedIds.size}</Button>

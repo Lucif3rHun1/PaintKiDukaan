@@ -573,6 +573,33 @@ export interface Formula {
   last_sold_at: string | null;
 }
 
+/**
+ * Cart-preview types — mirror `CartPreviewLine` and `CartPreview` in
+ * `src-tauri/src/commands/sales.rs`. Returned by `cmd_preview_cart_total`
+ * (registered in the shared invoke_handler).
+ */
+export interface CartPreviewLine {
+  line_value_paise: number;
+  line_subtotal_paise: number;
+}
+
+export interface CartPreview {
+  lines: CartPreviewLine[];
+  cart_subtotal_paise: number;
+  cart_total_paise: number;
+  bill_discount_paise: number;
+}
+
+/**
+ * Minimal cart-line input for `cmd_preview_cart_total`. Mirrors the
+ * `NewCartLine` type in `src-tauri/src/commands/sales.rs`.
+ */
+export interface NewCartLine {
+  qty: number;
+  price: number;
+  line_discount: number;
+}
+
 export interface FormulaFilter {
   query?: string;
   active?: boolean | null;

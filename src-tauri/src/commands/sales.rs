@@ -206,6 +206,47 @@ pub fn cart_total(lines: &[CartLine], bill_discount: i64) -> i64 {
     (cart_subtotal(lines) - bill_discount).max(0)
 }
 
+/// Per-line preview values returned to the frontend. `line_value_paise` is the
+/// GROSS line value (`round(qty × price)`); `line_subtotal_paise` is the NET
+/// value after subtracting the line discount, floored at zero.
+#[derive(Debug, Clone, Serialize)]
+pub struct CartPreviewLine {
+    pub line_value_paise: i64,
+    pub line_subtotal_paise: i64,
+}
+
+/// Authoritative cart totals computed by Rust's `line_value` / `cart_subtotal`
+/// / `cart_total`. Used by the frontend for read-only previewing so the UI
+/// cannot drift from the formulas Rust will apply when persisting the sale.
+#[derive(Debug, Clone, Serialize)]
+pub struct CartPreview {
+    pub lines: Vec<CartPreviewLine>,
+    pub cart_subtotal_paise: i64,
+    pub cart_total_paise: i64,
+    pub bill_discount_paise: i64,
+}
+
+/// Pure cart math exposed as a Tauri command so the frontend can render
+/// authoritative totals without duplicating the formula. No DB access; safe
+/// to call as often as the UI needs.
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_preview_cart_total(lines: Vec<CartLine>, bill_discount: i64) -> CartPreview {
+    let preview_lines = lines
+        .iter()
+        .map(|l| CartPreviewLine {
+            line_value_paise: (l.qty * l.price as f64).round() as i64,
+            line_subtotal_paise: line_value(l),
+        })
+        .collect();
+    let subtotal = cart_subtotal(&lines);
+    CartPreview {
+        lines: preview_lines,
+        cart_subtotal_paise: subtotal,
+        cart_total_paise: (subtotal - bill_discount).max(0),
+        bill_discount_paise: bill_discount,
+    }
+}
+
 pub fn modes_sum(modes: &[PaymentSplit]) -> i64 {
     modes.iter().fold(0i64, |acc, m| acc.saturating_add(m.amount))
 }
@@ -1116,12 +1157,14 @@ fn today() -> String {
     Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// Convert a "YYYY-MM-DD" string to epoch milliseconds (UTC start of day).
-/// Falls back to now_epoch_ms() on parse failure.
-fn date_to_ms(date: &str) -> i64 {
+/// Interprets input as local date (midnight in runtime TZ).
+/// For UTC semantics, call `Local::now()` directly.
+pub(crate) fn date_to_ms(date: &str) -> i64 {
     NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .ok()
-        .and_then(|d| d.and_hms_opt(0, 0, 0).map(|t| t.and_utc().timestamp_millis()))
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .and_then(|t| t.and_local_timezone(Local).single())
+        .map(|dt| dt.timestamp_millis())
         .unwrap_or_else(now_epoch_ms)
 }
 
@@ -2673,3 +2716,4 @@ pub fn cmd_void_sale(
     ipc_auth::authorize_err("cmd_void_sale", state.inner())?;
     Err(AppError::Internal("not implemented".into()))
 }
+

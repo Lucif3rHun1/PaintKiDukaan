@@ -14,12 +14,14 @@
  */
 import { invoke } from "../lib/ipc";
 import type {
+  CartPreview,
   CreateCustomerInlinePayload,
   CreateSaleReturnPayload,
   Customer,
   SaleReturn,
   Formula,
   FormulaFilter,
+  NewCartLine,
   NewFormula,
   UpdateFormula,
   FormulaSaleRow,
@@ -38,6 +40,16 @@ export async function getNextQuotationNumber(): Promise<string> {
 }
 
 // Customer & Sales Return commands
+export async function previewCartTotal(
+  lines: NewCartLine[],
+  billDiscountPaise: number,
+): Promise<CartPreview> {
+  return invoke<CartPreview>("cmd_preview_cart_total", {
+    lines,
+    bill_discount: billDiscountPaise,
+  });
+}
+
 export async function createCustomerInline(
   payload: CreateCustomerInlinePayload,
 ): Promise<Customer> {

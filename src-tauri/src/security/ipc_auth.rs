@@ -512,6 +512,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Cashier,
     },
     CommandAcl {
+        name: "cmd_preview_cart_total",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
         name: "cmd_create_sale_return",
         min_role: Role::Cashier,
     },

@@ -25,6 +25,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::auth::AppState;
+use crate::commands::sales::date_to_ms;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
@@ -179,8 +180,8 @@ pub fn list(
             args.push(Box::new(date_to_ms(f)));
         }
         if let Some(t) = to_date {
-            sql.push_str(" AND (p.bill_date <= ? OR p.bill_date IS NULL)");
-            args.push(Box::new(date_to_ms(t)));
+            sql.push_str(" AND (p.bill_date < ? OR p.bill_date IS NULL)");
+            args.push(Box::new(date_to_ms(t) + 86_400_000));
         }
         sql.push_str(" ORDER BY p.bill_date DESC, p.id DESC LIMIT ?");
         args.push(Box::new(limit));
@@ -511,16 +512,6 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-pub(crate) fn date_to_ms(date: &str) -> i64 {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map(|d| {
-            d.and_time(chrono::NaiveTime::MIN)
-                .and_utc()
-                .timestamp_millis()
-        })
-        .unwrap_or_else(|_| now_ms())
-}
-
 pub(crate) fn ms_to_date(ms: i64) -> String {
     let secs = ms / 1000;
     let nsec = ((ms.rem_euclid(1_000)) as u32) * 1_000_000;
@@ -640,8 +631,8 @@ pub fn cmd_list_purchases_paged(
             params.push(Box::new(date_to_ms(d)));
         }
         if let Some(d) = query.filters.get("to_date").and_then(|v| v.as_str()) {
-            wheres.push("p.bill_date <= ?".to_string());
-            params.push(Box::new(date_to_ms(d)));
+            wheres.push("p.bill_date < ?".to_string());
+            params.push(Box::new(date_to_ms(d) + 86_400_000));
         }
 
         let where_refs: Vec<&str> = wheres.iter().map(|s| s.as_str()).collect();
@@ -721,8 +712,8 @@ pub fn cmd_purchase_period_summary(
             params.push(Box::new(date_to_ms(d)));
         }
         if let Some(d) = to_date.as_deref() {
-            wheres.push("bill_date <= ?".to_string());
-            params.push(Box::new(date_to_ms(d)));
+            wheres.push("bill_date < ?".to_string());
+            params.push(Box::new(date_to_ms(d) + 86_400_000));
         }
         let where_suffix = if wheres.is_empty() {
             String::new()

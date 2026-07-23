@@ -4,11 +4,11 @@
 //! decrease it) and a dedicated command to post a credit invoice for a
 //! customer on an older date.
 
-use chrono::NaiveDate;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::{customers, sales};
+use crate::commands::sales::date_to_ms;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::session::{require_role, Role};
@@ -248,19 +248,6 @@ pub fn record_customer_payment_impl(
 // -----------------------------------------------------------------------------
 // Helpers.
 // -----------------------------------------------------------------------------
-
-fn date_to_ms(date: &str) -> i64 {
-    NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .ok()
-        .and_then(|d| d.and_hms_opt(0, 0, 0))
-        .map(|t| t.and_utc().timestamp_millis())
-        .unwrap_or_else(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0)
-        })
-}
 
 fn ms_to_date(ms: i64) -> String {
     use chrono::TimeZone;

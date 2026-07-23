@@ -17,6 +17,7 @@ import { extractError } from "../../lib/extractError";
 import { useShortcut } from "../../lib/shortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
 import { toTitleCase } from "../../lib/format/titleCase";
+import { canDo } from "../../lib/security/acl";
 import { Skeleton } from "boneyard-js/react";
 
 interface Props {
@@ -101,7 +102,7 @@ export function VendorList({
   }
 
   const canCreate = onCreate && (role === "owner" || role === "stocker");
-  const canPay = (role === "owner" || role === "stocker") && onRecordPayment;
+  const canPay = canDo(role, "create_vendor_payment") && onRecordPayment;
 
   const columns = useMemo<ColumnDef<Vendor>[]>(() => {
     const cols: ColumnDef<Vendor>[] = [

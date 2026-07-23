@@ -457,6 +457,7 @@ pub fn run() {
             commands::vendors::list_vendor_payments,
             // Sales (Slice C)
             commands::sales::cmd_create_sale,
+            commands::sales::cmd_preview_cart_total,
             commands::sales::cmd_create_sale_return,
             commands::sales::cmd_convert_quotation,
             commands::sales::cmd_edit_sale,

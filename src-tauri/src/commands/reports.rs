@@ -12,7 +12,8 @@ use rusqlite::params;
 use serde::Serialize;
 
 use crate::commands::auth::AppState;
-use crate::commands::purchases::{date_to_ms, StockMovement};
+use crate::commands::purchases::StockMovement;
+use crate::commands::sales::date_to_ms;
 use crate::db::list::{sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};

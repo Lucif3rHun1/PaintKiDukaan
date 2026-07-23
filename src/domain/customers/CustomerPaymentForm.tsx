@@ -35,6 +35,7 @@ const MODES = [
 export function CustomerPaymentForm({ customer, onSaved, onCancel }: Props) {
   const [amount, setAmount] = useState(0);
   const [mode, setMode] = useState(getPref("customerPayment:lastMode", "upi"));
+  // FIXME: aligns with C4 local-date convention — toISOString() uses UTC, not local date
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);

@@ -18,6 +18,7 @@ use rusqlite::params;
 use serde::Serialize;
 
 use crate::commands::auth::AppState;
+use crate::commands::sales::date_to_ms;
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
 use crate::session::{require_auth, require_role, Role};
@@ -926,16 +927,6 @@ fn resolve_item<'a>(items: &'a [ItemLookupRow], query: &str) -> Option<&'a ItemL
     }
     // Partial name match
     items.iter().find(|it| it.name.to_lowercase().contains(&q))
-}
-
-fn date_to_ms(date: &str) -> i64 {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map(|d| {
-            d.and_time(chrono::NaiveTime::MIN)
-                .and_utc()
-                .timestamp_millis()
-        })
-        .unwrap_or_else(|_| chrono::Utc::now().timestamp_millis())
 }
 
 #[cfg(test)]

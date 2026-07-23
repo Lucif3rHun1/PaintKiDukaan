@@ -80,6 +80,7 @@ import type {
 import type { Customer, CustomerType, Formula, FormulaSearchHit, SaleUnit } from "../../domain/types";
 import { listSaleUnits } from "../../domain/units/api";
 import { setHash } from "../../lib/navigate";
+import { computeLineValue } from "@/lib/cartMath";
 
 type Kind = "quotation" | "final" | "fbill";
 
@@ -87,10 +88,6 @@ interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
   onExit: () => void;
   editSaleId?: number;
-}
-
-function lineTotal(line: CartLine): number {
-  return Math.max(0, Math.round(line.qty * line.price) - line.line_discount);
 }
 
 function isFlagged(c: Customer | null): boolean {
@@ -274,7 +271,8 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
 
   // ---- Computed totals ----
   const subtotal = useMemo(
-    () => lines.reduce((s, l) => s + Math.round(l.qty * l.price), 0),
+    () =>
+      lines.reduce((s, l) => s + computeLineValue(l.qty, l.price, l.line_discount), 0),
     [lines],
   );
   const lineDiscountTotal = useMemo(
@@ -282,8 +280,8 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
     [lines],
   );
   const total = useMemo(
-    () => Math.max(0, subtotal - lineDiscountTotal - billDiscount),
-    [subtotal, lineDiscountTotal, billDiscount],
+    () => Math.max(0, subtotal - billDiscount),
+    [subtotal, billDiscount],
   );
   const paid = useMemo(() => splits.reduce((s, p) => s + p.amount, 0), [splits]);
   const balance = total - paid;
@@ -1024,7 +1022,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                               <span className="text-muted-foreground">Discount</span>
                               <span className="text-destructive">-{formatRupeesFromPaise(l.line_discount)}</span>
                               <span className="font-medium text-foreground">
-                                = {formatRupeesFromPaise(lineTotal(l))}
+                                = {formatRupeesFromPaise(computeLineValue(l.qty, l.price, l.line_discount))}
                               </span>
                             </div>
                           ) : null}

@@ -2,6 +2,7 @@
 
 use crate::commands::_util::case_fold_lower;
 use crate::commands::auth::AppState;
+use crate::commands::sales::date_to_ms;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
 use crate::security::ipc_auth;
@@ -281,12 +282,7 @@ pub fn record_vendor_payment(
     if payload.mode.trim().is_empty() {
         return Err(AppError::Validation("mode is required".into()));
     }
-    let now = chrono::Utc::now().timestamp_millis();
-    let date_ms = chrono::NaiveDate::parse_from_str(&payload.date, "%Y-%m-%d")
-        .ok()
-        .and_then(|d| d.and_hms_opt(0, 0, 0))
-        .map(|t| t.and_utc().timestamp_millis())
-        .unwrap_or(now);
+    let date_ms = date_to_ms(&payload.date);
     db.with_tx(|tx| {
         // Ensure vendor exists.
         let exists: bool = tx.query_row(

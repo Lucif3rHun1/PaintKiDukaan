@@ -24,6 +24,7 @@ import { ItemSearchInput } from "@/components/ui/ItemSearchInput";
 import { InvoiceSearchInput } from "./InvoiceSearchInput";
 import { SplitPayment } from "./SplitPayment";
 import { extractError } from "../../lib/extractError";
+import { computeLineValue } from "@/lib/cartMath";
 import { findSourceSaleItem, deriveSaleIdForReturn } from "./refundable";
 import { RETURN_DRAFT_KEY, type ReturnDraft } from "./ReturnBillSelectModal";
 
@@ -156,7 +157,7 @@ export default function ReturnPage({ user, onBack }: Props) {
   }, [markDirty]);
 
   const subtotal = useMemo(
-    () => lines.reduce((sum, line) => sum + Math.max(0, Math.round(line.qty * line.price)), 0),
+    () => lines.reduce((sum, line) => sum + computeLineValue(line.qty, line.price, 0), 0),
     [lines],
   );
   const refundAmount = useMemo(
@@ -471,7 +472,7 @@ export default function ReturnPage({ user, onBack }: Props) {
                           />
                         </td>
                         <td className="py-2 text-right font-medium">
-                          <Money paise={Math.max(0, Math.round(line.qty * line.price))} />
+                          <Money paise={computeLineValue(line.qty, line.price, 0)} />
                         </td>
                         <td className="py-2 text-right">
                            <Button
