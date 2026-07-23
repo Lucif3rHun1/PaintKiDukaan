@@ -8,6 +8,7 @@ import {
   Search,
   ScanBarcode,
 } from "lucide-react";
+import { invalidateList } from "@/lib/query/invalidateList";
 import { createItem, listItems, lookupItem } from "../../domain/items/api";
 import { listSaleUnits } from "../../domain/units/api";
 import { formatHitName } from "../../domain/items/display";
@@ -428,7 +429,7 @@ export function ItemSearchInput({
       handlePick(itemToSearchHit(item));
       setQuickSuggestions([]);
       setQuickMinStock(0);
-      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void invalidateList(queryClient, "cmd_list_items_paged");
     } finally {
       setQuickBusy(false);
     }

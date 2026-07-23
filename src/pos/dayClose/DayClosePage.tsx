@@ -6,6 +6,7 @@ const VARIANCE_TOLERANCE_PAISE = 500; // ₹5
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { invalidateList } from "@/lib/query/invalidateList";
 import {
   Alert,
   Button,
@@ -208,7 +209,7 @@ export default function DayClosePage({ user }: Props) {
         backup_decision: decision,
       });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      void queryClient.invalidateQueries({ queryKey: ["dayClose"] });
+      void invalidateList(queryClient, "cmd_list_day_close_paged");
       setLastClose({
         date,
         opening: openingPaise,

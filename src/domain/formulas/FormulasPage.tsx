@@ -82,7 +82,6 @@ export function FormulasPage({ role }: Props) {
     (saved: Formula) => {
       toast.success(`Saved ${saved.id_code}`);
       setMode("list");
-      queryClient.invalidateQueries({ queryKey: ["formulas"] });
       void invalidateList(queryClient, "cmd_list_formulas_paged");
       void invalidateListMetrics(queryClient, "cmd_formula_metrics");
     },

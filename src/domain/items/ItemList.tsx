@@ -242,12 +242,6 @@ export function ItemList({ role }: Props) {
     try {
       await updateItem(item.id, { is_active: !item.is_active });
       toast.success(item.is_active ? "Archived" : "Restored");
-      // Invalidate ALL ["items"] queries, not just the current one. When the
-      // user toggles includeInactive, react-query would otherwise serve the
-      // stale cache from before the toggle (the restored item would be
-      // missing). invalidateQueries with a partial key invalidates every
-      // page/filter combination so the next read pulls fresh data.
-      queryClient.invalidateQueries({ queryKey: ["items"] });
       void invalidateList(queryClient, "cmd_list_items_paged");
       void invalidateListMetrics(queryClient, "stock_health_summary");
       void stockHealth.refetch();
@@ -288,7 +282,6 @@ export function ItemList({ role }: Props) {
       );
       toast.success(`Archived ${selectedIds.size} item${selectedIds.size === 1 ? "" : "s"}`);
       setSelectedIds(new Set());
-      queryClient.invalidateQueries({ queryKey: ["items"] });
       void invalidateList(queryClient, "cmd_list_items_paged");
       void invalidateListMetrics(queryClient, "stock_health_summary");
       void stockHealth.refetch();

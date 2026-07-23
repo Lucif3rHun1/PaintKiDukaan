@@ -77,7 +77,6 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
         success: "Archived",
         error: (e) => extractError(e),
       });
-      queryClient.invalidateQueries({ queryKey: ["formulas"] });
       void invalidateList(queryClient, "cmd_list_formulas_paged");
       void invalidateListMetrics(queryClient, "cmd_formula_metrics");
       setConfirmArchive(false);
@@ -92,7 +91,6 @@ export function FormulaDetailsPage({ id, role, onBack }: Props) {
       toast.success(`Saved ${saved.id_code}`);
       setEditing(false);
       setFormula(saved);
-      queryClient.invalidateQueries({ queryKey: ["formulas"] });
       void invalidateList(queryClient, "cmd_list_formulas_paged");
       void invalidateListMetrics(queryClient, "cmd_formula_metrics");
     },

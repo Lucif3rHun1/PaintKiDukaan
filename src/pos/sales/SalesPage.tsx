@@ -42,6 +42,7 @@ import { toast } from "../../lib/feedback/toast";
 import { extractError } from "../../lib/extractError";
 import { saleStatus } from "./saleStatus";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateList } from "@/lib/query/invalidateList";
 import { useSecurity } from "../../lib/security/state";
 import { useFormShortcuts } from "../../lib/shortcuts/useFormShortcuts";
 import { useFocusShortcut } from "../../lib/shortcuts/useFocusShortcut";
@@ -562,7 +563,7 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
           setAckFlag(false);
           void refreshRecent();
           void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-          void queryClient.invalidateQueries({ queryKey: ["sales-list"] });
+          void invalidateList(queryClient, "cmd_list_sales_paged");
           void resetDraft();
           resetDirty();
           if (shouldPrintAfterSaveRef.current) {

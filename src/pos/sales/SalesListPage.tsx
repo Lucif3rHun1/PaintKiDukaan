@@ -214,8 +214,6 @@ export function SalesListPage({ onCreate }: Props) {
                     const newId = await convertToFbill(s.id);
                     toast.success("Bill converted successfully");
                     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-                    void queryClient.invalidateQueries({ queryKey: ["items"] });
-                    void queryClient.invalidateQueries({ queryKey: ["sales-list"] });
                     void invalidateList(queryClient, "cmd_list_sales_paged");
                     void invalidateListMetrics(queryClient, "cmd_sales_period_summary");
                     setHash(`#/sales/edit/${newId}`);

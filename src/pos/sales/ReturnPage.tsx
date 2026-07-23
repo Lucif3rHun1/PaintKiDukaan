@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, Save, Search, Trash2 } from "lucide-react";
+import { invalidateList } from "@/lib/query/invalidateList";
 
 import { Alert, Button, Card, KbdHint, Money, MoneyInput, PageHeader, QtyInput } from "../../components/ui";
 import { UnsavedChangesModal } from "../../components/ui/UnsavedChangesModal";
@@ -307,10 +308,10 @@ export default function ReturnPage({ user, onBack }: Props) {
       clearAll();
       void resetDraft();
       resetDirty();
-      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void invalidateList(queryClient, "cmd_list_items_paged");
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      void queryClient.invalidateQueries({ queryKey: ["returns-list"] });
-      void queryClient.invalidateQueries({ queryKey: ["sales-list"] });
+      void invalidateList(queryClient, "cmd_list_sale_returns_paged");
+      void invalidateList(queryClient, "cmd_list_sales_paged");
       setStatus(`Return #${saved} saved`);
       window.location.hash = `#/sales/return/${saved}`;
     } catch (e) {

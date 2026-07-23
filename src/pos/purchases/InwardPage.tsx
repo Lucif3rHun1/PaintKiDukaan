@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, PackagePlus, Printer, Truck, X } from "lucide-react";
+import { invalidateList } from "@/lib/query/invalidateList";
 import { Alert, Badge, EmptyState, Select, Skeleton } from "../../components/ui";
 
 import { Button, InlineDialog, Money, MoneyInput, PageHeader, QtyInput } from "../../components/ui";
@@ -540,8 +541,8 @@ export default function InwardPage({ user: _user, onExit }: Props) {
       void resetDraft();
       resetDirty();
       setRecent(await listPurchases());
-      void queryClient.invalidateQueries({ queryKey: ["inward-list"] });
-      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void invalidateList(queryClient, "cmd_list_purchases_paged");
+      void invalidateList(queryClient, "cmd_list_items_paged");
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setHash('#/inward');
       return res;
