@@ -3,6 +3,7 @@ pub mod auth;
 pub mod recovery;
 
 // Internal helpers shared across command modules
+pub mod _stock_movements;
 pub mod _util;
 
 // Slice B — domain commands

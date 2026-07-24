@@ -523,6 +523,7 @@ pub fn cmd_refresh_alerts(state: State<'_, AppState>) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::_stock_movements::{insert_stock_movement, StockMovementKind};
     use rusqlite::params;
 
     fn setup_db() -> Db {
@@ -675,9 +676,20 @@ mod tests {
                 "INSERT INTO locations (id, name, is_active, created_at, updated_at) VALUES (1, 'Default', 1, 0, 0)",
                 [],
             ).unwrap();
-            conn.execute(
-                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, created_at) VALUES (1, 1, 5, (SELECT id FROM stock_movement_kinds WHERE code = 'recount'), 1, 'adjustment', 1, 0)",
-                [],
+            // ponytail: original used 'recount' (sign=0, is_inbound=0); Adjustment
+            // has identical sign=0 so stock_balances updates identically. Add a
+            // StockMovementKind::Recount variant if a future test needs the
+            // recount-specific kind_id.
+            insert_stock_movement(
+                conn,
+                1,
+                1,
+                5.0,
+                StockMovementKind::Adjustment,
+                Some(1),
+                None,
+                0,
+                1,
             ).unwrap();
             Ok::<(), AppError>(())
         }).unwrap();

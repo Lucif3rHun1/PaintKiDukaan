@@ -24,6 +24,7 @@ use rusqlite::params;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
+use crate::commands::_stock_movements::{insert_stock_movement, StockMovementKind};
 use crate::commands::auth::AppState;
 use crate::commands::sales::date_to_ms;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
@@ -405,10 +406,16 @@ pub fn create_inward(
                  VALUES (?1, ?2, ?3, COALESCE((SELECT sell_unit_id FROM items WHERE id = ?2), (SELECT id FROM sale_units WHERE code = 'pcs')), ?4, 0, ?5, ?6)",
                 params![pid, l.item_id, base, l.unit_price_paise, line_total, now_ms()],
             )?;
-            c.execute(
-                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
-                 VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='purchase'), COALESCE((SELECT sell_unit_id FROM items WHERE id = ?1), (SELECT id FROM sale_units WHERE code = 'pcs')), 'purchase', ?4, ?5, ?6, ?7)",
-                params![l.item_id, l.location_id, base, pid, req.notes, now_ms(), user_id],
+            insert_stock_movement(
+                c,
+                l.item_id,
+                l.location_id,
+                base,
+                StockMovementKind::Purchase,
+                Some(pid),
+                req.notes.as_deref(),
+                now_ms(),
+                user_id,
             )?;
         }
         Ok(PurchaseCreated {
@@ -446,15 +453,6 @@ pub fn adjust_stock(
         return Err(PurchaseError::BadQty(0));
     }
     let note = req.notes.unwrap_or_else(|| "stock adjustment".into());
-    let kind_id: i64 = db
-        .with_conn(|c| {
-            c.query_row(
-                "SELECT id FROM stock_movement_kinds WHERE code = 'adjustment'",
-                [],
-                |r| r.get(0),
-            )
-        })
-        .map_err(PurchaseError::Db)?;
 
     // All reads and writes happen in one transaction to prevent TOCTOU races.
     db.with_conn_immediate(|c| {
@@ -484,10 +482,16 @@ pub fn adjust_stock(
                 )));
             }
         }
-        c.execute(
-            "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by) \
-             VALUES (?1, ?2, ?3, ?4, COALESCE((SELECT sell_unit_id FROM items WHERE id = ?1), (SELECT id FROM sale_units WHERE code = 'pcs')), 'adjustment', NULL, ?5, ?6, ?7)",
-            params![req.item_id, req.location_id, req.qty, kind_id, note, now_ms(), user_id],
+        insert_stock_movement(
+            c,
+            req.item_id,
+            req.location_id,
+            req.qty,
+            StockMovementKind::Adjustment,
+            None,
+            Some(&note),
+            now_ms(),
+            user_id,
         )?;
         let new_qty: f64 = c.query_row(
             "SELECT COALESCE(sb.qty, 0) FROM items i \

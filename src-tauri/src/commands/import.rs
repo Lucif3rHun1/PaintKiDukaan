@@ -17,6 +17,7 @@
 use rusqlite::params;
 use serde::Serialize;
 
+use crate::commands::_stock_movements::{insert_stock_movement, StockMovementKind};
 use crate::commands::auth::AppState;
 use crate::commands::sales::date_to_ms;
 use crate::error::{AppError, AppResult};
@@ -479,17 +480,16 @@ pub fn cmd_import_items_csv(
                 ).unwrap_or(0.0);
                 let delta = target_stock - current_balance;
                 if delta.abs() > f64::EPSILON {
-                    if let Err(e) = tx.execute(
-                        "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
-                         VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='adjustment'), COALESCE((SELECT sell_unit_id FROM items WHERE id = ?1), (SELECT id FROM sale_units WHERE code = 'pcs')), 'adjustment', NULL, ?4, ?5, ?6)",
-                        params![
-                            item_id,
-                            primary_location_id,
-                            delta,
-                            "Stock set by CSV import",
-                            now_ms,
-                            user.id,
-                        ],
+                    if let Err(e) = insert_stock_movement(
+                        tx,
+                        item_id,
+                        primary_location_id,
+                        delta,
+                        StockMovementKind::Adjustment,
+                        None,
+                        Some("Stock set by CSV import"),
+                        now_ms,
+                        user.id,
                     ) {
                         log::warn!("stock replacement failed for item {item_id}: {e}");
                         result.errors.push(ImportRowError { row: i + 2, message: format!("stock adjustment failed for item {item_id}: {e}") });
@@ -875,10 +875,16 @@ pub fn cmd_import_inward_csv(
             }
 
             // Insert stock movement
-            tx.execute(
-                "INSERT INTO stock_movements (item_id, location_id, qty, kind_id, sale_unit_id, ref_kind, ref_id, note, created_at, created_by)
-                 VALUES (?1, ?2, ?3, (SELECT id FROM stock_movement_kinds WHERE code='purchase'), ?4, 'purchase', ?5, ?6, ?7, ?8)",
-                params![item.id, location_id, base, item.sell_unit_id, pid, notes, now_ms, user.id],
+            insert_stock_movement(
+                tx,
+                item.id,
+                location_id,
+                base,
+                StockMovementKind::Purchase,
+                Some(pid),
+                notes.as_deref(),
+                now_ms,
+                user.id,
             )?;
 
             result.created += 1;

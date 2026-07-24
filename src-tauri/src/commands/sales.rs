@@ -19,6 +19,7 @@ use rusqlite::params;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
+use crate::commands::_stock_movements::{insert_stock_movement, StockMovementKind};
 use crate::commands::auth::AppState;
 use crate::commands::{customers, sequences};
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
@@ -601,18 +602,16 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                     ).unwrap_or_else(|_| "unknown".into());
                     return Err(SaleError::InsufficientStock { item_id, item_name, available, requested });
                 }
-                c.execute(
-                    "INSERT INTO stock_movements
-                        (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'sale',?4,?5,?6)",
-                    params![
-                        item_id,
-                        default_location,
-                        -requested,
-                        id,
-                        user_id,
-                        now_epoch_ms()
-                    ],
+                insert_stock_movement(
+                    c,
+                    item_id,
+                    default_location,
+                    -requested,
+                    StockMovementKind::Sale,
+                    Some(id),
+                    None,
+                    now_epoch_ms(),
+                    user_id,
                 )?;
             } else if l.kind == "formula" {
                 if let Some(fid) = l.formula_id {
@@ -637,11 +636,16 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
                             ).unwrap_or_else(|_| "unknown".into());
                             return Err(SaleError::InsufficientStock { item_id: base_id, item_name, available, requested });
                         }
-                        c.execute(
-                            "INSERT INTO stock_movements
-                                (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                             VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'sale',?4,?5,?6)",
-                            params![base_id, default_location, -requested, id, user_id, now_epoch_ms()],
+                        insert_stock_movement(
+                            c,
+                            base_id,
+                            default_location,
+                            -requested,
+                            StockMovementKind::Sale,
+                            Some(id),
+                            None,
+                            now_epoch_ms(),
+                            user_id,
                         )?;
                     }
                 }
@@ -802,11 +806,16 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                         ).unwrap_or_else(|_| "unknown".into());
                         return Err(SaleError::InsufficientStock { item_id, item_name, available, requested: qty });
                     }
-                    c.execute(
-                        "INSERT INTO stock_movements
-                        (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'sale',?4,?5,?6)",
-                        params![item_id, default_location, -qty, new_id, user_id, now_epoch_ms()],
+                    insert_stock_movement(
+                        c,
+                        item_id,
+                        default_location,
+                        -qty,
+                        StockMovementKind::Sale,
+                        Some(new_id),
+                        None,
+                        now_epoch_ms(),
+                        user_id,
                     )?;
                 } else if kind == "formula" {
                     if let Some(fid) = formula_id {
@@ -830,11 +839,16 @@ pub fn convert_quotation(db: &Db, user_id: i64, req: ConvertQuotation) -> Result
                                 ).unwrap_or_else(|_| "unknown".into());
                                 return Err(SaleError::InsufficientStock { item_id: base_id, item_name, available, requested: qty });
                             }
-                            c.execute(
-                                "INSERT INTO stock_movements
-                                (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                             VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='sale'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'sale',?4,?5,?6)",
-                                params![base_id, default_location, -qty, new_id, user_id, now_epoch_ms()],
+                            insert_stock_movement(
+                                c,
+                                base_id,
+                                default_location,
+                                -qty,
+                                StockMovementKind::Sale,
+                                Some(new_id),
+                                None,
+                                now_epoch_ms(),
+                                user_id,
                             )?;
                         }
                     }
@@ -1481,18 +1495,16 @@ pub fn create_sale_return(
                 l.item_id
             };
             if let Some(item_id) = resolved_item_id {
-                c.execute(
-                    "INSERT INTO stock_movements
-                        (item_id,location_id,qty,kind_id,sale_unit_id,ref_kind,ref_id,created_by,created_at)
-                     VALUES (?1,?2,?3,(SELECT id FROM stock_movement_kinds WHERE code='return'),COALESCE((SELECT sell_unit_id FROM items WHERE id=?1), (SELECT id FROM sale_units WHERE code = 'pcs')),'return',?4,?5,?6)",
-                    params![
-                        item_id,
-                        sale_location,
-                        l.qty,
-                        return_id,
-                        user_id,
-                        created_at,
-                    ],
+                insert_stock_movement(
+                    c,
+                    item_id,
+                    sale_location,
+                    l.qty,
+                    StockMovementKind::Return,
+                    Some(return_id),
+                    None,
+                    created_at,
+                    user_id,
                 )?;
             }
         }

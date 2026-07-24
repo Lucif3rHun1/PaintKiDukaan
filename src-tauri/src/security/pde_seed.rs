@@ -1,5 +1,7 @@
 use rusqlite::Connection;
 
+use crate::commands::_stock_movements::{insert_stock_movement, StockMovementKind};
+
 /// Seed a decoy SQLite database with realistic paint shop data for PDE.
 ///
 /// Called from `provision_decoy_db_impl` AFTER the existing 5-row seed
@@ -338,18 +340,20 @@ pub fn seed_decoy_data(
     }
 
     // ═══════════════════ 6. Stock movements (initial purchase) ═══
-    let purchase_kind_id: i64 = conn.query_row(
-        "SELECT id FROM stock_movement_kinds WHERE kind='purchase'",
-        [],
-        |r| r.get(0),
-    )?;
     for &iid in &item_ids {
         let qty = prng.range(20, 50) as f64;
-        conn.execute(
-            "INSERT INTO stock_movements \
-             (item_id,location_id,kind_id,qty,sale_unit_id,ref_kind,note,created_at,created_by) \
-             VALUES (?1,1,?2,?3,?4,'purchase','Initial stock',?5,1)",
-            rusqlite::params![iid, purchase_kind_id, qty, unit_sid, now - 30 * 86400],
+        // ponytail: original SQL referenced a non-existent `kind` column on
+        // `stock_movement_kinds`; the helper resolves `kind_id` from `code`.
+        insert_stock_movement(
+            conn,
+            iid,
+            1,
+            qty,
+            StockMovementKind::Purchase,
+            None,
+            Some("Initial stock"),
+            now - 30 * 86400,
+            1,
         )?;
     }
 
