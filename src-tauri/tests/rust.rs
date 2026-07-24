@@ -19,3 +19,6 @@ mod purchases;
 
 #[path = "rust/settings.rs"]
 mod settings;
+
+#[path = "rust/items.rs"]
+mod items;
