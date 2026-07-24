@@ -2,10 +2,8 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Card, Money, Skeleton } from "../../components/ui";
 import { fetchCustomerLedger } from "./api";
 import { extractError } from "../../lib/extractError";
-import type { Customer, CustomerLedger } from "../types";
 import { LedgerTable } from "./LedgerTable";
-
-export { CustomerCreditInvoiceForm } from "./CreditInvoiceForm";
+import type { Customer, CustomerLedger } from "../types";
 
 interface Props {
   customer: Customer;
@@ -59,7 +57,8 @@ export function CustomerLedgerView({ customer, onCreateCreditInvoice }: Props) {
           <LedgerTable rows={ledger.rows} />
         </>
       )}
-
     </div>
   );
 }
+
+export { CustomerCreditInvoiceForm } from "./CreditInvoiceForm";
