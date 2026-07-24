@@ -123,4 +123,63 @@ mod tests {
             );
         }
     }
+
+    /// M-039: TEXT timestamps must default to UTC with millisecond precision
+    /// (format `YYYY-MM-DD HH:MM:SS.fff`, 23 chars) rather than the legacy
+    /// `datetime('now','localtime')` (19 chars, no fractional, local TZ).
+    #[test]
+    fn m039_timestamps_use_utc_ms_format() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA key = 'test';").unwrap();
+        conn.execute_batch(crate::db::SCHEMA_FINAL)
+            .expect("schema_final.sql should apply");
+
+        let tables_with_created_at = [
+            "customers", "formulas", "sales", "sale_items",
+            "sale_units", "purchase_units", "item_purchase_packaging",
+        ];
+
+        for table in &tables_with_created_at {
+            let sql: String = conn
+                .query_row(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?1",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap_or_default();
+            assert!(
+                sql.contains("strftime('%Y-%m-%d %H:%M:%f', 'now')"),
+                "table `{table}` should use UTC ms DEFAULT; got: {sql}"
+            );
+            assert!(
+                !sql.contains("datetime('now','localtime')"),
+                "table `{table}` should not use localtime DEFAULT; got: {sql}"
+            );
+        }
+    }
+
+    /// M-039: schema_default produces a 23-char UTC millisecond timestamp.
+    #[test]
+    fn m039_default_format_is_23_chars() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA key = 'test';").unwrap();
+        conn.execute_batch(crate::db::SCHEMA_FINAL)
+            .expect("schema_final.sql should apply");
+
+        let now: String = conn
+            .query_row(
+                "SELECT strftime('%Y-%m-%d %H:%M:%f', 'now')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // Format: YYYY-MM-DD HH:MM:SS.fff (4+1+2+1+2+1+2+1+2+1+2+1+3 = 23)
+        assert_eq!(now.len(), 23, "got '{now}' (len={}); expected 23", now.len());
+        // Must NOT contain 'T' (we use space, not ISO 8601 'T' separator for
+        // backward compat with NaiveDateTime::parse_from_str format).
+        assert!(!now.contains('T'), "got '{now}'; should not contain 'T'");
+        // Must contain the fractional separator.
+        assert!(now.contains('.'), "got '{now}'; should be ms-precision");
+    }
+
 }

@@ -347,10 +347,24 @@ fn ms_to_date(ms: i64) -> String {
 
 fn text_datetime_to_ms(s: &str) -> i64 {
     use chrono::NaiveDateTime;
-    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+    // M-039: accept either legacy "YYYY-MM-DD HH:MM:SS" (localtime) or
+    // normalized "YYYY-MM-DD HH:MM:SS.fff" (UTC). Try fractional first
+    // since it is a superset (chrono accepts fewer digits in %.f).
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
         .ok()
-        .and_then(|dt| dt.and_local_timezone(chrono::Local).single())
-        .map(|dt| dt.timestamp_millis())
+        .map(|dt| {
+            // M-039: fractional-seconds rows are stored in UTC;
+            // legacy non-fractional rows were stored in localtime.
+            if s.contains('.') {
+                dt.and_utc().timestamp_millis()
+            } else {
+                dt.and_local_timezone(chrono::Local)
+                    .single()
+                    .map(|local| local.timestamp_millis())
+                    .unwrap_or(0)
+            }
+        })
         .unwrap_or(0)
 }
 

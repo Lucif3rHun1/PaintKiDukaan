@@ -36,6 +36,7 @@ pub fn run_inline_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     m_inline_026(conn)?;
     m_inline_028(conn)?;
     m_inline_031(conn)?;
+    m_inline_039(conn)?;
     Ok(())
 }
 
@@ -1164,5 +1165,144 @@ fn m_inline_031(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         "        CREATE INDEX IF NOT EXISTS idx_items_sell_unit ON items(sell_unit_id) WHERE is_active = 1;        CREATE INDEX IF NOT EXISTS idx_items_sub_location ON items(sub_location_id) WHERE is_active = 1;        CREATE INDEX IF NOT EXISTS idx_sale_return_lines_sale_item_id ON sale_return_lines(sale_item_id);",
     )?;
+    Ok(())
+}
+
+
+// ---------------------------------------------------------------------------
+// M-INLINE-039: Normalize TEXT timestamps to UTC with millisecond precision.
+// Source: audit-6-sql-best-practices.md timestamp section.
+// Each affected table has its TEXT created_at/updated_at columns rebuilt
+// to use strftime('%Y-%m-%d %H:%M:%f', 'now') (UTC ms) and existing rows
+// converted in-place. Indexes + FKs are dropped before the rebuild and
+// recreated after.
+//
+// Idempotent: pragma_table_info("table") is queried first; if a watched column
+// is already INTEGER or already uses the new DEFAULT (detected by inspecting
+// the CREATE TABLE SQL), the table is skipped.
+// ---------------------------------------------------------------------------
+
+fn m_inline_039(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let cols: &[(&str, &str, &str)] = &[
+        // (table, col, source_tz_when_legacy) -- source_tz is only used to
+        // parse legacy TEXT data; if the column already carried a fractional
+        // component we treat it as UTC and copy as-is.
+        ("customers",              "created_at", "localtime"),
+        ("customers",              "updated_at", "localtime"),
+        ("formulas",               "created_at", "localtime"),
+        ("sales",                  "created_at", "localtime"),
+        ("sales",                  "updated_at", "localtime"),
+        ("sale_items",             "created_at", "localtime"),
+        ("sale_units",             "created_at", "utc"),
+        ("sale_units",             "updated_at", "utc"),
+        ("purchase_units",         "created_at", "utc"),
+        ("purchase_units",         "updated_at", "utc"),
+        ("item_purchase_packaging", "created_at", "utc"),
+        ("item_purchase_packaging", "updated_at", "utc"),
+    ];
+
+    // Group by table so we only rebuild each table once even with multiple cols.
+    use std::collections::BTreeMap;
+    let mut by_table: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut source_tz: BTreeMap<&str, &str> = BTreeMap::new();
+    for (t, c, tz) in cols {
+        by_table.entry(t).or_default().push(c);
+        source_tz.entry(t).or_insert(tz);
+    }
+
+    for (table, table_cols) in &by_table {
+        // Idempotency: skip if any column is already INTEGER (already migrated).
+        let mut needs_migration = false;
+        for col in table_cols {
+            let col_type: Option<String> = conn
+                .query_row(
+                    &format!("SELECT type FROM pragma_table_info('{table}') WHERE name = '{col}'"),
+                    [],
+                    |r| r.get(0),
+                )
+                .ok();
+            match col_type.as_deref() {
+                Some("TEXT") => needs_migration = true,
+                Some("INTEGER") => continue,
+                _ => return Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                    Some(format!("M-INLINE-039: column {table}.{col} missing or unknown type")),
+                )),
+            }
+        }
+        if !needs_migration {
+            continue;
+        }
+
+        // Read CREATE TABLE SQL, swap old default for new (UTC ms).
+        let sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?1",
+                [table],
+                |r| r.get(0),
+            )
+            .map_err(|e| rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                Some(format!("M-INLINE-039: cannot read {table} schema: {e}")),
+            ))?;
+        let new_default = "DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))";
+        let new_table_sql = sql
+            .replace("DEFAULT (datetime('now','localtime'))", new_default)
+            .replace("DEFAULT (datetime('now'))", new_default);
+        let new_name = format!("{table}_m039_new");
+        let new_create = new_table_sql.replace(
+            &format!("CREATE TABLE {table} "),
+            &format!("CREATE TABLE {new_name} "),
+        );
+
+        // Snapshot indexes on this table so we can recreate them after.
+        let mut idx_stmt = conn.prepare(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name = ?1 AND sql IS NOT NULL",
+        )?;
+        let indexes: Vec<String> = idx_stmt
+            .query_map([table], |r| r.get::<_, String>(0))?
+            .collect::<Result<_, _>>()?;
+
+        // Build column list and SELECT expression that converts each legacy col.
+        let mut col_stmt = conn.prepare(
+            &format!("SELECT name FROM pragma_table_info('{table}') ORDER BY cid"),
+        )?;
+        let all_cols: Vec<String> = col_stmt
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<_, _>>()?;
+
+        let tz = source_tz[table];
+        let select_list = all_cols
+            .iter()
+            .map(|c| {
+                if table_cols.contains(&c.as_str()) {
+                    if tz == "localtime" {
+                        format!("strftime('%Y-%m-%d %H:%M:%f', '{c}', 'localtime')")
+                    } else {
+                        format!("strftime('%Y-%m-%d %H:%M:%f', '{c}')")
+                    }
+                } else {
+                    c.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let all_cols_csv = all_cols.join(", ");
+
+        let mut batch = format!(
+            "PRAGMA foreign_keys = OFF;\
+             {new_create};\
+             INSERT INTO {new_name} ({all_cols_csv}) SELECT {select_list} FROM {table};\
+             DROP TABLE {table};\
+             ALTER TABLE {new_name} RENAME TO {table};"
+        );
+        for idx in &indexes {
+            let fixed = idx.replace(&new_name, table);
+            batch.push_str(&format!("\n{fixed};"));
+        }
+        batch.push_str("\nPRAGMA foreign_keys = ON;");
+        conn.execute_batch(&batch)?;
+    }
+
     Ok(())
 }
