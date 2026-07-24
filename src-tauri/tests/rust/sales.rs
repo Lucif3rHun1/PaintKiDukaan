@@ -182,14 +182,12 @@ fn convert_quotation_creates_new_final_sale_without_deducting_stock_twice() {
             acknowledge_flag: false,
         },
     );
-    // Pin the current (broken) contract so the bug stays visible in CI.
-    assert!(
-        matches!(res, Err(sales::SaleError::InsufficientStock { .. })),
-        "expected InsufficientStock while the rusqlite param-count bug is unfixed, got: {res:?}"
-    );
-    // The quotation stays unconverted (no stock movement either way).
-    assert_eq!(stock_qty(&fx.db, ITEM_RED_ID, LOCATION_ID), 100.0);
-    assert_eq!(sale_status(&fx.db, q_id), "quotation");
+    // C6 fixed the rusqlite param-count bug: deduct_stock_for_line now passes
+    // exactly one param, so the stock check works correctly and conversion succeeds.
+    let new_id = res.expect("convert_quotation should succeed after param-count fix");
+    assert_eq!(sale_status(&fx.db, new_id), "final");
+    // Stock reduced by exactly the line quantity (5.0).
+    assert_eq!(stock_qty(&fx.db, ITEM_RED_ID, LOCATION_ID), 95.0);
 }
 
 // ============================================================================

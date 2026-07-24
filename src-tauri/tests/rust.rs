@@ -25,3 +25,9 @@ mod stock_movements;
 
 #[path = "rust/items.rs"]
 mod items;
+
+#[path = "rust/customer_ledger.rs"]
+mod customer_ledger;
+
+#[path = "rust/vendor_ledger.rs"]
+mod vendor_ledger;

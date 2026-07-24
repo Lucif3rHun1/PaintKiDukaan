@@ -19,6 +19,7 @@ pub mod locations;
 pub mod sale_purchase_units;
 pub mod sub_locations;
 pub mod units;
+pub mod vendor_ledger;
 pub mod vendors;
 
 // Slice C — POS commands

@@ -1,27 +1,22 @@
-//! Customer ledger reads + credit-invoice writes.
-//!
-//! Provides a per-transaction khata view (sales increase balance, payments
-//! decrease it) and a dedicated command to post a credit invoice for a
-//! customer on an older date.
+//! Customer ledger reads + writes + Tauri command wrappers.
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use tauri::State;
 
+use crate::commands::auth::AppState;
 use crate::commands::{customers, sales};
 use crate::commands::sales::date_to_ms;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::session::{require_role, Role};
-
-// -----------------------------------------------------------------------------
-// Public types (Tauri command arguments / return values).
-// -----------------------------------------------------------------------------
+use crate::security::ipc_auth;
+use crate::session::{current_user, require_auth, require_role, Role};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CustomerLedgerTransaction {
     pub id: i64,
     pub date: String,
-    pub kind: String, // "sale" | "payment"
+    pub kind: String,
     pub ref_no: Option<String>,
     pub description: Option<String>,
     pub debit_paise: i64,
@@ -49,7 +44,7 @@ pub struct CreditInvoiceLine {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateCustomerCreditInvoice {
     pub customer_id: i64,
-    pub date: String, // ISO YYYY-MM-DD
+    pub date: String,
     pub description: Option<String>,
     pub lines: Vec<CreditInvoiceLine>,
 }
@@ -57,15 +52,13 @@ pub struct CreateCustomerCreditInvoice {
 #[derive(Debug, Clone, Deserialize)]
 pub struct RecordCustomerPayment {
     pub customer_id: i64,
-    pub amount: i64, // paise, must be > 0
+    pub amount: i64,
     pub mode: String,
-    pub date: String, // ISO YYYY-MM-DD
+    pub date: String,
     pub note: Option<String>,
 }
 
-// -----------------------------------------------------------------------------
-// Reads.
-// -----------------------------------------------------------------------------
+// ---- Reads -----------------------------------------------------------------
 
 pub fn customer_ledger_impl(db: &Db, customer_id: i64, limit: i64) -> AppResult<CustomerLedger> {
     db.with_raw(|c| {
@@ -141,9 +134,40 @@ pub fn customer_ledger_impl(db: &Db, customer_id: i64, limit: i64) -> AppResult<
     })
 }
 
-// -----------------------------------------------------------------------------
-// Writes.
-// -----------------------------------------------------------------------------
+// ---- Outstanding balance ---------------------------------------------------
+
+pub fn customer_outstanding_impl(db: &Db, id: i64) -> AppResult<customers::CustomerOutstanding> {
+    db.with_raw(|c| {
+        let opening: i64 = c.query_row(
+            "SELECT opening_balance_paise FROM customers WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )?;
+        let total_sales: i64 = c.query_row(
+            "SELECT COALESCE(SUM(total - paid_amount), 0) FROM sales WHERE customer_id = ?1 AND status = 'final'",
+            params![id], |r| r.get(0),
+        )?;
+        let total_payments: i64 = c.query_row(
+            "SELECT COALESCE(SUM(amount_paise), 0) FROM customer_payments WHERE customer_id = ?1",
+            params![id], |r| r.get(0),
+        )?;
+        let total_paid: i64 = c.query_row(
+            "SELECT COALESCE(SUM(paid_amount), 0) FROM sales WHERE customer_id = ?1 AND status = 'final'",
+            params![id], |r| r.get(0),
+        )?;
+        let outstanding = opening + total_sales - total_payments;
+        Ok(customers::CustomerOutstanding {
+            customer_id: id,
+            opening_balance_paise: opening,
+            total_sales,
+            total_paid,
+            total_payments,
+            outstanding,
+        })
+    })
+}
+
+// ---- Writes ----------------------------------------------------------------
 
 pub fn create_customer_credit_invoice_impl(
     db: &Db,
@@ -152,7 +176,6 @@ pub fn create_customer_credit_invoice_impl(
 ) -> AppResult<i64> {
     require_role(user, &[Role::Owner, Role::Cashier])?;
 
-    // Verify the customer exists.
     let customer_id = req.customer_id;
     let customer = db
         .with_raw(|c| customers::get_by_id(c, customer_id))?
@@ -213,7 +236,6 @@ pub fn record_customer_payment_impl(
     let customer_id = req.customer_id;
 
     db.with_conn_immediate(|c| -> AppResult<()> {
-        // Ensure customer exists before recording payment.
         let exists: bool = c.query_row(
             "SELECT EXISTS(SELECT 1 FROM customers WHERE id = ?1)",
             params![customer_id],
@@ -237,17 +259,82 @@ pub fn record_customer_payment_impl(
         Ok(())
     })?;
 
-    customers::customer_outstanding_impl(db, customer_id)
+    customer_outstanding_impl(db, customer_id)
 }
 
-// -----------------------------------------------------------------------------
-// Tauri command wrappers live in `commands::customers` so the existing
-// invoke_handler in `lib.rs` does not need to change.
-// -----------------------------------------------------------------------------
+// ---- Tauri command wrappers ------------------------------------------------
 
-// -----------------------------------------------------------------------------
-// Helpers.
-// -----------------------------------------------------------------------------
+#[tauri::command(rename_all = "snake_case")]
+pub fn customer_ledger(
+    state: State<'_, AppState>,
+    customer_id: i64,
+    limit: Option<i64>,
+) -> AppResult<CustomerLedger> {
+    ipc_auth::authorize_err("customer_ledger", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    customer_ledger_impl(db, customer_id, limit.unwrap_or(100))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn create_customer_credit_invoice(
+    state: State<'_, AppState>,
+    args: CreateCustomerCreditInvoice,
+) -> AppResult<()> {
+    ipc_auth::authorize_err("create_customer_credit_invoice", state.inner())?;
+    let user = current_user(state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    create_customer_credit_invoice_impl(db, &user, args)?;
+    Ok(())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn customer_credit_sales(
+    state: State<'_, AppState>,
+    _customer_id: i64,
+) -> AppResult<Vec<serde_json::Value>> {
+    ipc_auth::authorize_err("customer_credit_sales", state.inner())?;
+    Ok(Vec::new())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn record_customer_payment(
+    state: State<'_, AppState>,
+    args: RecordCustomerPayment,
+) -> AppResult<customers::CustomerOutstanding> {
+    ipc_auth::authorize_err("record_customer_payment", state.inner())?;
+    let user = current_user(state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    record_customer_payment_impl(db, &user, args)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn customer_outstanding(
+    state: State<'_, AppState>,
+    id: i64,
+) -> AppResult<customers::CustomerOutstanding> {
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    let user = require_auth("customer_outstanding", state.inner())?;
+    require_role(&user, &[Role::Owner, Role::Cashier])?;
+    customer_outstanding_impl(db, id)
+}
+
+// ---- Helpers ---------------------------------------------------------------
 
 fn ms_to_date(ms: i64) -> String {
     use chrono::TimeZone;
@@ -274,7 +361,6 @@ mod tests {
 
     #[test]
     fn ledger_running_balance_computed_oldest_first() {
-
         let db = Db::open_in_memory().unwrap();
         db.with_raw(|c| {
             c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 0, 0)", []).unwrap();
@@ -289,20 +375,45 @@ mod tests {
 
         let ledger = customer_ledger_impl(&db, 1, 200).unwrap();
         assert_eq!(ledger.opening_balance_paise, 100);
-        // Rows are returned newest-first for display.
-        // Payment (created_at=2000 → epoch 1970-01-01) sorts before INV-1
-        // because it has no sale_id link, so the ledger query treats it as
-        // an orphan with an ambiguous effective date.
         assert_eq!(ledger.rows.len(), 3);
         assert_eq!(ledger.rows[0].ref_no.as_deref(), Some("INV-2"));
-        assert_eq!(ledger.rows[0].balance_paise, 700); // 100 + 500 - 200 + 300
+        assert_eq!(ledger.rows[0].balance_paise, 700);
         assert_eq!(ledger.rows[1].ref_no.as_deref(), Some("INV-1"));
-        assert_eq!(ledger.rows[1].balance_paise, 400); // 100 + 500 - 200
+        assert_eq!(ledger.rows[1].balance_paise, 400);
         assert_eq!(ledger.rows[2].credit_paise, 200);
-        // Sorting ASC: payment (1970-01-01) first → balance = 100 + 0 - 200 = -100
-        // INV-1 → -100 + 500 = 400. INV-2 → 400 + 300 = 700.
-        // After reversal for display: rows[2] = payment with balance -100.
         assert_eq!(ledger.rows[2].balance_paise, -100);
         assert_eq!(ledger.closing_balance_paise, 700);
+    }
+
+    #[test]
+    fn customer_outstanding_command() {
+        let db = Db::open_in_memory().unwrap();
+        db.with_raw(|c| {
+            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 0, 0)", []).unwrap();
+        });
+        let cust_id = db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO customers (name, phone, opening_balance_paise) VALUES ('X', '9876543210', 500)",
+                [],
+            ).unwrap();
+            c.last_insert_rowid()
+        });
+        db.with_raw(|c| {
+            c.execute(
+                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('INV-1', ?1, 1000, 400, 'final', '2024-01-01', 1000, 1)",
+                [cust_id],
+            ).unwrap();
+            c.execute(
+                "INSERT INTO customer_payments (customer_id, amount_paise, mode, created_at, created_by) VALUES (?1, 200, 'cash', 1704153600000, 1)",
+                [cust_id],
+            ).unwrap();
+        });
+        let out = customer_outstanding_impl(&db, cust_id).unwrap();
+        assert_eq!(out.customer_id, cust_id);
+        assert_eq!(out.opening_balance_paise, 500);
+        assert_eq!(out.total_sales, 600);
+        assert_eq!(out.total_paid, 400);
+        assert_eq!(out.total_payments, 200);
+        assert_eq!(out.outstanding, 900);
     }
 }

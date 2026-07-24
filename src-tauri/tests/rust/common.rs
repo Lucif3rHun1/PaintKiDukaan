@@ -511,7 +511,7 @@ pub fn vendor_outstanding_in_db(db: &Db, vendor_id: i64) -> i64 {
 }
 
 pub fn customer_outstanding_in_db(db: &Db, customer_id: i64) -> i64 {
-    paintkiduakan_lib::commands::customers::customer_outstanding_impl(db, customer_id)
+    paintkiduakan_lib::commands::customer_ledger::customer_outstanding_impl(db, customer_id)
         .map(|o| o.outstanding)
         .unwrap_or(0)
 }

@@ -2,10 +2,8 @@
 
 use crate::commands::_util::case_fold_lower;
 use crate::commands::auth::AppState;
-use crate::commands::sales::date_to_ms;
 use crate::db::list::{paged_query, sanitize_dir, sanitize_sort, ListPage, ListQuery};
 use crate::error::{AppError, AppResult};
-use crate::security::ipc_auth;
 use crate::session::{require_auth, require_role, Role};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -264,112 +262,6 @@ pub fn update_vendor(
     })
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub fn record_vendor_payment(
-    state: State<'_, AppState>,
-    payload: VendorPayment,
-) -> AppResult<VendorOutstanding> {
-    let guard = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
-    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = require_auth("record_vendor_payment", state.inner())?;
-    require_role(&user, &[Role::Owner])?;
-    if payload.amount <= 0 {
-        return Err(AppError::Validation("amount must be > 0".into()));
-    }
-    if payload.mode.trim().is_empty() {
-        return Err(AppError::Validation("mode is required".into()));
-    }
-    let date_ms = date_to_ms(&payload.date);
-    db.with_tx(|tx| {
-        // Ensure vendor exists.
-        let exists: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM vendors WHERE id = ?1)",
-            params![payload.vendor_id], |r| r.get(0),
-        ).unwrap_or(false);
-        if !exists {
-            return Err(AppError::NotFound(format!("vendor {}", payload.vendor_id)));
-        }
-        tx.execute(
-            "INSERT INTO vendor_payments (vendor_id, purchase_id, mode, amount_paise, reference, note, created_at, created_by) VALUES (?1, NULL, ?2, ?3, NULL, ?4, ?5, ?6)",
-            params![
-                payload.vendor_id,
-                payload.mode,
-                payload.amount,
-                payload.notes,
-                date_ms,
-                user.id,
-            ],
-        )?;
-        // Return updated outstanding.
-        compute_outstanding_tx(tx, payload.vendor_id)
-    })
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn vendor_outstanding(state: State<'_, AppState>, id: i64) -> AppResult<VendorOutstanding> {
-    let guard = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
-    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
-    let user = require_auth("vendor_outstanding", state.inner())?;
-    require_role(&user, &[Role::Owner, Role::Cashier])?;
-    db.with_raw(|c| {
-        let opening_balance: i64 = c.query_row(
-            "SELECT COALESCE(opening_balance_paise, 0) FROM vendors WHERE id = ?1",
-            params![id],
-            |r| r.get(0),
-        )?;
-        let total_purchases: i64 = c.query_row(
-            "SELECT COALESCE(SUM(total_paise), 0) FROM purchases WHERE vendor_id = ?1",
-            params![id],
-            |r| r.get(0),
-        )?;
-        let total_payments: i64 = c.query_row(
-            "SELECT COALESCE(SUM(amount_paise), 0) FROM vendor_payments WHERE vendor_id = ?1",
-            params![id],
-            |r| r.get(0),
-        )?;
-        let outstanding = opening_balance + total_purchases - total_payments;
-        Ok(VendorOutstanding {
-            vendor_id: id,
-            opening_balance,
-            total_purchases,
-            total_payments,
-            outstanding,
-        })
-    })
-}
-
-fn compute_outstanding_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<VendorOutstanding> {
-    let opening_balance: i64 = tx.query_row(
-        "SELECT COALESCE(opening_balance_paise, 0) FROM vendors WHERE id = ?1",
-        params![id],
-        |r| r.get(0),
-    )?;
-    let total_purchases: i64 = tx.query_row(
-        "SELECT COALESCE(SUM(total_paise), 0) FROM purchases WHERE vendor_id = ?1",
-        params![id],
-        |r| r.get(0),
-    )?;
-    let total_payments: i64 = tx.query_row(
-        "SELECT COALESCE(SUM(amount_paise), 0) FROM vendor_payments WHERE vendor_id = ?1",
-        params![id],
-        |r| r.get(0),
-    )?;
-    let outstanding = opening_balance + total_purchases - total_payments;
-    Ok(VendorOutstanding {
-        vendor_id: id,
-        opening_balance,
-        total_purchases,
-        total_payments,
-        outstanding,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,43 +309,12 @@ mod tests {
     }
 
     #[test]
-    fn record_vendor_payment_returns_updated_outstanding() {
-
-        let db = Db::open_in_memory().unwrap();
-        db.with_raw(|c| {
-            c.execute("INSERT INTO users (name, role, pin_salt, pin_verifier, pin_length, is_active, created_at, updated_at) VALUES ('O', 'owner', X'00', X'00', 6, 1, 0, 0)", []).unwrap();
-        });
-        let id = db.with_raw(|c| {
-            c.execute("INSERT INTO vendors (name, opening_balance_paise, is_active, created_at, updated_at) VALUES ('V', 0, 1, 0, 0)", []).unwrap();
-            c.last_insert_rowid()
-        });
-        let out = db.with_tx(|tx| {
-            tx.execute(
-                "INSERT INTO vendor_payments (vendor_id, purchase_id, mode, amount_paise, reference, note, created_at, created_by) VALUES (?1, NULL, 'cash', 100, NULL, NULL, 0, 1)",
-                [id],
-            ).unwrap();
-            compute_outstanding_tx(tx, id)
-        }).unwrap();
-        assert_eq!(out.outstanding, -100, "got {}", out.outstanding);
-    }
-
-    #[test]
     fn validate_phone_rejects_invalid_numbers() {
         assert!(validate_phone("12345").is_err());
         assert!(validate_phone("1234567890").is_err());
         assert!(validate_phone("987654321a").is_err());
         assert!(validate_phone("9876543210").is_ok());
     }
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn list_vendor_payments(
-    state: State<'_, AppState>,
-    _vendor_id: i64,
-    _limit: Option<i64>,
-) -> AppResult<Vec<serde_json::Value>> {
-    ipc_auth::authorize_err("list_vendor_payments", state.inner())?;
-    Ok(Vec::new())
 }
 
 // ---- Unified List Display System (PR-1, Wave 2) ----
