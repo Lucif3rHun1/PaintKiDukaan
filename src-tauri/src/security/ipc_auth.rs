@@ -1334,4 +1334,66 @@ mod tests {
         assert!(Role::Stocker > Role::Public);
         assert!(Role::Owner > Role::Public);
     }
+
+    // -- RU-1 drift check: COMMAND_ACL must match CHECK_ACL (from commands.toml) ----
+
+    fn role_to_str(r: &Role) -> &'static str {
+        match r {
+            Role::Public => "public",
+            Role::Stocker => "stocker",
+            Role::Cashier => "cashier",
+            Role::Owner => "owner",
+        }
+    }
+
+    #[test]
+    fn rbac_command_acl_matches_check_acl() {
+        use std::collections::BTreeMap;
+        use crate::security::acl_generated::CHECK_ACL;
+
+        let hand: BTreeMap<&str, &str> = COMMAND_ACL
+            .iter()
+            .map(|e| (e.name, role_to_str(&e.min_role)))
+            .collect();
+        let gen: BTreeMap<&str, &str> = CHECK_ACL.iter().map(|(n, r)| (*n, *r)).collect();
+
+        assert_eq!(
+            hand.len(),
+            gen.len(),
+            "command count mismatch: hand={} gen={}",
+            hand.len(),
+            gen.len()
+        );
+
+        for (name, role) in &hand {
+            match gen.get(name) {
+                Some(r) => assert_eq!(r, role, "role drift for '{name}': hand={role} gen={r}"),
+                None => panic!("'{name}' in COMMAND_ACL but missing from commands.toml"),
+            }
+        }
+        for name in gen.keys() {
+            assert!(hand.contains_key(name), "'{name}' in commands.toml but missing from COMMAND_ACL");
+        }
+    }
+
+    #[test]
+    fn rbac_check_acl_no_duplicate_names() {
+        use std::collections::HashSet;
+        use crate::security::acl_generated::CHECK_ACL;
+        let mut seen = HashSet::new();
+        for (name, _) in CHECK_ACL {
+            assert!(seen.insert(*name), "duplicate command '{name}' in commands.toml");
+        }
+    }
+
+    #[test]
+    fn rbac_check_acl_valid_roles() {
+        use crate::security::acl_generated::CHECK_ACL;
+        for (name, role) in CHECK_ACL {
+            assert!(
+                matches!(*role, "public" | "stocker" | "cashier" | "owner"),
+                "invalid role '{role}' for command '{name}'"
+            );
+        }
+    }
 }

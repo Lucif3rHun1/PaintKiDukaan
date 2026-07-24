@@ -275,3 +275,4 @@ fn run_security_init_inner(
 
     log::info!("security: all startup checks complete");
 }
+pub mod acl_generated;
