@@ -25,6 +25,7 @@ path = "benches/list_items.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+ts-rs = "12.0.1"
 # Tauri core
 tauri = { version = "2", features = ["tray-icon", "test"] }
 tauri-plugin-log = "2"

@@ -1,3 +1,5 @@
+export type { Brand, Customer, DayClose, DayCloseMode, DayClosePreview, DayCloseTotals, Item, ItemLookup, NewItem, PaymentSplit, Sale, SaleItem, Vendor } from "./types.generated";
+
 export { formatRupeesFromPaise } from "../lib/money";
 import type { PaymentMode } from "../pos/types";
 import type { Sale } from "../pos/types";
@@ -69,69 +71,10 @@ export interface User {
   is_active: boolean;
 }
 
-export interface Item {
-  id: number;
-  sku_code: string;
-  barcode: string | null;
-  name: string;
-  brand: string | null;
-  category: string | null;
-  /** Denormalized from sale_units.code — display only, never mutate via this */
-  unit_code: string;
-  /** Denormalized from sale_units.label — display only */
-  unit_label: string;
-  /** @deprecated Alias for unit_code. Kept for migration compat. */
-  unit: string;
-  /** @deprecated Use sell_unit instead. Kept for migration compat. */
-  units_per_pack: number | null;
-  /** Denormalized sale unit code ("unit" | "mtr" | "kg") — display only */
-  sell_unit: string;
-  /** Canonical FK to sale_units table — use this for all mutations */
-  sell_unit_id: number | null;
-  retail_price_paise: number;
-  cost_paise: number;
-  promo_price_paise: number | null;
-  label_line1: string | null;
-  label_line2: string | null;
-  primary_location_id: number | null;
-  sub_location_id: number | null;
-  position: string | null;
-  min_stock: number;
-  barcode_format: string | null;
-  is_active: boolean;
-  current_qty: number;
-  created_at: string;
-  updated_at: string;
-  brand_id: number | null;
-}
-
 export interface QtyPerLoc {
   location: string;
   qty: number;
 }
-
-export type ItemLookup =
-  | ({ scope: "owner" } & Item)
-  | {
-      scope: "cashier";
-      id: number;
-      sku_code: string;
-      name: string;
-      retail_price_paise: number;
-      sell_unit: string;
-      unit: string;
-      /** @deprecated Kept for migration compat. */
-      units_per_pack: number | null;
-      in_stock: number;
-    }
-  | {
-      scope: "stocker";
-      id: number;
-      sku_code: string;
-      name: string;
-      min_stock: number;
-      qty_per_loc: QtyPerLoc[];
-    };
 
 export interface ItemFilter {
   query?: string;
@@ -141,34 +84,6 @@ export interface ItemFilter {
   include_inactive?: boolean;
   archived_only?: boolean;
   limit?: number;
-}
-
-export interface NewItem {
-  name: string;
-  brand?: string | null;
-  brand_id?: number | null;
-  category?: string | null;
-  /** Optional — backend auto-fills from sell_unit_id if provided */
-  unit_code?: string | null;
-  /** Optional — backend auto-fills from sell_unit_id if provided */
-  unit_label?: string | null;
-  /** @deprecated Use sell_unit instead. Kept for migration compat. */
-  units_per_pack?: number | null;
-  /** Denormalized unit code — optional, backend derives from sell_unit_id */
-  sell_unit?: string;
-  /** Canonical FK — prefer setting this over sell_unit string */
-  sell_unit_id?: number | null;
-  retail_price_paise: number;
-  cost_paise: number;
-  promo_price_paise?: number | null;
-  label_line1?: string | null;
-  label_line2?: string | null;
-  primary_location_id: number;
-  sub_location_id?: number | null;
-  position?: string | null;
-  min_stock?: number;
-  barcode_format?: string;
-  barcode?: string | null;
 }
 
 export interface ItemUpdate {
@@ -213,32 +128,6 @@ export interface LabelPrintRecord {
   labelsPerRow: number | null;
 }
 
-export interface Customer {
-  id: number;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  customer_type_id: number | null;
-  type_name: string | null;
-  opening_balance_paise: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-  is_flagged?: boolean;
-  credit_limit?: number | null;
-  notes?: string | null;
-}
-
-export interface CustomerOutstanding {
-  customer_id: number;
-  opening_balance_paise: number;
-  total_sales: number;
-  total_paid: number;
-  total_payments: number;
-  outstanding: number;
-}
-
 export interface NewCustomer {
   name: string;
   phone?: string | null;
@@ -256,19 +145,6 @@ export interface CustomerUpdate {
   customer_type_id?: number | null;
   opening_balance_paise?: number;
   is_active?: boolean;
-}
-
-export interface Vendor {
-  id: number;
-  name: string;
-  phone: string | null;
-  contact_person: string | null;
-  credit_limit: number | null;
-  opening_balance: number;
-  notes: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface VendorOutstanding {
@@ -350,13 +226,6 @@ export interface CustomerType {
 
 export interface NewCustomerType {
   name: string;
-}
-
-export interface Brand {
-  id: number;
-  name: string;
-  prefix: string;
-  next_seq: number;
 }
 
 export interface Category {
@@ -443,6 +312,16 @@ export function isAppError(e: unknown): e is AppError {
     typeof (e as { code: unknown }).code === "string"
   );
 }
+
+export interface CustomerOutstanding {
+  customer_id: number;
+  opening_balance_paise: number;
+  total_sales: number;
+  total_paid: number;
+  total_payments: number;
+  outstanding: number;
+}
+
 
 export interface CustomerBill {
   sale_id: number;

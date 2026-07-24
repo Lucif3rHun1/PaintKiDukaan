@@ -1,11 +1,72 @@
-// POS shared types — mirror src-tauri/src/commands/{sales,purchases,day_close,reports,sequences}.rs
-// Keep these in sync; small drift here will break the IPC bridge.
+// Wire types live in the generated module (C5) and are re-exported here so
+// legacy imports keep working. Hand-written types stay in this file.
+export type {
+  DayClose,
+  DayCloseMode,
+  DayClosePreview,
+  DayCloseTotals,
+  Sale,
+} from "../domain/types.generated.ts";
 
 export type PaymentMode = "cash" | "upi" | "card" | "bank" | "cheque" | "balance";
+export type PaymentSplit = import("../domain/types.generated.ts").PaymentSplit;
+export type SaleItem = import("../domain/types.generated.ts").SaleItem;
 
-export interface PaymentSplit {
-  mode: PaymentMode;
-  amount: number; // paise
+// ---- Reports — handwritten until Rust reports types land in C6. ----
+
+export interface ComparisonMetric {
+  change_pct: number;
+
+  current: number;
+  previous: number;
+}
+export interface ComparisonMetricsReport {
+  sales: ComparisonMetric;
+  bills: ComparisonMetric;
+  avg_bill_value: ComparisonMetric;
+
+}
+export interface DeadStockRow {
+  item_id: number;
+  name: string;
+  sku_code: string;
+  last_sale_ms: number | null;
+  current_qty: number;
+}
+export interface InventoryAgingReport {
+  bucket_0_30: number;
+  bucket_31_60: number;
+  bucket_61_90: number;
+  bucket_91_plus: number;
+}
+export interface InventoryTurnoverReport {
+  stock_value_paise: number;
+}
+export interface PaymentSummary {
+  received_paise: number;
+  paid_paise: number;
+}
+export interface ReceivableAgingReport {
+  bucket_0_30: number;
+  bucket_31_60: number;
+  bucket_61_90: number;
+  bucket_91_plus: number;
+}
+
+
+export interface StockHealthSummary {
+  total_active_items: number;
+  healthy_count: number;
+  low_count: number;
+  zero_count: number;
+  negative_count: number;
+  retail_value_paise: number;
+}
+export interface TopCustomerRow {
+  customer_id: number;
+  name: string;
+  total_value: number;
+  bill_count: number;
 }
 
 export interface SalePaymentRecord {
@@ -25,43 +86,6 @@ export interface NewSalePayment {
   amount: number;
   date?: string | null;
   notes?: string | null;
-}
-
-export interface SaleItem {
-  id: number;
-  kind: "item" | "formula";
-  item_id: number | null;
-  formula_id: number | null;
-  display_name: string;
-  sku_code?: string | null;
-  qty: number;
-  price: number;
-  unit_type: string;
-  line_discount: number;
-  shade_note?: string | null;
-  line_order: number;
-  /** Aggregated qty already returned across all prior returns for this
-   * sale_item. Use `qty - returned_qty` for refundable headroom. Defaults to 0. */
-  returned_qty?: number;
-}
-
-export interface Sale {
-  id: number;
-  no: string;
-  customer_id: number | null;
-  customer_name: string | null;
-  date: string;
-  status: "quotation" | "final" | "fbill";
-  subtotal: number;
-  bill_discount: number;
-  total: number;
-  paid_amount: number;
-  payment_modes: PaymentSplit[];
-  validity_days: number | null;
-  converted_from_id: number | null;
-  user_id: number;
-  created_at: string;
-  items: SaleItem[];
 }
 
 export interface ReturnCartLine {
@@ -165,63 +189,7 @@ export interface StockMovement {
   created_at: string;
 }
 
-// ---- Day close ----
-
-export interface DayClose {
-  id: number;
-  day: string;
-  location_id: number;
-  /**
-   * `null` marks a shop-level close (single-cashier mode).
-   * A real user_id marks a per-cashier close (multi-cashier mode).
-   * Mirrors `day_close.user_id` which became nullable in M-INLINE-027.
-   */
-  user_id: number | null;
-  opening_cash_paise: number;
-  cash_sales_paise: number;
-  card_sales_paise: number;
-  upi_sales_paise: number;
-  expenses_paise: number;
-  cash_in_paise: number;
-  cash_out_paise: number;
-  closing_cash_paise: number;
-  actual_cash_paise: number;
-  variance_paise: number;
-  note: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export type DayCloseMode = "shop" | "cashier";
-
-export interface DayCloseTotals {
-  user_id: number | null;
-  user_name: string;
-  opening_cash_paise: number;
-  cash_sales_paise: number;
-  card_sales_paise: number;
-  upi_sales_paise: number;
-  cash_in_paise: number;
-  cash_out_paise: number;
-  closing_cash_paise: number;
-  actual_cash_paise: number;
-  variance_paise: number;
-}
-
-/**
- * Returned by `cmd_trigger_day_close`. Renders both the shop-level section
- * and (when `mode === "cashier"`) the per-cashier breakdown in one response.
- *
- * In `shop` mode, `per_cashier` is empty and `shop_total` is the close row.
- * In `cashier` mode, `shop_total` is the element-wise sum of `per_cashier`.
- */
-export interface DayClosePreview {
-  mode: DayCloseMode;
-  day: string;
-  location_id: number;
-  shop_total: DayCloseTotals;
-  per_cashier: DayCloseTotals[];
-}
+// ---- Day close (preview/totals live in generated module) ----
 
 export interface CashSalesSummary {
   date: string;
@@ -403,58 +371,66 @@ export interface TopItemRow {
   total_qty: number;
   total_value: number;
 }
-export interface TopCustomerRow {
-  customer_id: number | null;
-  name: string;
-  total_value: number;
-  bill_count: number;
-}
-export interface TopVendorRow {
-  vendor_id: number | null;
-  name: string;
-  total_value: number;
-}
-export interface StockHealthSummary {
-  total_active_items: number;
-  healthy_count: number;
-  low_count: number;
-  zero_count: number;
-  negative_count: number;
-  retail_value_paise: number;
-}
-export interface DeadStockRow {
-  item_id: number;
-  name: string;
-  current_qty: number;
-  last_sale_ms: number | null;
-}
-export interface InventoryAgingReport {
-  bucket_0_30: number;
-  bucket_31_60: number;
-  bucket_61_90: number;
-  bucket_91_plus: number;
-}
-export interface PaymentSummary {
-  received_paise: number;
-  paid_paise: number;
-}
-export interface ComparisonMetric {
-  current: number;
-  previous: number;
-  change_pct: number;
-}
-export interface ComparisonMetricsReport {
-  sales: ComparisonMetric;
-  bills: ComparisonMetric;
-  avg_bill_value: ComparisonMetric;
-}
-export interface InventoryTurnoverReport {
-  stock_value_paise: number;
-}
-export interface ReceivableAgingReport {
-  bucket_0_30: number;
-  bucket_31_60: number;
-  bucket_61_90: number;
-  bucket_91_plus: number;
+export interface DashboardMetrics {
+  todays_sales_paise: number;
+  todays_bills: number;
+  low_stock_count: number;
+  outstanding_paise: number;
+  top_items: TopItemRow[];
+  week_sales_paise: number;
+  week_bills: number;
 }
 
+export interface HeldBill {
+  id: number;
+  no: string;
+  customer_id: number | null;
+  customer_name: string | null;
+  updated_at: string;
+  total: number;
+  line_count: number;
+}
+
+export interface HeldBillDetail {
+  id: number;
+  no: string;
+  customer_id: number | null;
+  customer_name: string | null;
+  created_at: string;
+  total: number;
+  payment_modes_json: string;
+  bill_discount: number;
+  validity_days: number | null;
+  lines: SaleItem[];
+}
+
+export interface PrintReceiptArgs {
+  sale_id: number;
+  printer?: string | null;
+  copies?: number;
+}
+
+export interface ReceiptPrintResult {
+  pdf_path: string | null;
+  sent_to: string | null;
+  copies: number;
+}
+
+export interface LabelSize {
+  id: number;
+  name: string;
+  width_mm: number;
+  height_mm: number;
+}
+
+export interface PrinterDevice {
+  id: number;
+  name: string;
+  kind: "receipt" | "label";
+  default: boolean;
+}
+
+export interface ScanEvent {
+  barcode: string;
+  ts_ms: number;
+}
