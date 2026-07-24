@@ -124,7 +124,7 @@ impl Db {
                        )\
                      );\
                      INSERT INTO printer_mappings_new SELECT * FROM printer_mappings;\
-                     DROP TABLE printer_mappings;\
+                     DROP TABLE IF EXISTS printer_mappings;\
                      ALTER TABLE printer_mappings_new RENAME TO printer_mappings;",
                 )?;
             }
@@ -564,7 +564,7 @@ impl Db {
                         updated_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION
                      );
                      INSERT INTO sales_new SELECT * FROM sales;
-                     DROP TABLE sales;
+                     DROP TABLE IF EXISTS sales;
                      ALTER TABLE sales_new RENAME TO sales;
                      CREATE INDEX IF NOT EXISTS idx_sales_user_created ON sales(user_id, created_at DESC);
                      CREATE INDEX IF NOT EXISTS idx_sales_customer_created ON sales(customer_id, created_at DESC) WHERE customer_id IS NOT NULL;
@@ -626,7 +626,7 @@ impl Db {
                                 unit_type, line_discount, shade_note, line_order,
                                 created_at, created_by, display_name
                          FROM sale_items;
-                     DROP TABLE sale_items;
+                     DROP TABLE IF EXISTS sale_items;
                      ALTER TABLE sale_items_new RENAME TO sale_items;
                      CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
                      CREATE INDEX IF NOT EXISTS idx_sale_items_item_id ON sale_items(item_id);
@@ -746,7 +746,7 @@ impl Db {
                                             CASE WHEN unit_type = 'unit' THEN 'pcs' ELSE unit_type END,
                                             line_discount, shade_note, line_order, created_at, created_by, display_name
                                      FROM sale_items;
-                                 DROP TABLE sale_items;
+                                 DROP TABLE IF EXISTS sale_items;
                                  ALTER TABLE sale_items_new RENAME TO sale_items;
                                  CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
                                  CREATE INDEX IF NOT EXISTS idx_sale_items_item_id ON sale_items(item_id);
@@ -923,7 +923,7 @@ impl Db {
                         UNIQUE(user_id, form_type)
                     );
                     INSERT INTO drafts_new SELECT * FROM drafts;
-                    DROP TABLE drafts;
+                    DROP TABLE IF EXISTS drafts;
                     ALTER TABLE drafts_new RENAME TO drafts;
                     CREATE INDEX IF NOT EXISTS idx_drafts_user ON drafts(user_id);",
                 )?;
@@ -1016,7 +1016,7 @@ impl Db {
                        updated_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION
                      );
                      INSERT INTO day_close_new SELECT * FROM day_close;
-                     DROP TABLE day_close;
+                     DROP TABLE IF EXISTS day_close;
                      ALTER TABLE day_close_new RENAME TO day_close;
                      CREATE INDEX IF NOT EXISTS idx_day_close_location_day ON day_close(location_id, day DESC);
                      CREATE INDEX IF NOT EXISTS idx_day_close_user_id ON day_close(user_id);
@@ -1086,7 +1086,7 @@ impl Db {
                          INSERT INTO brands_new \
                              SELECT id, name, prefix, is_active, created_at, updated_at, created_by, updated_by \
                              FROM brands;\
-                         DROP TABLE brands;\
+                         DROP TABLE IF EXISTS brands;\
                          ALTER TABLE brands_new RENAME TO brands;\
                          CREATE UNIQUE INDEX uniq_brands_active_name ON brands(name COLLATE NOCASE) WHERE is_active = 1;\
                          CREATE INDEX IF NOT EXISTS idx_brands_prefix ON brands(prefix) WHERE is_active = 1 AND prefix IS NOT NULL;\
@@ -1122,7 +1122,7 @@ impl Db {
                          INSERT INTO customer_types_new \
                              SELECT id, name, is_active, created_at, updated_at, created_by, updated_by \
                              FROM customer_types;\
-                         DROP TABLE customer_types;\
+                         DROP TABLE IF EXISTS customer_types;\
                          ALTER TABLE customer_types_new RENAME TO customer_types;\
                          CREATE UNIQUE INDEX uniq_customer_types_active_name ON customer_types(name COLLATE NOCASE) WHERE is_active = 1;\
                          PRAGMA foreign_keys = ON;",
@@ -1154,7 +1154,7 @@ impl Db {
                          INSERT INTO categories_new \
                              SELECT id, name, is_active, created_at, updated_at \
                              FROM categories;\
-                         DROP TABLE categories;\
+                         DROP TABLE IF EXISTS categories;\
                          ALTER TABLE categories_new RENAME TO categories;\
                          PRAGMA foreign_keys = ON;",
                     )?;
@@ -1190,7 +1190,7 @@ impl Db {
                          INSERT INTO sub_locations_new \
                              SELECT id, location_id, name, position, is_active, created_at, updated_at, created_by, updated_by \
                              FROM sub_locations;\
-                         DROP TABLE sub_locations;\
+                         DROP TABLE IF EXISTS sub_locations;\
                          ALTER TABLE sub_locations_new RENAME TO sub_locations;\
                          CREATE INDEX IF NOT EXISTS idx_sub_locations_location_active ON sub_locations(location_id) WHERE is_active = 1;\
                          PRAGMA foreign_keys = ON;",
@@ -1225,7 +1225,7 @@ impl Db {
                          INSERT INTO devices_new \
                              SELECT id, name, last_seen_at, is_active, created_at, updated_at, created_by, updated_by \
                              FROM devices;\
-                         DROP TABLE devices;\
+                         DROP TABLE IF EXISTS devices;\
                          ALTER TABLE devices_new RENAME TO devices;\
                          CREATE INDEX IF NOT EXISTS idx_devices_is_active_name ON devices(is_active, name COLLATE NOCASE);\
                          PRAGMA foreign_keys = ON;",

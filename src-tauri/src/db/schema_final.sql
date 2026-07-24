@@ -219,7 +219,7 @@ CREATE TABLE customers (
   phone                TEXT,
   customer_type_id     INTEGER REFERENCES customer_types(id) ON DELETE NO ACTION,
   is_flagged           INTEGER NOT NULL DEFAULT 0 CHECK(is_flagged IN (0,1)),
-  opening_balance_paise INTEGER NOT NULL DEFAULT 0,
+  opening_balance_paise INTEGER NOT NULL DEFAULT 0 CHECK(opening_balance_paise >= 0),
   notes                TEXT,
   is_active            INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at           TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
@@ -454,12 +454,12 @@ CREATE TABLE purchases (
   purchase_number TEXT    NOT NULL UNIQUE,
   vendor_id       INTEGER REFERENCES vendors(id) ON DELETE NO ACTION,
   location_id     INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
-  subtotal_paise  INTEGER NOT NULL DEFAULT 0,
-  discount_paise  INTEGER NOT NULL DEFAULT 0,
-  tax_paise       INTEGER NOT NULL DEFAULT 0,
-  total_paise     INTEGER NOT NULL DEFAULT 0,
-  paid_paise      INTEGER NOT NULL DEFAULT 0,
-  balance_paise   INTEGER NOT NULL DEFAULT 0,
+  subtotal_paise  INTEGER NOT NULL DEFAULT 0 CHECK(subtotal_paise >= 0),
+  discount_paise  INTEGER NOT NULL DEFAULT 0 CHECK(discount_paise >= 0),
+  tax_paise       INTEGER NOT NULL DEFAULT 0 CHECK(tax_paise >= 0),
+  total_paise     INTEGER NOT NULL DEFAULT 0 CHECK(total_paise >= 0),
+  paid_paise      INTEGER NOT NULL DEFAULT 0 CHECK(paid_paise >= 0),
+  balance_paise   INTEGER NOT NULL DEFAULT 0 CHECK(balance_paise >= 0),
   status          TEXT    NOT NULL DEFAULT 'open'
                     CHECK(status IN ('open','finalized','cancelled')),
   bill_number     TEXT,
@@ -540,10 +540,10 @@ CREATE TABLE sales (
   date               TEXT    NOT NULL DEFAULT '',
   status             TEXT    NOT NULL DEFAULT 'quotation'
                        CHECK(status IN ('quotation','final','fbill')),
-  subtotal           INTEGER NOT NULL DEFAULT 0,
-  bill_discount      INTEGER NOT NULL DEFAULT 0,
-  total              INTEGER NOT NULL DEFAULT 0,
-  paid_amount        INTEGER NOT NULL DEFAULT 0,
+  subtotal           INTEGER NOT NULL DEFAULT 0 CHECK(subtotal >= 0),
+  bill_discount      INTEGER NOT NULL DEFAULT 0 CHECK(bill_discount >= 0),
+  total              INTEGER NOT NULL DEFAULT 0 CHECK(total >= 0),
+  paid_amount        INTEGER NOT NULL DEFAULT 0 CHECK(paid_amount >= 0),
   payment_modes_json TEXT    NOT NULL DEFAULT '[]',
   validity_days      INTEGER,
   converted_from_id  INTEGER REFERENCES sales(id) ON DELETE NO ACTION,
@@ -577,7 +577,7 @@ CREATE TABLE sale_items (
   qty           REAL NOT NULL CHECK(qty > 0),
   price         INTEGER NOT NULL CHECK(price >= 0),
   unit_type     TEXT    NOT NULL DEFAULT 'pcs' CHECK(unit_type IN ('pcs','mtr','kg')),
-  line_discount INTEGER NOT NULL DEFAULT 0,
+  line_discount INTEGER NOT NULL DEFAULT 0 CHECK(line_discount >= 0),
   shade_note    TEXT,
   line_order    INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
@@ -638,7 +638,7 @@ CREATE INDEX idx_customer_payments_sale_id ON customer_payments(sale_id) WHERE s
 CREATE TABLE sale_returns (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   sale_id           INTEGER NOT NULL REFERENCES sales(id) ON DELETE NO ACTION,
-  refund_total_paise INTEGER NOT NULL DEFAULT 0,
+  refund_total_paise INTEGER NOT NULL DEFAULT 0 CHECK(refund_total_paise >= 0),
   reason            TEXT,
   no                TEXT,                          -- M007: human-readable return number
   date              TEXT,                          -- M17: user-provided logical date (YYYY-MM-DD)
@@ -663,6 +663,9 @@ CREATE TABLE sale_return_lines (
   created_at       INTEGER NOT NULL,
   created_by       INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
+-- M-INLINE-031: index for return-line lookup by sale_item
+CREATE INDEX IF NOT EXISTS idx_sale_return_lines_sale_item_id ON sale_return_lines(sale_item_id);
+
 
 -- serves: "lines for this return"
 CREATE INDEX idx_sale_return_lines_return_id ON sale_return_lines(sale_return_id);
@@ -703,12 +706,12 @@ CREATE TABLE day_close (
   day                 TEXT    NOT NULL,           -- 'YYYY-MM-DD' (calendar day, NOT epoch)
   location_id         INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
   user_id             INTEGER REFERENCES users(id) ON DELETE NO ACTION,  -- NULL = shop-level close
-  opening_cash_paise  INTEGER NOT NULL DEFAULT 0,
-  cash_sales_paise    INTEGER NOT NULL DEFAULT 0,
-  card_sales_paise    INTEGER NOT NULL DEFAULT 0,
-  upi_sales_paise     INTEGER NOT NULL DEFAULT 0,
-  expenses_paise      INTEGER NOT NULL DEFAULT 0,
-  closing_cash_paise  INTEGER NOT NULL DEFAULT 0,
+  opening_cash_paise  INTEGER NOT NULL DEFAULT 0 CHECK(opening_cash_paise >= 0),
+  cash_sales_paise    INTEGER NOT NULL DEFAULT 0 CHECK(cash_sales_paise >= 0),
+  card_sales_paise    INTEGER NOT NULL DEFAULT 0 CHECK(card_sales_paise >= 0),
+  upi_sales_paise     INTEGER NOT NULL DEFAULT 0 CHECK(upi_sales_paise >= 0),
+  expenses_paise      INTEGER NOT NULL DEFAULT 0 CHECK(expenses_paise >= 0),
+  closing_cash_paise  INTEGER NOT NULL DEFAULT 0 CHECK(closing_cash_paise >= 0),
   actual_cash_paise   INTEGER,                    -- counted; NULL until counted
   variance_paise      INTEGER,                    -- actual_cash - closing_cash; can be negative
   note                TEXT,
@@ -1162,7 +1165,7 @@ CREATE TABLE IF NOT EXISTS sale_items_new (
   qty           REAL NOT NULL CHECK(qty > 0),
   price         INTEGER NOT NULL CHECK(price >= 0),
   unit_type     TEXT    NOT NULL DEFAULT 'pcs' CHECK(unit_type IN ('pcs','mtr','kg')),
-  line_discount INTEGER NOT NULL DEFAULT 0,
+  line_discount INTEGER NOT NULL DEFAULT 0 CHECK(line_discount >= 0),
   shade_note    TEXT,
   line_order    INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),

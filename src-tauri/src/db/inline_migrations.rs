@@ -26,6 +26,7 @@ pub fn run_inline_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     m_inline_016(conn)?;
     m_inline_017(conn)?;
     m_inline_018(conn)?;
+    // M-019 skipped: dropped during review (see M-INLINE-020 follow-up)
     m_inline_020(conn)?;
     m_inline_021(conn)?;
     m_inline_022(conn)?;
@@ -33,6 +34,8 @@ pub fn run_inline_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     m_inline_024(conn)?;
     m_inline_025(conn)?;
     m_inline_026(conn)?;
+    m_inline_028(conn)?;
+    m_inline_031(conn)?;
     Ok(())
 }
 
@@ -114,7 +117,7 @@ fn m_inline_002(conn: &Connection) -> Result<(), rusqlite::Error> {
                )\
              );\
              INSERT INTO printer_mappings_new SELECT * FROM printer_mappings;\
-             DROP TABLE printer_mappings;\
+             DROP TABLE IF EXISTS printer_mappings;\
              ALTER TABLE printer_mappings_new RENAME TO printer_mappings;",
         )?;
     }
@@ -481,7 +484,7 @@ fn m_inline_015(conn: &Connection) -> Result<(), rusqlite::Error> {
                 updated_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION
              );
              INSERT INTO sales_new SELECT * FROM sales;
-             DROP TABLE sales;
+             DROP TABLE IF EXISTS sales;
              ALTER TABLE sales_new RENAME TO sales;
              CREATE INDEX IF NOT EXISTS idx_sales_user_created ON sales(user_id, created_at DESC);
              CREATE INDEX IF NOT EXISTS idx_sales_customer_created ON sales(customer_id, created_at DESC) WHERE customer_id IS NOT NULL;
@@ -583,7 +586,7 @@ fn m_inline_018(conn: &Connection) -> Result<(), rusqlite::Error> {
                         unit_type, line_discount, shade_note, line_order,
                         created_at, created_by, display_name
                  FROM sale_items;
-             DROP TABLE sale_items;
+             DROP TABLE IF EXISTS sale_items;
              ALTER TABLE sale_items_new RENAME TO sale_items;
              CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
              CREATE INDEX IF NOT EXISTS idx_sale_items_item_id ON sale_items(item_id);
@@ -635,7 +638,7 @@ fn m_inline_020(conn: &Connection) -> Result<(), rusqlite::Error> {
                                     CASE WHEN unit_type = 'unit' THEN 'pcs' ELSE unit_type END,
                                     line_discount, shade_note, line_order, created_at, created_by, display_name
                              FROM sale_items;
-                         DROP TABLE sale_items;
+                         DROP TABLE IF EXISTS sale_items;
                          ALTER TABLE sale_items_new RENAME TO sale_items;
                          CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
                          CREATE INDEX IF NOT EXISTS idx_sale_items_item_id ON sale_items(item_id);
@@ -794,7 +797,7 @@ fn m_inline_023(conn: &Connection) -> Result<(), rusqlite::Error> {
                 UNIQUE(user_id, form_type)
             );
             INSERT INTO drafts_new SELECT * FROM drafts;
-            DROP TABLE drafts;
+            DROP TABLE IF EXISTS drafts;
             ALTER TABLE drafts_new RENAME TO drafts;
             CREATE INDEX IF NOT EXISTS idx_drafts_user ON drafts(user_id);",
         )?;
@@ -952,7 +955,7 @@ fn m_inline_026(conn: &Connection) -> Result<(), rusqlite::Error> {
              INSERT INTO brands_new \
                  SELECT id, name, prefix, is_active, created_at, updated_at, created_by, updated_by \
                  FROM brands;\
-             DROP TABLE brands;\
+             DROP TABLE IF EXISTS brands;\
              ALTER TABLE brands_new RENAME TO brands;\
              CREATE UNIQUE INDEX uniq_brands_active_name ON brands(name COLLATE NOCASE) WHERE is_active = 1;\
              CREATE INDEX IF NOT EXISTS idx_brands_prefix ON brands(prefix) WHERE is_active = 1 AND prefix IS NOT NULL;\
@@ -978,7 +981,7 @@ fn m_inline_026(conn: &Connection) -> Result<(), rusqlite::Error> {
              INSERT INTO customer_types_new \
                  SELECT id, name, is_active, created_at, updated_at, created_by, updated_by \
                  FROM customer_types;\
-             DROP TABLE customer_types;\
+             DROP TABLE IF EXISTS customer_types;\
              ALTER TABLE customer_types_new RENAME TO customer_types;\
              CREATE UNIQUE INDEX uniq_customer_types_active_name ON customer_types(name COLLATE NOCASE) WHERE is_active = 1;\
              PRAGMA foreign_keys = ON;",
@@ -1000,7 +1003,7 @@ fn m_inline_026(conn: &Connection) -> Result<(), rusqlite::Error> {
              INSERT INTO categories_new \
                  SELECT id, name, is_active, created_at, updated_at \
                  FROM categories;\
-             DROP TABLE categories;\
+             DROP TABLE IF EXISTS categories;\
              ALTER TABLE categories_new RENAME TO categories;\
              PRAGMA foreign_keys = ON;",
         )?;
@@ -1026,7 +1029,7 @@ fn m_inline_026(conn: &Connection) -> Result<(), rusqlite::Error> {
              INSERT INTO sub_locations_new \
                  SELECT id, location_id, name, position, is_active, created_at, updated_at, created_by, updated_by \
                  FROM sub_locations;\
-             DROP TABLE sub_locations;\
+             DROP TABLE IF EXISTS sub_locations;\
              ALTER TABLE sub_locations_new RENAME TO sub_locations;\
              CREATE INDEX IF NOT EXISTS idx_sub_locations_location_active ON sub_locations(location_id) WHERE is_active = 1;\
              PRAGMA foreign_keys = ON;",
@@ -1051,12 +1054,115 @@ fn m_inline_026(conn: &Connection) -> Result<(), rusqlite::Error> {
              INSERT INTO devices_new \
                  SELECT id, name, last_seen_at, is_active, created_at, updated_at, created_by, updated_by \
                  FROM devices;\
-             DROP TABLE devices;\
+             DROP TABLE IF EXISTS devices;\
              ALTER TABLE devices_new RENAME TO devices;\
              CREATE INDEX IF NOT EXISTS idx_devices_is_active_name ON devices(is_active, name COLLATE NOCASE);\
              PRAGMA foreign_keys = ON;",
         )?;
     }
 
+    Ok(())
+}
+
+
+// ---------------------------------------------------------------------------
+// M-INLINE-028: Add CHECK (>= 0) on money columns missing the constraint.
+// Idempotent: each table is only rebuilt if the CHECK is absent.
+// Uses the rebuild pattern (PRAGMA foreign_keys = OFF, create _new, copy,
+// drop, rename) because SQLite cannot ALTER TABLE ADD CONSTRAINT.
+// ---------------------------------------------------------------------------
+
+/// Read CREATE TABLE SQL for .
+fn table_sql(conn: &Connection, name: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1",
+        [name],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+}
+
+/// True when 's CREATE TABLE includes `CHECK(<col> >= 0)`.
+fn has_money_check(conn: &Connection, table_name: &str, col: &str) -> bool {
+    let needle = format!("CHECK({col} >= 0)");
+    table_sql(conn, table_name)
+        .map(|s| s.contains(&needle))
+        .unwrap_or(false)
+}
+
+/// Helper: add `CHECK(<col> >= 0)` to a single table by rebuilding.
+/// Aborts on existing-row violation with a clear SQLITE_CONSTRAINT error.
+fn add_money_check(conn: &Connection, table: &str, col: &str) -> Result<(), rusqlite::Error> {
+    if has_money_check(conn, table, col) {
+        return Ok(());
+    }
+    let bad_count: i64 = conn.query_row(
+        &format!("SELECT COUNT(*) FROM {table} WHERE {col} < 0"),
+        [],
+        |r| r.get(0),
+    ).unwrap_or(0);
+    if bad_count > 0 {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+            Some(format!(
+                "M-INLINE-028: cannot add CHECK({col} >= 0) on {table} — {bad_count} rows violate it"
+            )),
+        ));
+    }
+    let sql = table_sql(conn, table).unwrap_or_default();
+    if sql.is_empty() {
+        return Ok(());
+    }
+    // Inject `CHECK(<col> >= 0)` before the closing `);` of the CREATE TABLE.
+    let injected = sql.replacen(
+        ");",
+        &format!("  CHECK({col} >= 0)
+);"),
+        1,
+    );
+    let new_name = format!("{table}_m028_new");
+    let new_sql = injected.replace(
+        &format!("CREATE TABLE {table} "),
+        &format!("CREATE TABLE {new_name} "),
+    );
+    conn.execute_batch(&format!(
+        "PRAGMA foreign_keys = OFF;         {new_sql};         INSERT INTO {new_name} SELECT * FROM {table};         DROP TABLE {table};         ALTER TABLE {new_name} RENAME TO {table};         PRAGMA foreign_keys = ON;"
+    ))?;
+    Ok(())
+}
+
+fn m_inline_028(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let cols: &[(&str, &str)] = &[
+        ("customers", "opening_balance_paise"),
+        ("purchases", "subtotal_paise"),
+        ("purchases", "discount_paise"),
+        ("purchases", "tax_paise"),
+        ("purchases", "total_paise"),
+        ("purchases", "paid_paise"),
+        ("purchases", "balance_paise"),
+        ("sales", "subtotal"),
+        ("sales", "bill_discount"),
+        ("sales", "total"),
+        ("sales", "paid_amount"),
+        ("sale_items", "line_discount"),
+        ("sale_returns", "refund_total_paise"),
+        ("day_close", "opening_cash_paise"),
+        ("day_close", "cash_sales_paise"),
+        ("day_close", "card_sales_paise"),
+        ("day_close", "upi_sales_paise"),
+        ("day_close", "expenses_paise"),
+        ("day_close", "closing_cash_paise"),
+    ];
+    for (table, col) in cols {
+        add_money_check(conn, table, col)?;
+    }
+    Ok(())
+}
+
+/// M-INLINE-031: Add missing lookup indexes.
+fn m_inline_031(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(
+        "        CREATE INDEX IF NOT EXISTS idx_items_sell_unit ON items(sell_unit_id) WHERE is_active = 1;        CREATE INDEX IF NOT EXISTS idx_items_sub_location ON items(sub_location_id) WHERE is_active = 1;        CREATE INDEX IF NOT EXISTS idx_sale_return_lines_sale_item_id ON sale_return_lines(sale_item_id);",
+    )?;
     Ok(())
 }
