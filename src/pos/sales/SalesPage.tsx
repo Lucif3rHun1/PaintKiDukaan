@@ -15,7 +15,6 @@ import {
   Paintbrush,
   Printer,
   Save,
-  ShoppingCart,
   Users,
   X,
 } from "lucide-react";
@@ -29,8 +28,6 @@ import {
   Money,
   MoneyInput,
   MoneyStatic,
-  QtyInput,
-  Select,
   Skeleton,
   cn,
 } from "../../components/ui";
@@ -915,123 +912,17 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                   )}
                 </div>
 
-                {lines.length === 0 ? (
-                  <EmptyState
-                    icon={ShoppingCart}
-                    title="Cart is empty"
-                    description="Scan a barcode or search for an item to start a bill."
-                  />
-                ) : (
-                  <div className="rounded border border-border">
-                    <div className="grid grid-cols-[2rem_1fr_auto_8rem_2rem] items-center gap-2 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground sm:grid-cols-[2.5rem_1fr_auto_auto_8rem_2.5rem]">
-                      <div className="text-center">#</div>
-                      <div>Item</div>
-                      <div>Qty</div>
-                      <div className="hidden text-right sm:block">Rate</div>
-                      <div className="text-right">Amount</div>
-                      <div />
-                    </div>
-                    {lines.map((l, i) => {
-                      const lineAmount = l.qty * l.price;
-                      const decUnit = isDecimalUnit(l.unit_type);
-                      const uLabel = unitLabel(l.unit_type);
-                      return (
-                        <div
-                          key={`${l.item_id}-${i}`}
-                          className="border-t border-border px-3 py-2"
-                        >
-                          <div className="grid grid-cols-[2rem_1fr_auto_8rem_2rem] items-center gap-2 sm:grid-cols-[2.5rem_1fr_auto_auto_8rem_2.5rem]">
-                            <div className="text-center text-xs text-muted-foreground tabular-nums">{i + 1}</div>
-                            <div className="min-w-0">
-                              {kind === "fbill" ? (
-                                <input
-                                  type="text"
-                                  value={l.item_name ?? ""}
-                                  onChange={(e) => updateLine(i, { item_name: e.target.value, display_name: e.target.value })}
-                                  placeholder="Item name..."
-                                  className="w-full truncate border-0 border-b border-transparent bg-transparent p-0 font-medium text-foreground placeholder:text-muted-foreground/50 focus:border-border focus:outline-none"
-                                />
-                              ) : (
-                                <div className="truncate font-medium text-foreground">
-                                  {l.item_name ? toTitleCase(l.item_name) : `#${l.item_id}`}
-                                </div>
-                              )}
-                              {l.shade_note ? (
-                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                  {l.shade_note}
-                                </div>
-                              ) : null}
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <QtyInput
-                                value={l.qty}
-                                step={qtyStep(l.unit_type)}
-                                min={decUnit ? 0.001 : 1}
-                                onChange={(v) => handleQtyChange(i, v)}
-                              />
-                              {kind === "fbill" && l.item_id === null ? (
-                                <Select
-                                  size="sm"
-                                  className="w-20"
-                                  value={l.unit_type}
-                                  onChange={(e) => { setLastUsedUnit(e.target.value); updateLine(i, { unit_type: e.target.value }); }}
-                                  options={saleUnits.map((u) => ({ value: u.code, label: u.label }))}
-                                />
-                              ) : (
-                                <Badge variant="muted" size="sm" className="shrink-0">
-                                  {uLabel}
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="hidden items-center justify-end gap-1 text-xs text-muted-foreground sm:flex">
-                              <span>×</span>
-                              <MoneyInput
-                                value={l.price}
-                                onChange={(v) => updateLine(i, { price: v })}
-                                disabled={!canOwner && kind === "final"}
-                                className="w-20"
-                              />
-                              <span>/{uLabel}</span>
-                            </div>
-                            <div className="flex items-center justify-end">
-                              {decUnit ? (
-                                <MoneyInput
-                                  value={lineAmount}
-                                  onChange={(v) => handleAmountChange(i, v)}
-                                  disabled={l.price <= 0}
-                                  className="w-full"
-                                />
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <Lock className="h-3 w-3 text-muted-foreground/50" aria-label="Amount locked for unit items" />
-                                  <MoneyStatic paise={lineAmount} className="font-medium" />
-                                </div>
-                              )}
-                            </div>
-                            <Button
-                              variant="destructive"
-                              size="icon-sm"
-                              icon={X}
-                              type="button"
-                              onClick={() => removeLine(i)}
-                              aria-label={`Remove ${l.item_name ?? "item"} from cart`}
-                              title="Remove line"
-                            />
-                          </div>
-                          {l.line_discount > 0 ? (
-                            <div className="mt-1 flex items-center justify-end gap-2 text-xs">
-                              <span className="text-muted-foreground">Discount</span>
-                              <span className="text-destructive">-{formatRupeesFromPaise(l.line_discount)}</span>
-                              <span className="font-medium text-foreground">
-                                = {formatRupeesFromPaise(computeLineValue(l.qty, l.price, l.line_discount))}
-                              </span>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                <Cart
+                  lines={lines}
+                  kind={kind}
+                  canOwner={canOwner}
+                  saleUnits={saleUnits}
+                  onUpdateLine={updateLine}
+                  onRemoveLine={removeLine}
+                  onQtyChange={handleQtyChange}
+                  onAmountChange={handleAmountChange}
+                  onSetLastUsedUnit={setLastUsedUnit}
+                />
               </Card.Body>
             </Card>
           </div>
@@ -1086,30 +977,13 @@ export default function SalesPage({ user, onExit, editSaleId }: Props) {
                   </label>
                 ) : (
                   <>
-                    <div className="border-t border-border pt-3">
-                      <SplitPayment
-                        total={total}
-                        splits={splits}
-                        onChange={setSplits}
-                      />
-                    </div>
-                    <div className="grid grid-cols-[1fr_8rem] items-center gap-3 text-xs">
-                      <span className="text-muted-foreground">Paid</span>
-                      <MoneyStatic paise={paid} tone="muted" />
-                    </div>
-                    <div className="grid grid-cols-[1fr_8rem] items-center gap-3 text-xs">
-                      <span
-                        className={cn(
-                          balance > 0 ? "text-destructive" : "text-success",
-                        )}
-                      >
-                        {balance > 0 ? "Balance due" : "Fully paid"}
-                      </span>
-                      <MoneyStatic
-                        paise={Math.abs(balance)}
-                        tone={balance > 0 ? "destructive" : "success"}
-                      />
-                    </div>
+                    <PaymentStrip
+                      total={total}
+                      splits={splits}
+                      onChange={setSplits}
+                      paid={paid}
+                      balance={balance}
+                    />
                   </>
                 )}
               </Card.Body>
