@@ -41,6 +41,61 @@ fn sql_col_for(key: &str) -> Option<&'static str> {
     }
 }
 
+/// SQL column kind, used by [`validate_sql_value_type`] to reject writes
+/// that would silently coerce into the wrong storage form (e.g. a `Number`
+/// written to a TEXT column via `to_string`). Only the three columns with
+/// a real integer domain are tagged `Integer`; everything else is `Text`.
+#[derive(Clone, Copy)]
+enum SqlColKind {
+    Text,
+    Integer,
+}
+
+fn sql_col_kind(col: &str) -> SqlColKind {
+    match col {
+        "currency_decimal_places" | "failed_attempts_lockout" | "alerts_retention_days" => {
+            SqlColKind::Integer
+        }
+        _ => SqlColKind::Text,
+    }
+}
+
+/// Reject writes whose JSON type would land in the wrong SQL column. Booleans
+/// and objects/arrays are not allowed on any column — return `Validation`
+/// rather than silently coercing (the previous implementation's `_ => Null`
+/// drop in `write_sql_setting`). `Null` always passes through.
+pub fn validate_sql_value_type(col: &str, value: &Value) -> Result<(), String> {
+    let ok = match (sql_col_kind(col), value) {
+        (_, Value::Null) => true,
+        (SqlColKind::Text, Value::String(_)) => true,
+        (SqlColKind::Integer, Value::Number(_)) => true,
+        _ => false,
+    };
+    if ok {
+        Ok(())
+    } else {
+        let expected = match sql_col_kind(col) {
+            SqlColKind::Integer => "integer",
+            SqlColKind::Text => "string",
+        };
+        Err(format!(
+            "validation: setting '{col}' expects {expected}, got {}",
+            json_type_name(value)
+        ))
+    }
+}
+
+fn json_type_name(v: &Value) -> &'static str {
+    match v {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Device {
     pub id: String,
@@ -61,21 +116,38 @@ pub fn get_setting(state: State<'_, AppState>, key: String) -> Result<String, St
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+pub fn set_setting(
+    state: State<'_, AppState>,
+    key: String,
+    value: Value,
+) -> Result<(), String> {
     ipc_auth::authorize_err("set_setting", state.inner())?;
-    let parsed: Value = serde_json::from_str(&value).unwrap_or(Value::String(value));
-    if let Some(col) = sql_col_for(&key) {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let db: &Db = guard
-            .as_ref()
-            .ok_or_else(|| "database not unlocked".to_string())?;
-        write_sql_setting(db, col, &parsed).map_err(|e| e.to_string())?;
+    let db_guard = state.db.lock().map_err(|e| e.to_string())?;
+    let mut settings_guard = state.settings.lock().map_err(|e| e.to_string())?;
+    set_setting_impl(
+        db_guard.as_ref().map(|d| d as &Db),
+        &mut settings_guard,
+        &key,
+        value,
+    )
+}
+
+/// Pure (no Tauri-state) implementation of [`set_setting`]. Performs type
+/// validation, writes through to the SQL `settings` row when the key maps to
+/// a real column, and otherwise inserts into the in-memory HashMap. Used by
+/// the Tauri command above and by integration tests in `tests/rust/`.
+pub fn set_setting_impl(
+    db: Option<&Db>,
+    settings: &mut HashMap<String, Value>,
+    key: &str,
+    value: Value,
+) -> Result<(), String> {
+    if let Some(col) = sql_col_for(key) {
+        let db = db.ok_or_else(|| "database not unlocked".to_string())?;
+        validate_sql_value_type(col, &value)?;
+        write_sql_setting(db, col, &value).map_err(|e| e.to_string())?;
     }
-    state
-        .settings
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(key, parsed);
+    settings.insert(key.to_string(), value);
     Ok(())
 }
 
@@ -143,7 +215,7 @@ fn row_to_value(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Value>> {
     })
 }
 
-fn write_sql_setting(db: &Db, col: &str, value: &Value) -> rusqlite::Result<()> {
+pub(crate) fn write_sql_setting(db: &Db, col: &str, value: &Value) -> rusqlite::Result<()> {
     let (sql_val, value_for_log): (rusqlite::types::Value, String) = match value {
         Value::Null => (rusqlite::types::Value::Null, "null".into()),
         Value::Bool(b) => (

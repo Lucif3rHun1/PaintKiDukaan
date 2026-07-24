@@ -16,3 +16,6 @@ mod day_close;
 
 #[path = "rust/purchases.rs"]
 mod purchases;
+
+#[path = "rust/settings.rs"]
+mod settings;
