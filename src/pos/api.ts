@@ -13,6 +13,8 @@ import type {
   ReceivableAgingReport,
   DailySalesReport,
   DayClose,
+  DayClosePreview,
+  DayCloseTotals,
   DeadStockRow,
   ExpenseSummary,
   InventoryAgingReport,
@@ -82,10 +84,30 @@ export const lastOpeningFor = (userId: number, date: string): Promise<number> =>
     : Promise.resolve(0);
 export const backupGateCheck = (): Promise<BackupGate> =>
   isTauri() ? tauriInvoke<BackupGate>("cmd_backup_gate_check", {}) : Promise.resolve({ needs_prompt: false, age_hours: null, reason: "browser", last_backup_unix_ms: null });
-export const triggerDayClose = (req: NewDayClose): Promise<number> =>
-  isTauri() ? tauriInvoke<number>("cmd_trigger_day_close", { req }) : Promise.resolve(0);
+export const triggerDayClose = (req: NewDayClose): Promise<DayClosePreview> =>
+  isTauri() ? tauriInvoke<DayClosePreview>("cmd_trigger_day_close", { req }) : Promise.resolve(emptyDayClosePreview(req));
+export const countActiveCashiers = (): Promise<number> =>
+  isTauri() ? tauriInvoke<number>("cmd_count_active_cashiers", {}) : Promise.resolve(1);
 export const listDayClose = (limit = 60): Promise<DayClose[]> =>
   isTauri() ? tauriInvoke<DayClose[]>("cmd_list_day_close", { limit }) : Promise.resolve([]);
+
+function emptyDayClosePreview(req: NewDayClose): DayClosePreview {
+  // Browser-mode fallback so vite dev (no Tauri) can still render the page.
+  const totals: DayCloseTotals = {
+    user_id: null,
+    user_name: "Shop",
+    opening_cash_paise: 0,
+    cash_sales_paise: 0,
+    card_sales_paise: 0,
+    upi_sales_paise: 0,
+    cash_in_paise: req.cash_in,
+    cash_out_paise: req.cash_out,
+    closing_cash_paise: 0,
+    actual_cash_paise: req.counted_cash,
+    variance_paise: 0,
+  };
+  return { mode: "shop", day: req.date ?? "", location_id: 0, shop_total: totals, per_cashier: [] };
+}
 // ----- Reports -----
 export const dailySales = (fromDate: string, toDate: string): Promise<DailySalesReport> =>
   isTauri()

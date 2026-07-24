@@ -688,12 +688,21 @@ CREATE INDEX idx_sale_return_payments_mode_created ON sale_return_payments(mode,
 -- SECTION I — Day close
 -- =====================================================================
 
--- I1. Per-location end-of-day settlement
+-- I1. Per-location end-of-day settlement.
+--
+-- Mode is determined at runtime by active cashier count. Single cashier →
+-- shop-level close per (day, location_id) with user_id NULL. Multiple
+-- cashiers → per-cashier close per (day, location_id, user_id). Both modes
+-- coexist via partial unique indexes below.
+--
+-- `user_id` is nullable: NULL marks a shop-level close, a real user_id marks
+-- a per-cashier close. The legacy table-level UNIQUE(day, location_id) is
+-- intentionally absent so the two modes can coexist.
 CREATE TABLE day_close (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   day                 TEXT    NOT NULL,           -- 'YYYY-MM-DD' (calendar day, NOT epoch)
   location_id         INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
-  user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+  user_id             INTEGER REFERENCES users(id) ON DELETE NO ACTION,  -- NULL = shop-level close
   opening_cash_paise  INTEGER NOT NULL DEFAULT 0,
   cash_sales_paise    INTEGER NOT NULL DEFAULT 0,
   card_sales_paise    INTEGER NOT NULL DEFAULT 0,
@@ -706,8 +715,7 @@ CREATE TABLE day_close (
   created_at          INTEGER NOT NULL,
   updated_at          INTEGER NOT NULL,
   created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
-  updated_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
-  UNIQUE(day, location_id)
+  updated_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
 
 -- serves: "show day-close history for this location"
@@ -715,6 +723,13 @@ CREATE INDEX idx_day_close_location_day ON day_close(location_id, day DESC);
 
 -- serves: "show day-close history for this user"
 CREATE INDEX idx_day_close_user_id ON day_close(user_id);
+
+-- audit-3 A2: partial unique indexes replace the legacy table-level
+-- UNIQUE(day, location_id). They let shop-level (user_id IS NULL) and
+-- per-cashier (user_id IS NOT NULL) close rows coexist on the same
+-- (day, location_id) without conflict.
+CREATE UNIQUE INDEX day_close_shop_uniq ON day_close(day, location_id) WHERE user_id IS NULL;
+CREATE UNIQUE INDEX day_close_user_uniq ON day_close(day, location_id, user_id) WHERE user_id IS NOT NULL;
 
 -- =====================================================================
 -- SECTION J — Daily counters (M005)

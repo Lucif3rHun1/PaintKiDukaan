@@ -171,7 +171,12 @@ export interface DayClose {
   id: number;
   day: string;
   location_id: number;
-  user_id: number;
+  /**
+   * `null` marks a shop-level close (single-cashier mode).
+   * A real user_id marks a per-cashier close (multi-cashier mode).
+   * Mirrors `day_close.user_id` which became nullable in M-INLINE-027.
+   */
+  user_id: number | null;
   opening_cash_paise: number;
   cash_sales_paise: number;
   card_sales_paise: number;
@@ -185,6 +190,37 @@ export interface DayClose {
   note: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type DayCloseMode = "shop" | "cashier";
+
+export interface DayCloseTotals {
+  user_id: number | null;
+  user_name: string;
+  opening_cash_paise: number;
+  cash_sales_paise: number;
+  card_sales_paise: number;
+  upi_sales_paise: number;
+  cash_in_paise: number;
+  cash_out_paise: number;
+  closing_cash_paise: number;
+  actual_cash_paise: number;
+  variance_paise: number;
+}
+
+/**
+ * Returned by `cmd_trigger_day_close`. Renders both the shop-level section
+ * and (when `mode === "cashier"`) the per-cashier breakdown in one response.
+ *
+ * In `shop` mode, `per_cashier` is empty and `shop_total` is the close row.
+ * In `cashier` mode, `shop_total` is the element-wise sum of `per_cashier`.
+ */
+export interface DayClosePreview {
+  mode: DayCloseMode;
+  day: string;
+  location_id: number;
+  shop_total: DayCloseTotals;
+  per_cashier: DayCloseTotals[];
 }
 
 export interface CashSalesSummary {

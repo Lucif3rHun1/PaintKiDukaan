@@ -1,5 +1,10 @@
-// Day Close — single page: list → form → summary.
-// No hash sub-routing; all views managed internally.
+// Day Close — split into two sections per audit-3 A2 + C5:
+//   * Shop-level totals: always rendered. Triggered by the single
+//     "Close day" button in the form view. The backend picks shop vs
+//     per-cashier mode at runtime based on the active cashier count.
+//   * Per-cashier breakdown: only rendered when 2+ active cashiers and
+//     the close was performed in per-cashier mode. Each row is a
+//     cashier's totals.
 
 const VARIANCE_TOLERANCE_PAISE = 500; // ₹5
 
@@ -25,12 +30,19 @@ import type { ColumnDef } from "../../components/ui";
 import {
   backupGateCheck,
   cashSalesFor,
+  countActiveCashiers,
   lastOpeningFor,
   triggerDayClose,
   listDayClose,
   listDayClosePaged,
 } from "../api";
-import type { BackupGate, CashSalesSummary, DayClose } from "../types";
+import type {
+  BackupGate,
+  CashSalesSummary,
+  DayClose,
+  DayClosePreview,
+  DayCloseTotals,
+} from "../types";
 import { todayLocalYyyymmdd, formatDateForDisplay } from "../../lib/date";
 import { extractError } from "../../lib/extractError";
 import { useDirtyForm } from "../hooks/useDirtyForm";
@@ -74,20 +86,6 @@ interface Props {
   user: { id: number; name: string; role: "owner" | "cashier" | "stocker" };
 }
 
-interface CloseResult {
-  date: string;
-  opening: number;
-  cashSales: number;
-  cardSales: number;
-  upiSales: number;
-  cashIn: number;
-  cashOut: number;
-  expected: number;
-  counted: number;
-  variance: number;
-  notes: string | null;
-}
-
 export default function DayClosePage({ user }: Props) {
   const queryClient = useQueryClient();
   const [view, setView] = useState<"list" | "form" | "summary">("list");
@@ -95,6 +93,8 @@ export default function DayClosePage({ user }: Props) {
 
   const [listError, setListError] = useState<string | null>(null);
   const [gate, setGate] = useState<BackupGate | null>(null);
+  const [cashierCount, setCashierCount] = useState<number | null>(null);
+  const [preview, setPreview] = useState<DayClosePreview | null>(null);
 
   const serverSource = useMemo(() => ({
     endpoint: "cmd_list_day_close_paged",
@@ -115,9 +115,9 @@ export default function DayClosePage({ user }: Props) {
   const [useDenom, setUseDenom] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [lastClose, setLastClose] = useState<CloseResult | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [alreadyClosed, setAlreadyClosed] = useState(false);
+  const [todayCloses, setTodayCloses] = useState<DayClose[]>([]);
 
   const dirty = useMemo(() => {
     if (view !== "form") return false;
@@ -143,6 +143,16 @@ export default function DayClosePage({ user }: Props) {
     backupGateCheck()
       .then((d) => { if (!cancelled) setGate(d ?? null); })
       .catch(() => { if (!cancelled) setListError("Failed to load gate data."); });
+    countActiveCashiers()
+      .then((n) => { if (!cancelled) setCashierCount(n); })
+      .catch(() => { if (!cancelled) setCashierCount(1); });
+    listDayClose(365)
+      .then((rows) => {
+        if (cancelled) return;
+        const today = todayLocalYyyymmdd();
+        setTodayCloses(rows.filter((r) => r.day === today));
+      })
+      .catch(() => { if (!cancelled) setTodayCloses([]); });
     return () => { cancelled = true; };
   }, [user.id, view === "list"]);
 
@@ -193,13 +203,39 @@ export default function DayClosePage({ user }: Props) {
     (summary?.cash_sales_paise ?? 0) +
     (summary?.card_sales_paise ?? 0) +
     (summary?.upi_sales_paise ?? 0);
+  const multiCashier = (cashierCount ?? 1) >= 2;
+
+  // Section 1 / Section 2 inputs derived from today's day_close rows.
+  // In shop mode there is one row (user_id NULL); in cashier mode there is
+  // one row per cashier. Section 1 always shows the aggregate.
+  const todayShopRow = todayCloses.find((c) => c.user_id === null) ?? null;
+  const todayPerCashierRows = todayCloses.filter((c) => c.user_id !== null);
+  const todayCurrentUserRow = todayPerCashierRows.find((c) => c.user_id === user.id) ?? null;
+  const shopSectionTotals: DayCloseTotals = todayShopRow
+    ? {
+        user_id: null,
+        user_name: "Shop",
+        opening_cash_paise: todayShopRow.opening_cash_paise,
+        cash_sales_paise: todayShopRow.cash_sales_paise,
+        card_sales_paise: todayShopRow.card_sales_paise,
+        upi_sales_paise: todayShopRow.upi_sales_paise,
+        cash_in_paise: todayShopRow.cash_in_paise,
+        cash_out_paise: todayShopRow.cash_out_paise,
+        closing_cash_paise: todayShopRow.closing_cash_paise,
+        actual_cash_paise: todayShopRow.actual_cash_paise,
+        variance_paise: todayShopRow.variance_paise,
+      }
+    : todayPerCashierRows.length > 0
+      ? sumDayCloseTotals(todayPerCashierRows)
+      : emptyShopTotals();
+  const myShiftOpen = !todayCurrentUserRow;
 
   async function submit(decision: "fresh" | "skip" | "back_up") {
     if (submitting || alreadyClosed) return;
     setSubmitting(true);
     setFormError(null);
     try {
-      await triggerDayClose({
+      const pv = await triggerDayClose({
         date,
         opening_cash: openingPaise,
         cash_in: cashInPaise,
@@ -210,19 +246,7 @@ export default function DayClosePage({ user }: Props) {
       });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       void invalidateList(queryClient, "cmd_list_day_close_paged");
-      setLastClose({
-        date,
-        opening: openingPaise,
-        cashSales: summary?.cash_sales_paise ?? 0,
-        cardSales: summary?.card_sales_paise ?? 0,
-        upiSales: summary?.upi_sales_paise ?? 0,
-        cashIn: cashInPaise,
-        cashOut: cashOutPaise,
-        expected,
-        counted: countedPaise,
-        variance,
-        notes: notes || null,
-      });
+      setPreview(pv);
       resetDirty();
       setView("summary");
       resetFormState();
@@ -252,19 +276,13 @@ export default function DayClosePage({ user }: Props) {
     setView("form");
   }
 
-  if (view === "summary" && lastClose) {
-    const lc = lastClose;
-    // ponytail: withinTolerance must be computed from lc.variance, not the
-    // outer-scope `variance` (which is reset to 0 because the form state was
-    // cleared after submit). Otherwise the summary always shows green.
-    const summaryWithinTolerance =
-      lc.variance === 0 ||
-      Math.abs(lc.variance) <= VARIANCE_TOLERANCE_PAISE;
+  if (view === "summary" && preview) {
+    const pv = preview;
     return (
       <div className="space-y-4">
         <PageHeader
-          title="Day Closed"
-          description={`Reconciliation completed for ${formatDateForDisplay(lc.date)}.`}
+          title={pv.mode === "shop" ? "Day Closed" : "Day Closed (per-cashier)"}
+          description={`Reconciliation completed for ${formatDateForDisplay(pv.day)}.`}
           accent="green"
         />
 
@@ -273,46 +291,10 @@ export default function DayClosePage({ user }: Props) {
           <span>Day closed successfully</span>
         </div>
 
-        <Card depth="raised" className="px-4">
-          <h2 className="mb-3 text-sm font-semibold">
-            <span className="tabular-nums whitespace-nowrap">{formatDateForDisplay(lc.date)}</span>
-          </h2>
-          <div className="space-y-2 text-sm">
-            <SummaryRow label="Opening cash" value={<Money paise={lc.opening} />} />
-            <SummaryRow label="Cash sales" value={<Money paise={lc.cashSales} />} />
-            <SummaryRow label="Card sales" value={<Money paise={lc.cardSales} />} />
-            <SummaryRow label="UPI sales" value={<Money paise={lc.upiSales} />} />
-            <SummaryRow label="Cash in" value={<Money paise={lc.cashIn} />} />
-            <SummaryRow label="Cash out" value={<Money paise={lc.cashOut} />} />
-            <hr className="my-2 border-border" />
-            <SummaryRow
-              label="Expected"
-              value={<Money paise={lc.expected} className="font-semibold" />}
-            />
-            <SummaryRow
-              label="Counted"
-              value={<Money paise={lc.counted} className="font-semibold" />}
-            />
-            <SummaryRow
-              label="Variance"
-              value={
-                <Money
-                  paise={lc.variance}
-                  className={
-                    summaryWithinTolerance
-                      ? "font-semibold text-success"
-                      : "font-semibold text-destructive"
-                  }
-                />
-              }
-            />
-            {lc.notes && (
-              <div className="mt-2 rounded bg-muted p-2 text-xs text-muted-foreground">
-                {lc.notes}
-              </div>
-            )}
-          </div>
-        </Card>
+        <Section1ShopTotals totals={pv.shop_total} />
+        {pv.per_cashier.length >= 2 && (
+          <Section2PerCashier rows={pv.per_cashier} />
+        )}
 
         <Button onClick={() => setView("list")} className="w-full">
           Back to closes
@@ -555,11 +537,6 @@ export default function DayClosePage({ user }: Props) {
         title="Day Close"
         description="Review recent reconciliations or close the current business day."
         accent="slate"
-        actions={
-          <Button onClick={openForm} data-testid="close-day">
-            Close day
-          </Button>
-        }
       />
 
       {listError && (
@@ -570,6 +547,29 @@ export default function DayClosePage({ user }: Props) {
 
       {gate?.needs_prompt && (
         <Alert variant="warning" title="Backup overdue">Recommend backing up before closing.</Alert>
+      )}
+
+      <Section1ShopTotals
+        totals={shopSectionTotals}
+        empty={todayCloses.length === 0}
+        action={
+          // In multi-cashier mode, the close-day action lives in Section 1
+          // and writes the current user's per-cashier row (the per-cashier
+          // close button is below in Section 2 for the same effect).
+          myShiftOpen && (
+            <Button onClick={openForm} className="w-full" data-testid="close-day">
+              {multiCashier ? "Close my shift" : "Close day"}
+            </Button>
+          )
+        }
+      />
+
+      {multiCashier && (
+        <Section2MyShift
+          row={todayCurrentUserRow ? rowToDayCloseTotals(todayCurrentUserRow) : null}
+          myShiftOpen={myShiftOpen}
+          onClose={openForm}
+        />
       )}
 
       <Card depth="flat" className="px-4">
@@ -633,4 +633,203 @@ function SummaryRow({ label, value }: { label: string; value: React.ReactNode })
       {value}
     </div>
   );
+}
+
+// Section 1 — shop-level totals. Always rendered. In shop-mode this is the
+// single close row; in cashier-mode it's the element-wise sum of per_cashier.
+// `action` slots in an optional close button for the list view.
+function Section1ShopTotals({
+  totals,
+  action,
+  empty,
+}: {
+  totals: DayCloseTotals;
+  action?: React.ReactNode;
+  empty?: boolean;
+}) {
+  const variance = totals.actual_cash_paise - totals.closing_cash_paise;
+  const withinTolerance = variance === 0 || Math.abs(variance) <= VARIANCE_TOLERANCE_PAISE;
+  return (
+    <Card depth="raised" className="px-4" data-testid="shop-level-section">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold">Shop-level totals</h2>
+        {empty && (
+          <span className="text-xs text-muted-foreground">no close yet today</span>
+        )}
+      </div>
+      <div className="space-y-2 text-sm">
+        <SummaryRow label="Total sales" value={<Money paise={totals.cash_sales_paise + totals.card_sales_paise + totals.upi_sales_paise} className="font-semibold" />} />
+        <SummaryRow label="Cash sales" value={<Money paise={totals.cash_sales_paise} />} />
+        <SummaryRow label="Card sales" value={<Money paise={totals.card_sales_paise} />} />
+        <SummaryRow label="UPI sales" value={<Money paise={totals.upi_sales_paise} />} />
+        <SummaryRow label="Cash in" value={<Money paise={totals.cash_in_paise} />} />
+        <SummaryRow label="Cash out" value={<Money paise={totals.cash_out_paise} />} />
+        <hr className="my-2 border-border" />
+        <SummaryRow label="Opening cash" value={<Money paise={totals.opening_cash_paise} />} />
+        <SummaryRow label="Closing cash" value={<Money paise={totals.closing_cash_paise} className="font-semibold" />} />
+        <SummaryRow label="Counted cash" value={<Money paise={totals.actual_cash_paise} className="font-semibold" />} />
+        <SummaryRow
+          label="Variance"
+          value={
+            <Money
+              paise={variance}
+              className={withinTolerance ? "font-semibold text-success" : "font-semibold text-destructive"}
+            />
+          }
+        />
+      </div>
+      {action && <div className="mt-3">{action}</div>}
+    </Card>
+  );
+}
+
+// Section 2 — per-cashier breakdown. Only rendered when 2+ active cashiers
+// and the close ran in per-cashier mode.
+function Section2PerCashier({ rows }: { rows: DayCloseTotals[] }) {
+  return (
+    <Card depth="raised" className="px-4" data-testid="per-cashier-section">
+      <h2 className="mb-3 text-sm font-semibold">Per-cashier breakdown</h2>
+      <div className="divide-y divide-border">
+        {rows.map((row, idx) => {
+          const variance = row.actual_cash_paise - row.closing_cash_paise;
+          const withinTolerance = variance === 0 || Math.abs(variance) <= VARIANCE_TOLERANCE_PAISE;
+          return (
+            <div key={row.user_id ?? idx} className="space-y-1.5 py-3 first:pt-0 last:pb-0 text-sm">
+              <div className="flex items-center justify-between font-medium">
+                <span>{row.user_name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {(row.cash_sales_paise + row.card_sales_paise + row.upi_sales_paise) === 0
+                    ? "no sales"
+                    : "closed"}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                <SummaryRow label="Cash" value={<Money paise={row.cash_sales_paise} />} />
+                <SummaryRow label="Card" value={<Money paise={row.card_sales_paise} />} />
+                <SummaryRow label="UPI" value={<Money paise={row.upi_sales_paise} />} />
+                <SummaryRow label="In/Out" value={<Money paise={row.cash_in_paise - row.cash_out_paise} />} />
+                <SummaryRow label="Closing" value={<Money paise={row.closing_cash_paise} />} />
+                <SummaryRow label="Counted" value={<Money paise={row.actual_cash_paise} />} />
+                <SummaryRow
+                  label="Variance"
+                  value={
+                    <Money
+                      paise={variance}
+                      className={withinTolerance ? "text-success" : "text-destructive"}
+                    />
+                  }
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// List-view variant of Section 2: shows the current user's row (open or
+// closed) with a "Close my shift" button. Only rendered when 2+ active
+// cashiers exist.
+function Section2MyShift({
+  row,
+  myShiftOpen,
+  onClose,
+}: {
+  row: DayCloseTotals | null;
+  myShiftOpen: boolean;
+  onClose: () => void;
+}) {
+  const variance = row ? row.actual_cash_paise - row.closing_cash_paise : 0;
+  const withinTolerance = variance === 0 || Math.abs(variance) <= VARIANCE_TOLERANCE_PAISE;
+  return (
+    <Card depth="raised" className="px-4" data-testid="per-cashier-section">
+      <h2 className="mb-3 text-sm font-semibold">Per-cashier breakdown</h2>
+      <div className="space-y-2 text-sm">
+        <SummaryRow
+          label={row?.user_name ?? "You"}
+          value={
+            <span className="text-xs text-muted-foreground">
+              {row
+                ? (row.cash_sales_paise + row.card_sales_paise + row.upi_sales_paise) === 0
+                  ? "no sales"
+                  : "closed"
+                : "no close yet"}
+            </span>
+          }
+        />
+        {row && (
+          <>
+            <SummaryRow label="Cash" value={<Money paise={row.cash_sales_paise} />} />
+            <SummaryRow label="Closing" value={<Money paise={row.closing_cash_paise} />} />
+            <SummaryRow label="Counted" value={<Money paise={row.actual_cash_paise} />} />
+            <SummaryRow
+              label="Variance"
+              value={
+                <Money
+                  paise={variance}
+                  className={withinTolerance ? "text-success" : "text-destructive"}
+                />
+              }
+            />
+          </>
+        )}
+      </div>
+      {myShiftOpen && (
+        <div className="mt-3">
+          <Button onClick={onClose} className="w-full" data-testid="close-my-shift">
+            Close my shift
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function emptyShopTotals(): DayCloseTotals {
+  return {
+    user_id: null,
+    user_name: "Shop",
+    opening_cash_paise: 0,
+    cash_sales_paise: 0,
+    card_sales_paise: 0,
+    upi_sales_paise: 0,
+    cash_in_paise: 0,
+    cash_out_paise: 0,
+    closing_cash_paise: 0,
+    actual_cash_paise: 0,
+    variance_paise: 0,
+  };
+}
+
+function rowToDayCloseTotals(r: DayClose): DayCloseTotals {
+  return {
+    user_id: r.user_id,
+    user_name: r.user_id === null ? "Shop" : `Cashier #${r.user_id}`,
+    opening_cash_paise: r.opening_cash_paise,
+    cash_sales_paise: r.cash_sales_paise,
+    card_sales_paise: r.card_sales_paise,
+    upi_sales_paise: r.upi_sales_paise,
+    cash_in_paise: r.cash_in_paise,
+    cash_out_paise: r.cash_out_paise,
+    closing_cash_paise: r.closing_cash_paise,
+    actual_cash_paise: r.actual_cash_paise,
+    variance_paise: r.variance_paise,
+  };
+}
+
+function sumDayCloseTotals(rows: DayClose[]): DayCloseTotals {
+  const out = emptyShopTotals();
+  for (const r of rows) {
+    out.opening_cash_paise += r.opening_cash_paise;
+    out.cash_sales_paise += r.cash_sales_paise;
+    out.card_sales_paise += r.card_sales_paise;
+    out.upi_sales_paise += r.upi_sales_paise;
+    out.cash_in_paise += r.cash_in_paise;
+    out.cash_out_paise += r.cash_out_paise;
+    out.closing_cash_paise += r.closing_cash_paise;
+    out.actual_cash_paise += r.actual_cash_paise;
+    out.variance_paise += r.variance_paise;
+  }
+  return out;
 }

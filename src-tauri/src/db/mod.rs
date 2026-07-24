@@ -977,6 +977,55 @@ impl Db {
             )?;
         }
 
+        // M-INLINE-027: Day-close runtime mode per active cashier count
+        // (audit-3 A2). Drops the table-level UNIQUE(day, location_id) and
+        // makes `user_id` nullable so partial unique indexes can carry the
+        // uniqueness invariant: `day_close_shop_uniq` for the shop-level
+        // mode (user_id IS NULL) and `day_close_user_uniq` for the
+        // per-cashier mode (user_id IS NOT NULL). Both indexes can coexist;
+        // the application chooses which to insert into based on
+        // `count_active_cashiers()`.
+        {
+            let has_shop_uniq: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_master \
+                     WHERE type='index' AND name='day_close_shop_uniq'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if !has_shop_uniq {
+                conn.execute_batch(
+                    "CREATE TABLE day_close_new (
+                       id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                       day                 TEXT    NOT NULL,
+                       location_id         INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+                       user_id             INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+                       opening_cash_paise  INTEGER NOT NULL DEFAULT 0,
+                       cash_sales_paise    INTEGER NOT NULL DEFAULT 0,
+                       card_sales_paise    INTEGER NOT NULL DEFAULT 0,
+                       upi_sales_paise     INTEGER NOT NULL DEFAULT 0,
+                       expenses_paise      INTEGER NOT NULL DEFAULT 0,
+                       closing_cash_paise  INTEGER NOT NULL DEFAULT 0,
+                       actual_cash_paise   INTEGER,
+                       variance_paise      INTEGER,
+                       note                TEXT,
+                       created_at          INTEGER NOT NULL,
+                       updated_at          INTEGER NOT NULL,
+                       created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+                       updated_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION
+                     );
+                     INSERT INTO day_close_new SELECT * FROM day_close;
+                     DROP TABLE day_close;
+                     ALTER TABLE day_close_new RENAME TO day_close;
+                     CREATE INDEX IF NOT EXISTS idx_day_close_location_day ON day_close(location_id, day DESC);
+                     CREATE INDEX IF NOT EXISTS idx_day_close_user_id ON day_close(user_id);
+                     CREATE UNIQUE INDEX IF NOT EXISTS day_close_shop_uniq ON day_close(day, location_id) WHERE user_id IS NULL;
+                     CREATE UNIQUE INDEX IF NOT EXISTS day_close_user_uniq ON day_close(day, location_id, user_id) WHERE user_id IS NOT NULL;",
+                )?;
+            }
+        }
+
         // M-INLINE-026: COLLATE NOCASE on name indexes & UNIQUE constraints.
         // ASCII-only by default; non-ASCII names remain case-sensitive. No ICU.
         {

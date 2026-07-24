@@ -1,8 +1,12 @@
 //! Day-close commands (per-user end-of-day reconciliation).
 //!
-//! Per master plan §7.6. One row per (user_id, day). After a row is written
-//! for a given date by cashier X, sales for that date are read-only to X
-//! (owner override always allowed). The `closing_cash_paise` formula is:
+//! Mode is determined at runtime by active cashier count. Single cashier →
+//! shop-level close per (day, location_id) with `user_id IS NULL`. Multiple
+//! cashiers → per-cashier close per (day, location_id, user_id). Both modes
+//! coexist via partial unique indexes (see `schema_final.sql` §I1 and
+//! `db/mod.rs` M-INLINE-027).
+//!
+//! The `closing_cash_paise` formula is:
 //!
 //! ```text
 //!     closing = opening_cash
@@ -38,7 +42,9 @@ pub struct DayClose {
     pub id: i64,
     pub day: String,
     pub location_id: i64,
-    pub user_id: i64,
+    /// `None` marks a shop-level close (single-cashier mode). Some
+    /// `user_id` marks a per-cashier close (multi-cashier mode).
+    pub user_id: Option<i64>,
     pub opening_cash_paise: i64,
     pub cash_sales_paise: i64,
     pub card_sales_paise: i64,
@@ -52,6 +58,47 @@ pub struct DayClose {
     pub note: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// Mode chosen at runtime by `count_active_cashiers` at the time of close.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub enum DayCloseMode {
+    /// Single active cashier → one close per `(day, location_id)` with
+    /// `user_id = NULL`.
+    Shop,
+    /// Two or more active cashiers → one close per cashier
+    /// `(day, location_id, user_id)`.
+    Cashier,
+}
+
+/// Totals for a single close row, normalized for the UI preview.
+/// `user_id` is `None` for the shop-level row, `Some(id)` for a per-cashier row.
+#[derive(Debug, Clone, Serialize)]
+pub struct DayCloseTotals {
+    pub user_id: Option<i64>,
+    pub user_name: String,
+    pub opening_cash_paise: i64,
+    pub cash_sales_paise: i64,
+    pub card_sales_paise: i64,
+    pub upi_sales_paise: i64,
+    pub cash_in_paise: i64,
+    pub cash_out_paise: i64,
+    pub closing_cash_paise: i64,
+    pub actual_cash_paise: i64,
+    pub variance_paise: i64,
+}
+
+/// Returned to the UI after a successful `cmd_trigger_day_close`.
+/// In `Shop` mode, `per_cashier` is empty and `shop_total` is the close row.
+/// In `Cashier` mode, `per_cashier` lists every cashier's row and
+/// `shop_total` is the element-wise sum of `per_cashier`.
+#[derive(Debug, Clone, Serialize)]
+pub struct DayClosePreview {
+    pub mode: DayCloseMode,
+    pub day: String,
+    pub location_id: i64,
+    pub shop_total: DayCloseTotals,
+    pub per_cashier: Vec<DayCloseTotals>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -279,27 +326,7 @@ pub fn list(db: &Db, limit: i64) -> Result<Vec<DayClose>, DayCloseError> {
                     cash_in_paise, cash_out_paise
              FROM day_close ORDER BY day DESC, id DESC LIMIT ?1",
         )?;
-        let rows = stmt.query_map(params![limit], |r| {
-            Ok(DayClose {
-                id: r.get(0)?,
-                day: r.get(1)?,
-                location_id: r.get(2)?,
-                user_id: r.get(3)?,
-                opening_cash_paise: r.get(4)?,
-                cash_sales_paise: r.get(5)?,
-                card_sales_paise: r.get(6)?,
-                upi_sales_paise: r.get(7)?,
-                expenses_paise: r.get(8)?,
-                closing_cash_paise: r.get(9)?,
-                actual_cash_paise: r.get(10)?,
-                variance_paise: r.get(11)?,
-                note: r.get(12)?,
-                created_at: r.get::<_, i64>(13)?.to_string(),
-                updated_at: r.get::<_, i64>(14)?.to_string(),
-                cash_in_paise: r.get(15)?,
-                cash_out_paise: r.get(16)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![limit], row_to_day_close)?;
         let mut out = Vec::new();
         for r in rows {
             out.push(r?);
@@ -318,27 +345,7 @@ pub fn get(db: &Db, id: i64) -> Result<Option<DayClose>, DayCloseError> {
                         cash_in_paise, cash_out_paise
                  FROM day_close WHERE id = ?1",
                 params![id],
-                |row| {
-                    Ok(DayClose {
-                        id: row.get(0)?,
-                        day: row.get(1)?,
-                        location_id: row.get(2)?,
-                        user_id: row.get(3)?,
-                        opening_cash_paise: row.get(4)?,
-                        cash_sales_paise: row.get(5)?,
-                        card_sales_paise: row.get(6)?,
-                        upi_sales_paise: row.get(7)?,
-                        expenses_paise: row.get(8)?,
-                        closing_cash_paise: row.get(9)?,
-                        actual_cash_paise: row.get(10)?,
-                        variance_paise: row.get(11)?,
-                        note: row.get(12)?,
-                        created_at: row.get::<_, i64>(13)?.to_string(),
-                        updated_at: row.get::<_, i64>(14)?.to_string(),
-                        cash_in_paise: row.get(15)?,
-                        cash_out_paise: row.get(16)?,
-                    })
-                },
+                row_to_day_close,
             )
             .optional()?;
         Ok(r)
@@ -383,8 +390,8 @@ pub fn trigger_day_close(db: &Db, user_id: i64, req: NewDayClose) -> Result<i64,
     let id = db.with_conn_immediate(|c| -> Result<i64, DayCloseError> {
         let existing: Option<i64> = c
             .query_row(
-                "SELECT id FROM day_close WHERE day = ?1 AND location_id = ?2",
-                params![day, location_id],
+                "SELECT id FROM day_close WHERE day = ?1 AND location_id = ?2 AND user_id = ?3",
+                params![day, location_id, user_id],
                 |r| r.get(0),
             )
             .optional()?;
@@ -421,6 +428,232 @@ pub fn trigger_day_close(db: &Db, user_id: i64, req: NewDayClose) -> Result<i64,
         Ok(id)
     })?;
     Ok(id)
+}
+
+/// Count of currently active cashiers — drives the runtime mode dispatch in
+/// `trigger_day_close_auto_mode`. Single active cashier → shop-level close;
+/// two or more → per-cashier close.
+pub fn count_active_cashiers(db: &Db) -> Result<i64, DayCloseError> {
+    db.with_conn(|c| -> Result<i64, DayCloseError> {
+        let n: i64 = c.query_row(
+            "SELECT COUNT(*) FROM users WHERE role = 'cashier' AND is_active = 1",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(n)
+    })
+}
+
+/// Shop-level close: inserts a row with `user_id = NULL`, enforcing
+/// uniqueness on `(day, location_id)` via the partial unique index
+/// `day_close_shop_uniq`. The caller (cmd path) is responsible for choosing
+/// this path — it is the right choice when `count_active_cashiers <= 1`.
+pub fn trigger_day_close_shop(db: &Db, req: NewDayClose) -> Result<i64, DayCloseError> {
+    if req.opening_cash < 0 {
+        return Err(DayCloseError::BadOpening);
+    }
+    if req.cash_in < 0 || req.cash_out < 0 {
+        return Err(DayCloseError::BadDelta);
+    }
+    if req.counted_cash < 0 {
+        return Err(DayCloseError::BadCounted);
+    }
+    if !matches!(req.backup_decision.as_str(), "back_up" | "skip" | "fresh") {
+        return Err(DayCloseError::BadBackupDecision(req.backup_decision));
+    }
+    let day = req.date.unwrap_or_else(today);
+    // The opening/closing math here uses the only active cashier's previous
+    // close as the carry-forward. Sales totals are still per-day totals for
+    // the location (the active cashier owns the day's activity).
+    let cashier_seed = db.with_conn(|c| -> Result<i64, DayCloseError> {
+        let id: i64 = c
+            .query_row(
+                "SELECT id FROM users WHERE role = 'cashier' AND is_active = 1 \
+                 ORDER BY id LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| DayCloseError::Other(anyhow::anyhow!("no active cashier")))?;
+        Ok(id)
+    })?;
+    let opening = if req.opening_cash == 0 {
+        last_opening_for(db, cashier_seed, &day)?
+    } else {
+        req.opening_cash
+    };
+    let summary = cash_sales_for(db, cashier_seed, &day)?;
+    let closing = closing_cash(opening, summary.cash_sales_paise, req.cash_in, req.cash_out);
+    let var = variance(req.counted_cash, closing);
+    let location_id = default_location(db)?;
+    let now = now_ms();
+
+    let id = db.with_conn_immediate(|c| -> Result<i64, DayCloseError> {
+        let existing: Option<i64> = c
+            .query_row(
+                "SELECT id FROM day_close WHERE day = ?1 AND location_id = ?2 AND user_id IS NULL",
+                params![day, location_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if existing.is_some() {
+            return Err(DayCloseError::AlreadyClosed { date: day });
+        }
+        let id: i64 = c.query_row(
+            "INSERT INTO day_close
+                (day, location_id, user_id, opening_cash_paise, cash_sales_paise, card_sales_paise,
+                 upi_sales_paise, expenses_paise, closing_cash_paise, actual_cash_paise,
+                 variance_paise, note, created_at, updated_at,
+                 cash_in_paise, cash_out_paise)
+             VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13, ?14)
+             RETURNING id",
+            params![
+                day,
+                location_id,
+                opening,
+                summary.cash_sales_paise,
+                summary.card_sales_paise,
+                summary.upi_sales_paise,
+                0i64,
+                closing,
+                req.counted_cash,
+                var,
+                req.notes,
+                now,
+                req.cash_in,
+                req.cash_out,
+            ],
+            |r| r.get(0),
+        )?;
+        Ok(id)
+    })?;
+    Ok(id)
+}
+
+/// Dispatch on active cashier count and run the matching insert. The
+/// returned `DayClosePreview` is what the UI needs to render both the
+/// shop-level section and (when 2+ cashiers) the per-cashier breakdown.
+pub fn trigger_day_close_auto_mode(
+    db: &Db,
+    user_id: i64,
+    req: NewDayClose,
+) -> Result<DayClosePreview, DayCloseError> {
+    let day = req.date.clone().unwrap_or_else(today);
+    let location_id = default_location(db)?;
+    let cashier_count = count_active_cashiers(db)?;
+    if cashier_count <= 1 {
+        let id = trigger_day_close_shop(db, req)?;
+        let row = get(db, id)?
+            .ok_or_else(|| DayCloseError::Other(anyhow::anyhow!("inserted row missing")))?;
+        let totals = row_to_totals(&row, "Shop");
+        return Ok(DayClosePreview {
+            mode: DayCloseMode::Shop,
+            day,
+            location_id,
+            shop_total: totals,
+            per_cashier: vec![],
+        });
+    }
+    // Per-cashier mode.
+    let _id = trigger_day_close(db, user_id, req)?;
+    let rows = list_cashier_closes(db, &day, location_id)?;
+    let per_cashier: Vec<DayCloseTotals> = rows
+        .iter()
+        .map(|r| row_to_totals(r, &user_name_for(db, r.user_id)))
+        .collect();
+    let shop_total = sum_totals(&per_cashier);
+    Ok(DayClosePreview {
+        mode: DayCloseMode::Cashier,
+        day,
+        location_id,
+        shop_total,
+        per_cashier,
+    })
+}
+
+fn list_cashier_closes(
+    db: &Db,
+    day: &str,
+    location_id: i64,
+) -> Result<Vec<DayClose>, DayCloseError> {
+    db.with_conn(|c| -> Result<Vec<DayClose>, DayCloseError> {
+        let mut stmt = c.prepare(
+            "SELECT id, day, location_id, user_id, opening_cash_paise, cash_sales_paise,
+                    card_sales_paise, upi_sales_paise, expenses_paise, closing_cash_paise,
+                    actual_cash_paise, variance_paise, note, created_at, updated_at,
+                    cash_in_paise, cash_out_paise
+             FROM day_close
+             WHERE day = ?1 AND location_id = ?2 AND user_id IS NOT NULL
+             ORDER BY user_id ASC",
+        )?;
+        let rows = stmt.query_map(params![day, location_id], row_to_day_close)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    })
+}
+
+fn user_name_for(db: &Db, user_id: Option<i64>) -> String {
+    let Some(uid) = user_id else {
+        return "Shop".into();
+    };
+    db.with_conn(|c| -> Result<String, DayCloseError> {
+        let name: Option<String> = c
+            .query_row(
+                "SELECT name FROM users WHERE id = ?1",
+                params![uid],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(name.unwrap_or_else(|| format!("user#{uid}")))
+    })
+    .unwrap_or_else(|_| format!("user#{uid}"))
+}
+
+fn row_to_totals(r: &DayClose, user_name: &str) -> DayCloseTotals {
+    DayCloseTotals {
+        user_id: r.user_id,
+        user_name: user_name.to_string(),
+        opening_cash_paise: r.opening_cash_paise,
+        cash_sales_paise: r.cash_sales_paise,
+        card_sales_paise: r.card_sales_paise,
+        upi_sales_paise: r.upi_sales_paise,
+        cash_in_paise: r.cash_in_paise,
+        cash_out_paise: r.cash_out_paise,
+        closing_cash_paise: r.closing_cash_paise,
+        actual_cash_paise: r.actual_cash_paise,
+        variance_paise: r.variance_paise,
+    }
+}
+
+fn sum_totals(rows: &[DayCloseTotals]) -> DayCloseTotals {
+    let mut t = DayCloseTotals {
+        user_id: None,
+        user_name: "Shop".into(),
+        opening_cash_paise: 0,
+        cash_sales_paise: 0,
+        card_sales_paise: 0,
+        upi_sales_paise: 0,
+        cash_in_paise: 0,
+        cash_out_paise: 0,
+        closing_cash_paise: 0,
+        actual_cash_paise: 0,
+        variance_paise: 0,
+    };
+    for r in rows {
+        t.opening_cash_paise += r.opening_cash_paise;
+        t.cash_sales_paise += r.cash_sales_paise;
+        t.card_sales_paise += r.card_sales_paise;
+        t.upi_sales_paise += r.upi_sales_paise;
+        t.cash_in_paise += r.cash_in_paise;
+        t.cash_out_paise += r.cash_out_paise;
+        t.closing_cash_paise += r.closing_cash_paise;
+        t.actual_cash_paise += r.actual_cash_paise;
+        t.variance_paise += r.variance_paise;
+    }
+    t
 }
 
 fn today() -> String {
@@ -494,7 +727,7 @@ pub fn cmd_trigger_day_close<R: tauri::Runtime>(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<R>,
     req: NewDayClose,
-) -> AppResult<i64> {
+) -> AppResult<DayClosePreview> {
     ipc_auth::authorize_err("cmd_trigger_day_close", state.inner())?;
 
     // ponytail: do_backup first; does NOT touch state.db so safe before lock.
@@ -513,7 +746,18 @@ pub fn cmd_trigger_day_close<R: tauri::Runtime>(
         .lock()
         .map_err(|_| AppError::Internal("session lock poisoned".into()))?;
     let user = session.as_ref().ok_or(AppError::NotUnlocked)?;
-    Ok(trigger_day_close(db, user.id, req)?)
+    Ok(trigger_day_close_auto_mode(db, user.id, req)?)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn cmd_count_active_cashiers(state: tauri::State<'_, AppState>) -> AppResult<i64> {
+    ipc_auth::authorize_err("cmd_count_active_cashiers", state.inner())?;
+    let guard = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("lock poisoned".into()))?;
+    let db = guard.as_ref().ok_or(AppError::NotUnlocked)?;
+    Ok(count_active_cashiers(db)?)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -553,7 +797,7 @@ fn row_to_day_close(r: &rusqlite::Row<'_>) -> rusqlite::Result<DayClose> {
         id: r.get(0)?,
         day: r.get(1)?,
         location_id: r.get(2)?,
-        user_id: r.get(3)?,
+        user_id: r.get::<_, Option<i64>>(3)?,
         opening_cash_paise: r.get(4)?,
         cash_sales_paise: r.get(5)?,
         card_sales_paise: r.get(6)?,

@@ -76,14 +76,54 @@ pub fn setup() -> Fixture {
     // `Db::open_in_memory` only applies SCHEMA_FINAL; the production
     // startup path additionally runs inline migrations inline (e.g.
     // M-INLINE-021 adds `cash_in_paise` and `cash_out_paise` to
-    // `day_close`). Day-close tests depend on these columns, so replay
-    // them here via raw SQL.
+    // `day_close`, and M-INLINE-027 rebuilds `day_close` to drop the
+    // table-level UNIQUE and make `user_id` nullable). Day-close tests
+    // depend on these, so replay them here via raw SQL.
     db.with_raw(|c| {
         c.execute_batch(
             "ALTER TABLE day_close ADD COLUMN cash_in_paise INTEGER NOT NULL DEFAULT 0;\
              ALTER TABLE day_close ADD COLUMN cash_out_paise INTEGER NOT NULL DEFAULT 0;",
         )
         .expect("day_close columns");
+
+        let has_shop_uniq: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='day_close_shop_uniq'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if has_shop_uniq == 0 {
+            c.execute_batch(
+                "CREATE TABLE day_close_new (
+                   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                   day                 TEXT    NOT NULL,
+                   location_id         INTEGER NOT NULL REFERENCES locations(id) ON DELETE NO ACTION,
+                   user_id             INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+                   opening_cash_paise  INTEGER NOT NULL DEFAULT 0,
+                   cash_sales_paise    INTEGER NOT NULL DEFAULT 0,
+                   card_sales_paise    INTEGER NOT NULL DEFAULT 0,
+                   upi_sales_paise     INTEGER NOT NULL DEFAULT 0,
+                   expenses_paise      INTEGER NOT NULL DEFAULT 0,
+                   closing_cash_paise  INTEGER NOT NULL DEFAULT 0,
+                   actual_cash_paise   INTEGER,
+                   variance_paise      INTEGER,
+                   note                TEXT,
+                   created_at          INTEGER NOT NULL,
+                   updated_at          INTEGER NOT NULL,
+                   created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
+                   updated_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION
+                 );
+                 INSERT INTO day_close_new SELECT * FROM day_close;
+                 DROP TABLE day_close;
+                 ALTER TABLE day_close_new RENAME TO day_close;
+                 CREATE INDEX IF NOT EXISTS idx_day_close_location_day ON day_close(location_id, day DESC);
+                 CREATE INDEX IF NOT EXISTS idx_day_close_user_id ON day_close(user_id);
+                 CREATE UNIQUE INDEX IF NOT EXISTS day_close_shop_uniq ON day_close(day, location_id) WHERE user_id IS NULL;
+                 CREATE UNIQUE INDEX IF NOT EXISTS day_close_user_uniq ON day_close(day, location_id, user_id) WHERE user_id IS NOT NULL;",
+            )
+            .expect("day_close M-INLINE-027 replay");
+        }
     });
 
     seed_users(&db);
@@ -350,14 +390,15 @@ pub fn day_close_for(db: &Db, day: &str, location_id: i64) -> Option<paintkiduak
                     card_sales_paise, upi_sales_paise, expenses_paise, closing_cash_paise, \
                     actual_cash_paise, variance_paise, note, created_at, updated_at, \
                     cash_in_paise, cash_out_paise \
-             FROM day_close WHERE day = ?1 AND location_id = ?2",
+             FROM day_close WHERE day = ?1 AND location_id = ?2 \
+             ORDER BY user_id IS NULL DESC, id DESC LIMIT 1",
             rusqlite::params![day, location_id],
             |r| {
                 Ok(DayClose {
                     id: r.get(0)?,
                     day: r.get(1)?,
                     location_id: r.get(2)?,
-                    user_id: r.get(3)?,
+                    user_id: r.get::<_, Option<i64>>(3)?,
                     opening_cash_paise: r.get(4)?,
                     cash_sales_paise: r.get(5)?,
                     card_sales_paise: r.get(6)?,

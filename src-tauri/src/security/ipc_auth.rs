@@ -634,6 +634,10 @@ pub const COMMAND_ACL: &[CommandAcl] = &[
         min_role: Role::Owner,
     },
     CommandAcl {
+        name: "cmd_count_active_cashiers",
+        min_role: Role::Cashier,
+    },
+    CommandAcl {
         name: "cmd_lock_state",
         min_role: Role::Owner,
     },
@@ -1088,8 +1092,8 @@ mod tests {
     fn acl_covers_all_commands() {
         assert_eq!(
             COMMAND_ACL.len(),
-            205,
-            "ACL has {} entries, expected 205",
+            207,
+            "ACL has {} entries, expected 207",
             COMMAND_ACL.len()
         );
     }

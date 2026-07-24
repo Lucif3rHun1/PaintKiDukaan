@@ -493,6 +493,7 @@ pub fn run() {
             commands::day_close::cmd_last_opening_for,
             commands::day_close::cmd_backup_gate_check,
             commands::day_close::cmd_trigger_day_close,
+            commands::day_close::cmd_count_active_cashiers,
             commands::day_close::cmd_lock_state,
             commands::day_close::cmd_list_day_close,
             commands::day_close::cmd_list_day_close_paged,
