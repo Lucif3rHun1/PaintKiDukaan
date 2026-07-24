@@ -1411,6 +1411,7 @@ mod tests {
                     unit_type: "pcs".into(),
                     unit_price_paise: 5000,
                     location_id: 1,
+                    ..Default::default()
                 }],
             },
         )

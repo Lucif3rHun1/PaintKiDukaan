@@ -57,13 +57,17 @@ pub struct PurchaseItem {
     pub location_id: i64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct InwardLine {
     pub item_id: i64,
     pub qty: f64,
     pub unit_type: String, // "pcs" | "mtr" | "kg"
     pub unit_price_paise: i64,
     pub location_id: i64,
+    #[serde(default)]
+    pub purchase_unit_id: Option<i64>,
+    #[serde(default)]
+    pub qty_per_purchase_unit: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -805,6 +809,7 @@ mod tests {
             unit_type: unit.into(),
             unit_price_paise: cost,
             location_id: 1,
+            ..Default::default()
         }
     }
 
@@ -872,6 +877,7 @@ mod tests {
                     unit_type: "pcs".into(),
                     unit_price_paise: 100,
                     location_id: 1,
+                    ..Default::default()
                 }],
             },
         );
@@ -919,6 +925,7 @@ mod tests {
                     unit_type: "pcs".into(),
                     unit_price_paise: 18000,
                     location_id: 1,
+                    ..Default::default()
                 }],
             },
         )
@@ -983,6 +990,7 @@ mod tests {
                     unit_type: "pcs".into(),
                     unit_price_paise: 18000,
                     location_id: 1,
+                    ..Default::default()
                 }],
             },
         )

@@ -284,6 +284,7 @@ fn seed_initial_stock(db: &Db) {
             unit_type: "pcs".into(),
             unit_price_paise: 0,
             location_id: LOCATION_ID,
+            ..Default::default()
         }],
     };
     let _ = purchases::create_inward(db, OWNER_ID, inward(ITEM_RED_ID, PRELOADED_STOCK))

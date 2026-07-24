@@ -30,6 +30,7 @@ fn create_inward_with_vendor_inserts_purchase_lines_and_stock_movements() {
                     unit_type: "pcs".into(),
                     unit_price_paise: RED_COST,
                     location_id: LOCATION_ID,
+                    ..Default::default()
                 },
                 InwardLine {
                     item_id: ITEM_BLUE_ID,
@@ -37,6 +38,7 @@ fn create_inward_with_vendor_inserts_purchase_lines_and_stock_movements() {
                     unit_type: "pcs".into(),
                     unit_price_paise: BLUE_COST,
                     location_id: LOCATION_ID,
+                    ..Default::default()
                 },
             ],
         },
@@ -83,6 +85,7 @@ fn create_inward_with_null_vendor_succeeds_for_opening_stock() {
                 unit_type: "pcs".into(),
                 unit_price_paise: 0,
                 location_id: LOCATION_ID,
+                ..Default::default()
             }],
         },
     )
@@ -112,6 +115,7 @@ fn create_inward_atomic_rolls_back_on_unknown_item() {
                 unit_type: "pcs".into(),
                 unit_price_paise: 100,
                 location_id: LOCATION_ID,
+                ..Default::default()
             }],
         },
     );
@@ -162,6 +166,7 @@ fn create_inward_rejects_zero_qty() {
                 unit_type: "pcs".into(),
                 unit_price_paise: 100,
                 location_id: LOCATION_ID,
+                ..Default::default()
             }],
         },
     );
@@ -184,6 +189,7 @@ fn create_inward_rejects_negative_qty() {
                 unit_type: "pcs".into(),
                 unit_price_paise: 100,
                 location_id: LOCATION_ID,
+                ..Default::default()
             }],
         },
     );
@@ -206,6 +212,7 @@ fn create_inward_rejects_unknown_unit_type() {
                 unit_type: "roll".into(), // not in ('pcs','mtr','kg')
                 unit_price_paise: 100,
                 location_id: LOCATION_ID,
+                ..Default::default()
             }],
         },
     );
@@ -228,6 +235,7 @@ fn create_inward_rejects_negative_unit_price() {
                 unit_type: "pcs".into(),
                 unit_price_paise: -100,
                 location_id: LOCATION_ID,
+                ..Default::default()
             }],
         },
     );
@@ -250,6 +258,7 @@ fn create_inward_rejects_unknown_location() {
                 unit_type: "pcs".into(),
                 unit_price_paise: 100,
                 location_id: 9_999_999,
+                ..Default::default()
             }],
         },
     );
@@ -275,6 +284,7 @@ fn record_vendor_payment_reduces_outstanding_in_paise() {
                 unit_type: "pcs".into(),
                 unit_price_paise: RED_COST, // 20 × 5000 = 100000 paise = ₹1000
                 location_id: LOCATION_ID,
+                ..Default::default()
             }],
         },
     )
@@ -365,6 +375,7 @@ fn last_cost_for_item_returns_most_recent_inward_unit_price() {
                 unit_type: "pcs".into(),
                 unit_price_paise: 4_000,
                 location_id: LOCATION_ID,
+                ..Default::default()
             }],
         },
     )
@@ -382,6 +393,7 @@ fn last_cost_for_item_returns_most_recent_inward_unit_price() {
                 unit_type: "pcs".into(),
                 unit_price_paise: 4_500,
                 location_id: LOCATION_ID,
+                ..Default::default()
             }],
         },
     )
