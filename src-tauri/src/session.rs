@@ -9,43 +9,12 @@ use crate::commands::auth::AppState;
 use crate::error::{AppError, AppResult};
 use crate::obs;
 use crate::security::ipc_auth;
+pub use crate::security::roles::Role;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 const MAX_LOG_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_LOG_GENERATIONS: u32 = 3;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    Owner,
-    Cashier,
-    Stocker,
-}
-
-impl Role {
-    pub fn from_db(s: &str) -> Self {
-        match s {
-            "owner" => Role::Owner,
-            "cashier" => Role::Cashier,
-            "stocker" => Role::Stocker,
-            // ponytail: unknown role falls back to lowest privilege rather than
-            // Cashier (fail-open). Pair with `ipc_auth::Role::from_db` which
-            // returns None for the same input. Worst-case UX is that a corrupted
-            // role string locks the operator out of write ops, which is the
-            // correct posture for a money path.
-            _ => Role::Stocker,
-        }
-    }
-
-    pub fn as_db(&self) -> &'static str {
-        match self {
-            Role::Owner => "owner",
-            Role::Cashier => "cashier",
-            Role::Stocker => "stocker",
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct User {
@@ -80,7 +49,7 @@ pub fn current_user(state: &AppState) -> AppResult<User> {
     Ok(User {
         id: u.id,
         name: u.name.clone(),
-        role: Role::from_db(&u.role),
+        role: Role::from_db_fallible(&u.role),
     })
 }
 

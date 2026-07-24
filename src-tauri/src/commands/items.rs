@@ -58,6 +58,9 @@ impl Item {
             Role::Stocker => {
                 self.cost_paise = 0;
             }
+            Role::Public => {
+                self.cost_paise = 0;
+            }
         }
     }
 }
@@ -799,6 +802,7 @@ pub fn lookup_item(state: State<'_, AppState>, code: String) -> AppResult<Option
                     qty_per_loc,
                 }
             }
+            Role::Public => return Err(crate::error::AppError::Unauthorized("public role cannot lookup items".into())),
         };
         Ok(Some(result))
     })

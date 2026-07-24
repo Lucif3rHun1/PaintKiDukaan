@@ -148,7 +148,7 @@ pub struct StockRow {
 pub struct StockGroupRow {
     pub group: String, // brand or category
     pub total_qty: f64,
-    pub total_retail_value: f64,
+    pub total_retail_value: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -200,7 +200,7 @@ pub fn stock_report(db: &Db) -> Result<StockReport, ReportsError> {
             let mut stmt = c.prepare(
                 "SELECT COALESCE(NULLIF(b.name, ''), NULLIF(i.category, ''), '(uncategorised)') AS grp,
                         COALESCE(SUM(sb.qty), 0) AS qty,
-                        COALESCE(SUM(sb.qty * i.retail_price_paise), 0) AS value
+                        COALESCE(CAST(SUM(sb.qty * i.retail_price_paise) AS INTEGER), 0) AS value
                  FROM stock_balances sb
                  JOIN items i ON i.id = sb.item_id
                  LEFT JOIN brands b ON b.id = i.brand_id
@@ -210,7 +210,7 @@ pub fn stock_report(db: &Db) -> Result<StockReport, ReportsError> {
                 Ok(StockGroupRow {
                     group: r.get(0)?,
                     total_qty: r.get::<_, f64>(1)?,
-                    total_retail_value: r.get::<_, f64>(2)?,
+                    total_retail_value: r.get::<_, i64>(2)?,
                 })
             })?;
             for r in rows {

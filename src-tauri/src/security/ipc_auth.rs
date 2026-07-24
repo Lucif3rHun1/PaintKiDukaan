@@ -19,41 +19,11 @@
 
 use crate::commands::auth::{AppState, now_unix};
 use crate::error::AppError;
+pub use crate::security::roles::Role;
 use std::sync::atomic::Ordering;
 use tauri::Manager;
 
 const SESSION_TIMEOUT_SECS: u64 = 1800;
-
-// ---------------------------------------------------------------------------
-// Role
-// ---------------------------------------------------------------------------
-
-/// Role hierarchy — ordered from least to most privileged.
-///
-/// `Ord` is derived so `Role::Owner >= Role::Cashier >= Role::Stocker >= Role::Public`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Role {
-    /// No authentication required. Commands callable before DB unlock.
-    Public = 0,
-    /// Lowest authenticated role — read-only items, brands, units, locations.
-    Stocker = 1,
-    /// Cashier — sales, purchases, day-close, customer/vendor CRUD, reports.
-    Cashier = 2,
-    /// Owner — admin functions: settings, backup, hardening, user management.
-    Owner = 3,
-}
-
-impl Role {
-    /// Parse the role string stored in the `users` table.
-    pub fn from_db(s: &str) -> Option<Self> {
-        match s {
-            "owner" => Some(Role::Owner),
-            "cashier" => Some(Role::Cashier),
-            "stocker" => Some(Role::Stocker),
-            _ => None,
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // ACL table

@@ -22,6 +22,7 @@ pub mod pin_entry;
 pub mod priv_strip;
 pub mod raw_input;
 pub mod registry_watch;
+pub mod roles;
 pub mod secrets_compat;
 pub mod secure_delete;
 pub mod secure_desktop;
