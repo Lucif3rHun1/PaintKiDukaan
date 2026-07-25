@@ -13,7 +13,7 @@ pub struct SubLocation {
     pub name: String,
     pub position: Option<String>,
     pub is_active: bool,
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -56,7 +56,7 @@ pub fn list_sub_locations(
                 name: r.get(2)?,
                 position: r.get(3)?,
                 is_active: r.get::<_, i64>(4)? != 0,
-                created_at: r.get::<_, i64>(5)?.to_string(),
+                created_at: r.get::<_, i64>(5)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -120,7 +120,7 @@ pub fn create_sub_location(
                 created_at: tx.query_row(
                     "SELECT created_at FROM sub_locations WHERE id = ?1",
                     params![id],
-                    |r| r.get::<_, i64>(0).map(|v| v.to_string()),
+                    |r| r.get::<_, i64>(0),
                 )?,
             });
         }
@@ -139,7 +139,7 @@ pub fn create_sub_location(
             created_at: tx.query_row(
                 "SELECT created_at FROM sub_locations WHERE id = ?1",
                 params![id],
-                |r| r.get::<_, i64>(0).map(|v| v.to_string()),
+                |r| r.get::<_, i64>(0),
             )?,
         })
     })
@@ -172,7 +172,7 @@ pub fn update_sub_location(
                     name: r.get(2)?,
                     position: r.get(3)?,
                     is_active: r.get::<_, i64>(4)? != 0,
-                    created_at: r.get::<_, i64>(5)?.to_string(),
+                    created_at: r.get::<_, i64>(5)?,
                 })
             },
         )?;

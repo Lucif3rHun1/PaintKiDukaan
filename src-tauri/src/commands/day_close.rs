@@ -56,8 +56,8 @@ pub struct DayClose {
     pub actual_cash_paise: i64,
     pub variance_paise: i64,
     pub note: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 /// Mode chosen at runtime by `count_active_cashiers` at the time of close.
@@ -807,8 +807,8 @@ fn row_to_day_close(r: &rusqlite::Row<'_>) -> rusqlite::Result<DayClose> {
         actual_cash_paise: r.get(10)?,
         variance_paise: r.get(11)?,
         note: r.get(12)?,
-        created_at: r.get::<_, i64>(13)?.to_string(),
-        updated_at: r.get::<_, i64>(14)?.to_string(),
+        created_at: r.get::<_, i64>(13)?,
+        updated_at: r.get::<_, i64>(14)?,
         cash_in_paise: r.get(15)?,
         cash_out_paise: r.get(16)?,
     })
@@ -1160,7 +1160,7 @@ mod tests {
                 "INSERT INTO day_close (day, location_id, user_id, opening_cash_paise, cash_sales_paise,
                    card_sales_paise, upi_sales_paise, expenses_paise, closing_cash_paise,
                    actual_cash_paise, variance_paise, note, created_at, updated_at)
-                 VALUES ('2026-06-18', 1, 1, 800, 200, 0, 0, 0, 1000, 1000, 0, 'yesterday', 0, 0)",
+                 VALUES (1781740800000, 1, 1, 800, 200, 0, 0, 0, 1000, 1000, 0, 'yesterday', 0, 0)",
                 [],
             )?;
             Ok(())

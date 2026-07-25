@@ -714,7 +714,7 @@ mod tests {
                 [],
             ).unwrap();
             conn.execute(
-                "INSERT INTO day_close (user_id, day, opening_cash_paise, cash_sales_paise, card_sales_paise, upi_sales_paise, expenses_paise, closing_cash_paise, location_id, created_at, updated_at) VALUES (1, '2025-01-15', 0, 0, 0, 0, 0, 0, 1, ?1, ?1)",
+                "INSERT INTO day_close (user_id, day, opening_cash_paise, cash_sales_paise, card_sales_paise, upi_sales_paise, expenses_paise, closing_cash_paise, location_id, created_at, updated_at) VALUES (1, 1736899200000, 0, 0, 0, 0, 0, 0, 1, ?1, ?1)",
                 params![today],
             ).unwrap();
             Ok::<(), AppError>(())

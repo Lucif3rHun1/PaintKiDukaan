@@ -172,7 +172,7 @@ export interface Sale {
   validity_days: number | null;
   converted_from_id: number | null;
   user_id: number;
-  created_at: string;
+  created_at: number;
   items: SaleItem[];
 }
 
@@ -237,16 +237,16 @@ export interface SaleUnit {
   label: string;
   quantity_precision: number;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface PurchaseUnit {
   id: number;
   label: string;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface ItemPurchasePackaging {
@@ -297,8 +297,8 @@ export interface Item {
   barcode_format: string | null;
   is_active: boolean;
   current_qty: number;
-  created_at: string;
-  updated_at: string;
+  created_at: number;
+  updated_at: number;
   brand_id: number | null;
 }
 

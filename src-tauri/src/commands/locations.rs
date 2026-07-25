@@ -14,7 +14,7 @@ pub struct Location {
     pub name: String,
     pub zone: Option<String>,
     pub is_active: bool,
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,7 +48,7 @@ pub fn list_locations(
                 name: r.get(1)?,
                 zone: r.get(2)?,
                 is_active: r.get::<_, i64>(3)? != 0,
-                created_at: r.get::<_, i64>(4)?.to_string(),
+                created_at: r.get::<_, i64>(4)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -82,7 +82,7 @@ pub fn create_location(state: State<'_, AppState>, payload: NewLocation) -> AppR
             created_at: tx.query_row(
                 "SELECT created_at FROM locations WHERE id = ?1",
                 params![id],
-                |r| r.get::<_, i64>(0).map(|v| v.to_string()),
+                |r| r.get::<_, i64>(0),
             )?,
         })
     })
@@ -126,7 +126,7 @@ pub fn rename_location(
             created_at: tx.query_row(
                 "SELECT created_at FROM locations WHERE id = ?1",
                 params![id],
-                |r| r.get::<_, i64>(0).map(|v| v.to_string()),
+                |r| r.get::<_, i64>(0),
             )?,
         })
     })

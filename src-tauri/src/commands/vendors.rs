@@ -34,8 +34,8 @@ pub struct Vendor {
     pub opening_balance: i64,
     pub notes: Option<String>,
     pub is_active: bool,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -114,11 +114,11 @@ pub fn create_vendor(state: State<'_, AppState>, payload: NewVendor) -> AppResul
             is_active: true,
             created_at: tx.query_row(
                 "SELECT created_at FROM vendors WHERE id = ?1",
-                params![id], |r| r.get::<_, i64>(0).map(|v| v.to_string()),
+                params![id], |r| r.get::<_, i64>(0),
             )?,
             updated_at: tx.query_row(
                 "SELECT updated_at FROM vendors WHERE id = ?1",
-                params![id], |r| r.get::<_, i64>(0).map(|v| v.to_string()),
+                params![id], |r| r.get::<_, i64>(0),
             )?,
         })
     })
@@ -155,8 +155,8 @@ pub fn list_vendors(
                 phone: r.get(2)?,
                 opening_balance: r.get::<_, i64>(3)?,
                 is_active: r.get::<_, i64>(4)? != 0,
-                created_at: r.get::<_, i64>(5)?.to_string(),
-                updated_at: r.get::<_, i64>(6)?.to_string(),
+                created_at: r.get::<_, i64>(5)?,
+                updated_at: r.get::<_, i64>(6)?,
                 notes: r.get(7)?,
             })
         })?;
@@ -184,8 +184,8 @@ pub fn get_vendor(state: State<'_, AppState>, id: i64) -> AppResult<Vendor> {
                 phone: r.get(2)?,
                 opening_balance: r.get::<_, i64>(3)?,
                 is_active: r.get::<_, i64>(4)? != 0,
-                created_at: r.get::<_, i64>(5)?.to_string(),
-                updated_at: r.get::<_, i64>(6)?.to_string(),
+                created_at: r.get::<_, i64>(5)?,
+                updated_at: r.get::<_, i64>(6)?,
                 notes: r.get(7)?,
             })
         })?;
@@ -251,8 +251,8 @@ pub fn update_vendor(
                 phone: r.get(2)?,
                 opening_balance: r.get::<_, i64>(3)?,
                 is_active: r.get::<_, i64>(4)? != 0,
-                created_at: r.get::<_, i64>(5)?.to_string(),
-                updated_at: r.get::<_, i64>(6)?.to_string(),
+                created_at: r.get::<_, i64>(5)?,
+                updated_at: r.get::<_, i64>(6)?,
                 notes: r.get(7)?,
             })
         })?;
@@ -384,8 +384,8 @@ pub fn cmd_list_vendors_paged(
                     opening_balance: r.get::<_, i64>(3)?,
                     notes: r.get(4)?,
                     is_active: r.get::<_, i64>(5)? != 0,
-                    created_at: r.get::<_, i64>(6)?.to_string(),
-                    updated_at: r.get::<_, i64>(7)?.to_string(),
+                    created_at: r.get::<_, i64>(6)?,
+                    updated_at: r.get::<_, i64>(7)?,
                 })
             },
         )?;

@@ -33,6 +33,16 @@ pub use return_sale::*;
 
 #[cfg(test)]
 mod tests {
+    use chrono::{NaiveDateTime, NaiveDate, TimeZone, Utc};
+    fn parse_test_ts(s: &str) -> i64 {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+            Utc.from_utc_datetime(&dt).timestamp_millis()
+        } else if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap()).timestamp_millis()
+        } else {
+            0
+        }
+    }
     use super::*;
     use crate::commands::customers;
     use crate::db::Db;
@@ -89,8 +99,8 @@ mod tests {
             opening_balance_paise: 0,
             notes: None,
             is_active: true,
-            created_at: "2026-01-01 00:00:00".into(),
-            updated_at: "2026-01-01 00:00:00".into(),
+            created_at: parse_test_ts("2026-01-01 00:00:00"),
+            updated_at: parse_test_ts("2026-01-01 00:00:00"),
         };
         assert!(validate_paid(0, 1000, Some(&c)).is_ok());
         assert!(validate_paid(500, 1000, Some(&c)).is_ok());
@@ -202,7 +212,7 @@ mod tests {
         db.with_raw(|c| {
             c.execute(
                 "INSERT INTO sales (no, status, date, subtotal, bill_discount, total, paid_amount, user_id) \
-                 VALUES ('QTN-X', 'quotation', '2025-01-01', 100, 0, 100, 0, 1)", [],
+                 VALUES ('QTN-X', 'quotation', 1735689600000, 100, 0, 100, 0, 1)", [],
             ).unwrap();
         });
         let payload = CreateSaleReturnPayload {
@@ -234,7 +244,7 @@ mod tests {
         db.with_raw(|c| {
             c.execute(
                 "INSERT INTO sales (no, status, date, subtotal, bill_discount, total, paid_amount, user_id) \
-                 VALUES ('INV-X', 'final', '2025-01-01', 100, 0, 100, 100, 1)", [],
+                 VALUES ('INV-X', 'final', 1735689600000, 100, 0, 100, 100, 1)", [],
             ).unwrap();
             c.execute(
                 "INSERT INTO sale_items (sale_id, item_id, qty, price, unit_type, line_discount, line_order) \
@@ -284,7 +294,7 @@ mod tests {
         db.with_raw(|c| {
             c.execute(
                 "INSERT INTO sales (no, status, date, subtotal, bill_discount, total, paid_amount, user_id) \
-                 VALUES ('INV-X', 'final', '2025-01-01', 100, 0, 100, 100, 1)", [],
+                 VALUES ('INV-X', 'final', 1735689600000, 100, 0, 100, 100, 1)", [],
             ).unwrap();
             c.execute(
                 "INSERT INTO sale_items (sale_id, item_id, qty, price, unit_type, line_discount, line_order) \
@@ -311,7 +321,7 @@ mod tests {
         db.with_raw(|c| {
             c.execute(
                 "INSERT INTO sales (no, status, date, subtotal, bill_discount, total, paid_amount, user_id) \
-                 VALUES ('INV-Y', 'final', '2025-01-01', 100, 0, 100, 100, 1)", [],
+                 VALUES ('INV-Y', 'final', 1735689600000, 100, 0, 100, 100, 1)", [],
             ).unwrap();
             c.execute(
                 "INSERT INTO sale_items (sale_id, item_id, qty, price, unit_type, line_discount, line_order) \

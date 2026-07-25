@@ -12,8 +12,8 @@ export interface Customer {
   type_name: string | null;
   opening_balance_paise: number;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: number;
+  updated_at: number;
   is_flagged?: boolean;
   credit_limit?: number | null;
   notes?: string | null;
@@ -52,7 +52,7 @@ export interface CustomerUpdate {
 export interface CustomerBill {
   sale_id: number;
   sale_number: string;
-  created_at: string;
+  created_at: number;
   total_paise: number;
   paid_paise: number;
   status: string;

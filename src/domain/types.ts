@@ -190,7 +190,7 @@ export interface VendorPaymentRecord {
   date: string;
   notes: string | null;
   user_id: number;
-  created_at: string;
+  created_at: number;
 }
 
 export interface Location {
@@ -199,7 +199,7 @@ export interface Location {
   rack: string | null;
   zone: string | null;
   is_active: boolean;
-  created_at: string;
+  created_at: number;
 }
 
 export interface SubLocation {
@@ -208,7 +208,7 @@ export interface SubLocation {
   name: string;
   position: string | null;
   is_active: boolean;
-  created_at: string;
+  created_at: number;
 }
 
 export interface NewLocation {
@@ -221,7 +221,7 @@ export interface CustomerType {
   id: number;
   name: string;
   is_active: boolean;
-  created_at: string;
+  created_at: number;
 }
 
 export interface NewCustomerType {
@@ -247,16 +247,16 @@ export interface SaleUnit {
   label: string;
   quantity_precision: number; // 0 = integer, 3 = decimal
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface PurchaseUnit {
   id: number;
   label: string;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface ItemPurchasePackaging {
@@ -326,7 +326,7 @@ export interface CustomerOutstanding {
 export interface CustomerBill {
   sale_id: number;
   sale_number: string;
-  created_at: string;
+  created_at: number;
   total_paise: number;
   paid_paise: number;
   status: string;
@@ -425,7 +425,7 @@ export interface SaleReturn {
   refund_total: number;         // paise
   payment_modes: Array<{ mode: string; amount: number }>;
   lines: SaleReturnLine[];
-  created_at: string;
+  created_at: number;
   created_by: number;
 }
 
@@ -446,7 +446,7 @@ export interface Formula {
   base_item_name: string | null;
   retail_price_paise: number;
   is_active: boolean;
-  created_at: string;
+  created_at: number;
   created_by_user_id: number | null;
   sales_count: number;
   last_sold_at: string | null;

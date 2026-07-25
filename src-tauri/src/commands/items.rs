@@ -39,8 +39,8 @@ pub struct Item {
     pub barcode_format: Option<String>,
     pub is_active: bool,
     pub current_qty: f64,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: i64,
+    pub updated_at: i64,
     pub brand_id: Option<i64>,
 }
 
@@ -876,8 +876,8 @@ fn row_to_item(r: &rusqlite::Row<'_>) -> rusqlite::Result<Item> {
         min_stock: r.get(20)?,
         barcode_format: r.get(21)?,
         is_active: r.get::<_, i64>(22)? != 0,
-        created_at: r.get::<_, i64>(23)?.to_string(),
-        updated_at: r.get::<_, i64>(24)?.to_string(),
+        created_at: r.get::<_, i64>(23)?,
+        updated_at: r.get::<_, i64>(24)?,
         current_qty: r.get(25)?,
         brand_id: r.get(26)?,
     })

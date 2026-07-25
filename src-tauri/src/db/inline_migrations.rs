@@ -1170,16 +1170,16 @@ fn m_inline_031(conn: &Connection) -> Result<(), rusqlite::Error> {
 
 
 // ---------------------------------------------------------------------------
-// M-INLINE-039: Normalize TEXT timestamps to UTC with millisecond precision.
+// M-INLINE-039: Convert TEXT timestamps to INTEGER unix epoch milliseconds.
 // Source: audit-6-sql-best-practices.md timestamp section.
 // Each affected table has its TEXT created_at/updated_at columns rebuilt
-// to use strftime('%Y-%m-%d %H:%M:%f', 'now') (UTC ms) and existing rows
-// converted in-place. Indexes + FKs are dropped before the rebuild and
-// recreated after.
+// to INTEGER storing ms since epoch (UTC). Existing rows are converted:
+// legacy localtime strings use strftime('%s', 'col', 'localtime') * 1000;
+// legacy UTC strings use strftime('%s', 'col') * 1000.
 //
-// Idempotent: pragma_table_info("table") is queried first; if a watched column
-// is already INTEGER or already uses the new DEFAULT (detected by inspecting
-// the CREATE TABLE SQL), the table is skipped.
+// Idempotent: pragma_table_info('table') is queried first; if a watched column
+// is already INTEGER, the table is skipped. If the column is missing or has
+// an unexpected type, M-INLINE-039 returns SQLITE_ERROR.
 // ---------------------------------------------------------------------------
 
 fn m_inline_039(conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -1245,7 +1245,7 @@ fn m_inline_039(conn: &Connection) -> Result<(), rusqlite::Error> {
                 rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
                 Some(format!("M-INLINE-039: cannot read {table} schema: {e}")),
             ))?;
-        let new_default = "DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))";
+        let new_default = "INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)";
         let new_table_sql = sql
             .replace("DEFAULT (datetime('now','localtime'))", new_default)
             .replace("DEFAULT (datetime('now'))", new_default);
@@ -1277,9 +1277,9 @@ fn m_inline_039(conn: &Connection) -> Result<(), rusqlite::Error> {
             .map(|c| {
                 if table_cols.contains(&c.as_str()) {
                     if tz == "localtime" {
-                        format!("strftime('%Y-%m-%d %H:%M:%f', '{c}', 'localtime')")
+                        format!("CAST(strftime('%s', '{c}', 'localtime') AS INTEGER) * 1000")
                     } else {
-                        format!("strftime('%Y-%m-%d %H:%M:%f', '{c}')")
+                        format!("CAST(strftime('%s', '{c}') AS INTEGER) * 1000")
                     }
                 } else {
                     c.clone()

@@ -94,7 +94,7 @@ pub struct StockMovement {
     pub ref_id: Option<i64>,
     pub reason: Option<String>,
     pub user_id: i64,
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 // -----------------------------------------------------------------------------
@@ -292,7 +292,7 @@ pub fn movements_for_item(
                     ref_id: r.get(6)?,
                     reason: r.get(7)?,
                     user_id: r.get(9)?,
-                    created_at: r.get::<_, i64>(8)?.to_string(),
+                    created_at: r.get::<_, i64>(8)?,
                 })
             })?;
         let mut out = Vec::new();

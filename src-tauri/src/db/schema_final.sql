@@ -222,8 +222,8 @@ CREATE TABLE customers (
   opening_balance_paise INTEGER NOT NULL DEFAULT 0 CHECK(opening_balance_paise >= 0),
   notes                TEXT,
   is_active            INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
-  created_at           TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
-  updated_at           TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
+  created_at           INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+  updated_at           INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
   created_by           INTEGER REFERENCES users(id) ON DELETE NO ACTION,
   updated_by           INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
@@ -350,7 +350,7 @@ CREATE TABLE formulas (
   base_item_id        INTEGER REFERENCES items(id) ON DELETE SET NULL,
   retail_price_paise  INTEGER NOT NULL CHECK(retail_price_paise >= 0),
   is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
-  created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
+  created_at          INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
   created_by          INTEGER REFERENCES users(id) ON DELETE NO ACTION,
   CHECK(with_base = 0 OR base_item_id IS NOT NULL)
 );
@@ -548,8 +548,8 @@ CREATE TABLE sales (
   validity_days      INTEGER,
   converted_from_id  INTEGER REFERENCES sales(id) ON DELETE NO ACTION,
   user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
-  created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
-  updated_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
+  created_at         INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+  updated_at         INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
   created_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION,
   updated_by         INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
@@ -580,7 +580,7 @@ CREATE TABLE sale_items (
   line_discount INTEGER NOT NULL DEFAULT 0 CHECK(line_discount >= 0),
   shade_note    TEXT,
   line_order    INTEGER NOT NULL DEFAULT 0,
-  created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
+  created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
   created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION
 -- CHECK removed: custom fbill lines may have both item_id and formula_id null.
 );
@@ -1015,8 +1015,8 @@ CREATE TABLE IF NOT EXISTS sale_units (
   label TEXT NOT NULL,
   quantity_precision INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+  updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
 );
 INSERT OR IGNORE INTO sale_units (code, label, quantity_precision) VALUES
   ('pcs', 'Pcs', 0),
@@ -1028,8 +1028,8 @@ CREATE TABLE IF NOT EXISTS purchase_units (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   label TEXT NOT NULL UNIQUE,
   is_active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+  updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
 );
 INSERT OR IGNORE INTO purchase_units (label) VALUES
   ('Carton'), ('Roll'), ('Sack'), ('Piece'), ('Box'), ('Bundle');
@@ -1040,8 +1040,8 @@ CREATE TABLE IF NOT EXISTS item_purchase_packaging (
   item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
   purchase_unit_id INTEGER NOT NULL REFERENCES purchase_units(id),
   qty_per_purchase_unit REAL NOT NULL DEFAULT 1.0,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+  updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
   UNIQUE(item_id, purchase_unit_id)
 );
 
@@ -1168,7 +1168,7 @@ CREATE TABLE IF NOT EXISTS sale_items_new (
   line_discount INTEGER NOT NULL DEFAULT 0 CHECK(line_discount >= 0),
   shade_note    TEXT,
   line_order    INTEGER NOT NULL DEFAULT 0,
-  created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
+  created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
   created_by    INTEGER REFERENCES users(id) ON DELETE NO ACTION
 );
 INSERT INTO sale_items_new (id, sale_id, kind, item_id, formula_id, qty, price, unit_type, line_discount, shade_note, line_order, created_at, created_by)

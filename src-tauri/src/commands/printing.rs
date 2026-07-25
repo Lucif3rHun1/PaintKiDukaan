@@ -47,7 +47,7 @@ pub struct ReceiptData {
     pub terms: Option<String>,
     pub paper_size: Option<String>, // "thermal-58mm" | "thermal-80mm"
     pub sale_number: String,
-    pub created_at: String,
+    pub created_at: i64,
     pub customer_name: Option<String>,
     pub items: Vec<ReceiptItem>,
     pub subtotal: String,
@@ -130,6 +130,15 @@ impl EscPosBuilder {
         let gap = self.width.saturating_sub(left_len + right_len);
         self.line(&format!("{}{}{}", left, " ".repeat(gap), right));
     }
+}
+
+fn format_ms_date(ms: i64) -> String {
+    use chrono::TimeZone;
+    chrono::Utc
+        .timestamp_millis_opt(ms)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%d").to_string())
+        .unwrap_or_default()
 }
 
 fn visible_chars(s: &str, max: usize) -> String {
@@ -242,7 +251,7 @@ pub fn build_receipt(data: ReceiptData) -> Vec<u8> {
 
     // Bill meta
     e.bold_on();
-    e.two_col(&format!("BILL: {}", data.sale_number), &data.created_at);
+    e.two_col(&format!("BILL: {}", data.sale_number), &format_ms_date(data.created_at));
     e.bold_off();
     if let Some(c) = data.customer_name {
         e.line(&sanitize(
@@ -517,7 +526,28 @@ pub fn cmd_print_raw(
 
 #[cfg(test)]
 mod tests {
+    use chrono::{NaiveDateTime, NaiveDate, TimeZone, Utc};
+    fn parse_test_ts(s: &str) -> i64 {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+            Utc.from_utc_datetime(&dt).timestamp_millis()
+        } else if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap()).timestamp_millis()
+        } else {
+            0
+        }
+    }
+
     use super::*;
+/// Format epoch milliseconds as YYYY-MM-DD for receipt printing.
+fn ms_to_date_string(ms: i64) -> String {
+    use chrono::TimeZone;
+    chrono::Utc
+        .timestamp_millis_opt(ms)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%d").to_string())
+        .unwrap_or_default()
+}
+
 
     #[test]
     fn title_case_preserves_short_acronyms_and_punctuation() {
@@ -536,7 +566,7 @@ mod tests {
             terms: None,
             paper_size: Some("thermal-80mm".into()),
             sale_number: "INV-0001".into(),
-            created_at: "2026-06-23".into(),
+            created_at: parse_test_ts("2026-06-23"),
             customer_name: None,
             items: vec![ReceiptItem {
                 name: "Paint".into(),
@@ -575,7 +605,7 @@ mod tests {
             terms: None,
             paper_size: None,
             sale_number: "1".into(),
-            created_at: "".into(),
+            created_at: parse_test_ts(""),
             customer_name: None,
             items: vec![],
             subtotal: "".into(),
@@ -600,7 +630,7 @@ mod tests {
             terms: None,
             paper_size: Some("thermal-80mm".into()),
             sale_number: "INV-0001".into(),
-            created_at: "2026-06-23".into(),
+            created_at: parse_test_ts("2026-06-23"),
             customer_name: None,
             items: vec![ReceiptItem {
                 name: "Paint".into(),

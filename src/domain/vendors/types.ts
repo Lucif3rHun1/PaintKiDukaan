@@ -11,8 +11,8 @@ export interface Vendor {
   opening_balance: number;
   notes: string | null;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface NewVendor {
@@ -50,5 +50,5 @@ export interface VendorPaymentRecord {
   date: string;
   notes: string | null;
   user_id: number;
-  created_at: string;
+  created_at: number;
 }

@@ -51,7 +51,7 @@ pub struct SaleReturn {
     pub refund_total: i64,
     pub payment_modes: Vec<PaymentSplit>,
     pub lines: Vec<SaleReturnLine>,
-    pub created_at: String,
+    pub created_at: i64,
     pub created_by: i64,
 }
 
@@ -471,7 +471,7 @@ pub(crate) struct SaleReturnHeader {
     pub(crate) date: String,
     pub(crate) reason: Option<String>,
     pub(crate) refund_total: i64,
-    pub(crate) created_at: String,
+    pub(crate) created_at: i64,
     pub(crate) created_by: i64,
 }
 
@@ -492,7 +492,7 @@ fn fetch_return_header(c: &rusqlite::Connection, id: i64) -> AppResult<Option<Sa
                     date: r.get(3)?,
                     reason: r.get(4)?,
                     refund_total: r.get(5)?,
-                    created_at: r.get(6)?,
+                    created_at: r.get::<_, i64>(6)?,
                     created_by: r.get(7)?,
                 })
             },
@@ -561,7 +561,7 @@ pub fn list_returns(
                 date: r.get(3)?,
                 reason: r.get(4)?,
                 refund_total: r.get(5)?,
-                created_at: r.get(6)?,
+                created_at: r.get::<_, i64>(6)?,
                 created_by: r.get(7)?,
             })
         })?;

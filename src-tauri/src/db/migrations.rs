@@ -124,22 +124,52 @@ mod tests {
         }
     }
 
-    /// M-039: TEXT timestamps must default to UTC with millisecond precision
-    /// (format `YYYY-MM-DD HH:MM:SS.fff`, 23 chars) rather than the legacy
-    /// `datetime('now','localtime')` (19 chars, no fractional, local TZ).
+    /// M-039: timestamp columns must be INTEGER (unix epoch ms) instead of TEXT.
+    /// Default must use `strftime('%s','now') * 1000` and must NOT use
+    /// `datetime('now','localtime')` (legacy localtime TEXT default).
     #[test]
-    fn m039_timestamps_use_utc_ms_format() {
+    fn m039_timestamps_are_integer_ms() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA key = 'test';").unwrap();
         conn.execute_batch(crate::db::SCHEMA_FINAL)
             .expect("schema_final.sql should apply");
 
         let tables_with_created_at = [
-            "customers", "formulas", "sales", "sale_items",
-            "sale_units", "purchase_units", "item_purchase_packaging",
+            ("customers", "created_at"),
+            ("customers", "updated_at"),
+            ("formulas", "created_at"),
+            ("sales", "created_at"),
+            ("sales", "updated_at"),
+            ("sale_items", "created_at"),
+            ("sale_units", "created_at"),
+            ("sale_units", "updated_at"),
+            ("purchase_units", "created_at"),
+            ("purchase_units", "updated_at"),
+            ("item_purchase_packaging", "created_at"),
+            ("item_purchase_packaging", "updated_at"),
         ];
 
-        for table in &tables_with_created_at {
+        for (table, col) in &tables_with_created_at {
+            let col_type: String = conn
+                .query_row(
+                    &format!(
+                        "SELECT type FROM pragma_table_info('{table}') WHERE name = ?1"
+                    ),
+                    [col],
+                    |r| r.get(0),
+                )
+                .unwrap_or_else(|_| panic!("column {table}.{col} missing"));
+            assert_eq!(
+                col_type, "INTEGER",
+                "table `{table}` column `{col}` must be INTEGER, got: {col_type}"
+            );
+        }
+
+        // CREATE TABLE SQL must use epoch ms default and never localtime.
+        for table in &[
+            "customers", "formulas", "sales", "sale_items",
+            "sale_units", "purchase_units", "item_purchase_packaging",
+        ] {
             let sql: String = conn
                 .query_row(
                     "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?1",
@@ -148,8 +178,8 @@ mod tests {
                 )
                 .unwrap_or_default();
             assert!(
-                sql.contains("strftime('%Y-%m-%d %H:%M:%f', 'now')"),
-                "table `{table}` should use UTC ms DEFAULT; got: {sql}"
+                sql.contains("strftime('%s','now')"),
+                "table `{table}` should use epoch-seconds default; got: {sql}"
             );
             assert!(
                 !sql.contains("datetime('now','localtime')"),
@@ -158,28 +188,44 @@ mod tests {
         }
     }
 
-    /// M-039: schema_default produces a 23-char UTC millisecond timestamp.
+    /// M-039: schema_default produces a unix epoch millisecond value
+    /// (large integer, ~1.7e12 in 2025-2026).
     #[test]
-    fn m039_default_format_is_23_chars() {
+    fn m039_default_is_ms_integer() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA key = 'test';").unwrap();
         conn.execute_batch(crate::db::SCHEMA_FINAL)
             .expect("schema_final.sql should apply");
 
-        let now: String = conn
+        let now: i64 = conn
             .query_row(
-                "SELECT strftime('%Y-%m-%d %H:%M:%f', 'now')",
+                "SELECT CAST(strftime('%s','now') AS INTEGER) * 1000",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        // Format: YYYY-MM-DD HH:MM:SS.fff (4+1+2+1+2+1+2+1+2+1+2+1+3 = 23)
-        assert_eq!(now.len(), 23, "got '{now}' (len={}); expected 23", now.len());
-        // Must NOT contain 'T' (we use space, not ISO 8601 'T' separator for
-        // backward compat with NaiveDateTime::parse_from_str format).
-        assert!(!now.contains('T'), "got '{now}'; should not contain 'T'");
-        // Must contain the fractional separator.
-        assert!(now.contains('.'), "got '{now}'; should be ms-precision");
+        // 2024-01-01 00:00:00 UTC = 1704067200000; current ms must be >= that.
+        assert!(
+            now >= 1_704_067_200_000,
+            "now ms ({now}) should be >= 2024-01-01 epoch ms (1704067200000)"
+        );
+        // Sanity: must be < year 2100 epoch ms (4_102_444_800_000)
+        assert!(
+            now < 4_102_444_800_000,
+            "now ms ({now}) should be < 2100-01-01 epoch ms"
+        );
+        // Verify 1-second boundary: strftime('%s','now') * 1000 increments in 1000-steps.
+        let delta: i64 = conn
+            .query_row(
+                "SELECT CAST(strftime('%s','now') AS INTEGER) * 1000 - ?1",
+                [now],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            delta < 1500 && delta >= 0,
+            "delta between two calls ({delta}) should be < 1500ms"
+        );
     }
 
 }

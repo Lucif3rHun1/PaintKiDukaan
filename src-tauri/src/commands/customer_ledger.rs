@@ -75,17 +75,17 @@ pub fn customer_ledger_impl(db: &Db, customer_id: i64, limit: i64) -> AppResult<
              ORDER BY created_at ASC, id ASC",
         )?;
         let sale_rows = stmt.query_map(params![customer_id], |r| {
-            let created_at_text: String = r.get(2)?;
+            let created_at_ms: i64 = r.get(2)?;
             Ok(CustomerLedgerTransaction {
                 id: r.get::<_, i64>(0)?,
-                date: created_at_text.clone(),
+                date: ms_to_date(created_at_ms),
                 kind: "sale".to_string(),
                 ref_no: r.get::<_, String>(1).ok(),
                 description: None,
                 debit_paise: r.get::<_, i64>(3)?,
                 credit_paise: 0,
                 balance_paise: 0,
-                sort_ms: text_datetime_to_ms(&created_at_text),
+                sort_ms: created_at_ms,
             })
         })?;
         let mut rows: Vec<CustomerLedgerTransaction> = sale_rows.collect::<Result<Vec<_>, _>>()?;
@@ -345,29 +345,6 @@ fn ms_to_date(ms: i64) -> String {
         .unwrap_or_else(|| String::new())
 }
 
-fn text_datetime_to_ms(s: &str) -> i64 {
-    use chrono::NaiveDateTime;
-    // M-039: accept either legacy "YYYY-MM-DD HH:MM:SS" (localtime) or
-    // normalized "YYYY-MM-DD HH:MM:SS.fff" (UTC). Try fractional first
-    // since it is a superset (chrono accepts fewer digits in %.f).
-    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
-        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
-        .ok()
-        .map(|dt| {
-            // M-039: fractional-seconds rows are stored in UTC;
-            // legacy non-fractional rows were stored in localtime.
-            if s.contains('.') {
-                dt.and_utc().timestamp_millis()
-            } else {
-                dt.and_local_timezone(chrono::Local)
-                    .single()
-                    .map(|local| local.timestamp_millis())
-                    .unwrap_or(0)
-            }
-        })
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,10 +358,10 @@ mod tests {
             c.execute("INSERT INTO locations (name, is_active, created_at, updated_at) VALUES ('Shop', 1, 0, 0)", []).unwrap();
             c.execute("INSERT INTO customers (name, phone, opening_balance_paise, created_at, updated_at) VALUES ('X', '9876543210', 100, 0, 0)", []).unwrap();
             c.execute("INSERT INTO sales (no, customer_id, status, user_id, subtotal, bill_discount, total, paid_amount, created_at, updated_at) \
-                 VALUES ('INV-1', 1, 'final', 1, 500, 0, 500, 0, '2025-01-10 10:00:00', '2025-01-10 10:00:00')", []).unwrap();
+                 VALUES ('INV-1', 1, 'final', 1, 500, 0, 500, 0, 1736503200000, 1736503200000)", []).unwrap();
             c.execute("INSERT INTO customer_payments (customer_id, sale_id, mode, amount_paise, created_at, created_by) VALUES (1, NULL, 'cash', 200, 2000, 1)", []).unwrap();
             c.execute("INSERT INTO sales (no, customer_id, status, user_id, subtotal, bill_discount, total, paid_amount, created_at, updated_at) \
-                 VALUES ('INV-2', 1, 'final', 1, 300, 0, 300, 0, '2025-01-10 11:00:00', '2025-01-10 11:00:00')", []).unwrap();
+                 VALUES ('INV-2', 1, 'final', 1, 300, 0, 300, 0, 1736506800000, 1736506800000)", []).unwrap();
         });
 
         let ledger = customer_ledger_impl(&db, 1, 200).unwrap();
@@ -414,7 +391,7 @@ mod tests {
         });
         db.with_raw(|c| {
             c.execute(
-                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('INV-1', ?1, 1000, 400, 'final', '2024-01-01', 1000, 1)",
+                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('INV-1', ?1, 1000, 400, 'final', 1704067200000, 1000, 1)",
                 [cust_id],
             ).unwrap();
             c.execute(

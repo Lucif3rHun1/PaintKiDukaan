@@ -27,7 +27,7 @@ export interface SaleReturn {
   refund_total: number; // paise
   payment_modes: Array<{ mode: string; amount: number }>;
   lines: SaleReturnLine[];
-  created_at: string;
+  created_at: number;
   created_by: number;
 }
 

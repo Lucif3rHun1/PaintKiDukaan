@@ -173,7 +173,7 @@ pub fn cmd_list_sale_returns_paged(
                     date: r.get(3)?,
                     reason: r.get(4)?,
                     refund_total: r.get(5)?,
-                    created_at: r.get(6)?,
+                    created_at: r.get::<_, i64>(6)?,
                     created_by: r.get(7)?,
                 })
             },

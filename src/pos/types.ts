@@ -77,7 +77,7 @@ export interface SalePaymentRecord {
   date: string;
   notes: string | null;
   user_id: number;
-  created_at: string;
+  created_at: number;
 }
 
 export interface NewSalePayment {
@@ -186,7 +186,7 @@ export interface StockMovement {
   ref_id: number | null;
   reason: string | null;
   user_id: number;
-  created_at: string;
+  created_at: number;
 }
 
 // ---- Day close (preview/totals live in generated module) ----
@@ -307,7 +307,7 @@ export interface CustomerLedgerPayment {
   amount: number;
   mode: string;
   notes: string | null;
-  created_at: string;
+  created_at: number;
 }
 
 export interface CustomerLedgerBill {
@@ -316,7 +316,7 @@ export interface CustomerLedgerBill {
   total: number;
   paid_amount: number;
   status: string;
-  created_at: string;
+  created_at: number;
 }
 
 export type LedgerEntry =
@@ -386,7 +386,7 @@ export interface HeldBill {
   no: string;
   customer_id: number | null;
   customer_name: string | null;
-  updated_at: string;
+  updated_at: number;
   total: number;
   line_count: number;
 }
@@ -396,7 +396,7 @@ export interface HeldBillDetail {
   no: string;
   customer_id: number | null;
   customer_name: string | null;
-  created_at: string;
+  created_at: number;
   total: number;
   payment_modes_json: string;
   bill_discount: number;

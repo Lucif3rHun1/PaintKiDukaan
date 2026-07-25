@@ -27,7 +27,7 @@ pub struct Sale {
     pub validity_days: Option<i64>,
     pub converted_from_id: Option<i64>,
     pub user_id: i64,
-    pub created_at: String,
+    pub created_at: i64,
     pub items: Vec<SaleItem>,
 }
 
@@ -305,7 +305,7 @@ pub(crate) fn row_to_sale_header(r: &rusqlite::Row<'_>) -> rusqlite::Result<Sale
         validity_days: r.get(10)?,
         converted_from_id: r.get(11)?,
         user_id: r.get(12)?,
-        created_at: r.get(13)?,
+        created_at: r.get::<_, i64>(13)?,
         items: Vec::new(),
     })
 }
@@ -331,7 +331,7 @@ pub(crate) fn row_to_sale_header_with_name(r: &rusqlite::Row<'_>) -> rusqlite::R
         validity_days: r.get(10)?,
         converted_from_id: r.get(11)?,
         user_id: r.get(12)?,
-        created_at: r.get(13)?,
+        created_at: r.get::<_, i64>(13)?,
         items: Vec::new(),
     })
 }

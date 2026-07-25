@@ -28,10 +28,10 @@ pub struct Formula {
     pub base_item_name: Option<String>,
     pub retail_price_paise: i64,
     pub is_active: bool,
-    pub created_at: String,
+    pub created_at: i64,
     pub created_by_user_id: Option<i64>,
     pub sales_count: i64,
-    pub last_sold_at: Option<String>,
+    pub last_sold_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -73,7 +73,7 @@ pub struct FormulaSaleRow {
     pub line_total: f64,
     pub line_discount: i64,
     pub shade_note: Option<String>,
-    pub sold_at: String,
+    pub sold_at: i64,
 }
 
 // -----------------------------------------------------------------------------
@@ -124,10 +124,10 @@ fn row_to_formula(r: &rusqlite::Row<'_>) -> rusqlite::Result<Formula> {
         with_base: r.get::<_, i64>(3)? != 0,
         retail_price_paise: r.get(4)?,
         is_active: r.get::<_, i64>(5)? != 0,
-        created_at: r.get(6)?,
+        created_at: r.get::<_, i64>(6)?,
         created_by_user_id: r.get(7)?,
         sales_count: r.get(8)?,
-        last_sold_at: r.get(9)?,
+        last_sold_at: r.get::<_, Option<i64>>(9)?,
         base_item_id: r.get(10)?,
         base_item_name: r.get(11)?,
     })
@@ -255,7 +255,7 @@ pub fn list_sales(
                 line_total: r.get(8)?,
                 line_discount: r.get(9)?,
                 shade_note: r.get(10)?,
-                sold_at: r.get(11)?,
+                sold_at: r.get::<_, i64>(11)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -628,7 +628,7 @@ pub fn cmd_list_formula_sales_paged(
                     line_total: r.get(8)?,
                     line_discount: r.get(9)?,
                     shade_note: r.get(10)?,
-                    sold_at: r.get(11)?,
+                    sold_at: r.get::<_, i64>(11)?,
                 })
             },
         )?;
@@ -1071,7 +1071,7 @@ mod tests {
             )?;
             let walkin: i64 = c.query_row(
                 "INSERT INTO sales (no, customer_id, date, status, subtotal, bill_discount, total, paid_amount, payment_modes_json, user_id) \
-                 VALUES ('INV/walkin', NULL, '2026-06-19', 'final', 100, 0, 100, 100, '[{\"mode\":\"cash\",\"amount\":100}]', 1) \
+                 VALUES ('INV/walkin', NULL, 1781827200000, 'final', 100, 0, 100, 100, '[{\"mode\":\"cash\",\"amount\":100}]', 1) \
                  RETURNING id",
                 [],
                 |r| r.get(0),
@@ -1083,7 +1083,7 @@ mod tests {
             )?;
             let acme: i64 = c.query_row(
                 "INSERT INTO sales (no, customer_id, date, status, subtotal, bill_discount, total, paid_amount, payment_modes_json, user_id) \
-                 VALUES ('INV/acme', 1, '2026-06-20', 'final', 100, 0, 100, 100, '[{\"mode\":\"cash\",\"amount\":100}]', 1) \
+                 VALUES ('INV/acme', 1, 1781913600000, 'final', 100, 0, 100, 100, '[{\"mode\":\"cash\",\"amount\":100}]', 1) \
                  RETURNING id",
                 [],
                 |r| r.get(0),

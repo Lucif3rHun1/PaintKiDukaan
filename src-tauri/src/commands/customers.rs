@@ -27,8 +27,8 @@ pub struct Customer {
     pub opening_balance_paise: i64,
     pub notes: Option<String>,
     pub is_active: bool,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -321,8 +321,8 @@ pub fn list_customers(
                 opening_balance_paise: r.get(6)?,
                 notes: r.get(7)?,
                 is_active: r.get::<_, i64>(8)? != 0,
-                created_at: r.get(9)?,
-                updated_at: r.get(10)?,
+                created_at: r.get::<_, i64>(9)?,
+                updated_at: r.get::<_, i64>(10)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -364,8 +364,8 @@ pub fn lookup_customer(state: State<'_, AppState>, phone: String) -> AppResult<O
                 opening_balance_paise: r.get(6)?,
                 notes: r.get(7)?,
                 is_active: r.get::<_, i64>(8)? != 0,
-                created_at: r.get(9)?,
-                updated_at: r.get(10)?,
+                created_at: r.get::<_, i64>(9)?,
+                updated_at: r.get::<_, i64>(10)?,
             })
         })?;
         match rows.next() {
@@ -383,7 +383,7 @@ pub struct CustomerBill {
     pub total: i64,
     pub paid_amount: i64,
     pub status: String,
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 fn list_customer_bills_impl(db: &Db, customer_id: i64) -> AppResult<Vec<CustomerBill>> {
@@ -401,7 +401,7 @@ fn list_customer_bills_impl(db: &Db, customer_id: i64) -> AppResult<Vec<Customer
                 total: r.get(2)?,
                 paid_amount: r.get(3)?,
                 status: r.get(4)?,
-                created_at: r.get(5)?,
+                created_at: r.get::<_, i64>(5)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -439,8 +439,8 @@ fn fetch_customer_tx(tx: &rusqlite::Connection, id: i64) -> AppResult<Customer> 
             opening_balance_paise: r.get(6)?,
             notes: r.get(7)?,
             is_active: r.get::<_, i64>(8)? != 0,
-            created_at: r.get(9)?,
-            updated_at: r.get(10)?,
+            created_at: r.get::<_, i64>(9)?,
+            updated_at: r.get::<_, i64>(10)?,
         })
     })?;
     rows.next()
@@ -828,19 +828,19 @@ mod tests {
 
         db.with_raw(|c| {
             c.execute(
-                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('QTN-1', ?1, 100, 50, 'quotation', '2025-01-10', 100, 1)",
+                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('QTN-1', ?1, 100, 50, 'quotation', 1736467200000, 100, 1)",
                 [customer.id],
             ).unwrap();
             c.execute(
-                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('INV-1', ?1, 250, 200, 'final', '2025-01-15', 250, 1)",
+                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('INV-1', ?1, 250, 200, 'final', 1736899200000, 250, 1)",
                 [customer.id],
             ).unwrap();
             c.execute(
-                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('INV-2', ?1, 180, 180, 'final', '2025-01-12', 180, 1)",
+                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('INV-2', ?1, 180, 180, 'final', 1736640000000, 180, 1)",
                 [customer.id],
             ).unwrap();
             c.execute(
-                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('INV-3', ?1, 300, 0, 'final', '2025-01-15', 300, 1)",
+                "INSERT INTO sales (no, customer_id, total, paid_amount, status, date, subtotal, user_id) VALUES ('INV-3', ?1, 300, 0, 'final', 1736899200000, 300, 1)",
                 [customer.id],
             ).unwrap();
         });
@@ -935,8 +935,8 @@ pub fn cmd_list_customers_paged(
                     opening_balance_paise: r.get(6)?,
                     notes: r.get(7)?,
                     is_active: r.get::<_, i64>(8)? != 0,
-                    created_at: r.get(9)?,
-                    updated_at: r.get(10)?,
+                    created_at: r.get::<_, i64>(9)?,
+                    updated_at: r.get::<_, i64>(10)?,
                 })
             },
         )?;

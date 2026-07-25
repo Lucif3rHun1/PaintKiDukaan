@@ -14,7 +14,7 @@ export type Sale = {
   date: string; status: string; subtotal: number; bill_discount: number;
   total: number; paid_amount: number; payment_modes: PaymentSplit[];
   validity_days: number | null; converted_from_id: number | null;
-  user_id: number; created_at: string; items: SaleItem[];
+  user_id: number; created_at: number; items: SaleItem[];
 };
 export type Item = {
   id: number; sku_code: string; barcode: string | null; name: string;
@@ -25,7 +25,7 @@ export type Item = {
   label_line2: string | null; primary_location_id: number | null;
   sub_location_id: number | null; position: string | null; min_stock: number;
   barcode_format: string | null; is_active: boolean; current_qty: number;
-  created_at: string; updated_at: string; brand_id: number | null;
+  created_at: number; updated_at: number; brand_id: number | null;
 };
 export type QtyPerLoc = { location: string; qty: number };
 export type ItemLookup =
@@ -65,7 +65,7 @@ export type Customer = {
   id: number; name: string; phone: string; email: string | null; address: string | null;
   customer_type_id: number | null; type_name: string | null; is_flagged: boolean;
   opening_balance_paise: number; notes: string | null; is_active: boolean;
-  created_at: string; updated_at: string; credit_limit: number | null;
+  created_at: number; updated_at: number; credit_limit: number | null;
 };
 export type NewCustomer = {
   name: string; phone: string; customer_type_id: number | null;
@@ -77,7 +77,7 @@ export type CustomerUpdate = {
   notes?: string | null; is_active?: boolean;
 };
 export type CustomerBill = {
-  sale_id: number; sale_number: string; created_at: string;
+  sale_id: number; sale_number: string; created_at: number;
   total_paise: number; paid_paise: number; status: string;
 };
 export type CustomerOutstanding = {
@@ -104,7 +104,7 @@ export type RecordCustomerPaymentArgs = {
 export type Vendor = {
   id: number; name: string; phone: string | null; contact_person: string | null;
   credit_limit: number | null; opening_balance: number; notes: string | null;
-  is_active: boolean; created_at: string; updated_at: string;
+  is_active: boolean; created_at: number; updated_at: number;
 };
 export type NewVendor = {
   name: string; phone?: string | null; contact_person?: string | null;
@@ -120,7 +120,7 @@ export type VendorPayment = {
 };
 export type VendorPaymentRecord = {
   id: number; vendor_id: number; amount: number; mode: string; date: string;
-  notes: string | null; user_id: number; created_at: string;
+  notes: string | null; user_id: number; created_at: number;
 };
 export type Brand = { id: number; name: string; prefix: string; next_seq: number };
 export type DayClose = {
@@ -128,7 +128,7 @@ export type DayClose = {
   opening_cash_paise: number; cash_sales_paise: number; card_sales_paise: number;
   upi_sales_paise: number; expenses_paise: number; cash_in_paise: number;
   cash_out_paise: number; closing_cash_paise: number; actual_cash_paise: number;
-  variance_paise: number; note: string | null; created_at: string; updated_at: string;
+  variance_paise: number; note: string | null; created_at: number; updated_at: number;
 };
 export type DayCloseMode = "shop" | "cashier";
 export type DayCloseTotals = {

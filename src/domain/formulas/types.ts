@@ -11,7 +11,7 @@ export interface Formula {
   base_item_name: string | null;
   retail_price_paise: number;
   is_active: boolean;
-  created_at: string;
+  created_at: number;
   created_by_user_id: number | null;
   sales_count: number;
   last_sold_at: string | null;

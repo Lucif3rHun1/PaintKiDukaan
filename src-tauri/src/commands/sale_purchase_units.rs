@@ -14,8 +14,8 @@ pub struct SaleUnit {
     pub label: String,
     pub quantity_precision: i64,
     pub is_active: bool,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,8 +37,8 @@ pub struct PurchaseUnit {
     pub id: i64,
     pub label: String,
     pub is_active: bool,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,8 +91,8 @@ pub fn list_sale_units(
                 label: r.get(2)?,
                 quantity_precision: r.get(3)?,
                 is_active: r.get::<_, i64>(4)? != 0,
-                created_at: r.get(5)?,
-                updated_at: r.get(6)?,
+                created_at: r.get::<_, i64>(5)?,
+                updated_at: r.get::<_, i64>(6)?,
             })
         })?;
         let mut out = Vec::new();
@@ -225,8 +225,8 @@ pub fn list_purchase_units(
                 id: r.get(0)?,
                 label: r.get(1)?,
                 is_active: r.get::<_, i64>(2)? != 0,
-                created_at: r.get(3)?,
-                updated_at: r.get(4)?,
+                created_at: r.get::<_, i64>(3)?,
+                updated_at: r.get::<_, i64>(4)?,
             })
         })?;
         let mut out = Vec::new();

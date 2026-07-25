@@ -6,7 +6,7 @@ export interface CustomerType {
   id: number;
   name: string;
   is_active: boolean;
-  created_at: string;
+  created_at: number;
 }
 
 export interface NewCustomerType {

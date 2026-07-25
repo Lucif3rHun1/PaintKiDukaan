@@ -15,8 +15,8 @@ pub struct CustomerType {
     pub id: i64,
     pub name: String,
     pub is_active: bool,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,8 +55,8 @@ pub fn list_customer_types(
                 id: r.get(0)?,
                 name: r.get(1)?,
                 is_active: r.get::<_, i64>(2)? != 0,
-                created_at: r.get::<_, i64>(3)?.to_string(),
-                updated_at: r.get::<_, i64>(4)?.to_string(),
+                created_at: r.get::<_, i64>(3)?,
+                updated_at: r.get::<_, i64>(4)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -94,8 +94,8 @@ pub fn add_customer_type(
             id,
             name,
             is_active: true,
-            created_at: created_at.to_string(),
-            updated_at: updated_at.to_string(),
+            created_at: created_at,
+            updated_at: updated_at,
         })
     })
 }
@@ -135,8 +135,8 @@ pub fn rename_customer_type(
             id,
             name,
             is_active: true,
-            created_at: created_at.to_string(),
-            updated_at: updated_at.to_string(),
+            created_at: created_at,
+            updated_at: updated_at,
         })
     })
 }
@@ -236,8 +236,8 @@ pub fn cmd_list_customer_types_paged(
                     id: r.get(0)?,
                     name: r.get(1)?,
                     is_active: r.get::<_, i64>(2)? != 0,
-                    created_at: r.get::<_, i64>(3)?.to_string(),
-                    updated_at: r.get::<_, i64>(4)?.to_string(),
+                    created_at: r.get::<_, i64>(3)?,
+                    updated_at: r.get::<_, i64>(4)?,
                 })
             },
         )?;

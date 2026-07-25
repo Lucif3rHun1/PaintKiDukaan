@@ -1337,7 +1337,7 @@ mod tests {
         db.with_conn(|c| -> anyhow::Result<()> {
             c.execute(
                 "INSERT INTO sales (no, customer_id, status, user_id, subtotal, bill_discount, total, paid_amount, created_at, updated_at)
-                 VALUES ('INV-TEST-0001',2,'final',1,7500,0,7500,0,'2025-01-10 10:00:00','2025-01-10 10:00:00')",
+                 VALUES ('INV-TEST-0001',2,'final',1,7500,0,7500,0,1736503200000,1736503200000)",
                 [],
             )?;
             c.execute(
@@ -1347,7 +1347,7 @@ mod tests {
             )?;
             c.execute(
                 "INSERT INTO sales (no, customer_id, status, user_id, subtotal, bill_discount, total, paid_amount, created_at, updated_at)
-                 VALUES ('INV-TEST-0002',4,'final',1,12000,0,12000,0,'2025-01-10 11:00:00','2025-01-10 11:00:00')",
+                 VALUES ('INV-TEST-0002',4,'final',1,12000,0,12000,0,1736506800000,1736506800000)",
                 [],
             )?;
             c.execute(

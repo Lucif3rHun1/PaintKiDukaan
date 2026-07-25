@@ -8,7 +8,7 @@ export interface Location {
   rack: string | null;
   zone: string | null;
   is_active: boolean;
-  created_at: string;
+  created_at: number;
 }
 
 export interface SubLocation {
@@ -17,7 +17,7 @@ export interface SubLocation {
   name: string;
   position: string | null;
   is_active: boolean;
-  created_at: string;
+  created_at: number;
 }
 
 export interface NewLocation {
