@@ -538,16 +538,6 @@ mod tests {
     }
 
     use super::*;
-/// Format epoch milliseconds as YYYY-MM-DD for receipt printing.
-fn ms_to_date_string(ms: i64) -> String {
-    use chrono::TimeZone;
-    chrono::Utc
-        .timestamp_millis_opt(ms)
-        .single()
-        .map(|dt| dt.format("%Y-%m-%d").to_string())
-        .unwrap_or_default()
-}
-
 
     #[test]
     fn title_case_preserves_short_acronyms_and_punctuation() {

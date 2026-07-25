@@ -181,6 +181,27 @@ mod tests {
     }
 
     #[test]
+    fn sale_return_rejects_zero_or_negative_payment_amount() {
+        let db = Db::open_in_memory().unwrap();
+        // Two-mode split where one row is 0 — should fail before any DB write
+        // (regression: previously accepted and INSERTed a phantom payment row).
+        let payload = CreateSaleReturnPayload {
+            sale_id: 1,
+            date: None,
+            customer_id: None,
+            reason: None,
+            payment_modes: vec![
+                PaymentSplit { mode: "cash".into(), amount: 100 },
+                PaymentSplit { mode: "upi".into(),  amount: 0   },
+            ],
+            owner_pin: String::new(),
+            lines: vec![ret_line(10, 1.0, 100)],
+        };
+        let err = create_sale_return(&db, 1, payload).unwrap_err();
+        assert!(matches!(err, ReturnError::BadPaymentAmount(1)));
+    }
+
+    #[test]
     fn sale_return_rejects_missing_sale() {
         let db = Db::open_in_memory().unwrap();
         let payload = CreateSaleReturnPayload {

@@ -85,6 +85,8 @@ pub enum ReturnError {
     },
     #[error("payment_modes sum ({got}) must equal refund total ({want})")]
     ModesSumMismatch { got: i64, want: i64 },
+    #[error("payment split {0}: amount must be > 0")]
+    BadPaymentAmount(usize),
     #[error("refund total ({refund}) exceeds paid amount ({paid})")]
     OverRefund { refund: i64, paid: i64 },
     #[error("sale {0} not found")]
@@ -107,7 +109,8 @@ impl From<ReturnError> for AppError {
             | ReturnError::QtyExceedsSold { .. }
             | ReturnError::ModesSumMismatch { .. }
             | ReturnError::NotAFinalSale(..)
-            | ReturnError::OverRefund { .. } => AppError::Validation(e.to_string()),
+            | ReturnError::OverRefund { .. }
+            | ReturnError::BadPaymentAmount(_) => AppError::Validation(e.to_string()),
             ReturnError::SaleNotFound(_) => AppError::NotFound("Sale not found".into()),
             ReturnError::Db(inner) => AppError::from(inner),
             ReturnError::Other(inner) => AppError::Internal(inner.to_string()),
@@ -129,6 +132,11 @@ pub fn create_sale_return(
         }
         if l.refund_paise < 0 {
             return Err(ReturnError::BadRefund(i));
+        }
+    }
+    for (i, m) in payload.payment_modes.iter().enumerate() {
+        if m.amount <= 0 {
+            return Err(ReturnError::BadPaymentAmount(i));
         }
     }
 
