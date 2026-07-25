@@ -61,13 +61,11 @@ pub fn create_final_bill(db: &Db, user_id: i64, sale: NewSale) -> Result<i64, Sa
             want: sale.paid_amount,
         });
     }
-    for (i, m) in sale.payment_modes.iter().enumerate() {
-        if m.amount <= 0 {
-            return Err(SaleError::Other(anyhow::anyhow!(
-                "payment split {}: amount must be > 0",
-                i
-            )));
-        }
+    if let Err(bad) = validate_payment_modes(&sale.payment_modes) {
+        return Err(SaleError::Other(anyhow::anyhow!(
+            "payment split {}: amount must be > 0",
+            bad
+        )));
     }
     let payment_json = serde_json::to_string(&sale.payment_modes).unwrap_or_else(|_| "[]".into());
     let date = sale.date.unwrap_or_else(today);

@@ -201,6 +201,39 @@ mod tests {
         assert!(matches!(err, ReturnError::BadPaymentAmount(1)));
     }
 
+    /// Regression: edit_fbill (sales/edit.rs) must also reject zero/negative
+    /// payment modes BEFORE writing to sale_payments. Previously missing the
+    /// guard that create_final_bill already had — a negative-amount row would
+    /// INSERT into the ledger on every edit.
+    #[test]
+    fn edit_fbill_rejects_zero_or_negative_payment_amount() {
+        let db = Db::open_in_memory().unwrap();
+        let payload = EditFbillPayload {
+            sale_id: 1,
+            lines: vec![CartLine {
+                kind: "item".into(),
+                item_id: Some(1),
+                formula_id: None,
+                display_name: Some("x".into()),
+                qty: 1.0,
+                price: 100,
+                unit_type: "pcs".into(),
+                line_discount: 0,
+                shade_note: None,
+            }],
+            bill_discount: 0,
+            customer_id: None,
+            paid_amount: 100,
+            payment_modes: vec![
+                PaymentSplit { mode: "cash".into(), amount: 100 },
+                PaymentSplit { mode: "upi".into(),  amount: -10 },
+            ],
+        };
+        let err = edit_fbill(&db, 1, payload).unwrap_err();
+        // Surface as SaleError::Other("payment split 1: amount must be > 0").
+        assert!(matches!(err, SaleError::Other(ref m) if m.to_string().contains("payment split 1")));
+    }
+
     #[test]
     fn sale_return_rejects_missing_sale() {
         let db = Db::open_in_memory().unwrap();

@@ -134,10 +134,8 @@ pub fn create_sale_return(
             return Err(ReturnError::BadRefund(i));
         }
     }
-    for (i, m) in payload.payment_modes.iter().enumerate() {
-        if m.amount <= 0 {
-            return Err(ReturnError::BadPaymentAmount(i));
-        }
+    if let Err(i) = validate_payment_modes(&payload.payment_modes) {
+        return Err(ReturnError::BadPaymentAmount(i));
     }
 
     // Mint return number BEFORE transaction to avoid reentrant mutex deadlock.

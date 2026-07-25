@@ -43,6 +43,12 @@ pub fn edit_fbill(db: &Db, user_id: i64, payload: EditFbillPayload) -> Result<i6
             "bill_discount cannot be negative"
         )));
     }
+    if let Err(bad) = validate_payment_modes(&payload.payment_modes) {
+        return Err(SaleError::Other(anyhow::anyhow!(
+            "payment split {}: amount must be > 0",
+            bad
+        )));
+    }
     let subtotal = cart_subtotal(&payload.lines);
     let total = cart_total(&payload.lines, payload.bill_discount);
 

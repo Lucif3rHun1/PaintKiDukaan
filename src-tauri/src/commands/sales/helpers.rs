@@ -228,6 +228,19 @@ pub fn cmd_preview_cart_total(lines: Vec<CartLine>, bill_discount: i64) -> CartP
     }
 }
 
+/// Returns Err(index of first mode with amount <= 0).
+/// Used by every sale-issuance and sale-edit code path to avoid
+/// drift between them (a previous audit caught this inconsistency
+/// between create_final_bill and create_sale_return). Mirrors here.
+pub fn validate_payment_modes(modes: &[PaymentSplit]) -> Result<(), usize> {
+    for (i, m) in modes.iter().enumerate() {
+        if m.amount <= 0 {
+            return Err(i);
+        }
+    }
+    Ok(())
+}
+
 pub fn modes_sum(modes: &[PaymentSplit]) -> i64 {
     modes.iter().fold(0i64, |acc, m| acc.saturating_add(m.amount))
 }
