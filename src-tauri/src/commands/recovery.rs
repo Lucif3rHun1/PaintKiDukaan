@@ -252,7 +252,7 @@ pub fn set_recovery_passphrase(
     let db_path = state
         .db_path
         .lock()
-        .unwrap()
+        .map_err(|e| AppError::Internal(format!("db_path mutex poisoned: {e}")))?
         .clone()
         .ok_or(AppError::NoDb)?;
     let db = state.db.lock().map_err(|e| AppError::Internal(format!("lock poisoned: {e}")))?;
@@ -345,8 +345,7 @@ pub async fn cmd_pick_backup_file(state: State<'_, AppState>) -> Result<Option<S
         .add_filter("PaintKiDukaan Backup", &["pkb1"])
         .open_single_file()
         .show()
-        .unwrap()
-        .map(|p| p);
+        .map_err(|e| AppError::Internal(format!("backup-file dialog error: {e}")))?;
     Ok(file.map(|p| p.to_string_lossy().to_string()))
 }
 

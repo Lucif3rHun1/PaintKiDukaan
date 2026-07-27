@@ -183,11 +183,18 @@ pub(crate) fn do_backup<R: tauri::Runtime>(
 
         // Read DEK from AppState.db so the snapshot is encrypted at the
         // SQLCipher level even when the recovery passphrase is missing.
-        let dek: Option<[u8; 32]> = state
-            .db
-            .lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|db| *db.dek()));
+        // Propagate lock errors (poisoned mutex = another thread panicked)
+        // rather than silently degrading to a plaintext temp snapshot.
+        let dek: Option<[u8; 32]> = {
+            let guard = state
+                .db
+                .lock()
+                .map_err(|e| format!("backup failed: db mutex poisoned: {e}"))?;
+            let db = guard
+                .as_ref()
+                .ok_or_else(|| "backup failed: database not unlocked".to_string())?;
+            Some(*db.dek())
+        };
         snapshot::snapshot_via_backup_api(&live_db, dek.as_ref(), &temp_path).map_err(err_str)?;
 
         let metadata = encrypt_snapshot(&temp_path, &envelope_path, &passphrase).map_err(err_str)?;
